@@ -1,0 +1,17 @@
+[package]
+name = "triple_arena"
+version = "0.1.0"
+edition = "2018"
+authors = ["Aaron Kutch <aaronkutch@att.net>"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/AaronKutch/triple_arena"
+documentation = "https://docs.rs/triple_arena"
+description = "Arena supporting non-Clone types, deletion, and inter-arena pointers"
+keywords = ["arena", "generation", "no_std"]
+categories = ["memory-management", "no-std"]
+
+[dependencies]
+
+[dev-dependencies]
+rand_xoshiro = "0.6"
