@@ -1,10 +1,18 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet};
 
 use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::prelude::*;
+use triple_arena::{ptr_trait_struct_with_gen, Arena, Ptr, PtrTrait};
+
+macro_rules! next_inx {
+    ($rng:ident, $len:ident) => {
+        $rng.next_u32() as usize % $len
+    };
+}
+
+ptr_trait_struct_with_gen!(P0);
 
 #[test]
 fn fuzz() {
@@ -12,164 +20,187 @@ fn fuzz() {
 
     // unique id for checking that the correct elements are returned
     let mut counter = 0u64;
-    let mut new_id = || {
+    let mut new_t = || {
         counter += 1;
         counter
     };
 
-    let mut m: Vec<Arena<u64>> = Vec::new();
-    // keeps track of elements in `m` for checking correctness. The tuple is of
-    // (unique id, `m` arena index, pointer).
-    let mut queue: VecDeque<(u64, usize, TriPtr)> = VecDeque::new();
-    // arenas of various sizes
-    let sizes = 4;
-    for i in 0..sizes {
-        let mut ta = Arena::new();
-        for _ in 0..(1 << i) {
-            let id = new_id();
-            queue.push_back((id, i, ta.insert(id)));
-        }
-        m.push(ta);
-    }
-    let mut tot_len = 0;
-    for i in 0..sizes {
-        tot_len += m[i].len();
-    }
-    assert_eq!(tot_len, 15);
+    let mut a: Arena<u64, P0> = Arena::new();
+    // map of all `T` and their pointers contained in the arena
+    let mut b: HashMap<u64, Ptr<P0>> = HashMap::new();
+    // list of `T`. We need this alongside the hashmap because we need random
+    // indexing (and hashmaps will be prone to biases)
+    let mut list: Vec<u64> = vec![];
+    let mut op_inx = 1000;
+    // makes sure there is not some problem with the test harness itself or
+    // determinism
+    let mut iters999 = 0;
+    let mut max_len = 0;
 
-    let mut saturations = 0;
-    for _ in 0..100_000 {
-        match rng.next_u32() % 8 {
-            // make removals as common as insertions
-            0 | 1 => {
-                if queue.len() == 0 {
-                    // no elements in `m`, lets test `insert`
-                    saturations += 1;
-                    for m_i in 0..sizes {
-                        assert_eq!(m[m_i].len(), 0);
-                        for _ in 0..(1 << m_i) {
-                            let id = new_id();
-                            queue.push_back((id, m_i, m[m_i].insert(id)));
-                        }
-                        assert_eq!(m[m_i].len(), 1 << m_i);
-                        assert_eq!(m[m_i].capacity(), 1 << m_i);
-                    }
-                } else {
-                    let queue_i = (rng.next_u32() as usize) % queue.len();
-                    let (id, m_i, ptr) = queue.swap_remove_back(queue_i).unwrap();
-                    assert_eq!(&id, m[m_i].get(ptr).unwrap());
-                    assert_eq!(&id, m[m_i].get_mut(ptr).unwrap());
-                    assert_eq!(id, m[m_i].remove(ptr).unwrap());
-                }
-            }
-            2 => {
-                // test `try_insert`
-                // treat `m` as one contiguous arena and figure out which to insert into
-                let sig_bits =
-                    (32 - (rng.next_u32() % (1 << (sizes - 1))).leading_zeros()) as usize;
-                let m_i = (sizes - 1) - sig_bits;
-                if m[m_i].len() < (1 << m_i) {
-                    let id = new_id();
-                    queue.push_back((id, m_i, m[m_i].try_insert(id).unwrap()));
-                } else {
-                    assert_eq!(m[m_i].try_insert(!0), Err(!0));
-                }
-            }
-            3 => {
-                // test `try_insert_with`
-                let sig_bits =
-                    (32 - (rng.next_u32() % (1 << (sizes - 1))).leading_zeros()) as usize;
-                let m_i = (sizes - 1) - sig_bits;
-                if m[m_i].len() < (1 << m_i) {
-                    let id = new_id();
-                    queue.push_back((
-                        id,
-                        m_i,
-                        m[m_i].try_insert_with(|| id).unwrap_or_else(|_| panic!()),
-                    ));
-                } else {
-                    assert!(m[m_i].try_insert_with(|| !0).is_err());
-                }
-            }
-            4 => {
-                // test `replace_update_gen`
-                if queue.len() == 0 {
-                    // nothing to replace
-                    continue
-                }
-                let queue_i = (rng.next_u32() as usize) % queue.len();
-                let (id, m_i, old_ptr) = queue.swap_remove_back(queue_i).unwrap();
-                let nid = new_id();
-                if let Ok((new_ptr, old)) = m[m_i].replace_update_gen(old_ptr, nid) {
-                    assert_eq!(id, old);
-                    queue.push_back((nid, m_i, new_ptr));
-                } else {
-                    panic!();
-                }
-            }
-            5 => {
-                // test `replace_keep_gen`
-                if queue.len() == 0 {
-                    // nothing to replace
-                    continue
-                }
-                let queue_i = (rng.next_u32() as usize) % queue.len();
-                let (id, m_i, ptr) = queue.swap_remove_back(queue_i).unwrap();
-                let nid = new_id();
-                if let Ok(old) = m[m_i].replace_keep_gen(ptr, nid) {
-                    assert_eq!(id, old);
-                    queue.push_back((nid, m_i, ptr));
-                } else {
-                    panic!();
-                }
-            }
-            6 => {
-                // test miscellanious functions
-                if queue.len() == 0 {
-                    // the removal section tests a bunch of stuff
-                    continue
-                }
-                let queue_i = (rng.next_u32() as usize) % queue.len();
-                let (id, m_i, ptr) = queue[queue_i];
-                assert_eq!(id, *m[m_i].get(ptr).unwrap());
-                assert_eq!(id, *m[m_i].get_mut(ptr).unwrap());
-                let new_ptr = m[m_i].invalidate(ptr).unwrap();
-                queue[queue_i].2 = new_ptr;
-            }
-            7 => {
-                // test failures
-                if queue.len() == 0 {
-                    continue
-                }
-                let i0 = (rng.next_u32() as usize) % queue.len();
-                let i1 = (rng.next_u32() as usize) % queue.len();
-                let (_, m_i0, ptr0) = queue[i0];
-                let (_, m_i1, ptr1) = queue[i1];
-                if m_i0 != m_i1 {
-                    // differing arenas
-                    assert!(m[m_i0].get(ptr1).is_none());
-                    assert!(m[m_i0].get_mut(ptr1).is_none());
-                    assert!(m[m_i0].invalidate(ptr1).is_none());
-                    assert!(m[m_i0].replace_keep_gen(ptr1, 0).is_err());
-                    assert!(m[m_i0].replace_update_gen(ptr1, 0).is_err());
-                    assert!(m[m_i0].remove(ptr1).is_none());
-                }
-                // differing gens
-                let new_ptr = m[m_i0].invalidate(ptr0).unwrap();
-                queue[i0].2 = new_ptr;
-                assert!(m[m_i0].get(ptr0).is_none());
-                assert!(m[m_i0].get_mut(ptr0).is_none());
-                assert!(m[m_i0].invalidate(ptr0).is_none());
-                assert!(m[m_i0].replace_keep_gen(ptr0, 0).is_err());
-                assert!(m[m_i0].replace_update_gen(ptr0, 0).is_err());
-                assert!(m[m_i0].remove(ptr0).is_none());
-            }
-            _ => panic!(),
+    // get invalid pointer
+    let invalid = a.insert(0);
+    a.remove(invalid);
+    a.clear_and_shrink();
+
+    for _ in 0..1_000_000 {
+        assert_eq!(b.len(), list.len());
+        assert_eq!(a.len(), b.len());
+        let len = list.len();
+        assert_eq!(a.is_empty(), b.is_empty());
+        let check = Arena::_check_arena_invariants(&a);
+        if check.is_err() {
+            dbg!(op_inx);
+            check.unwrap();
         }
+        op_inx = rng.next_u32() % 1000;
+        // I am only using inclusive ranges because exclusive ones are not stable as of
+        // writing
+        match op_inx {
+            0 => {
+                // reserve
+                a.reserve((rng.next_u32() % 8) as usize);
+            }
+            1..=49 => {
+                // try_insert
+                if a.len() < a.capacity() {
+                    let t = new_t();
+                    let ptr = a.try_insert(t).unwrap();
+                    b.insert(t, ptr);
+                    list.push(t);
+                } else {
+                    let t = new_t();
+                    assert_eq!(a.try_insert(t), Err(t));
+                }
+            }
+            50..=99 => {
+                // try_insert_with
+                if a.len() < a.capacity() {
+                    let t = new_t();
+                    let ptr = if let Ok(ptr) = a.try_insert_with(|| t) {
+                        ptr
+                    } else {
+                        panic!()
+                    };
+                    b.insert(t, ptr);
+                    list.push(t);
+                } else {
+                    let t = new_t();
+                    let create = || t;
+                    assert!(a.try_insert(create()) == Err(create()));
+                }
+            }
+            100..=199 => {
+                // insert
+                let t = new_t();
+                let ptr = a.insert(t);
+                b.insert(t, ptr);
+                list.push(t);
+            }
+            200..=399 => {
+                // remove
+                if len != 0 {
+                    let t = list.swap_remove(next_inx!(rng, len));
+                    let ptr = b.remove(&t).unwrap();
+                    assert_eq!(t, a.remove(ptr).unwrap());
+                } else {
+                    assert!(a.remove(invalid).is_none());
+                }
+            }
+            // TODO test failure cases
+            400..=799 => {
+                // contains
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    assert!(a.contains(b[&t]));
+                } else {
+                    assert!(!a.contains(invalid));
+                }
+            }
+            800..=849 => {
+                // get and index
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    assert_eq!(t, *a.get(b[&t]).unwrap());
+                    assert_eq!(t, a[b[&t]]);
+                } else {
+                    assert!(a.get(invalid).is_none())
+                }
+            }
+            850..=899 => {
+                // get_mut and index_mut
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    assert_eq!(t, *a.get_mut(b[&t]).unwrap());
+                    let tmp: &mut u64 = &mut a[b[&t]];
+                    assert_eq!(t, *tmp);
+                } else {
+                    assert!(a.get_mut(invalid).is_none())
+                }
+            }
+            900..=949 => {
+                // iter
+                let mut n = 0;
+                for (ptr, t) in a.iter() {
+                    assert_eq!(ptr, b[t]);
+                    n += 1;
+                }
+                assert_eq!(n, list.len());
+            }
+            950..=995 => {
+                // iter_mut
+                let mut n = 0;
+                for (ptr, t) in a.iter_mut() {
+                    assert_eq!(ptr, b[t]);
+                    n += 1;
+                }
+                assert_eq!(n, list.len());
+            }
+            // The following reset the length so we can reexplore small cases.
+            // Because of exponential probabilities, these need to be rare.
+            996 => {
+                // remove_by
+                if len != 0 {
+                    let mut remove = HashSet::new();
+                    for _ in 0..next_inx!(rng, len) {
+                        remove.insert(list.swap_remove((rng.next_u32() as usize) % list.len()));
+                    }
+                    a.remove_by(|(ptr, t)| {
+                        if remove.contains(t) {
+                            remove.remove(t);
+                            assert_eq!(ptr, b.remove(t).unwrap());
+                            true
+                        } else {
+                            false
+                        }
+                    });
+                    assert!(remove.is_empty());
+                }
+            }
+            997 => {
+                // drain
+                for (ptr, t) in a.drain() {
+                    assert_eq!(b.remove(&t).unwrap(), ptr);
+                }
+                list.clear();
+                assert_eq!(a.capacity(), 0);
+            }
+            998 => {
+                // clear
+                a.clear_and_shrink();
+                list.clear();
+                b.clear();
+            }
+            999 => {
+                // clear_and_shrink
+                a.clear_and_shrink();
+                list.clear();
+                b.clear();
+                iters999 += 1;
+            }
+            _ => unreachable!(),
+        }
+        max_len = std::cmp::max(max_len, a.len());
     }
-    // make sure something is not completely broken in some way by checking if the
-    // different extremes have been reached many times
-    if saturations < 500 {
-        panic!();
-    }
+    assert_eq!(iters999, 1061);
+    assert_eq!(max_len, 81);
 }
