@@ -391,16 +391,15 @@ impl<T, P: PtrTrait> Arena<T, P> {
     ///
     /// Returns ownership of `new` instead if `p` is invalid
     pub fn replace_and_keep_gen(&mut self, p: Ptr<P>, new: T) -> Result<T, T> {
-        let old_gen;
-        match self.m.get(p.get_raw()) {
+        let old_gen = match self.m.get(p.get_raw()) {
             Some(Allocated(gen, _)) => {
                 if *gen != p.gen_p() {
                     return Err(new)
                 }
-                old_gen = *gen;
+                *gen
             }
             _ => return Err(new),
-        }
+        };
         let old = mem::replace(
             self.m.get_mut(p.get_raw()).unwrap(),
             Allocated(old_gen, new),

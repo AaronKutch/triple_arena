@@ -41,7 +41,7 @@ macro_rules! ptr_trait_struct {
             )]
             pub struct $struct_name {}
 
-            impl PtrTrait for $struct_name {
+            impl triple_arena::PtrTrait for $struct_name {
                 #[inline]
                 fn ptr_debug_str() -> &'static str {
                     stringify!($struct_name)
@@ -87,7 +87,7 @@ macro_rules! ptr_trait_struct_with_gen {
                 _internal_value: core::num::NonZeroU64
             }
 
-            impl PtrTrait for $struct_name {
+            impl triple_arena::PtrTrait for $struct_name {
                 #[inline]
                 fn ptr_debug_str() -> &'static str {
                     stringify!($struct_name)
