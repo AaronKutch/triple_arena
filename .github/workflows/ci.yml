@@ -15,7 +15,7 @@ jobs:
       - name: Install Rust components
         run: |
           rustup set profile minimal
-          rustup default nightly
+          rustup default stable
       - name: Run test suite
         run: |
           cargo test --all-features
