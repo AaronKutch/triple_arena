@@ -490,7 +490,7 @@ impl<T, P: PtrTrait> Arena<T, P> {
         self.len = 0;
     }
 
-    /// Performs a [Arena::clear] and resets capacity to 0
+    /// Performs an [Arena::clear] and resets capacity to 0
     pub fn clear_and_shrink(&mut self) {
         self.m.clear();
         self.m.shrink_to_fit();
