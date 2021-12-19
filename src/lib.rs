@@ -31,19 +31,19 @@ use InternalEntry::*;
 ///
 /// Panics or unexpected behaviour could result if `PtrTrait` is not implemented
 /// properly for `P`. The macros should be used for quickly making `PtrTrait`
-/// structs
+/// structs.
 ///
 /// ```
 /// use triple_arena::prelude::*;
 ///
-/// // In real implementations, `#[cfg(Debug)]` and the like can be used to
+/// // In real implementations, `#[cfg(Debug)]` and the like could be used to
 /// // switch between the generation tracking and non tracking versions.
-/// ptr_trait_struct_with_gen!(Ex);
+/// ptr_trait_struct_with_gen!(Ex P2);
 ///
 /// let mut arena: Arena<String, Ex> = Arena::new();
 ///
-/// let test_ptr = arena.insert("test".to_string());
-/// let hello_ptr = arena.insert("hello".to_string());
+/// let test_ptr: Ptr<Ex> = arena.insert("test".to_string());
+/// let hello_ptr: Ptr<Ex> = arena.insert("hello".to_string());
 ///
 /// // nice debug representations
 /// assert_eq!(
@@ -62,6 +62,39 @@ use InternalEntry::*;
 /// // When using generation counters, invalidated pointers are guaranteed to
 /// // never work again
 /// assert!(arena.get(test_ptr).is_none());
+///
+/// // Using different `P` generics is extremely useful in complicated multiple
+/// // arena code with self pointers and inter-arena pointers. This is an arena
+/// // storing a tuple of pointers that work on the first arena and itself.
+/// let mut arena2: Arena<(Ptr<Ex>, Option<Ptr<P2>>), P2> = Arena::new();
+///
+/// let p2_ptr: Ptr<P2> = arena2.insert((hello_ptr, None));
+/// let another: Ptr<P2> = arena2.insert((hello_ptr, Some(p2_ptr)));
+///
+/// // With other arena crates, no compile time or runtime checks would prevent
+/// // you from using the wrong pointers. Here, the compiler protects us.
+/// // error: expected struct `triple_arena::Ptr<Ex>`
+/// //           found struct `triple_arena::Ptr<P2>`
+/// //let _ = arena.get(p2_ptr);
+///
+/// assert_eq!(arena[arena2[p2_ptr].0], "hello");
+///
+/// // In cases where we are forced to have the same `P`, we can still have
+/// // type guards against semantically different `Ptr`s by using generics:
+/// fn example<T, P0: PtrTrait, P1: PtrTrait>(
+///     a0: &mut Arena<T, P0>,
+///     a1: &mut Arena<T, P1>,
+///     p1: Ptr<P1>
+/// ) {
+///    // error: expected type parameter `P0`, found type parameter `P1`
+///    //let _ = a0.remove(p1);
+///
+///    a0.insert(a1.remove(p1).unwrap());
+/// }
+///
+/// let mut arena3: Arena<String, Ex> = Arena::new();
+/// example(&mut arena3, &mut arena, hello_ptr);
+/// assert_eq!(arena3.iter().next().unwrap().1, "hello");
 /// ```
 #[derive(Clone)]
 pub struct Arena<T, P: PtrTrait> {
