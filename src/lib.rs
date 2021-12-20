@@ -36,9 +36,12 @@ use InternalEntry::*;
 /// ```
 /// use triple_arena::prelude::*;
 ///
-/// // In real implementations, `#[cfg(Debug)]` and the like could be used to
-/// // switch between the generation tracking and non tracking versions.
+/// // In implementations that always use valid indexes and only want the
+/// // generation counter in debug mode, we can use `cfg`s like this:
+/// //#[cfg(Debug)]
 /// ptr_trait_struct_with_gen!(Ex P2);
+/// //#[cfg(not(Debug))]
+/// //ptr_trait_struct!(Ex P2);
 ///
 /// let mut arena: Arena<String, Ex> = Arena::new();
 ///
@@ -503,9 +506,17 @@ impl<T, P: PtrTrait> Arena<T, P> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_arena_invariants(this: &Self) -> Result<(), &'static str> {
+        if let Some(gen) = this.gen_nz() {
+            if gen.get() < 2 {
+                return Err("bad generation")
+            }
+        }
         let m_len = this.m.len();
+        if this.m.capacity() != m_len {
+            return Err("real capacity != m_len")
+        }
         if this.capacity() != m_len {
-            return Err("capacity != m_len")
+            return Err("virtual capacity != m_len")
         }
         let n_allocated = this.iter().fold(0, |acc, _| acc + 1);
         let n_free = m_len - n_allocated;

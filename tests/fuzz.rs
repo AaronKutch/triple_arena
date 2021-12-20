@@ -146,7 +146,7 @@ fn fuzz() {
                 }
                 assert_eq!(n, list.len());
             }
-            950..=995 => {
+            950..=994 => {
                 // iter_mut
                 let mut n = 0;
                 for (ptr, t) in a.iter_mut() {
@@ -157,7 +157,7 @@ fn fuzz() {
             }
             // The following reset the length so we can reexplore small cases.
             // Because of exponential probabilities, these need to be rare.
-            996 => {
+            995 => {
                 // remove_by
                 if len != 0 {
                     let mut remove = HashSet::new();
@@ -176,13 +176,21 @@ fn fuzz() {
                     assert!(remove.is_empty());
                 }
             }
+            996 => {
+                // total_drain
+                let a_clone = a.clone();
+                for (ptr, t) in a_clone {
+                    assert_eq!(b[&t], ptr);
+                }
+            }
             997 => {
                 // drain
+                let prev_cap = a.capacity();
                 for (ptr, t) in a.drain() {
                     assert_eq!(b.remove(&t).unwrap(), ptr);
                 }
                 list.clear();
-                assert_eq!(a.capacity(), 0);
+                assert_eq!(a.capacity(), prev_cap);
             }
             998 => {
                 // clear
@@ -201,6 +209,10 @@ fn fuzz() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!(iters999, 1061);
-    assert_eq!(max_len, 81);
+    assert_eq!(iters999, 1060);
+    assert_eq!(max_len, 70);
+    assert_eq!(
+        a.gen_nz(),
+        Some(core::num::NonZeroU64::new(175953).unwrap())
+    );
 }
