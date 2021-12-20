@@ -48,7 +48,7 @@ use InternalEntry::*;
 /// // nice debug representations
 /// assert_eq!(
 ///     &format!("{:?}", arena),
-///     "{Ptr<Ex>(0): \"test\", Ptr<Ex>(1): \"hello\"}"
+///     "{Ptr<Ex>(0)[2]: \"test\", Ptr<Ex>(1)[2]: \"hello\"}"
 /// );
 ///
 /// // use the `Ptr`s we got from insertion to reference the stored data
@@ -66,10 +66,10 @@ use InternalEntry::*;
 /// // Using different `P` generics is extremely useful in complicated multiple
 /// // arena code with self pointers and inter-arena pointers. This is an arena
 /// // storing a tuple of pointers that work on the first arena and itself.
-/// let mut arena2: Arena<(Ptr<Ex>, Option<Ptr<P2>>), P2> = Arena::new();
+/// let mut arena2: Arena<(Ptr<Ex>, Ptr<P2>), P2> = Arena::new();
 ///
-/// let p2_ptr: Ptr<P2> = arena2.insert((hello_ptr, None));
-/// let another: Ptr<P2> = arena2.insert((hello_ptr, Some(p2_ptr)));
+/// let p2_ptr: Ptr<P2> = arena2.insert((hello_ptr, Ptr::invalid()));
+/// let another: Ptr<P2> = arena2.insert((hello_ptr, p2_ptr));
 ///
 /// // With other arena crates, no compile time or runtime checks would prevent
 /// // you from using the wrong pointers. Here, the compiler protects us.
@@ -103,6 +103,8 @@ pub struct Arena<T, P: PtrTrait> {
     /// The main memory of entries.
     ///
     /// Invariants:
+    /// - The generation value starts at 2 in a new Arena, so that the
+    ///   `Ptr::invalid` function works
     /// - `self.m.capacity() == self.m.len()` (`self.m.len()` can be thought of
     ///   as the virtual capacity of entries, this simplifies the
     ///   try_insert/insert logic)
@@ -144,7 +146,6 @@ impl<T, P: PtrTrait> Arena<T, P> {
             len: 0,
             m: Vec::new(),
             freelist_root: None,
-            // reserve the 1 value in case we need an invalid pointer value
             gen: PtrTrait::new(Some(NonZeroU64::new(2).unwrap())),
         }
     }
