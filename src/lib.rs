@@ -376,10 +376,10 @@ impl<T, P: PtrTrait> Arena<T, P> {
     /// For every `T` in the arena, `predicate` is called with a tuple of the
     /// `Ptr` to that `T` and a mutable reference to the `T`. If `predicate`
     /// returns `true` that `T` is dropped and pointers to it invalidated.
-    pub fn remove_by<F: FnMut((Ptr<P>, &mut T)) -> bool>(&mut self, mut predicate: F) {
+    pub fn remove_by<F: FnMut(Ptr<P>, &mut T) -> bool>(&mut self, mut predicate: F) {
         for (inx, entry) in self.m.iter_mut().enumerate() {
             if let Allocated(p, t) = entry {
-                if predicate((Ptr::from_raw(inx, PtrTrait::get(p)), t)) {
+                if predicate(Ptr::from_raw(inx, PtrTrait::get(p)), t) {
                     self.len -= 1;
                     if let Some(free) = self.freelist_root {
                         // point to previous root

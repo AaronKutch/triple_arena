@@ -164,7 +164,7 @@ fn fuzz() {
                     for _ in 0..next_inx!(rng, len) {
                         remove.insert(list.swap_remove((rng.next_u32() as usize) % list.len()));
                     }
-                    a.remove_by(|(ptr, t)| {
+                    a.remove_by(|ptr, t| {
                         if remove.contains(t) {
                             remove.remove(t);
                             assert_eq!(ptr, b.remove(t).unwrap());
