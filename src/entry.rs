@@ -6,7 +6,7 @@ use crate::PtrTrait;
 
 /// Internal entry for an `Arena`.
 #[derive(Clone)]
-pub(crate) enum InternalEntry<T, P: PtrTrait> {
+pub(crate) enum InternalEntry<P: PtrTrait, T> {
     /// A free entry with no `T`. The `usize` points to the next free entry,
     /// except if it points to the self entry in which case it is the last free
     /// entry.
@@ -15,7 +15,7 @@ pub(crate) enum InternalEntry<T, P: PtrTrait> {
     Allocated(P, T),
 }
 
-impl<T, P: PtrTrait> InternalEntry<T, P> {
+impl<P: PtrTrait, T> InternalEntry<P, T> {
     #[inline]
     pub fn replace_free_with_allocated(&mut self, gen_element: (P, T)) -> Option<usize> {
         let free = mem::replace(self, Allocated(gen_element.0, gen_element.1));

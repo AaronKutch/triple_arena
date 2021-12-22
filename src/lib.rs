@@ -43,7 +43,7 @@ use InternalEntry::*;
 /// //#[cfg(not(Debug))]
 /// //ptr_trait_struct!(Ex P2);
 ///
-/// let mut arena: Arena<String, Ex> = Arena::new();
+/// let mut arena: Arena<Ex, String> = Arena::new();
 ///
 /// let test_ptr: Ptr<Ex> = arena.insert("test".to_string());
 /// let hello_ptr: Ptr<Ex> = arena.insert("hello".to_string());
@@ -69,7 +69,7 @@ use InternalEntry::*;
 /// // Using different `P` generics is extremely useful in complicated multiple
 /// // arena code with self pointers and inter-arena pointers. This is an arena
 /// // storing a tuple of pointers that work on the first arena and itself.
-/// let mut arena2: Arena<(Ptr<Ex>, Ptr<P2>), P2> = Arena::new();
+/// let mut arena2: Arena<P2, (Ptr<Ex>, Ptr<P2>)> = Arena::new();
 ///
 /// let p2_ptr: Ptr<P2> = arena2.insert((hello_ptr, Ptr::invalid()));
 /// let another: Ptr<P2> = arena2.insert((hello_ptr, p2_ptr));
@@ -84,9 +84,9 @@ use InternalEntry::*;
 ///
 /// // In cases where we are forced to have the same `P`, we can still have
 /// // type guards against semantically different `Ptr`s by using generics:
-/// fn example<T, P0: PtrTrait, P1: PtrTrait>(
-///     a0: &mut Arena<T, P0>,
-///     a1: &mut Arena<T, P1>,
+/// fn example<P0: PtrTrait, P1: PtrTrait, T>(
+///     a0: &mut Arena<P0, T>,
+///     a1: &mut Arena<P1, T>,
 ///     p1: Ptr<P1>
 /// ) {
 ///    // error: expected type parameter `P0`, found type parameter `P1`
@@ -95,12 +95,12 @@ use InternalEntry::*;
 ///    a0.insert(a1.remove(p1).unwrap());
 /// }
 ///
-/// let mut arena3: Arena<String, Ex> = Arena::new();
+/// let mut arena3: Arena<Ex, String> = Arena::new();
 /// example(&mut arena3, &mut arena, hello_ptr);
 /// assert_eq!(arena3.iter().next().unwrap().1, "hello");
 /// ```
 #[derive(Clone)]
-pub struct Arena<T, P: PtrTrait> {
+pub struct Arena<P: PtrTrait, T> {
     /// Number of `T` currently contained in the arena
     len: usize,
     /// The main memory of entries.
@@ -119,7 +119,7 @@ pub struct Arena<T, P: PtrTrait> {
     ///   the allocation in question is turned into a `Free` or has its
     ///   generation updated to equal the arena's `gen`. Newer allocations must
     ///   use the new `gen` value.
-    m: Vec<InternalEntry<T, P>>,
+    m: Vec<InternalEntry<P, T>>,
     /// Points to the root of the chain of freelist nodes
     freelist_root: Option<usize>,
     gen: P,
@@ -141,10 +141,10 @@ pub struct Arena<T, P: PtrTrait> {
 /// is possible for another `T` to get allocated in the same allocation, and
 /// pointers to the previous `T` will now point to a different `T`. If this is
 /// intentional, [Arena::replace_and_keep_gen] should be used.
-impl<T, P: PtrTrait> Arena<T, P> {
+impl<P: PtrTrait, T> Arena<P, T> {
     /// Creates a new arena for fast allocation for the type `T`, which are
     /// pointed to by `Ptr<P>`s.
-    pub fn new() -> Arena<T, P> {
+    pub fn new() -> Arena<P, T> {
         Arena {
             len: 0,
             m: Vec::new(),

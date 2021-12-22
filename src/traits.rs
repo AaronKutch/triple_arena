@@ -9,9 +9,9 @@ use InternalEntry::*;
 
 use crate::{Arena, InternalEntry, Ptr, PtrTrait};
 
-impl<T, P: PtrTrait> Arena<T, P> {
+impl<P: PtrTrait, T> Arena<P, T> {
     /// Immutable reference iteration with `(Ptr<P>, &T)` tuples
-    pub fn iter(&self) -> Iter<T, P> {
+    pub fn iter(&self) -> Iter<P, T> {
         Iter {
             ptr: 0,
             iter: self.m.iter(),
@@ -19,7 +19,7 @@ impl<T, P: PtrTrait> Arena<T, P> {
     }
 
     /// Mutable reference iteration with `(Ptr<P>, &mut T)` tuples
-    pub fn iter_mut(&mut self) -> IterMut<T, P> {
+    pub fn iter_mut(&mut self) -> IterMut<P, T> {
         IterMut {
             ptr: 0,
             iter_mut: self.m.iter_mut(),
@@ -32,7 +32,7 @@ impl<T, P: PtrTrait> Arena<T, P> {
     /// Note: When the `Drain` struct is dropped, any remaining iterations will
     /// be consumed and dropped like normal. If the `Drain` struct is leaked
     /// (such as with [mem::forget]), unspecified behavior will result.
-    pub fn drain(&mut self) -> Drain<T, P> {
+    pub fn drain(&mut self) -> Drain<P, T> {
         // prep the length and root to be how they need to be when `Drain` is dropped or
         // leaked
         if self.m.is_empty() {
@@ -52,7 +52,7 @@ impl<T, P: PtrTrait> Arena<T, P> {
 
     /// By-value iteration with `(Ptr<P>, T)` tuples. Consumes all `T` and
     /// capacity.
-    pub fn total_drain(self) -> TotalDrain<T, P> {
+    pub fn total_drain(self) -> TotalDrain<P, T> {
         TotalDrain {
             ptr: 0,
             arena: self,
@@ -60,13 +60,13 @@ impl<T, P: PtrTrait> Arena<T, P> {
     }
 }
 
-impl<T, P: PtrTrait> Default for Arena<T, P> {
+impl<T, P: PtrTrait> Default for Arena<P, T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T, P: PtrTrait, B: Borrow<Ptr<P>>> Index<B> for Arena<T, P> {
+impl<P: PtrTrait, T, B: Borrow<Ptr<P>>> Index<B> for Arena<P, T> {
     type Output = T;
 
     fn index(&self, inx: B) -> &T {
@@ -75,7 +75,7 @@ impl<T, P: PtrTrait, B: Borrow<Ptr<P>>> Index<B> for Arena<T, P> {
     }
 }
 
-impl<T, P: PtrTrait, B: Borrow<Ptr<P>>> IndexMut<B> for Arena<T, P> {
+impl<P: PtrTrait, T, B: Borrow<Ptr<P>>> IndexMut<B> for Arena<P, T> {
     fn index_mut(&mut self, inx: B) -> &mut T {
         let p: Ptr<P> = *inx.borrow();
         self.get_mut(p)
@@ -87,12 +87,12 @@ impl<T, P: PtrTrait, B: Borrow<Ptr<P>>> IndexMut<B> for Arena<T, P> {
 // would otherwise be difficult to implement safely. There are redundant
 // counters but they should be optimized away.
 
-pub struct Iter<'a, T, P: PtrTrait> {
+pub struct Iter<'a, P: PtrTrait, T> {
     ptr: usize,
-    iter: slice::Iter<'a, InternalEntry<T, P>>,
+    iter: slice::Iter<'a, InternalEntry<P, T>>,
 }
 
-impl<'a, T, P: PtrTrait> Iterator for Iter<'a, T, P> {
+impl<'a, P: PtrTrait, T> Iterator for Iter<'a, P, T> {
     type Item = (Ptr<P>, &'a T);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -107,8 +107,8 @@ impl<'a, T, P: PtrTrait> Iterator for Iter<'a, T, P> {
     }
 }
 
-impl<'a, T, P: PtrTrait> IntoIterator for &'a Arena<T, P> {
-    type IntoIter = Iter<'a, T, P>;
+impl<'a, P: PtrTrait, T> IntoIterator for &'a Arena<P, T> {
+    type IntoIter = Iter<'a, P, T>;
     type Item = (Ptr<P>, &'a T);
 
     fn into_iter(self) -> Self::IntoIter {
@@ -116,12 +116,12 @@ impl<'a, T, P: PtrTrait> IntoIterator for &'a Arena<T, P> {
     }
 }
 
-pub struct IterMut<'a, T, P: PtrTrait> {
+pub struct IterMut<'a, P: PtrTrait, T> {
     ptr: usize,
-    iter_mut: slice::IterMut<'a, InternalEntry<T, P>>,
+    iter_mut: slice::IterMut<'a, InternalEntry<P, T>>,
 }
 
-impl<'a, T, P: PtrTrait> Iterator for IterMut<'a, T, P> {
+impl<'a, P: PtrTrait, T> Iterator for IterMut<'a, P, T> {
     type Item = (Ptr<P>, &'a mut T);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -136,8 +136,8 @@ impl<'a, T, P: PtrTrait> Iterator for IterMut<'a, T, P> {
     }
 }
 
-impl<'a, T, P: PtrTrait> IntoIterator for &'a mut Arena<T, P> {
-    type IntoIter = IterMut<'a, T, P>;
+impl<'a, P: PtrTrait, T> IntoIterator for &'a mut Arena<P, T> {
+    type IntoIter = IterMut<'a, P, T>;
     type Item = (Ptr<P>, &'a mut T);
 
     /// This returns an `IterMut`. Use `Arena::drain` for by-value consumption.
@@ -146,12 +146,12 @@ impl<'a, T, P: PtrTrait> IntoIterator for &'a mut Arena<T, P> {
     }
 }
 
-pub struct Drain<'a, T, P: PtrTrait> {
+pub struct Drain<'a, P: PtrTrait, T> {
     ptr: usize,
-    arena: &'a mut Arena<T, P>,
+    arena: &'a mut Arena<P, T>,
 }
 
-impl<'a, T, P: PtrTrait> Iterator for Drain<'a, T, P> {
+impl<'a, P: PtrTrait, T> Iterator for Drain<'a, P, T> {
     type Item = (Ptr<P>, T);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -174,12 +174,12 @@ impl<'a, T, P: PtrTrait> Iterator for Drain<'a, T, P> {
     }
 }
 
-pub struct TotalDrain<T, P: PtrTrait> {
+pub struct TotalDrain<P: PtrTrait, T> {
     ptr: usize,
-    arena: Arena<T, P>,
+    arena: Arena<P, T>,
 }
 
-impl<T, P: PtrTrait> Iterator for TotalDrain<T, P> {
+impl<T, P: PtrTrait> Iterator for TotalDrain<P, T> {
     type Item = (Ptr<P>, T);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -197,8 +197,8 @@ impl<T, P: PtrTrait> Iterator for TotalDrain<T, P> {
     }
 }
 
-impl<T, P: PtrTrait> IntoIterator for Arena<T, P> {
-    type IntoIter = TotalDrain<T, P>;
+impl<P: PtrTrait, T> IntoIterator for Arena<P, T> {
+    type IntoIter = TotalDrain<P, T>;
     type Item = (Ptr<P>, T);
 
     fn into_iter(self) -> Self::IntoIter {
@@ -206,7 +206,7 @@ impl<T, P: PtrTrait> IntoIterator for Arena<T, P> {
     }
 }
 
-impl<T, P: PtrTrait> FromIterator<T> for Arena<T, P> {
+impl<P: PtrTrait, T> FromIterator<T> for Arena<P, T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let mut a = Arena::new();
         for t in iter {
@@ -216,7 +216,7 @@ impl<T, P: PtrTrait> FromIterator<T> for Arena<T, P> {
     }
 }
 
-impl<T: fmt::Debug, P: PtrTrait> fmt::Debug for Arena<T, P> {
+impl<P: PtrTrait, T: fmt::Debug> fmt::Debug for Arena<P, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_map().entries(self.iter()).finish()
     }

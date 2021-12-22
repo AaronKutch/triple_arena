@@ -25,7 +25,7 @@ fn fuzz() {
         counter
     };
 
-    let mut a: Arena<u64, P0> = Arena::new();
+    let mut a: Arena<P0, u64> = Arena::new();
     // map of all `T` and their pointers contained in the arena
     let mut b: HashMap<u64, Ptr<P0>> = HashMap::new();
     // list of `T`. We need this alongside the hashmap because we need random
