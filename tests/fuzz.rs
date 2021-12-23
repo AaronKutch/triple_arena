@@ -4,7 +4,7 @@ use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::{ptr_trait_struct_with_gen, Arena, Ptr};
+use triple_arena::{ptr_trait_struct, ptr_trait_struct_with_gen, Arena, Ptr};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
@@ -13,6 +13,7 @@ macro_rules! next_inx {
 }
 
 ptr_trait_struct_with_gen!(P0);
+ptr_trait_struct!(TestStructNoGen);
 
 #[test]
 fn fuzz() {
