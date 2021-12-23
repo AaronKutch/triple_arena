@@ -23,12 +23,25 @@ pub trait PtrTrait: fmt::Debug + Hash + Clone + Copy + PartialEq + Eq + PartialO
 }
 
 /// Convenience macro for quickly making new unit structs that implement
-/// `PtrTrait` without a generation value. For example, if we want structs
-/// `P0` and `Example`, we type `ptr_trait_struct(P0 Example)`.
+/// `PtrTrait` _without_ a generation value. Each struct name can be followed by
+/// a comma separated list of attributes, and structs are separated by
+/// semicolons.
+///
+/// ```
+/// use triple_arena::prelude::*;
+///
+/// ptr_trait_struct!(
+///     P0 doc="An example struct `P0` that implements `PtrTrait`";
+///     Example2 doc="Another struct. ", doc="Another doc attribute."
+/// );
+///
+/// let _: Arena<P0, String>;
+/// ```
 #[macro_export]
 macro_rules! ptr_trait_struct {
-    ($($struct_name:ident)*) => {
+    ($($struct_name:ident $($attributes:meta),*);*) => {
         $(
+            $(#[$attributes])*
             #[derive(
                 core::fmt::Debug,
                 core::hash::Hash,
@@ -67,12 +80,24 @@ macro_rules! ptr_trait_struct {
 }
 
 /// Convenience macro for quickly making new unit structs that implement
-/// `PtrTrait` with a generation value. For example, if we want structs `P0`
-/// and `Example`, we type `ptr_trait_struct_with_gen(P0 Example)`.
+/// `PtrTrait` with a generation value. Each struct name can be followed by a
+/// comma separated list of attributes, and structs are separated by semicolons.
+///
+/// ```
+/// use triple_arena::prelude::*;
+///
+/// ptr_trait_struct_with_gen!(
+///     P0 doc="An example struct `P0` that implements `PtrTrait`";
+///     Example2 doc="Another struct. ", doc="Another doc attribute."
+/// );
+///
+/// let _: Arena<Example2, String>;
+/// ```
 #[macro_export]
 macro_rules! ptr_trait_struct_with_gen {
-    ($($struct_name:ident)*) => {
+    ($($struct_name:ident $($attributes:meta),*);*) => {
         $(
+            $(#[$attributes])*
             #[derive(
                 core::fmt::Debug,
                 core::hash::Hash,

@@ -40,9 +40,9 @@ use InternalEntry::*;
 /// // In implementations that always use valid indexes and only want the
 /// // generation counter in debug mode, we can use `cfg`s like this:
 /// //#[cfg(Debug)]
-/// ptr_trait_struct_with_gen!(Ex P2);
+/// ptr_trait_struct_with_gen!(Ex; P2);
 /// //#[cfg(not(Debug))]
-/// //ptr_trait_struct!(Ex P2);
+/// //ptr_trait_struct!(Ex; P2);
 ///
 /// let mut arena: Arena<Ex, String> = Arena::new();
 ///
