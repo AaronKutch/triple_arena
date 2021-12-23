@@ -3,6 +3,7 @@
 #![allow(clippy::while_let_on_iterator)]
 
 mod entry;
+mod misc;
 mod ptr;
 mod traits;
 pub(crate) use entry::InternalEntry;
@@ -99,18 +100,41 @@ use InternalEntry::*;
 /// example(&mut arena3, &mut arena, hello_ptr);
 /// assert_eq!(arena3.iter().next().unwrap().1, "hello");
 /// ```
-#[derive(Clone)]
 pub struct Arena<P: PtrTrait, T> {
     /// Number of `T` currently contained in the arena
     len: usize,
     /// The main memory of entries.
     ///
-    /// Invariants:
+    /// # Capacity
+    ///
+    /// In earlier versions of this crate, there was an invariant that
+    /// `self.m.capacity() == self.m.len()`. However, the `clone_from_with`
+    /// exposed a flaw with this that is absolutely catastrophic for some use
+    /// cases of this crate: `reserve` and `reserve_exact` can sometimes
+    /// allocate inconsistently, e.x. one arena gets 32 capacity from doubling
+    /// and another arena gets 24 from taking a half step (this has been
+    /// observed in practice even with `reserve_exact` and identical arenas). If
+    /// `clone_from` is called to copy the 24 capacity arena to the 32 capacity
+    /// arena, then it must reserve 8 more capacity. `reserve_exact` can
+    /// then choose to start allocating by only doubling, in which case the
+    /// 24 capacity arena gets 24 additional capacity. If the new 48
+    /// capacity arena is cloned to the 32 capacity arena, it can get 32
+    /// more capacity to increase to 64 capacity despite nothing being
+    /// inserted. If the arenas `clone_from` to each other in a loop, they
+    /// leap frog each other exponentially. The only way to fix this is to
+    /// have `clone_from` push exactly what it needs to `self.m.len()`, so
+    /// they must be detached.
+    ///
+    /// I have decided to call `m.capacity()` the true allocated capacity and
+    /// `m.len()` the virtual capacity. Only `try_insert` and friends increase
+    /// the virtual capacity within the allocated capacity, everything else
+    /// reads only the virtual capacity and treats it as a limit. See `remove`
+    /// for more mitigations.
+    ///
+    /// # Invariants
+    ///
     /// - The generation value starts at 2 in a new Arena, so that the
     ///   `Ptr::invalid` function works
-    /// - `self.m.capacity() == self.m.len()` (`self.m.len()` can be thought of
-    ///   as the virtual capacity of entries, this simplifies the
-    ///   try_insert/insert logic)
     /// - If there are free entries, all Free entries have their freelist nodes
     ///   in a single linked list with the start being pointed to by
     ///   `freelist_root` and the end pointing to itself
@@ -142,6 +166,50 @@ pub struct Arena<P: PtrTrait, T> {
 /// pointers to the previous `T` will now point to a different `T`. If this is
 /// intentional, [Arena::replace_and_keep_gen] should be used.
 impl<P: PtrTrait, T> Arena<P, T> {
+    /// Used by tests
+    #[doc(hidden)]
+    pub fn _check_arena_invariants(this: &Self) -> Result<(), &'static str> {
+        if let Some(gen) = this.gen_nz() {
+            if gen.get() < 2 {
+                return Err("bad generation")
+            }
+        }
+        let m_len = this.m.len();
+        if this.capacity() != m_len {
+            return Err("virtual capacity != m_len")
+        }
+        let n_allocated = this.iter().fold(0, |acc, _| acc + 1);
+        let n_free = m_len - n_allocated;
+        if this.len() != n_allocated {
+            return Err("len != n_allocated")
+        }
+        // checking freelist integrity
+        let mut freelist_len = 0;
+        if let Some(root) = this.freelist_root {
+            let mut tmp_inx = root;
+            for i in 0.. {
+                let entry = this.m.get(tmp_inx).unwrap();
+                if let Free(inx) = entry {
+                    freelist_len += 1;
+                    if *inx == tmp_inx {
+                        // last one
+                        break
+                    }
+                    tmp_inx = *inx;
+                } else {
+                    return Err("bad freelist node")
+                }
+                if i > this.m.len() {
+                    return Err("endless loop")
+                }
+            }
+        }
+        if freelist_len != n_free {
+            return Err("freelist discontinuous")
+        }
+        Ok(())
+    }
+
     /// Creates a new arena for fast allocation for the type `T`, which are
     /// pointed to by `Ptr<P>`s.
     pub fn new() -> Arena<P, T> {
@@ -163,7 +231,12 @@ impl<P: PtrTrait, T> Arena<P, T> {
         self.len == 0
     }
 
-    /// Returns the capacity of the arena
+    /// Returns the capacity of the arena.
+    ///
+    /// Technical note: this is usually equal to the true allocated capacity but
+    /// is sometimes less in order to prevent exponential capacity growth
+    /// with some combinations of functions (see the "Capacity" section in
+    /// lib.rs for details).
     pub fn capacity(&self) -> usize {
         self.m.len()
     }
@@ -199,10 +272,23 @@ impl<P: PtrTrait, T> Arena<P, T> {
     /// with `Vec::reserve`
     pub fn reserve(&mut self, additional: usize) {
         let end = self.m.len();
-        self.m.reserve(additional);
-        // we will use up this remaining real capacity and prepare the virtual capacity
+        let true_remaining = self.m.capacity().wrapping_sub(end);
+        let remaining = if true_remaining < additional {
+            self.m.reserve(additional.wrapping_sub(true_remaining));
+            self.m.capacity()
+        } else {
+            // because of the performance edge case with [clone_from], we need to use up
+            // existing true allocated capacity first, or else even `additional == 0` can
+            // cause exponential growth problems. If the doubling in `insert` or capacity
+            // increase in [clone_from] causes the reserve to overstep, and if
+            // `true_remaining >= additional`, then `reserve` will not be called
+            // until `true_remaining < additional` again. `additional == 0` will
+            // always go here.
+            additional
+        };
+
+        // we will use up this remaining capacity and prepare the virtual capacity
         // with extended freelist
-        let remaining = self.m.capacity().wrapping_sub(end);
         if remaining > 0 {
             let old_root = self.freelist_root;
             // we can choose the new root to go anywhere in the new capacity, but we choose
@@ -354,13 +440,13 @@ impl<P: PtrTrait, T> Arena<P, T> {
         match old {
             Free(old_free) => {
                 // undo
-                let _ = mem::replace(allocation, Free(old_free));
+                *allocation = Free(old_free);
                 None
             }
             Allocated(gen, old_t) => {
                 if gen != p.gen_p() {
                     // undo
-                    let _ = mem::replace(allocation, Allocated(gen, old_t));
+                    *allocation = Allocated(gen, old_t);
                     None
                 } else {
                     // in both cases the new root is the entry we just removed
@@ -373,20 +459,20 @@ impl<P: PtrTrait, T> Arena<P, T> {
         }
     }
 
-    /// For every `T` in the arena, `predicate` is called with a tuple of the
-    /// `Ptr` to that `T` and a mutable reference to the `T`. If `predicate`
-    /// returns `true` that `T` is dropped and pointers to it invalidated.
-    pub fn remove_by<F: FnMut(Ptr<P>, &mut T) -> bool>(&mut self, mut predicate: F) {
+    /// For every `T` in the arena, `pred` is called with a tuple of the `Ptr`
+    /// to that `T` and a mutable reference to the `T`. If `pred` returns `true`
+    /// that `T` is dropped and pointers to it invalidated.
+    pub fn remove_by<F: FnMut(Ptr<P>, &mut T) -> bool>(&mut self, mut pred: F) {
         for (inx, entry) in self.m.iter_mut().enumerate() {
             if let Allocated(p, t) = entry {
-                if predicate(Ptr::from_raw(inx, PtrTrait::get(p)), t) {
+                if pred(Ptr::from_raw(inx, PtrTrait::get(p)), t) {
                     self.len -= 1;
                     if let Some(free) = self.freelist_root {
                         // point to previous root
-                        let _ = mem::replace(entry, Free(free));
+                        *entry = Free(free);
                     } else {
                         // point to self
-                        let _ = mem::replace(entry, Free(inx));
+                        *entry = Free(inx);
                     }
                     self.freelist_root = Some(inx);
                 }
@@ -480,12 +566,12 @@ impl<P: PtrTrait, T> Arena<P, T> {
     pub fn clear(&mut self) {
         // drop all `T` and recreate the freelist
         for i in 1..self.m.len() {
-            let _ = mem::replace(self.m.get_mut(i.wrapping_sub(1)).unwrap(), Free(i));
+            *self.m.get_mut(i.wrapping_sub(1)).unwrap() = Free(i);
         }
         if !self.m.is_empty() {
             // the last freelist node points to itself
             let last = self.m.len().wrapping_sub(1);
-            let _ = mem::replace(self.m.get_mut(last).unwrap(), Free(last));
+            *self.m.get_mut(last).unwrap() = Free(last);
             self.freelist_root = Some(last);
         } else {
             self.freelist_root = None;
@@ -503,47 +589,53 @@ impl<P: PtrTrait, T> Arena<P, T> {
         self.len = 0;
     }
 
-    /// Used by tests
-    #[doc(hidden)]
-    pub fn _check_arena_invariants(this: &Self) -> Result<(), &'static str> {
-        if let Some(gen) = this.gen_nz() {
-            if gen.get() < 2 {
-                return Err("bad generation")
-            }
+    /// Like [Arena::clone_from] except the `Clone` bound is not required
+    /// and `source` can have arbitrary `U`. For every `U`, the `P` pointing to
+    /// that `U` and a reference to itself is passed to `map` to generate
+    /// the corresponding `T` in `self`. Validity is cloned with a `Ptr<P>`
+    /// being able to reference `U` in the `source` arena and `T` in `self`.
+    pub fn clone_from_with<U, F: FnMut(Ptr<P>, &U) -> T>(
+        &mut self,
+        source: &Arena<P, U>,
+        mut map: F,
+    ) {
+        // exponential growth mitigation factor, absolutely do not use `self.m.capacity`
+        // in the extra freelist additions
+        let old_virtual_capacity = self.m.len();
+        self.gen = source.gen;
+        self.len = source.len;
+        // Invariants are temporarily broken, use only methods on `m`.
+        // clearing first makes `self.m.reserve` cheaper by not needing to copy
+        self.m.clear();
+        if self.m.capacity() < source.m.len() {
+            self.m
+                .reserve(source.m.len().wrapping_sub(self.m.capacity()));
         }
-        let m_len = this.m.len();
-        if this.m.capacity() != m_len {
-            return Err("real capacity != m_len")
+        for i in 0..source.m.len() {
+            let new = match source.m.get(i).unwrap() {
+                // copy `source` freelist
+                Free(inx) => Free(*inx),
+                // map `source` allocated
+                Allocated(gen, u) => Allocated(*gen, map(Ptr::from_raw(i, PtrTrait::get(gen)), u)),
+            };
+            self.m.push(new);
         }
-        if this.capacity() != m_len {
-            return Err("virtual capacity != m_len")
+
+        for i in self.m.len().wrapping_add(1)..old_virtual_capacity {
+            // point to next
+            self.m.push(Free(i));
         }
-        let n_allocated = this.iter().fold(0, |acc, _| acc + 1);
-        let n_free = m_len - n_allocated;
-        if this.len() != n_allocated {
-            return Err("len != n_allocated")
+        if self.m.len() < old_virtual_capacity {
+            // new root starting at extension of `self.m` beyond `source.m`
+            self.freelist_root = Some(source.m.len());
+            self.m.push(match source.freelist_root {
+                // points to old root
+                Some(inx) => Free(inx),
+                // points to itself
+                None => Free(self.m.len()),
+            });
+        } else {
+            self.freelist_root = source.freelist_root;
         }
-        // checking freelist integrity
-        let mut freelist_len = 0;
-        if let Some(root) = this.freelist_root {
-            let mut tmp_inx = root;
-            loop {
-                let entry = this.m.get(tmp_inx).unwrap();
-                if let Free(inx) = entry {
-                    freelist_len += 1;
-                    if *inx == tmp_inx {
-                        // last one
-                        break
-                    }
-                    tmp_inx = *inx;
-                } else {
-                    return Err("bad freelist node")
-                }
-            }
-        }
-        if freelist_len != n_free {
-            return Err("freelist discontinuous")
-        }
-        Ok(())
     }
 }
