@@ -139,6 +139,15 @@ impl<P: PtrTrait> Ptr<P> {
         self.raw
     }
 
+    /// Returns a new `Ptr<P>` with a generation value (if it exists) set to 1.
+    /// Because the arena starts with generation 2, this is guaranteed invalid
+    /// when generation counters are used. The raw index is also set to
+    /// `usize::MAX`.
+    #[inline]
+    pub fn invalid() -> Self {
+        Self::from_raw(usize::MAX, Some(NonZeroU64::new(1).unwrap()))
+    }
+
     /// Return the generation of `self` as a `P`
     #[inline]
     pub fn gen_p(self) -> P {
@@ -155,12 +164,24 @@ impl<P: PtrTrait> Ptr<P> {
 // This is manually implemented so that it is inline and has no newlines, which
 // makes the `Debug` implementation on `Arena` look much nicer.
 impl<P: PtrTrait> fmt::Debug for Ptr<P> {
+    /// Formats as `Ptr<{P::ptr_debug_str()}>({raw index})[{generation}]` (if
+    /// generation number is included), or
+    /// `Ptr<{P::ptr_debug_str()}>({raw index})`
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_fmt(format_args!(
-            "Ptr<{}>({:?})",
-            P::ptr_debug_str(),
-            self.get_raw()
-        ))
+        if let Some(gen) = self.gen_nz() {
+            f.write_fmt(format_args!(
+                "Ptr<{}>({})[{}]",
+                P::ptr_debug_str(),
+                self.get_raw(),
+                gen
+            ))
+        } else {
+            f.write_fmt(format_args!(
+                "Ptr<{}>({})",
+                P::ptr_debug_str(),
+                self.get_raw(),
+            ))
+        }
     }
 }
 
