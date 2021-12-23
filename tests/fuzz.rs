@@ -252,10 +252,7 @@ fn fuzz() {
     }
     assert_eq!(iters999, 1064);
     assert_eq!(max_len, 57);
-    assert_eq!(
-        a.gen_nz(),
-        Some(core::num::NonZeroU64::new(44392).unwrap())
-    );
+    assert_eq!(a.gen_nz(), Some(core::num::NonZeroU64::new(44392).unwrap()));
 }
 
 #[test]
