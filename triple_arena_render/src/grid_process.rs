@@ -1,8 +1,5 @@
 #![allow(clippy::needless_range_loop)]
 
-// TODO remove dependency
-use std::collections::{hash_map::Entry::*, HashMap};
-
 use triple_arena::prelude::*;
 
 use crate::*;
@@ -37,6 +34,7 @@ pub(crate) struct ANode<P: PtrTrait> {
     pub sort_position: usize,
     /// Used for grid positioning
     pub grid_position: (usize, usize),
+    pub lineage: Option<usize>,
 }
 
 impl<P: PtrTrait> Default for ANode<P> {
@@ -46,6 +44,7 @@ impl<P: PtrTrait> Default for ANode<P> {
             state: VisitState::default(),
             sort_position: 0,
             grid_position: (0, 0),
+            lineage: None,
         }
     }
 }
@@ -355,34 +354,39 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     // touched on the first exploration, later explorations through
     // the same lineage will overwrite the lineage number.
     let mut n = 0;
-    let mut lineage_map: HashMap<Ptr<P>, usize> = HashMap::new();
-    let mut lineage_leaves: HashMap<usize, Ptr<P>> = HashMap::new();
+    let mut lineage_leaves: Vec<(usize, Ptr<P>)> = vec![];
     for p0 in &ptrs {
-        if !lineage_map.contains_key(p0) {
-            let mut next = *p0;
-            lineage_map.insert(next, n);
-            lineage_leaves.insert(n, next);
+        let mut next = *p0;
+        if dag[next].lineage.is_none() {
+            dag[next].lineage = Some(n);
+            // Record the leaf of this lineage
+            lineage_leaves.push((n, next));
             while let Some((next_zeroeth, _)) = dag[next].debug_node.sources.get(0) {
                 next = *next_zeroeth;
-                match lineage_map.entry(next) {
-                    Occupied(mut o) => {
-                        // remove prior firsts
-                        let _ = lineage_leaves.remove(o.get());
-                        o.insert(n);
-                    }
-                    Vacant(v) => {
-                        v.insert(n);
-                    }
-                }
+                dag[next].lineage = Some(n);
             }
             n += 1;
         }
     }
 
+    // remove overwritten lineage leaves
+    let mut i = 0;
+    loop {
+        if let Some((lineage, leaf)) = lineage_leaves.get(i) {
+            if dag[leaf].lineage.unwrap() == *lineage {
+                i += 1;
+            } else {
+                lineage_leaves.swap_remove(i);
+            }
+        } else {
+            break
+        }
+    }
+
     // get ordered lineages
     let mut lineages: Vec<Vec<Ptr<P>>> = vec![];
-    for leaf in lineage_leaves {
-        let mut next = leaf.1;
+    for (_, leaf) in lineage_leaves {
+        let mut next = leaf;
         let mut lineage = vec![next];
         while let Some((next_zeroeth, _)) = dag[next].debug_node.sources.get(0) {
             next = *next_zeroeth;
@@ -405,6 +409,7 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     // compress vertically as much as possible
     let mut changed;
     loop {
+        // may need multiple rounds
         changed = false;
         for vertical in &mut grid {
             for slot in &mut *vertical {
@@ -425,13 +430,13 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
         }
     }
 
-    /*let mut leaves = vec![];
+    /*
+    let mut leaves = vec![];
     for p0 in &ptrs {
         if dag[p0].debug_node.sinks.is_empty() {
             leaves.push(*p0);
         }
     }
-
     // Reordering columns to try and minimize dependency line crossings.
     // create some maps first.
     let mut ptr_to_x_i: HashMap<Ptr<P>, usize> = HashMap::new();
