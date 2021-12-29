@@ -1,15 +1,7 @@
-[package]
-name = "triple_arena"
-version = "0.2.0"
-edition = "2021"
-authors = ["Aaron Kutch <aaronkutch@att.net>"]
-license = "MIT OR Apache-2.0"
-readme = "README.md"
-repository = "https://github.com/AaronKutch/triple_arena"
-documentation = "https://docs.rs/triple_arena"
-description = "Arena supporting non-Clone types, deletion, and more"
-keywords = ["arena", "generation", "no_std"]
-categories = ["memory-management", "data-structures", "no-std"]
-
-[dev-dependencies]
-rand_xoshiro = "0.6"
+[workspace]
+resolver = "2"
+members = [
+    "testcrate",
+    "triple_arena",
+    "triple_arena_render",
+]
