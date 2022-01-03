@@ -23,19 +23,20 @@ pub use svg::{render_to_svg, render_to_svg_file};
 
 // in the future, we could make these default parameters in some struct
 
+pub(crate) const PAD: i32 = 4;
 pub(crate) const FONT_FAMILY: &str = "monospace";
 //const FONT_SIZE: i32 = 16;
 // NOTE: do not change without checking that `|` and `_` fit perfectly
-pub(crate) const FONT_WX: i32 = 10;
+pub(crate) const FONT_WX: i32 = 9;
 pub(crate) const FONT_WY: i32 = 16;
 //const INPUT_FONT_SIZE: i32 = 8;
 pub(crate) const INPUT_FONT_WX: i32 = 5;
 pub(crate) const INPUT_FONT_WY: i32 = 8;
-pub(crate) const SMALL_PAD: i32 = 4;
 // Fonts tend to hang downwards below the point at which they are written, so
 // this corrects that
 pub(crate) const FONT_ADJUST_Y: i32 = -6;
-pub(crate) const PAD: i32 = 4;
+// I don't know why this is needed
+pub(crate) const BEZIER_OFFSET: i32 = -2;
 pub(crate) const NODE_PAD: i32 = 32;
 pub(crate) const NODE_OUTLINE_WIDTH: i32 = 1;
 // Quaternion VScode color theme

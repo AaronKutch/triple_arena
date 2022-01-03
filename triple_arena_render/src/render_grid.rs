@@ -61,7 +61,7 @@ impl<P: PtrTrait> RenderGrid<P> {
         }
 
         let mut cumulative_x = vec![];
-        rg.tot_wx = SMALL_PAD;
+        rg.tot_wx = PAD;
         for (i, wx) in grid_max_wx.iter().enumerate() {
             cumulative_x.push(rg.tot_wx);
             rg.tot_wx += wx;
@@ -69,9 +69,9 @@ impl<P: PtrTrait> RenderGrid<P> {
                 rg.tot_wx += NODE_PAD;
             }
         }
-        rg.tot_wx += SMALL_PAD;
+        rg.tot_wx += PAD;
         let mut cumulative_y = vec![];
-        rg.tot_wy = SMALL_PAD;
+        rg.tot_wy = PAD;
         for (i, wy) in grid_max_wy.iter().enumerate() {
             cumulative_y.push(rg.tot_wy);
             rg.tot_wy += wy;
@@ -79,7 +79,7 @@ impl<P: PtrTrait> RenderGrid<P> {
                 rg.tot_wy += NODE_PAD;
             }
         }
-        rg.tot_wy += SMALL_PAD;
+        rg.tot_wy += PAD;
 
         // translate to final places
         for (i, vert) in rg.grid.iter_mut().enumerate() {

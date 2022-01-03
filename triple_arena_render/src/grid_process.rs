@@ -76,7 +76,7 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                 if let Some(node) = dag.get(p1) {
                     if !node.debug_node.sources.iter().any(|(o, _)| *o == *p0) {
                         // unelide
-                        dag[p1].debug_node.sources.push((*p0, String::new()));
+                        dag[p1].debug_node.sources.push((*p0, "|".to_string()));
                     }
                 } else if error_on_invalid_ptr {
                     return Err(RenderError::InvalidPtr(p1))
@@ -89,7 +89,7 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                 if let Some(node) = dag.get(p1) {
                     if !node.debug_node.sinks.iter().any(|(o, _)| *o == *p0) {
                         // unelide
-                        dag[p1].debug_node.sinks.push((*p0, String::new()));
+                        dag[p1].debug_node.sinks.push((*p0, "|".to_string()));
                     }
                 } else if error_on_invalid_ptr {
                     return Err(RenderError::InvalidPtr(p1))
@@ -371,15 +371,11 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
 
     // remove overwritten lineage leaves
     let mut i = 0;
-    loop {
-        if let Some((lineage, leaf)) = lineage_leaves.get(i) {
-            if dag[leaf].lineage.unwrap() == *lineage {
-                i += 1;
-            } else {
-                lineage_leaves.swap_remove(i);
-            }
+    while let Some((lineage, leaf)) = lineage_leaves.get(i) {
+        if dag[leaf].lineage.unwrap() == *lineage {
+            i += 1;
         } else {
-            break
+            lineage_leaves.swap_remove(i);
         }
     }
 
