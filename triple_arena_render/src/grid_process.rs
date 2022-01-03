@@ -14,6 +14,8 @@ pub(crate) enum VisitState {
     DFSExplored0,
     OnStack1,
     DFSExplored1,
+    OnStack2,
+    DFSExplored2,
 }
 
 use VisitState::*;
@@ -38,6 +40,7 @@ pub(crate) struct ANode<P: PtrTrait> {
     /// Used for grid positioning
     pub grid_position: (usize, usize),
     pub lineage_num: Option<usize>,
+    pub independence_num: Option<usize>,
 }
 
 impl<P: PtrTrait> Default for ANode<P> {
@@ -50,6 +53,7 @@ impl<P: PtrTrait> Default for ANode<P> {
             sort_position: 0,
             grid_position: (0, 0),
             lineage_num: None,
+            independence_num: None,
         }
     }
 }
@@ -108,7 +112,7 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                     if !node.sinks.iter().any(|(o, _)| *o == *p0) {
                         // unelide
                         dag[p0].sources[i0].2 = Some(node.sinks.len());
-                        dag[p1].sinks.push((*p0, "|".to_string()));
+                        dag[p1].sinks.push((*p0, String::new()));
                     }
                 } else if error_on_invalid_ptr {
                     return Err(RenderError::InvalidPtr(p1))
@@ -379,6 +383,25 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
         }
     }
 
+    // Do some more overwriting with lineages that go all the way from a root to a
+    // leaf. This tends to reduce dependency line crossings and reduces the work the
+    // main crossing reduction step needs to do
+    for root in &roots {
+        // go from root to leaf
+        let mut next = *root;
+        while let Some((next_zeroeth, _)) = dag[next].sinks.get(0) {
+            next = *next_zeroeth;
+        }
+        // overwrite from leaf back to root
+        dag[next].lineage_num = Some(lineage_num);
+        lineage_leaves.push((lineage_num, next));
+        while let Some((next_zeroeth, ..)) = dag[next].sources.get(0) {
+            next = *next_zeroeth;
+            dag[next].lineage_num = Some(lineage_num);
+        }
+        lineage_num += 1;
+    }
+
     // remove overwritten lineage leaves
     let mut i = 0;
     while let Some((lineage_num, leaf)) = lineage_leaves.get(i) {
@@ -389,7 +412,7 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
         }
     }
 
-    // get ordered lineages
+    // get lineages
     let mut lineages: Vec<Vec<Ptr<P>>> = vec![];
     for (lineage_num, leaf) in lineage_leaves {
         let mut next = leaf;
@@ -404,6 +427,84 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
         }
         lineages.push(lineage);
     }
+
+    // Separate sets of lineages that have no relations between each other.
+    // DFS through relations (sinks and sources). The `bool` in `path`
+    // differentiates between searching sources and sinks
+    let mut path: Vec<(bool, usize, Ptr<P>)> = vec![];
+    let mut independence_num = 0;
+    for lineage in &lineages {
+        let node = lineage[0];
+        if dag[node].independence_num.is_none() {
+            if dag[node].state == DFSExplored1 {
+                path.push((false, 0, node));
+                loop {
+                    let current = path.last().unwrap().2;
+                    dag[current].state = OnStack2;
+                    dag[current].independence_num = Some(independence_num);
+                    let relation = if path.last().unwrap().0 {
+                        dag[current]
+                            .sinks
+                            .get(path.last().unwrap().1)
+                            .map(|(p0, _)| p0)
+                    } else {
+                        dag[current]
+                            .sources
+                            .get(path.last().unwrap().1)
+                            .map(|(p0, ..)| p0)
+                    };
+                    match relation {
+                        Some(p0) => {
+                            let p0 = *p0;
+                            match dag[p0].state {
+                                DFSExplored1 => {
+                                    // explore further
+                                    path.push((false, 0, p0));
+                                }
+                                // `DFSExplored2` needs to be included for multigraph conditions
+                                OnStack2 | DFSExplored2 => {
+                                    // cross edge, check next
+                                    let len = path.len();
+                                    path[len - 1].1 += 1;
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        None => {
+                            if path.last().unwrap().0 {
+                                // no more relations, backtrack
+                                dag[current].state = DFSExplored2;
+                                path.pop().unwrap();
+                                if path.is_empty() {
+                                    break
+                                }
+                                // check next dependency
+                                let len = path.len();
+                                path[len - 1].1 += 1;
+                            } else {
+                                // change relation type
+                                let len = path.len();
+                                path[len - 1].0 = true;
+                                path[len - 1].1 = 0;
+                            }
+                        }
+                    }
+                }
+            } else {
+                assert_eq!(dag[node].state, DFSExplored2);
+            }
+            independence_num += 1;
+        }
+        // else the lineage is connected
+    }
+    // stable sort horizontally so that the lineage numbers are monotonically
+    // increasing
+    lineages.sort_by(|lhs, rhs| {
+        dag[lhs[0]]
+            .independence_num
+            .unwrap()
+            .cmp(&dag[rhs[0]].independence_num.unwrap())
+    });
 
     // Finally, make a grid such that any dependency must flow one way. The second
     // element in the tuple says how far back from the leaf line the node should be
@@ -441,86 +542,6 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
             break
         }
     }
-
-    /*
-    let mut leaves = vec![];
-    for p0 in &ptrs {
-        if dag[p0].debug_node.sinks.is_empty() {
-            leaves.push(*p0);
-        }
-    }
-    // Reordering columns to try and minimize dependency line crossings.
-    // create some maps first.
-    let mut ptr_to_x_i: HashMap<Ptr<P>, usize> = HashMap::new();
-    let mut x_i_to_ptr: HashMap<usize, Ptr<P>> = HashMap::new();
-    for (x_i, vertical) in grid.iter().enumerate() {
-        for slot in vertical {
-            ptr_to_x_i.insert(slot.0, x_i);
-            x_i_to_ptr.insert(x_i, slot.0);
-        }
-    }
-    let mut done_lineages: HashSet<usize> = HashSet::new();
-    let mut sorted_lineages: Vec<usize> = vec![];
-    // path from leaf, with the `usize` indicating which sink was followed
-    let mut path: Vec<(usize, Ptr<P>)> = vec![];
-    for leaf in &leaves {
-        if dag[leaf].state == ElisionExplored {
-            path.push((0, *leaf));
-            loop {
-                let current = path[path.len() - 1].1;
-                dag[current].state = OnDFSStack;
-                let tmp = if let Some((tmp, _)) =
-                    dag[current].debug_node.sources.get(path[path.len() - 1].0)
-                {
-                    Some(*tmp)
-                } else {
-                    None
-                };
-                match tmp {
-                    Some(p0) => {
-                        match dag[p0].state {
-                            DFSExplored => {
-                                // explore further
-                                path.push((0, p0));
-                            }
-                            LeafDFSExplored => {
-                                let len = path.len();
-                                path[len - 1].0 += 1;
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-                    None => {
-                        // no more sources, backtrack
-                        dag[current].state = LeafDFSExplored;
-
-                        let x_i = ptr_to_x_i[&current];
-                        // push sorted like normal, except according to lineage
-                        if !done_lineages.contains(&x_i) {
-                            sorted_lineages.push(x_i);
-                            done_lineages.insert(x_i);
-                        }
-
-                        path.pop().unwrap();
-                        if path.is_empty() {
-                            break
-                        }
-                        // check next dependency
-                        let len = path.len();
-                        path[len - 1].0 += 1;
-                    }
-                }
-            }
-        } else {
-            assert!(dag[leaf] == );
-        }
-    }
-    // do the sorting
-    let mut new_grid = vec![];
-    for x_i in sorted_lineages {
-        new_grid.push(grid[x_i].clone());
-    }
-    let grid = new_grid;*/
 
     Ok(RenderGrid::new(dag, grid))
 }
