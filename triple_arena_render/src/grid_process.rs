@@ -37,7 +37,7 @@ pub(crate) struct ANode<P: PtrTrait> {
     pub sort_position: usize,
     /// Used for grid positioning
     pub grid_position: (usize, usize),
-    pub lineage: Option<usize>,
+    pub lineage_num: Option<usize>,
 }
 
 impl<P: PtrTrait> Default for ANode<P> {
@@ -49,7 +49,7 @@ impl<P: PtrTrait> Default for ANode<P> {
             state: VisitState::default(),
             sort_position: 0,
             grid_position: (0, 0),
-            lineage: None,
+            lineage_num: None,
         }
     }
 }
@@ -363,26 +363,26 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     // until a root is reached. If the leafward parts of the lineage are not
     // touched on the first exploration, later explorations through
     // the same lineage will overwrite the lineage number.
-    let mut n = 0;
+    let mut lineage_num = 0;
     let mut lineage_leaves: Vec<(usize, Ptr<P>)> = vec![];
     for p0 in &ptrs {
         let mut next = *p0;
-        if dag[next].lineage.is_none() {
-            dag[next].lineage = Some(n);
+        if dag[next].lineage_num.is_none() {
+            dag[next].lineage_num = Some(lineage_num);
             // Record the leaf of this lineage
-            lineage_leaves.push((n, next));
+            lineage_leaves.push((lineage_num, next));
             while let Some((next_zeroeth, ..)) = dag[next].sources.get(0) {
                 next = *next_zeroeth;
-                dag[next].lineage = Some(n);
+                dag[next].lineage_num = Some(lineage_num);
             }
-            n += 1;
+            lineage_num += 1;
         }
     }
 
     // remove overwritten lineage leaves
     let mut i = 0;
-    while let Some((lineage, leaf)) = lineage_leaves.get(i) {
-        if dag[leaf].lineage.unwrap() == *lineage {
+    while let Some((lineage_num, leaf)) = lineage_leaves.get(i) {
+        if dag[leaf].lineage_num.unwrap() == *lineage_num {
             i += 1;
         } else {
             lineage_leaves.swap_remove(i);
@@ -391,11 +391,15 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
 
     // get ordered lineages
     let mut lineages: Vec<Vec<Ptr<P>>> = vec![];
-    for (_, leaf) in lineage_leaves {
+    for (lineage_num, leaf) in lineage_leaves {
         let mut next = leaf;
         let mut lineage = vec![next];
         while let Some((next_zeroeth, ..)) = dag[next].sources.get(0) {
             next = *next_zeroeth;
+            if dag[next].lineage_num.unwrap() != lineage_num {
+                // another leaf will handle this
+                break
+            }
             lineage.push(next);
         }
         lineages.push(lineage);
@@ -408,11 +412,12 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     for lineage in &lineages {
         let mut vertical = vec![];
         for ptr in lineage {
+            // the topological ordering insures dependencies flow one way
             vertical.push((*ptr, dag[ptr].sort_position));
         }
         grid.push(vertical);
     }
-    // compress vertically as much as possible
+    // Compress the `sort_position`s vertically as much as possible.
     let mut changed;
     loop {
         // may need multiple rounds
@@ -421,6 +426,7 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
             for slot in &mut *vertical {
                 let mut pos = 0;
                 for (sink, _) in &dag[slot.0].sinks {
+                    // find highest sinks position + 1
                     pos = std::cmp::max(pos, dag[sink].sort_position + 1);
                 }
                 if pos < slot.1 {
