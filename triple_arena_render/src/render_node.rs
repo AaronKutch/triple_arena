@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 use std::cmp::max;
 
 use triple_arena::{Ptr, PtrTrait};
@@ -13,7 +15,7 @@ pub(crate) struct RenderNode<P: PtrTrait> {
     /// Text location, size, and string
     pub text: Vec<((i32, i32), i32, String)>,
     /// Location of input points and pointers to where they should go
-    pub input_points: Vec<((i32, i32), Ptr<P>)>,
+    pub input_points: Vec<((i32, i32), Ptr<P>, Option<usize>)>,
     /// Location of output points and where they should go
     pub output_points: Vec<((i32, i32), Ptr<P>)>,
     /// width in x direction
@@ -23,25 +25,25 @@ pub(crate) struct RenderNode<P: PtrTrait> {
 }
 
 impl<P: PtrTrait> RenderNode<P> {
-    pub fn new(node: &DebugNode<P>, ptr: Ptr<P>) -> Self {
+    pub fn new(
+        sources: &[(Ptr<P>, String, Option<usize>)],
+        center: &[String],
+        sinks: &[(Ptr<P>, String)],
+        ptr: Ptr<P>,
+    ) -> Self {
         let mut rects = vec![];
         let mut text = vec![];
         let mut input_points = vec![];
         let mut output_points = vec![];
 
-        let total_source_len: i32 = node.sources.iter().map(|(_, s)| s.len() as i32).sum();
-        let total_sink_len: i32 = node.sinks.iter().map(|(_, s)| s.len() as i32).sum();
-        let max_center_xlen: i32 = node
-            .center
-            .iter()
-            .map(|s| s.len() as i32)
-            .max()
-            .unwrap_or(0);
+        let total_source_len: i32 = sources.iter().map(|(_, s, _)| s.len() as i32).sum();
+        let total_sink_len: i32 = sinks.iter().map(|(_, s)| s.len() as i32).sum();
+        let max_center_xlen: i32 = center.iter().map(|s| s.len() as i32).max().unwrap_or(0);
 
         let total_source_wx =
-            (INPUT_FONT_WX * total_source_len) + max(PAD * (node.sources.len() as i32 - 1), 0);
+            (INPUT_FONT_WX * total_source_len) + max(PAD * (sources.len() as i32 - 1), 0);
         let total_sink_wx =
-            (INPUT_FONT_WX * total_sink_len) + max(PAD * (node.sinks.len() as i32 - 1), 0);
+            (INPUT_FONT_WX * total_sink_len) + max(PAD * (sinks.len() as i32 - 1), 0);
         let max_center_wx = FONT_WX * max_center_xlen;
 
         let mut wx = max(max(total_source_wx, total_sink_wx), max_center_wx);
@@ -54,16 +56,16 @@ impl<P: PtrTrait> RenderNode<P> {
 
         // generate inputs
         // both the len == 0 and len == 1 cases have to be specially handled
-        let individual_spaces = if node.sources.len() < 2 {
+        let individual_spaces = if sources.len() < 2 {
             extra_source_space / 2
         } else {
             extra_source_space
-                .checked_div(node.sources.len() as i32 - 1)
+                .checked_div(sources.len() as i32 - 1)
                 .unwrap_or(0)
         };
         let mut x_progression = PAD;
-        for (p, s) in &node.sources {
-            if node.sources.len() == 1 {
+        for (p, s, inx) in sources {
+            if sources.len() == 1 {
                 x_progression += individual_spaces;
             }
             if !s.is_empty() {
@@ -75,40 +77,40 @@ impl<P: PtrTrait> RenderNode<P> {
             }
             let this_wx = INPUT_FONT_WX * (s.len() as i32);
             let center_x = x_progression + (this_wx / 2);
-            input_points.push(((center_x, wy - PAD), *p));
+            input_points.push(((center_x, wy - PAD), *p, *inx));
             x_progression += this_wx + individual_spaces;
         }
         // we need `center_x` for the input points, but do not need any height if all
         // the strings are empty
-        if node.sources.iter().any(|(_, s)| !s.is_empty()) {
+        if sources.iter().any(|(_, s, _)| !s.is_empty()) {
             wy += INPUT_FONT_WY;
         }
 
         // center
-        if !node.center.is_empty() {
-            for (i, s) in node.center.iter().enumerate() {
+        if !center.is_empty() {
+            for (i, s) in center.iter().enumerate() {
                 wy += FONT_WY;
                 text.push((((extra_center_space / 2) + PAD, wy), FONT_WY, s.clone()));
-                if i != (node.center.len() - 1) {
+                if i != (center.len() - 1) {
                     wy += PAD;
                 }
             }
         }
 
         // generate outputs
-        if node.sinks.iter().any(|(_, s)| !s.is_empty()) {
+        if sinks.iter().any(|(_, s)| !s.is_empty()) {
             wy += INPUT_FONT_WY;
         }
-        let individual_spaces = if node.sources.len() < 2 {
+        let individual_spaces = if sources.len() < 2 {
             extra_sink_space / 2
         } else {
             extra_sink_space
-                .checked_div(node.sinks.len() as i32 - 1)
+                .checked_div(sinks.len() as i32 - 1)
                 .unwrap_or(0)
         };
         let mut x_progression = PAD;
-        for (p, s) in &node.sinks {
-            if node.sinks.len() == 1 {
+        for (p, s) in sinks {
+            if sinks.len() == 1 {
                 x_progression += individual_spaces;
             }
             if !s.is_empty() {

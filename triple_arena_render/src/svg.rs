@@ -71,30 +71,29 @@ pub(crate) fn gen_svg<P: PtrTrait>(rg: &RenderGrid<P>) -> String {
     // lines second
     for i in 0..rg.grid.len() {
         for j in 0..rg.grid[i].len() {
-            let num_inputs = if let Some(ref node) = rg.grid[i][j] {
-                node.input_points.len()
+            if let Some(ref node) = rg.grid[i][j] {
+                for k in 0..node.input_points.len() {
+                    let (i, ptr, inx) = rg.grid[i][j].as_ref().unwrap().input_points[k];
+                    let (o_i, o_j) = rg.dag[ptr].grid_position;
+                    let color = COLORS[o_i % COLORS.len()];
+                    let o = rg.grid[o_i][o_j].as_ref().unwrap().output_points[inx.unwrap_or(0)].0;
+                    let p = NODE_PAD / 2;
+                    s += &format!(
+                        "<path stroke=\"#{}\" fill=\"#0000\" d=\"M {},{} C {},{} {},{} {},{}\"/>\n",
+                        color,
+                        o.0,
+                        o.1,
+                        o.0,
+                        o.1 + p,
+                        i.0,
+                        i.1 - p,
+                        i.0,
+                        i.1
+                    );
+                }
             } else {
                 continue
             };
-            for k in 0..num_inputs {
-                let (i, ptr) = rg.grid[i][j].as_ref().unwrap().input_points[k];
-                let (o_i, o_j) = rg.dag[ptr].grid_position;
-                let color = COLORS[o_i % COLORS.len()];
-                let o = rg.grid[o_i][o_j].as_ref().unwrap().output_points[0].0;
-                let p = NODE_PAD / 2;
-                s += &format!(
-                    "<path stroke=\"#{}\" fill=\"#0000\" d=\"M {},{} C {},{} {},{} {},{}\"/>\n",
-                    color,
-                    o.0,
-                    o.1,
-                    o.0,
-                    o.1 + p,
-                    i.0,
-                    i.1 - p,
-                    i.0,
-                    i.1
-                );
-            }
         }
     }
 

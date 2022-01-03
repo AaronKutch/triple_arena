@@ -53,11 +53,7 @@ fn fuzz() {
         assert_eq!(a.len(), b.len());
         let len = list.len();
         assert_eq!(a.is_empty(), b.is_empty());
-        let check = Arena::_check_arena_invariants(&a);
-        if check.is_err() {
-            dbg!(op_inx);
-            check.unwrap();
-        }
+        let check = Arena::_check_arena_invariants(&a).unwrap();
         op_inx = rng.next_u32() % 1000;
         // I am only using inclusive ranges because exclusive ones are not stable as of
         // writing

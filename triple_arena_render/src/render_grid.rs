@@ -37,7 +37,12 @@ impl<P: PtrTrait> RenderGrid<P> {
         }
         for (x_i, vertical) in grid.iter().enumerate() {
             for (ptr, pos) in &*vertical {
-                let node = RenderNode::new(&rg.dag[ptr].debug_node, *ptr);
+                let node = RenderNode::new(
+                    &rg.dag[ptr].sources,
+                    &rg.dag[ptr].center,
+                    &rg.dag[ptr].sinks,
+                    *ptr,
+                );
                 let tmp = grid_max_wx[x_i];
                 grid_max_wx[x_i] = max(tmp, node.wx);
                 // y is reversed to make the data flow downwards graphically

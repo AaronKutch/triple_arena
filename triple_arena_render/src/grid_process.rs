@@ -25,10 +25,13 @@ impl Default for VisitState {
 }
 
 /// Algorithmic node. Contains some additional information alongside the
-/// `DebugNode` needed for fast processing
+/// `DebugNode` information needed for fast processing
 #[derive(Debug)]
 pub(crate) struct ANode<P: PtrTrait> {
-    pub debug_node: DebugNode<P>,
+    // the additional `usize` enables pointing to a specific output in the source node
+    pub sources: Vec<(Ptr<P>, String, Option<usize>)>,
+    pub center: Vec<String>,
+    pub sinks: Vec<(Ptr<P>, String)>,
     pub state: VisitState,
     /// Used in initial topological sorting
     pub sort_position: usize,
@@ -40,7 +43,9 @@ pub(crate) struct ANode<P: PtrTrait> {
 impl<P: PtrTrait> Default for ANode<P> {
     fn default() -> Self {
         Self {
-            debug_node: DebugNode::default(),
+            sources: vec![],
+            center: vec![],
+            sinks: vec![],
             state: VisitState::default(),
             sort_position: 0,
             grid_position: (0, 0),
@@ -55,9 +60,18 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
 ) -> Result<RenderGrid<P>, RenderError<P>> {
     // this is not guaranteed to be a DAG yet but will become one
     let mut dag: Arena<P, ANode<P>> = Arena::new();
-    dag.clone_from_with(arena, |_, t| ANode {
-        debug_node: DebugNodeTrait::debug_node(t),
-        ..Default::default()
+    dag.clone_from_with(arena, |_, t| {
+        let debug_node = DebugNodeTrait::debug_node(t);
+        ANode {
+            sources: debug_node
+                .sources
+                .into_iter()
+                .map(|(p, s)| (p, s, None))
+                .collect(),
+            center: debug_node.center,
+            sinks: debug_node.sinks,
+            ..Default::default()
+        }
     });
 
     let mut ptrs = vec![];
@@ -70,26 +84,31 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     for p0 in &ptrs {
         if dag[p0].state == Initial {
             // check all sinks
-            for i0 in 0..dag[p0].debug_node.sinks.len() {
-                let p1 = dag[p0].debug_node.sinks[i0].0;
+            for i0 in 0..dag[p0].sinks.len() {
+                let p1 = dag[p0].sinks[i0].0;
                 // check for invalid pointers and if a source is elided
                 if let Some(node) = dag.get(p1) {
-                    if !node.debug_node.sources.iter().any(|(o, _)| *o == *p0) {
+                    if !node
+                        .sources
+                        .iter()
+                        .any(|(o, _, inx)| (*o == *p0) && (*inx == Some(i0)))
+                    {
                         // unelide
-                        dag[p1].debug_node.sources.push((*p0, "|".to_string()));
+                        dag[p1].sources.push((*p0, String::new(), Some(i0)));
                     }
                 } else if error_on_invalid_ptr {
                     return Err(RenderError::InvalidPtr(p1))
                 }
             }
             // check all sources
-            for i0 in 0..dag[p0].debug_node.sources.len() {
-                let p1 = dag[p0].debug_node.sources[i0].0;
+            for i0 in 0..dag[p0].sources.len() {
+                let p1 = dag[p0].sources[i0].0;
                 // check for invalid pointers and if a sink is elided
                 if let Some(node) = dag.get(p1) {
-                    if !node.debug_node.sinks.iter().any(|(o, _)| *o == *p0) {
+                    if !node.sinks.iter().any(|(o, _)| *o == *p0) {
                         // unelide
-                        dag[p1].debug_node.sinks.push((*p0, "|".to_string()));
+                        dag[p0].sources[i0].2 = Some(node.sinks.len());
+                        dag[p1].sinks.push((*p0, "|".to_string()));
                     }
                 } else if error_on_invalid_ptr {
                     return Err(RenderError::InvalidPtr(p1))
@@ -106,35 +125,29 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
         let original_len = ptrs.len();
         for ptr_i in 0..original_len {
             let p0 = ptrs[ptr_i];
-            for i0 in 0..dag[p0].debug_node.sinks.len() {
-                let p1 = dag[p0].debug_node.sinks[i0].0;
+            for i0 in 0..dag[p0].sinks.len() {
+                let p1 = dag[p0].sinks[i0].0;
                 if !dag.contains(p1) {
                     let p1_prime = dag.insert(ANode {
-                        debug_node: DebugNode {
-                            sources: vec![(p0, String::new())],
-                            center: vec![format!("{:?}(invalid)", p1)],
-                            sinks: vec![],
-                        },
+                        sources: vec![(p0, String::new(), Some(i0))],
+                        center: vec![format!("{:?}(invalid)", p1)],
                         state: Unelided,
                         ..Default::default()
                     });
-                    dag[p0].debug_node.sinks[i0].0 = p1_prime;
+                    dag[p0].sinks[i0].0 = p1_prime;
                     ptrs.push(p1_prime);
                 }
             }
-            for i0 in 0..dag[p0].debug_node.sources.len() {
-                let p1 = dag[p0].debug_node.sources[i0].0;
+            for i0 in 0..dag[p0].sources.len() {
+                let p1 = dag[p0].sources[i0].0;
                 if !dag.contains(p1) {
                     let p1_prime = dag.insert(ANode {
-                        debug_node: DebugNode {
-                            sources: vec![],
-                            center: vec![format!("{:?}(invalid)", p1)],
-                            sinks: vec![(p0, String::new())],
-                        },
+                        center: vec![format!("{:?}(invalid)", p1)],
+                        sinks: vec![(p0, String::new())],
                         state: Unelided,
                         ..Default::default()
                     });
-                    dag[p0].debug_node.sources[i0].0 = p1_prime;
+                    dag[p0].sources[i0].0 = p1_prime;
                     ptrs.push(p1_prime);
                 }
             }
@@ -144,7 +157,7 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     // nodes with no sources
     let mut roots = vec![];
     for p0 in &ptrs {
-        if dag[p0].debug_node.sources.is_empty() {
+        if dag[p0].sources.is_empty() {
             roots.push(*p0);
         }
     }
@@ -159,7 +172,7 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
             loop {
                 let current = path[path.len() - 1].1;
                 dag[current].state = RootReachable;
-                match dag[current].debug_node.sinks.get(path[path.len() - 1].0) {
+                match dag[current].sinks.get(path[path.len() - 1].0) {
                     Some((p0, _)) => {
                         let p0 = *p0;
                         match dag[p0].state {
@@ -216,7 +229,7 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                 let current = path[path.len() - 1].1;
                 // self-cycles are handled also if this is done first
                 dag[current].state = OnStack0;
-                match dag[current].debug_node.sinks.get(path[path.len() - 1].0) {
+                match dag[current].sinks.get(path[path.len() - 1].0) {
                     Some((p0, _)) => {
                         let p0 = *p0;
                         match dag[p0].state {
@@ -229,31 +242,30 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                                 // pointer to `p0_prime0` and repointing the corresponding
                                 // source of `p0` to `p0_prime1`
                                 let p0_prime0 = dag.insert(ANode {
-                                    debug_node: DebugNode {
-                                        sources: vec![(current, String::new())],
-                                        center: vec![format!("{:?}", p0)],
-                                        sinks: vec![],
-                                    },
+                                    sources: vec![(
+                                        current,
+                                        String::new(),
+                                        Some(path[path.len() - 1].0),
+                                    )],
+                                    center: vec![format!("{:?}", p0)],
                                     state: DFSExplored0,
                                     ..Default::default()
                                 });
-                                dag[current].debug_node.sinks[path[path.len() - 1].0].0 = p0_prime0;
+                                dag[current].sinks[path[path.len() - 1].0].0 = p0_prime0;
                                 // special case explore
                                 ptrs.push(p0_prime0);
 
                                 let p0_prime1 = dag.insert(ANode {
-                                    debug_node: DebugNode {
-                                        sources: vec![],
-                                        center: vec![format!("{:?}", p0)],
-                                        sinks: vec![(p0, String::new())],
-                                    },
+                                    center: vec![format!("{:?}", p0)],
+                                    sinks: vec![(p0, String::new())],
                                     state: DFSExplored0,
                                     ..Default::default()
                                 });
                                 // find the corresponding source
-                                for i1 in 0..dag[p0].debug_node.sources.len() {
-                                    if dag[p0].debug_node.sources[i1].0 == current {
-                                        dag[p0].debug_node.sources[i1].0 = p0_prime1;
+                                for i1 in 0..dag[p0].sources.len() {
+                                    if dag[p0].sources[i1].0 == current {
+                                        dag[p0].sources[i1].0 = p0_prime1;
+                                        dag[p0].sources[i1].2 = Some(0);
                                     }
                                 }
                                 ptrs.push(p0_prime1);
@@ -304,9 +316,7 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
             loop {
                 let current = path[path.len() - 1].1;
                 dag[current].state = OnStack1;
-                let tmp = if let Some((tmp, _)) =
-                    dag[current].debug_node.sinks.get(path[path.len() - 1].0)
-                {
+                let tmp = if let Some((tmp, _)) = dag[current].sinks.get(path[path.len() - 1].0) {
                     Some(*tmp)
                 } else {
                     None
@@ -361,7 +371,7 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
             dag[next].lineage = Some(n);
             // Record the leaf of this lineage
             lineage_leaves.push((n, next));
-            while let Some((next_zeroeth, _)) = dag[next].debug_node.sources.get(0) {
+            while let Some((next_zeroeth, ..)) = dag[next].sources.get(0) {
                 next = *next_zeroeth;
                 dag[next].lineage = Some(n);
             }
@@ -384,7 +394,7 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     for (_, leaf) in lineage_leaves {
         let mut next = leaf;
         let mut lineage = vec![next];
-        while let Some((next_zeroeth, _)) = dag[next].debug_node.sources.get(0) {
+        while let Some((next_zeroeth, ..)) = dag[next].sources.get(0) {
             next = *next_zeroeth;
             lineage.push(next);
         }
@@ -410,7 +420,7 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
         for vertical in &mut grid {
             for slot in &mut *vertical {
                 let mut pos = 0;
-                for (sink, _) in &dag[slot.0].debug_node.sinks {
+                for (sink, _) in &dag[slot.0].sinks {
                     pos = std::cmp::max(pos, dag[sink].sort_position + 1);
                 }
                 if pos < slot.1 {
