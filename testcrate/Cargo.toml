@@ -4,7 +4,7 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
-[dev-dependencies]
+[dependencies]
 rand_xoshiro = "0.6"
 triple_arena = { path = "../triple_arena" }
 triple_arena_render = { path = "../triple_arena_render" }
