@@ -22,6 +22,7 @@ jobs:
           cargo test --release --all-features
           cargo r --bin render0
           cargo r --bin render1
+          cargo r --example equation
 
   rustfmt:
     name: Rustfmt

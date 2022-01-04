@@ -48,7 +48,7 @@ pub(crate) const TEXT_COLOR: &str = "a0a0a0";
 /// `sources` should be filled out and `sinks` left empty, and vice-versa for
 /// "source-to-sink" edges. Arbitrary combinations can also be chosen depending
 /// on what ordering is preferred.
-#[derive(Debug)]
+#[derive(Debug, Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DebugNode<P: PtrTrait> {
     /// Sources should be a tuple of `Ptr`s to source nodes in the graph and
     /// short one line strings that will be used for input annotations (or empty
@@ -68,6 +68,21 @@ impl<P: PtrTrait> Default for DebugNode<P> {
             sources: vec![],
             center: vec![],
             sinks: vec![],
+        }
+    }
+}
+
+impl<P: PtrTrait> DebugNode<P> {
+    /// Shorthand construction
+    pub fn new(
+        sources: Vec<(Ptr<P>, String)>,
+        center: Vec<String>,
+        sinks: Vec<(Ptr<P>, String)>,
+    ) -> Self {
+        Self {
+            sources,
+            center,
+            sinks,
         }
     }
 }
