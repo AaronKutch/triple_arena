@@ -1,8 +1,10 @@
+// note: for README version keep limit at 70 characters and change `out_file`
+
 use triple_arena::prelude::*;
 use triple_arena_render::{render_to_svg_file, DebugNode, DebugNodeTrait};
 
-// Suppose we are storing an equation evaluation tree in an arena with this type
-// of node
+// Suppose we are storing an equation evaluation tree in an arena
+// with this type of node
 enum MyNode<P: PtrTrait> {
     /// A literal value in the equation
     Literal(i64),
@@ -16,23 +18,25 @@ use MyNode::*;
 
 impl<P: PtrTrait> DebugNodeTrait<P> for MyNode<P> {
     fn debug_node(this: &Self) -> DebugNode<P> {
-        // Here we manually write out the fields of the `DebugNode`, but you can also
-        // use its `Default` implementation or `new` constructor
+        // Here we manually write out the fields of the `DebugNode`,
+        // but you can also use its `Default` implementation or
+        // new` constructor
         match this {
             Literal(x) => {
                 DebugNode {
                     sources: vec![],
-                    // We choose in this example to display the literal value by itself
+                    // We choose in this example to display the
+                    // literal value by itself
                     center: vec![format!("{}", x)],
-                    // We choose source-to-sink convention for our tree, so `sink` will always be
-                    // empty
+                    // We choose source-to-sink convention for our
+                    // tree, so `sink` will always be empty
                     sinks: vec![],
                 }
             }
             Negation(p) => {
                 DebugNode {
-                    // Have a debug edge corresponding to the real edge, but leave the source
-                    // description empty
+                    // Have a debug edge corresponding to the real
+                    // edge, but leave the source description empty
                     sources: vec![(*p, String::new())],
                     // Display a negative sign
                     center: vec!["-".to_owned()],
