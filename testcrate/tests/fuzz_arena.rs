@@ -108,7 +108,6 @@ fn fuzz() {
                     assert!(a.remove(invalid).is_none());
                 }
             }
-            // TODO test failure cases
             400..=799 => {
                 // contains
                 if len != 0 {
