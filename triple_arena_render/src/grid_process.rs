@@ -616,9 +616,10 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
         }
     }
 
-    // TODO we really need the square grid in `(Ptr<P>, usize)` form here in order
-    // to exploit empty space. We should use a "rubber band" based method to
-    // minimize more crossings and make large graphs more compact.
+    // TODO we really need the square grid in `(Ptr<P>, usize)` form in this
+    // function in order to exploit empty space. We should use a "rubber band"
+    // based method to minimize more crossings and make large graphs more
+    // compact.
 
     Ok(RenderGrid::new(dag, grid))
 }
