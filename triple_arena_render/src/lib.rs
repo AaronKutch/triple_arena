@@ -1,12 +1,18 @@
-use triple_arena::prelude::*;
 mod grid_process;
 mod render_grid;
 mod render_node;
 mod svg;
-pub(crate) use grid_process::{grid_process, ANode};
-pub(crate) use render_grid::RenderGrid;
-pub(crate) use render_node::RenderNode;
 pub use svg::{render_to_svg, render_to_svg_file};
+use triple_arena::{Ptr, PtrTrait};
+
+/// Internal structs and functions for experimenting with new rendering backends
+pub mod internal {
+    pub use crate::{
+        grid_process::{grid_process, ANode, VisitState},
+        render_grid::RenderGrid,
+        render_node::RenderNode,
+    };
+}
 
 // in the future, we could make these default parameters in some struct
 

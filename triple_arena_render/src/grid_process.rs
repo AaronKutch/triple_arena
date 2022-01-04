@@ -2,12 +2,9 @@
 
 use std::cmp::Ordering;
 
-use triple_arena::prelude::*;
-
-use crate::*;
-
+/// For different node states used by algorithms
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum VisitState {
+pub enum VisitState {
     Initial,
     Unelided,
     RootReachable,
@@ -22,7 +19,10 @@ pub(crate) enum VisitState {
     DFSExplored3,
 }
 
+use triple_arena::{Arena, Ptr, PtrTrait};
 use VisitState::*;
+
+use crate::{render_grid::RenderGrid, DebugNodeTrait, RenderError};
 
 impl Default for VisitState {
     fn default() -> Self {
@@ -33,7 +33,7 @@ impl Default for VisitState {
 /// Algorithmic node. Contains some additional information alongside the
 /// `DebugNode` information needed for fast processing
 #[derive(Debug)]
-pub(crate) struct ANode<P: PtrTrait> {
+pub struct ANode<P: PtrTrait> {
     // the additional `usize` enables pointing to a specific output in the source node
     pub sources: Vec<(Ptr<P>, String, Option<usize>)>,
     pub center: Vec<String>,
@@ -64,7 +64,8 @@ impl<P: PtrTrait> Default for ANode<P> {
     }
 }
 
-pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
+/// Processes an `Arena<P, T>` into a `RenderGrid<P>`
+pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     arena: &Arena<P, T>,
     error_on_invalid_ptr: bool,
 ) -> Result<RenderGrid<P>, RenderError<P>> {

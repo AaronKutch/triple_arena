@@ -4,6 +4,9 @@ use std::{
     path::PathBuf,
 };
 
+use internal::{grid_process, RenderGrid};
+use triple_arena::Arena;
+
 use crate::*;
 
 /// create the SVG code
@@ -151,6 +154,9 @@ pub(crate) fn gen_svg<P: PtrTrait>(rg: &RenderGrid<P>) -> String {
 
 /// Renders an SVG graph representation of `arena` in a top-down order from
 /// sources to sinks. Cycles are broken up by inserting pointer reference nodes.
+/// If `error_on_invalid_ptr` then this will return an error if an invalid
+/// pointer is encountered, otherwise it will insert pointer nodes with
+/// "(invalid)" appended.
 pub fn render_to_svg<P: PtrTrait, T: DebugNodeTrait<P>>(
     arena: &Arena<P, T>,
     error_on_invalid_ptr: bool,
