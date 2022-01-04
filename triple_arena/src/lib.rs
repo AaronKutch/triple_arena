@@ -101,8 +101,8 @@ use InternalEntry::*;
 /// assert_eq!(arena3.iter().next().unwrap().1, "hello");
 /// ```
 ///
-/// Note: See the `triple_arena_render` crate for ways to visualize graph
-/// structures in `Arena`s
+/// Note: See the `triple_arena_render` crate for a trait-based way to visualize
+/// graph structures in `Arena`s
 pub struct Arena<P: PtrTrait, T> {
     /// Number of `T` currently contained in the arena
     len: usize,
