@@ -96,4 +96,4 @@ fn main() {
 }
 ```
 
-![Alt text](example.svg)
+![Example SVG](https://raw.githubusercontent.com/AaronKutch/triple_arena/main/triple_arena_render/example.svg)
