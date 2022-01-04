@@ -1,6 +1,6 @@
 #![allow(clippy::type_complexity)]
 
-use std::{cmp::max, iter::empty};
+use std::cmp::max;
 
 use triple_arena::{Ptr, PtrTrait};
 
@@ -54,7 +54,7 @@ impl<P: PtrTrait> RenderNode<P> {
 
         let empty_node = wx == PAD;
 
-        let mut wy = if empty_node {PAD} else {0};
+        let mut wy = if empty_node { PAD } else { 0 };
 
         // generate inputs
         // both the len == 0 and len == 1 cases have to be specially handled

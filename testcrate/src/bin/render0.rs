@@ -36,11 +36,7 @@ fn main() {
         vec![(n3, "|||".to_string()), (n3, "|".to_string())],
     ));
     // with only input
-    let _n4 = a.insert(MyNode::new(
-        vec![(n2, "n4_in".to_string())],
-        vec![],
-        vec![],
-    ));
+    let _n4 = a.insert(MyNode::new(vec![(n2, "n4_in".to_string())], vec![], vec![]));
     let _n5 = a.insert(MyNode::new(vec![], vec!["n5".to_string()], vec![(
         n2,
         "|".to_string(),
@@ -49,11 +45,10 @@ fn main() {
     let n6 = a.insert(MyNode::new(vec![], vec![], vec![]));
     a[n2].sources[0].0 = n6;
     // node with only output
-    let _n7 = a.insert(MyNode::new(
-        vec![],
-        vec![],
-        vec![(n6, "n7_out".to_string())],
-    ));
+    let _n7 = a.insert(MyNode::new(vec![], vec![], vec![(
+        n6,
+        "n7_out".to_string(),
+    )]));
 
     render_to_svg_file(
         &a,
