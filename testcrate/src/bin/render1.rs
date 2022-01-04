@@ -9,7 +9,7 @@ use triple_arena::prelude::*;
 use triple_arena_render::*;
 
 fn main() {
-    let mut rng = Xoshiro128StarStar::seed_from_u64(0);
+    let mut rng = Xoshiro128StarStar::seed_from_u64(1);
     let mut a: Arena<P0, MyNode<P0>> = Arena::new();
     let mut ptrs = vec![];
     for i in 0..100 {

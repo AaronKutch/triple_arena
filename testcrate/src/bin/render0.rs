@@ -50,6 +50,11 @@ fn main() {
         "n7_out".to_string(),
     )]));
 
+    // self cycle
+    let n8 = a.insert(MyNode::new(vec![], vec!["n8".to_string()], vec![]));
+    a[n8].sources.push((n8, "i".to_string()));
+    a[n8].sinks.push((n8, "o".to_string()));
+
     render_to_svg_file(
         &a,
         false,
