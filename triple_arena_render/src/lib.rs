@@ -8,45 +8,31 @@ pub(crate) use render_grid::RenderGrid;
 pub(crate) use render_node::RenderNode;
 pub use svg::{render_to_svg, render_to_svg_file};
 
-// for calibration
-//<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-//<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
-//"http://www.w3.org/Graphics///SVG/1.1/DTD/svg11.dtd">
-//<svg preserveAspectRatio="meet" viewBox="0 0 400 200" width="100%"
-//height="100%" version="1.1" xmlns="http://www.w3.org/2000/svg">
-//<rect fill="#111" x="0" y="64" width="200" height="16"/>
-//<text fill="red" font-size="16" font-family="monospace" x="0" y="75">
-//0123456789abcdef=|_
-//</text>
-//<line x1="0" y1="80" x2="154" y2="82" stroke="#f08" stroke-width="2" />
-//</svg>
-
 // in the future, we could make these default parameters in some struct
 
-pub(crate) const PAD: i32 = 4;
-pub(crate) const FONT_FAMILY: &str = "monospace";
-//const FONT_SIZE: i32 = 16;
+pub(crate) const PAD: i32 = 128;
+pub(crate) const FONT_WX: i32 = 256;
+pub(crate) const FONT_WY: i32 = 512;
 // NOTE: do not change without checking that `|` and `_` fit perfectly
-pub(crate) const FONT_WX: i32 = 9;
-pub(crate) const FONT_WY: i32 = 16;
-//const INPUT_FONT_SIZE: i32 = 8;
-pub(crate) const INPUT_FONT_WX: i32 = 5;
-pub(crate) const INPUT_FONT_WY: i32 = 8;
-// Fonts tend to hang downwards below the point at which they are written, so
-// this corrects that
-pub(crate) const FONT_ADJUST_Y: i32 = -6;
-// I don't know why this is needed
-pub(crate) const BEZIER_OFFSET: i32 = -2;
-pub(crate) const NODE_PAD: i32 = 32;
-pub(crate) const NODE_OUTLINE_WIDTH: i32 = 1;
+pub(crate) const FONT_FAMILY: &str = "monospace";
+pub(crate) const FONT_SIZE: i32 = 512 - 48;
+// the lowest hanging parts of characters should be above text starting point
+pub(crate) const FONT_ADJUST_Y: i32 = -192;
+pub(crate) const INPUT_PAD: i32 = 0;
+pub(crate) const INPUT_FONT_WX: i32 = 128;
+pub(crate) const INPUT_FONT_WY: i32 = 256;
+pub(crate) const INPUT_FONT_SIZE: i32 = 256 - 24;
+pub(crate) const INPUT_FONT_ADJUST_Y: i32 = -48;
+pub(crate) const RELATION_WIDTH: i32 = 48;
+pub(crate) const NODE_PAD: i32 = 1024;
 // Quaternion VScode color theme
 pub(crate) const COLORS: [&str; 7] = [
     // the green-yellow clash is problematic, so remove green
     "a0a0a0", "00b2ff", "00cb9d", /* "2ab90f", */ "c49d00", "ff8080", "ff2adc", "a35bff",
 ];
 pub(crate) const NODE_FILL: &str = "171717";
-pub(crate) const NODE_OUTLINE: &str = "7770";
 pub(crate) const TEXT_COLOR: &str = "a0a0a0";
+//pub(crate) const DEBUG_WIDTH: i32 = 48;
 
 /// Most kinds of graph representations have some notion of directionality,
 /// which we term "source-to-sink" or "sink-to-source" edges. By convention,

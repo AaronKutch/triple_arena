@@ -49,10 +49,8 @@ pub(crate) fn gen_svg<P: PtrTrait>(rg: &RenderGrid<P>) -> String {
                 );
                 // outline the rectangle
                 s += &format!(
-                    "<polyline stroke=\"#{}\" stroke-width=\"{}\" points=\"{},{} {},{} {},{} \
+                    "<polyline stroke=\"#0000\" stroke-width=\"0\" points=\"{},{} {},{} {},{} \
                      {},{} {},{}\"  fill=\"#0000\"/>\n",
-                    NODE_OUTLINE,
-                    NODE_OUTLINE_WIDTH,
                     rect.0,
                     rect.1,
                     rect.0 + rect.2,
@@ -79,8 +77,10 @@ pub(crate) fn gen_svg<P: PtrTrait>(rg: &RenderGrid<P>) -> String {
                     let o = rg.grid[o_i][o_j].as_ref().unwrap().output_points[inx.unwrap_or(0)].0;
                     let p = NODE_PAD / 2;
                     s += &format!(
-                        "<path stroke=\"#{}\" fill=\"#0000\" d=\"M {},{} C {},{} {},{} {},{}\"/>\n",
+                        "<path stroke=\"#{}\" stroke-width=\"{}\" fill=\"#0000\" d=\"M {},{} C \
+                         {},{} {},{} {},{}\"/>\n",
                         color,
+                        RELATION_WIDTH,
                         o.0,
                         o.1,
                         o.0,
@@ -90,6 +90,14 @@ pub(crate) fn gen_svg<P: PtrTrait>(rg: &RenderGrid<P>) -> String {
                         i.0,
                         i.1
                     );
+                    /*s += &format!(
+                        "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"orange\"/>",
+                        o.0, o.1, DEBUG_WIDTH
+                    );
+                    s += &format!(
+                        "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"orange\"/>",
+                        i.0, i.1, DEBUG_WIDTH
+                    );*/
                 }
             } else {
                 continue
@@ -104,22 +112,21 @@ pub(crate) fn gen_svg<P: PtrTrait>(rg: &RenderGrid<P>) -> String {
                 let size = tmp.1;
                 // these characters need to be escaped, do "&" first
                 let final_text = tmp
-                    .2
+                    .3
                     .replace('&', "&amp;")
                     .replace('"', "&quot;")
                     .replace('\'', "&apos;")
                     .replace('<', "&lt;")
                     .replace('>', "&gt;");
                 s += &format!(
-                    "<text fill=\"#{}\" font-size=\"{}\" font-family=\"{}\" x=\"{}\" \
-                     y=\"{}\">{}</text>\n",
-                    TEXT_COLOR,
-                    size,
-                    FONT_FAMILY,
-                    tmp.0 .0,
-                    tmp.0 .1 + FONT_ADJUST_Y,
-                    final_text
+                    "<text fill=\"#{}\" font-size=\"{}\" font-family=\"{}\" x=\"{}\" y=\"{}\" \
+                     textLength=\"{}\">{}</text>\n",
+                    TEXT_COLOR, size, FONT_FAMILY, tmp.0 .0, tmp.0 .1, tmp.2, final_text
                 );
+                /*s += &format!(
+                    "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"red\"/>",
+                    tmp.0 .0, tmp.0 .1, DEBUG_WIDTH
+                );*/
             }
         }
     }

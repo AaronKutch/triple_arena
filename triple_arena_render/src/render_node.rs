@@ -1,6 +1,6 @@
 #![allow(clippy::type_complexity)]
 
-use std::cmp::max;
+use std::{cmp::max, iter::empty};
 
 use triple_arena::{Ptr, PtrTrait};
 
@@ -12,8 +12,8 @@ pub(crate) struct RenderNode<P: PtrTrait> {
     pub ptr: Ptr<P>,
     /// Rectangles in (x position, y position, x width, y width)
     pub rects: Vec<(i32, i32, i32, i32)>,
-    /// Text location, size, and string
-    pub text: Vec<((i32, i32), i32, String)>,
+    /// Text location, size, length, and string
+    pub text: Vec<((i32, i32), i32, i32, String)>,
     /// Location of input points and pointers to where they should go
     pub input_points: Vec<((i32, i32), Ptr<P>, Option<usize>)>,
     /// Location of output points and where they should go
@@ -41,22 +41,24 @@ impl<P: PtrTrait> RenderNode<P> {
         let max_center_xlen: i32 = center.iter().map(|s| s.len() as i32).max().unwrap_or(0);
 
         let total_source_wx =
-            (INPUT_FONT_WX * total_source_len) + max(PAD * (sources.len() as i32 - 1), 0);
+            (INPUT_FONT_WX * total_source_len) + max(INPUT_PAD * (sources.len() as i32 - 1), 0);
         let total_sink_wx =
-            (INPUT_FONT_WX * total_sink_len) + max(PAD * (sinks.len() as i32 - 1), 0);
+            (INPUT_FONT_WX * total_sink_len) + max(INPUT_PAD * (sinks.len() as i32 - 1), 0);
         let max_center_wx = FONT_WX * max_center_xlen;
 
-        let mut wx = max(max(total_source_wx, total_sink_wx), max_center_wx);
+        let mut wx = max(max(total_source_wx, total_sink_wx), max_center_wx) + PAD;
         // for spreading out sources and sinks
         let extra_source_space = wx - total_source_wx;
         let extra_sink_space = wx - total_sink_wx;
         let extra_center_space = wx - max_center_wx;
 
-        let mut wy = PAD;
+        let empty_node = wx == PAD;
+
+        let mut wy = if empty_node {PAD} else {0};
 
         // generate inputs
         // both the len == 0 and len == 1 cases have to be specially handled
-        let individual_spaces = if sources.len() < 2 {
+        let separation = if sources.len() < 2 {
             extra_source_space / 2
         } else {
             extra_source_space
@@ -66,19 +68,20 @@ impl<P: PtrTrait> RenderNode<P> {
         let mut x_progression = PAD;
         for (p, s, inx) in sources {
             if sources.len() == 1 {
-                x_progression += individual_spaces;
+                x_progression += separation;
             }
             if !s.is_empty() {
                 text.push((
-                    (x_progression, wy + INPUT_FONT_WY),
-                    INPUT_FONT_WY,
+                    (x_progression, wy + INPUT_FONT_WY + INPUT_FONT_ADJUST_Y),
+                    INPUT_FONT_SIZE,
+                    INPUT_FONT_WX * (s.len() as i32),
                     (*s).clone(),
                 ));
             }
             let this_wx = INPUT_FONT_WX * (s.len() as i32);
             let center_x = x_progression + (this_wx / 2);
-            input_points.push(((center_x, wy - PAD), *p, *inx));
-            x_progression += this_wx + individual_spaces;
+            input_points.push(((center_x, wy), *p, *inx));
+            x_progression += this_wx + separation;
         }
         // we need `center_x` for the input points, but do not need any height if all
         // the strings are empty
@@ -87,10 +90,16 @@ impl<P: PtrTrait> RenderNode<P> {
         }
 
         // center
+        wy += PAD;
         if !center.is_empty() {
             for (i, s) in center.iter().enumerate() {
                 wy += FONT_WY;
-                text.push((((extra_center_space / 2) + PAD, wy), FONT_WY, s.clone()));
+                text.push((
+                    ((extra_center_space / 2) + PAD, wy + FONT_ADJUST_Y),
+                    FONT_SIZE,
+                    FONT_WX * (s.len() as i32),
+                    s.clone(),
+                ));
                 if i != (center.len() - 1) {
                     wy += PAD;
                 }
@@ -101,7 +110,7 @@ impl<P: PtrTrait> RenderNode<P> {
         if sinks.iter().any(|(_, s)| !s.is_empty()) {
             wy += INPUT_FONT_WY;
         }
-        let individual_spaces = if sources.len() < 2 {
+        let separation = if sources.len() < 2 {
             extra_sink_space / 2
         } else {
             extra_sink_space
@@ -111,18 +120,26 @@ impl<P: PtrTrait> RenderNode<P> {
         let mut x_progression = PAD;
         for (p, s) in sinks {
             if sinks.len() == 1 {
-                x_progression += individual_spaces;
+                x_progression += separation;
             }
             if !s.is_empty() {
-                text.push(((x_progression, wy + PAD), INPUT_FONT_WY, (*s).clone()));
+                text.push((
+                    (x_progression, wy + INPUT_FONT_ADJUST_Y),
+                    INPUT_FONT_SIZE,
+                    INPUT_FONT_WX * (s.len() as i32),
+                    (*s).clone(),
+                ));
             }
-            let this_wx = (INPUT_FONT_WX * (s.len() as i32)) + PAD;
+            let this_wx = INPUT_FONT_WX * (s.len() as i32);
             let center_x = x_progression + (this_wx / 2);
-            output_points.push(((center_x + BEZIER_OFFSET, wy), *p));
-            x_progression += this_wx + individual_spaces;
+            output_points.push(((center_x, wy), *p));
+            x_progression += this_wx + separation;
         }
 
-        wx += PAD;
+        if empty_node {
+            wy += PAD;
+        }
+        wx += 2 * PAD;
 
         let rect = (0, 0, wx, wy);
         rects.push(rect);
