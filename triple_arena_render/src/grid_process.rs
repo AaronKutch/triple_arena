@@ -1,11 +1,10 @@
 #![allow(clippy::needless_range_loop)]
 
-use triple_arena::prelude::*;
+use std::cmp::Ordering;
 
-use crate::*;
-
+/// For different node states used by algorithms
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum VisitState {
+pub enum VisitState {
     Initial,
     Unelided,
     RootReachable,
@@ -16,9 +15,14 @@ pub(crate) enum VisitState {
     DFSExplored1,
     OnStack2,
     DFSExplored2,
+    OnStack3,
+    DFSExplored3,
 }
 
+use triple_arena::{Arena, Ptr, PtrTrait};
 use VisitState::*;
+
+use crate::{render_grid::RenderGrid, DebugNodeTrait, RenderError};
 
 impl Default for VisitState {
     fn default() -> Self {
@@ -29,7 +33,7 @@ impl Default for VisitState {
 /// Algorithmic node. Contains some additional information alongside the
 /// `DebugNode` information needed for fast processing
 #[derive(Debug)]
-pub(crate) struct ANode<P: PtrTrait> {
+pub struct ANode<P: PtrTrait> {
     // the additional `usize` enables pointing to a specific output in the source node
     pub sources: Vec<(Ptr<P>, String, Option<usize>)>,
     pub center: Vec<String>,
@@ -40,7 +44,8 @@ pub(crate) struct ANode<P: PtrTrait> {
     /// Used for grid positioning
     pub grid_position: (usize, usize),
     pub lineage_num: Option<usize>,
-    pub independence_num: Option<usize>,
+    pub indep_num: Option<usize>,
+    pub second_order_num: Option<usize>,
 }
 
 impl<P: PtrTrait> Default for ANode<P> {
@@ -53,12 +58,14 @@ impl<P: PtrTrait> Default for ANode<P> {
             sort_position: 0,
             grid_position: (0, 0),
             lineage_num: None,
-            independence_num: None,
+            indep_num: None,
+            second_order_num: None,
         }
     }
 }
 
-pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
+/// Processes an `Arena<P, T>` into a `RenderGrid<P>`
+pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     arena: &Arena<P, T>,
     error_on_invalid_ptr: bool,
 ) -> Result<RenderGrid<P>, RenderError<P>> {
@@ -432,16 +439,16 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     // DFS through relations (sinks and sources). The `bool` in `path`
     // differentiates between searching sources and sinks
     let mut path: Vec<(bool, usize, Ptr<P>)> = vec![];
-    let mut independence_num = 0;
+    let mut indep_num = 0;
     for lineage in &lineages {
         let node = lineage[0];
-        if dag[node].independence_num.is_none() {
+        if dag[node].indep_num.is_none() {
             if dag[node].state == DFSExplored1 {
                 path.push((false, 0, node));
                 loop {
                     let current = path.last().unwrap().2;
                     dag[current].state = OnStack2;
-                    dag[current].independence_num = Some(independence_num);
+                    dag[current].indep_num = Some(indep_num);
                     let relation = if path.last().unwrap().0 {
                         dag[current]
                             .sinks
@@ -493,17 +500,84 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
             } else {
                 assert_eq!(dag[node].state, DFSExplored2);
             }
-            independence_num += 1;
+            indep_num += 1;
         }
-        // else the lineage is connected
+        // else the lineage is connected to a known set
     }
+
+    let mut leaves = vec![];
+    for p in &ptrs {
+        if dag[p].sinks.is_empty() {
+            leaves.push(*p);
+        }
+    }
+
+    // For reducing line crossings further.
+    let mut path: Vec<(usize, Ptr<P>, usize)> = vec![];
+    for (i, root) in roots.iter().enumerate() {
+        let node = *root;
+        if dag[node].state == DFSExplored2 {
+            path.push((0, node, i));
+            loop {
+                let current = path.last().unwrap().1;
+                dag[current].state = OnStack3;
+                dag[current].second_order_num = Some(path.last().unwrap().2);
+                match dag[current]
+                    .sinks
+                    .get(path.last().unwrap().0)
+                    .map(|(p0, ..)| p0)
+                {
+                    Some(p0) => {
+                        let p0 = *p0;
+                        match dag[p0].state {
+                            DFSExplored2 => {
+                                // explore further
+                                let prev_order = path.last().unwrap().2;
+                                path.push((0, p0, prev_order));
+                            }
+                            // `DFSExplored3` needs to be included for multigraph conditions
+                            OnStack3 | DFSExplored3 => {
+                                // cross edge, check next
+                                let len = path.len();
+                                path[len - 1].0 += 1;
+                                path[len - 1].2 += 1;
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    None => {
+                        // no more relations, backtrack
+                        dag[current].state = DFSExplored3;
+                        path.pop().unwrap();
+                        if path.is_empty() {
+                            break
+                        }
+                        // check next dependency
+                        let len = path.len();
+                        path[len - 1].0 += 1;
+                        path[len - 1].2 += 1;
+                    }
+                }
+            }
+        } else {
+            assert_eq!(dag[node].state, DFSExplored3);
+        }
+        indep_num += 1;
+    }
+
     // stable sort horizontally so that the lineage numbers are monotonically
-    // increasing
+    // increasing, followed in priority by the second_sort_num
     lineages.sort_by(|lhs, rhs| {
-        dag[lhs[0]]
-            .independence_num
-            .unwrap()
-            .cmp(&dag[rhs[0]].independence_num.unwrap())
+        let lhs0 = dag[lhs[0]].indep_num.unwrap();
+        let rhs0 = dag[rhs[0]].indep_num.unwrap();
+        match lhs0.cmp(&rhs0) {
+            Ordering::Equal => {
+                let lhs1 = dag[lhs[0]].second_order_num.unwrap();
+                let rhs1 = dag[rhs[0]].second_order_num.unwrap();
+                lhs1.cmp(&rhs1)
+            }
+            c => c,
+        }
     });
 
     // Finally, make a grid such that any dependency must flow one way. The second
@@ -542,6 +616,11 @@ pub(crate) fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
             break
         }
     }
+
+    // TODO we really need the square grid in `(Ptr<P>, usize)` form in this
+    // function in order to exploit empty space. We should use a "rubber band"
+    // based method to minimize more crossings and make large graphs more
+    // compact.
 
     Ok(RenderGrid::new(dag, grid))
 }

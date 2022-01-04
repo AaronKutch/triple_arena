@@ -1,13 +1,14 @@
 #![allow(clippy::type_complexity)]
 
-use std::{cmp::max, iter::empty};
+use std::cmp::max;
 
 use triple_arena::{Ptr, PtrTrait};
 
 use crate::*;
 
+/// Graphics for a single node
 #[derive(Debug, Clone)]
-pub(crate) struct RenderNode<P: PtrTrait> {
+pub struct RenderNode<P: PtrTrait> {
     /// Pointer to node this is representing
     pub ptr: Ptr<P>,
     /// Rectangles in (x position, y position, x width, y width)
@@ -25,6 +26,8 @@ pub(crate) struct RenderNode<P: PtrTrait> {
 }
 
 impl<P: PtrTrait> RenderNode<P> {
+    /// Generates a `RenderNode` from the parts of a `DebugNode`. `ptr` is the
+    /// node itself.
     pub fn new(
         sources: &[(Ptr<P>, String, Option<usize>)],
         center: &[String],
@@ -54,7 +57,7 @@ impl<P: PtrTrait> RenderNode<P> {
 
         let empty_node = wx == PAD;
 
-        let mut wy = if empty_node {PAD} else {0};
+        let mut wy = if empty_node { PAD } else { 0 };
 
         // generate inputs
         // both the len == 0 and len == 1 cases have to be specially handled

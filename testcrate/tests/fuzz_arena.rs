@@ -4,7 +4,7 @@ use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::{ptr_trait_struct_with_gen, Arena, Ptr};
+use triple_arena::{ptr_trait_struct, ptr_trait_struct_with_gen, Arena, Ptr};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
@@ -13,6 +13,8 @@ macro_rules! next_inx {
 }
 
 ptr_trait_struct_with_gen!(P0);
+// just make sure that the other kind compiles
+ptr_trait_struct!(P1);
 
 #[test]
 fn fuzz() {
@@ -37,7 +39,7 @@ fn fuzz() {
     let mut b1: HashMap<u64, Ptr<P0>> = HashMap::new();
     let mut list1: Vec<u64> = vec![];
 
-    let mut op_inx = 1000;
+    let mut op_inx;
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut iters999 = 0;
@@ -53,7 +55,7 @@ fn fuzz() {
         assert_eq!(a.len(), b.len());
         let len = list.len();
         assert_eq!(a.is_empty(), b.is_empty());
-        let check = Arena::_check_arena_invariants(&a).unwrap();
+        Arena::_check_arena_invariants(&a).unwrap();
         op_inx = rng.next_u32() % 1000;
         // I am only using inclusive ranges because exclusive ones are not stable as of
         // writing
@@ -108,7 +110,6 @@ fn fuzz() {
                     assert!(a.remove(invalid).is_none());
                 }
             }
-            // TODO test failure cases
             400..=799 => {
                 // contains
                 if len != 0 {

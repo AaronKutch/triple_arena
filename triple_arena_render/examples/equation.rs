@@ -1,13 +1,3 @@
-# Triple Arena Rendering
-
-A crate enabling trait-based visualization of graphs in `triple_arena::Arena<P, T>`s.
-
-There is still work to do with better compactness of large graphs, but the SVG rendering is mostly
-complete.
-
-In the future, we could have more rendering styles and backends.
-
-```rust
 use triple_arena::prelude::*;
 use triple_arena_render::{render_to_svg_file, DebugNode, DebugNodeTrait};
 
@@ -90,10 +80,7 @@ fn main() {
     render_to_svg_file(
         &a,
         false,
-        std::path::PathBuf::from("./example.svg".to_owned()),
+        std::path::PathBuf::from("./triple_arena_render/example.svg".to_owned()),
     )
     .unwrap();
 }
-```
-
-![Alt text](example.svg)
