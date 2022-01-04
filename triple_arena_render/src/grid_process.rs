@@ -514,16 +514,16 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
 
     // For reducing line crossings further.
     let mut path: Vec<(usize, Ptr<P>, usize)> = vec![];
-    for (leaf_i, leaf) in leaves.iter().enumerate() {
-        let node = *leaf;
+    for (i, root) in roots.iter().enumerate() {
+        let node = *root;
         if dag[node].state == DFSExplored2 {
-            path.push((0, node, leaf_i));
+            path.push((0, node, i));
             loop {
                 let current = path.last().unwrap().1;
                 dag[current].state = OnStack3;
                 dag[current].second_order_num = Some(path.last().unwrap().2);
                 match dag[current]
-                    .sources
+                    .sinks
                     .get(path.last().unwrap().0)
                     .map(|(p0, ..)| p0)
                 {
