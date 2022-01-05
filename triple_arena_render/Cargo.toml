@@ -1,6 +1,6 @@
 [package]
 name = "triple_arena_render"
-version = "0.3.1" # note: make equal to `triple_arena` version
+version = "0.3.1"
 edition = "2021"
 authors = ["Aaron Kutch <aaronkutch@att.net>"]
 license = "MIT OR Apache-2.0"
