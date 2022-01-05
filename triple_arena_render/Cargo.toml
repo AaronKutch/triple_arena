@@ -1,6 +1,6 @@
 [package]
 name = "triple_arena_render"
-version = "0.3.1" # note: make equal to `triple_arena` version
+version = "0.3.2"
 edition = "2021"
 authors = ["Aaron Kutch <aaronkutch@att.net>"]
 license = "MIT OR Apache-2.0"
@@ -12,4 +12,4 @@ keywords = ["arena", "graph", "render", "visualize"]
 categories = ["rendering::data-formats", "graphics", "visualization"]
 
 [dependencies]
-triple_arena = { path = "../triple_arena", version = "0.3.0" }
+triple_arena = { path = "../triple_arena", version = "0.3.1" }
