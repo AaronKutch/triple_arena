@@ -51,7 +51,6 @@ impl<P: PtrTrait> DebugNodeTrait<P> for MyNode<P> {
                         .enumerate()
                         .map(|(i, p)| (*p, format!("in{}", i)))
                         .collect(),
-                    // Display a negative sign
                     center: vec!["+".to_owned()],
                     sinks: vec![],
                 }
