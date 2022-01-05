@@ -513,17 +513,20 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     }
 
     // For reducing line crossings further.
-    let mut path: Vec<(usize, Ptr<P>, usize)> = vec![];
-    for (i, root) in roots.iter().enumerate() {
-        let node = *root;
+    let mut path: Vec<(usize, Ptr<P>)> = vec![];
+    let mut order_num = 0;
+    for leaf in &leaves {
+        let node = *leaf;
         if dag[node].state == DFSExplored2 {
-            path.push((0, node, i));
+            path.push((0, node));
             loop {
                 let current = path.last().unwrap().1;
                 dag[current].state = OnStack3;
-                dag[current].second_order_num = Some(path.last().unwrap().2);
+                if dag[current].second_order_num.is_none() {
+                    dag[current].second_order_num = Some(order_num);
+                }
                 match dag[current]
-                    .sinks
+                    .sources
                     .get(path.last().unwrap().0)
                     .map(|(p0, ..)| p0)
                 {
@@ -532,21 +535,20 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                         match dag[p0].state {
                             DFSExplored2 => {
                                 // explore further
-                                let prev_order = path.last().unwrap().2;
-                                path.push((0, p0, prev_order));
+                                path.push((0, p0));
                             }
                             // `DFSExplored3` needs to be included for multigraph conditions
                             OnStack3 | DFSExplored3 => {
                                 // cross edge, check next
                                 let len = path.len();
                                 path[len - 1].0 += 1;
-                                path[len - 1].2 += 1;
                             }
                             _ => unreachable!(),
                         }
                     }
                     None => {
                         // no more relations, backtrack
+                        order_num += 1;
                         dag[current].state = DFSExplored3;
                         path.pop().unwrap();
                         if path.is_empty() {
@@ -555,14 +557,12 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                         // check next dependency
                         let len = path.len();
                         path[len - 1].0 += 1;
-                        path[len - 1].2 += 1;
                     }
                 }
             }
         } else {
             assert_eq!(dag[node].state, DFSExplored3);
         }
-        indep_num += 1;
     }
 
     // stable sort horizontally so that the lineage numbers are monotonically
@@ -572,9 +572,9 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
         let rhs0 = dag[rhs[0]].indep_num.unwrap();
         match lhs0.cmp(&rhs0) {
             Ordering::Equal => {
-                let lhs1 = dag[lhs[0]].second_order_num.unwrap();
-                let rhs1 = dag[rhs[0]].second_order_num.unwrap();
-                lhs1.cmp(&rhs1)
+                let lhs0 = dag[lhs[0]].second_order_num.unwrap();
+                let rhs0 = dag[rhs[0]].second_order_num.unwrap();
+                lhs0.cmp(&rhs0)
             }
             c => c,
         }
