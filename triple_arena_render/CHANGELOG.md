@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.0] - TODO
+
+### Changes
+- `DebugNode` itself now implements `DebugNodeTrait`
+
 ## [0.3.2] - 2022-01-05
 
 ### Changes
