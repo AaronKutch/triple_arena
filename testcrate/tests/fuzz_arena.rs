@@ -80,11 +80,16 @@ fn fuzz() {
                 // try_insert_with
                 if a.len() < a.capacity() {
                     let t = new_t();
-                    let ptr = if let Ok(ptr) = a.try_insert_with(|| t) {
+                    let mut create_ptr = None;
+                    let ptr = if let Ok(ptr) = a.try_insert_with(|p| {
+                        create_ptr = Some(p);
+                        t
+                    }) {
                         ptr
                     } else {
                         panic!()
                     };
+                    assert_eq!(ptr, create_ptr.unwrap());
                     b.insert(t, ptr);
                     list.push(t);
                 } else {
@@ -93,10 +98,22 @@ fn fuzz() {
                     assert!(a.try_insert(create()) == Err(create()));
                 }
             }
-            100..=199 => {
+            100..=149 => {
                 // insert
                 let t = new_t();
                 let ptr = a.insert(t);
+                b.insert(t, ptr);
+                list.push(t);
+            }
+            150..=199 => {
+                // insert_with
+                let t = new_t();
+                let mut create_ptr = None;
+                let ptr = a.insert_with(|p| {
+                    create_ptr = Some(p);
+                    t
+                });
+                assert_eq!(ptr, create_ptr.unwrap());
                 b.insert(t, ptr);
                 list.push(t);
             }
@@ -252,6 +269,7 @@ fn fuzz() {
     assert_eq!(a.gen_nz(), Some(core::num::NonZeroU64::new(44392).unwrap()));
 }
 
+// for testing `clone` and `clone_from` which interact between multiple arenas
 #[test]
 fn multi_arena() {
     fn inner(
