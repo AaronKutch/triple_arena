@@ -8,6 +8,7 @@ mod ptr;
 mod traits;
 pub(crate) use entry::InternalEntry;
 pub use ptr::{Ptr, PtrTrait};
+pub use traits::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
 
 extern crate alloc;
 use alloc::vec::Vec;

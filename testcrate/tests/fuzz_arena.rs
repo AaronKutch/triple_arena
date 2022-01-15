@@ -157,7 +157,37 @@ fn fuzz() {
                     assert!(a.get_mut(invalid).is_none())
                 }
             }
-            900..=949 => {
+            900..=909 => {
+                // ptrs
+                let mut n = 0;
+                for ptr in a.ptrs() {
+                    assert_eq!(ptr, b[&a[ptr]]);
+                    n += 1;
+                }
+                assert_eq!(n, list.len());
+            }
+            910..=919 => {
+                // vals
+                let mut n = 0;
+                for t in a.vals() {
+                    let p = b[t];
+                    assert_eq!(a[p], *t);
+                    n += 1;
+                }
+                assert_eq!(n, list.len());
+            }
+            920..=929 => {
+                // vals_mut
+                let mut n = 0;
+                let tmp: Vec<u64> = a.vals_mut().map(|t| *t).collect();
+                for t in tmp {
+                    let p = b[&t];
+                    assert_eq!(a[p], t);
+                    n += 1;
+                }
+                assert_eq!(n, list.len());
+            }
+            930..=939 => {
                 // iter
                 let mut n = 0;
                 for (ptr, t) in a.iter() {
@@ -166,7 +196,7 @@ fn fuzz() {
                 }
                 assert_eq!(n, list.len());
             }
-            950..=993 => {
+            940..=993 => {
                 // iter_mut
                 let mut n = 0;
                 for (ptr, t) in a.iter_mut() {
@@ -232,7 +262,7 @@ fn fuzz() {
                 }
             }
             996 => {
-                // total_drain
+                // capacity_drain via the `IntoIter` impl
                 let a_clone = a.clone();
                 for (ptr, t) in a_clone {
                     assert_eq!(b[&t], ptr);
