@@ -1,9 +1,15 @@
 use core::{fmt, hash::Hash, num::NonZeroU64};
 
-/// Note: The `PartialEq` implementation is used for generation value
-/// comparison. When implementing this trait manually, `#[inline]` should be
-/// applied to all these functions.
-pub trait PtrTrait: fmt::Debug + Hash + Clone + Copy + PartialEq + Eq + PartialOrd + Ord {
+/// Most users should use [ptr_trait_struct_with_gen] or [ptr_trait_struct] for
+/// generating structs with this trait automatically implemented for them.
+///
+/// Notes: This trait also has many bounds on it, so that users do not regularly
+/// encounter friction with using `Ptr`s in data structures. The `PartialEq`
+/// implementation is used for generation value comparison. When implementing
+/// this trait manually, `#[inline]` should be applied to all these functions.
+pub trait PtrTrait:
+    fmt::Debug + Hash + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Send + Sync
+{
     /// Used by the Debug implementation of `Ptr<P>`
     fn ptr_debug_str() -> &'static str;
 

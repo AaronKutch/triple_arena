@@ -9,8 +9,33 @@ use InternalEntry::*;
 
 use crate::{Arena, InternalEntry, Ptr, PtrTrait};
 
+/// All the iterators here can return values in arbitrary order
 impl<P: PtrTrait, T> Arena<P, T> {
-    /// Immutable reference iteration with `(Ptr<P>, &T)` tuples
+    /// Iteration over all valid `Ptr<P>` in the arena
+    pub fn ptrs(&self) -> Ptrs<P, T> {
+        Ptrs {
+            ptr: 0,
+            iter: self.m.iter(),
+        }
+    }
+
+    /// Iteration over `&T`
+    pub fn vals(&self) -> Vals<P, T> {
+        Vals {
+            ptr: 0,
+            iter: self.m.iter(),
+        }
+    }
+
+    /// Mutable iteration over `&mut T`
+    pub fn vals_mut(&mut self) -> ValsMut<P, T> {
+        ValsMut {
+            ptr: 0,
+            iter_mut: self.m.iter_mut(),
+        }
+    }
+
+    /// Iteration over `(Ptr<P>, &T)` tuples
     pub fn iter(&self) -> Iter<P, T> {
         Iter {
             ptr: 0,
@@ -18,7 +43,7 @@ impl<P: PtrTrait, T> Arena<P, T> {
         }
     }
 
-    /// Mutable reference iteration with `(Ptr<P>, &mut T)` tuples
+    /// Mutable iteration over `(Ptr<P>, &mut T)` tuples
     pub fn iter_mut(&mut self) -> IterMut<P, T> {
         IterMut {
             ptr: 0,
@@ -26,7 +51,7 @@ impl<P: PtrTrait, T> Arena<P, T> {
         }
     }
 
-    /// By-value iteration with `(Ptr<P>, T)` tuples. Consumes all `T` in
+    /// By-value iteration over `(Ptr<P>, T)` tuples. Consumes all `T` in
     /// `self`, but retains capacity.
     ///
     /// Note: When the `Drain` struct is dropped, any remaining iterations will
@@ -52,8 +77,8 @@ impl<P: PtrTrait, T> Arena<P, T> {
 
     /// By-value iteration with `(Ptr<P>, T)` tuples. Consumes all `T` and
     /// capacity.
-    pub fn total_drain(self) -> TotalDrain<P, T> {
-        TotalDrain {
+    pub fn capacity_drain(self) -> CapacityDrain<P, T> {
+        CapacityDrain {
             ptr: 0,
             arena: self,
         }
@@ -87,6 +112,68 @@ impl<P: PtrTrait, T, B: Borrow<Ptr<P>>> IndexMut<B> for Arena<P, T> {
 // would otherwise be difficult to implement safely. There are redundant
 // counters but they should be optimized away.
 
+/// An iterator over the valid `Ptr<P>`s of an `Arena`
+pub struct Ptrs<'a, P: PtrTrait, T> {
+    ptr: usize,
+    iter: slice::Iter<'a, InternalEntry<P, T>>,
+}
+
+impl<'a, P: PtrTrait, T> Iterator for Ptrs<'a, P, T> {
+    type Item = Ptr<P>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(next) = self.iter.next() {
+            let inx = self.ptr;
+            self.ptr += 1;
+            if let Allocated(p, _) = next {
+                return Some(Ptr::from_raw(inx, PtrTrait::get(p)))
+            }
+        }
+        None
+    }
+}
+
+/// An iterator over `&T` in an `Arena`
+pub struct Vals<'a, P: PtrTrait, T> {
+    ptr: usize,
+    iter: slice::Iter<'a, InternalEntry<P, T>>,
+}
+
+impl<'a, P: PtrTrait, T> Iterator for Vals<'a, P, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(next) = self.iter.next() {
+            self.ptr += 1;
+            if let Allocated(_, t) = next {
+                return Some(t)
+            }
+        }
+        None
+    }
+}
+
+/// A mutable iterator over `&mut T` in an `Arena`
+pub struct ValsMut<'a, P: PtrTrait, T> {
+    ptr: usize,
+    iter_mut: slice::IterMut<'a, InternalEntry<P, T>>,
+}
+
+impl<'a, P: PtrTrait, T> Iterator for ValsMut<'a, P, T> {
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(next) = self.iter_mut.next() {
+            self.ptr += 1;
+            if let Allocated(_, t) = next {
+                return Some(t)
+            }
+        }
+        None
+    }
+}
+
+/// An iterator over `(Ptr<P>, &T)` in an `Arena`
 pub struct Iter<'a, P: PtrTrait, T> {
     ptr: usize,
     iter: slice::Iter<'a, InternalEntry<P, T>>,
@@ -116,6 +203,7 @@ impl<'a, P: PtrTrait, T> IntoIterator for &'a Arena<P, T> {
     }
 }
 
+/// A mutable iterator over `(Ptr<P>, &mut T)` in an `Arena`
 pub struct IterMut<'a, P: PtrTrait, T> {
     ptr: usize,
     iter_mut: slice::IterMut<'a, InternalEntry<P, T>>,
@@ -146,6 +234,7 @@ impl<'a, P: PtrTrait, T> IntoIterator for &'a mut Arena<P, T> {
     }
 }
 
+/// A draining iterator over `(Ptr<P>, T)` in an `Arena`
 pub struct Drain<'a, P: PtrTrait, T> {
     ptr: usize,
     arena: &'a mut Arena<P, T>,
@@ -174,12 +263,13 @@ impl<'a, P: PtrTrait, T> Iterator for Drain<'a, P, T> {
     }
 }
 
-pub struct TotalDrain<P: PtrTrait, T> {
+/// A capacity draining iterator over `(Ptr<P>, T)` in an `Arena`
+pub struct CapacityDrain<P: PtrTrait, T> {
     ptr: usize,
     arena: Arena<P, T>,
 }
 
-impl<T, P: PtrTrait> Iterator for TotalDrain<P, T> {
+impl<T, P: PtrTrait> Iterator for CapacityDrain<P, T> {
     type Item = (Ptr<P>, T);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -198,11 +288,11 @@ impl<T, P: PtrTrait> Iterator for TotalDrain<P, T> {
 }
 
 impl<P: PtrTrait, T> IntoIterator for Arena<P, T> {
-    type IntoIter = TotalDrain<P, T>;
+    type IntoIter = CapacityDrain<P, T>;
     type Item = (Ptr<P>, T);
 
     fn into_iter(self) -> Self::IntoIter {
-        self.total_drain()
+        self.capacity_drain()
     }
 }
 

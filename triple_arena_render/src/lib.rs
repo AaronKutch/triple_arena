@@ -95,6 +95,16 @@ pub trait DebugNodeTrait<P: PtrTrait> {
     fn debug_node(this: &Self) -> DebugNode<P>;
 }
 
+impl<P: PtrTrait> DebugNodeTrait<P> for DebugNode<P> {
+    /// Useful for cases where a graph is in some structure that is not an
+    /// `Arena`, but we derive an `Arena` from that structure and decide we
+    /// should just place `DebugNode`s in that arena instead of needing to
+    /// create a single use struct.
+    fn debug_node(this: &Self) -> DebugNode<P> {
+        this.clone()
+    }
+}
+
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum RenderError<P: PtrTrait> {

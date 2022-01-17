@@ -8,6 +8,7 @@ mod ptr;
 mod traits;
 pub(crate) use entry::InternalEntry;
 pub use ptr::{Ptr, PtrTrait};
+pub use traits::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -350,17 +351,19 @@ impl<P: PtrTrait, T> Arena<P, T> {
     }
 
     /// Tries to insert the `T` returned by `create` into the arena without
-    /// changing its capacity.
+    /// changing its capacity. `create` is given the the same `Ptr` that is
+    /// returned for referencing the `T` again.
     ///
     /// # Errors
     ///
     /// Does not run `create` and returns ownership if there are no remaining
     /// unallocated entries in the arena.
-    pub fn try_insert_with<F: FnOnce() -> T>(&mut self, create: F) -> Result<Ptr<P>, F> {
+    pub fn try_insert_with<F: FnOnce(Ptr<P>) -> T>(&mut self, create: F) -> Result<Ptr<P>, F> {
         if let Some(inx) = self.freelist_root {
-            self.unwrap_replace_free(inx, (self.gen_p(), create()));
+            let ptr = Ptr::from_raw(inx, self.gen_nz());
+            self.unwrap_replace_free(inx, (self.gen_p(), create(ptr)));
             self.len += 1;
-            Ok(Ptr::from_raw(inx, self.gen_nz()))
+            Ok(ptr)
         } else {
             Err(create)
         }
@@ -386,6 +389,31 @@ impl<P: PtrTrait, T> Arena<P, T> {
                 }
             }
         }
+    }
+
+    /// Inserts the `T` returned by `create` into the arena and returns a `Ptr`
+    /// to it. `create` is given the the same `Ptr` that is returned, which is
+    /// useful for initialization of immutable structures that need to reference
+    /// themselves. This function allocates if capacity in the arena runs out.
+    pub fn insert_with<F: FnOnce(Ptr<P>) -> T>(&mut self, create: F) -> Ptr<P> {
+        // can't use `try_insert_with` analogously like `insert` uses `try_insert`
+        // because `create` is `FnOnce`
+        let inx = if let Some(inx) = self.freelist_root {
+            inx
+        } else {
+            // double the allocation size
+            let mut additional = self.m.len();
+            if additional == 0 {
+                // need at least one
+                additional = 1;
+            }
+            self.reserve(additional);
+            self.freelist_root.unwrap()
+        };
+        let ptr = Ptr::from_raw(inx, self.gen_nz());
+        self.unwrap_replace_free(inx, (self.gen_p(), create(ptr)));
+        self.len += 1;
+        ptr
     }
 
     /// Returns if `p` is a valid pointer
