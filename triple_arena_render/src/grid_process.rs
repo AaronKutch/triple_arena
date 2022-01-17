@@ -86,7 +86,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     });
 
     let mut ptrs = vec![];
-    for (p, _) in &dag {
+    for p in dag.ptrs() {
         ptrs.push(p);
     }
 

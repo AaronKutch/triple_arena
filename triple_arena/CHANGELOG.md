@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.4.0] - TODO
+## [0.4.0] - 2022-01-17
 
 ### Changes
 - Added `Send` and `Sync` bounds to `PtrTrait`
