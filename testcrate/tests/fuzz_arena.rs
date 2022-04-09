@@ -127,7 +127,55 @@ fn fuzz() {
                     assert!(a.remove(invalid).is_none());
                 }
             }
-            400..=799 => {
+            400..=449 => {
+                // invalidate
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let ptr = b.remove(&t).unwrap();
+                    let new_ptr = a.invalidate(ptr).unwrap();
+                    b.insert(t, new_ptr);
+                    assert_eq!(t, a[new_ptr]);
+                } else {
+                    assert!(a.invalidate(invalid).is_none());
+                }
+            }
+            450..=499 => {
+                // replace_and_keep_gen
+                if len != 0 {
+                    let t0 = list.swap_remove(next_inx!(rng, len));
+                    let t1 = new_t();
+                    let same_ptr = b.remove(&t0).unwrap();
+                    assert_eq!(t0, a.replace_and_keep_gen(same_ptr, t1).unwrap());
+                    list.push(t1);
+                    b.insert(t1, same_ptr);
+                    assert_eq!(t1, a[same_ptr]);
+                } else {
+                    assert_eq!(
+                        a.replace_and_keep_gen(invalid, u64::MAX).unwrap_err(),
+                        u64::MAX
+                    );
+                }
+            }
+            500..=549 => {
+                // replace_and_update_gen
+                if len != 0 {
+                    let t0 = list.swap_remove(next_inx!(rng, len));
+                    let t1 = new_t();
+                    let old_ptr = b.remove(&t0).unwrap();
+                    let (new_ptr, output_t) = a.replace_and_update_gen(old_ptr, t1).unwrap();
+                    assert_eq!(t0, output_t);
+                    list.push(t1);
+                    b.insert(t1, new_ptr);
+                    assert_eq!(t1, a[new_ptr]);
+                    assert!(a.remove(old_ptr).is_none());
+                } else {
+                    assert_eq!(
+                        a.replace_and_update_gen(invalid, u64::MAX).unwrap_err(),
+                        u64::MAX
+                    );
+                }
+            }
+            550..=799 => {
                 // contains
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
@@ -279,7 +327,7 @@ fn fuzz() {
             }
             998 => {
                 // clear
-                a.clear_and_shrink();
+                a.clear();
                 list.clear();
                 b.clear();
             }
@@ -296,7 +344,7 @@ fn fuzz() {
     }
     assert_eq!(iters999, 1064);
     assert_eq!(max_len, 57);
-    assert_eq!(a.gen_nz(), Some(core::num::NonZeroU64::new(44392).unwrap()));
+    assert_eq!(a.gen_nz(), Some(core::num::NonZeroU64::new(68264).unwrap()));
 }
 
 // for testing `clone` and `clone_from` which interact between multiple arenas
@@ -312,7 +360,7 @@ fn multi_arena() {
         assert_eq!(b.len(), list.len());
         assert_eq!(a.len(), b.len());
         assert_eq!(a.is_empty(), b.is_empty());
-        Arena::_check_arena_invariants(&a).unwrap();
+        Arena::_check_arena_invariants(a).unwrap();
         let len = a.len();
         match rng.next_u32() % 1000 {
             0..=499 => {

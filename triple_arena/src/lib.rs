@@ -603,7 +603,7 @@ impl<P: PtrTrait, T> Arena<P, T> {
             // the last freelist node points to itself
             let last = self.m.len().wrapping_sub(1);
             *self.m.get_mut(last).unwrap() = Free(last);
-            self.freelist_root = Some(last);
+            self.freelist_root = Some(0);
         } else {
             self.freelist_root = None;
         }
