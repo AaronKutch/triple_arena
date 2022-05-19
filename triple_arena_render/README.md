@@ -30,39 +30,33 @@ impl<P: PtrTrait> DebugNodeTrait<P> for MyNode<P> {
         // but you can also use its `Default` implementation or
         // new` constructor
         match this {
-            Literal(x) => {
-                DebugNode {
-                    sources: vec![],
-                    // We choose in this example to display the
-                    // literal value by itself
-                    center: vec![format!("{}", x)],
-                    // We choose source-to-sink convention for our
-                    // tree, so `sink` will always be empty
-                    sinks: vec![],
-                }
-            }
-            Negation(p) => {
-                DebugNode {
-                    // Have a debug edge corresponding to the real
-                    // edge, but leave the source description empty
-                    sources: vec![(*p, String::new())],
-                    // Display a negative sign
-                    center: vec!["-".to_owned()],
-                    sinks: vec![],
-                }
-            }
-            Summation(v) => {
-                DebugNode {
-                    // List all the inputs and number them
-                    sources: v
-                        .iter()
-                        .enumerate()
-                        .map(|(i, p)| (*p, format!("in{}", i)))
-                        .collect(),
-                    center: vec!["+".to_owned()],
-                    sinks: vec![],
-                }
-            }
+            Literal(x) => DebugNode {
+                sources: vec![],
+                // We choose in this example to display the
+                // literal value by itself
+                center: vec![format!("{}", x)],
+                // We choose source-to-sink convention for our
+                // tree, so `sink` will always be empty
+                sinks: vec![],
+            },
+            Negation(p) => DebugNode {
+                // Have a debug edge corresponding to the real
+                // edge, but leave the source description empty
+                sources: vec![(*p, String::new())],
+                // Display a negative sign
+                center: vec!["-".to_owned()],
+                sinks: vec![],
+            },
+            Summation(v) => DebugNode {
+                // List all the inputs and number them
+                sources: v
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| (*p, format!("in{}", i)))
+                    .collect(),
+                center: vec!["+".to_owned()],
+                sinks: vec![],
+            },
         }
     }
 }
@@ -83,7 +77,9 @@ fn main() {
 
     let will_be_removed = a.insert(Literal(10));
 
-    let _sum = a.insert(Summation(vec![neg_lit42, inner_sum, will_be_removed]));
+    let _sum = a.insert(
+        Summation(vec![neg_lit42, inner_sum, will_be_removed])
+    );
 
     // example of an invalid pointer in a graph
     a.remove(will_be_removed).unwrap();
