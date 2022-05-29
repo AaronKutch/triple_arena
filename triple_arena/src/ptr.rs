@@ -7,8 +7,10 @@ use core::{fmt, hash::Hash, num::NonZeroU64};
 /// encounter friction with using `Ptr`s in data structures. The `PartialEq`
 /// implementation is used for generation value comparison. When implementing
 /// this trait manually, `#[inline]` should be applied to all these functions.
+/// `Default` should default to the always invalid generation of 1 if there is a
+/// generation value.
 pub trait PtrTrait:
-    fmt::Debug + Hash + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Send + Sync
+    Default + fmt::Debug + Hash + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Send + Sync
 {
     /// Used by the Debug implementation of `Ptr<P>`
     fn ptr_debug_str() -> &'static str;
@@ -81,6 +83,13 @@ macro_rules! ptr_trait_struct {
                     None
                 }
             }
+
+            impl core::default::Default for $struct_name {
+                #[inline]
+                fn default() -> Self {
+                    Self {}
+                }
+            }
         )*
     };
 }
@@ -141,6 +150,13 @@ macro_rules! ptr_trait_struct_with_gen {
                     Some(this._internal_value)
                 }
             }
+
+            impl core::default::Default for $struct_name {
+                #[inline]
+                fn default() -> Self {
+                    Self { _internal_value: core::num::NonZeroU64::new(1).unwrap() }
+                }
+            }
         )*
     };
 }
@@ -157,19 +173,6 @@ pub struct Ptr<P: PtrTrait> {
 }
 
 impl<P: PtrTrait> Ptr<P> {
-    #[inline]
-    pub(crate) fn from_raw(p: usize, gen: Option<NonZeroU64>) -> Self {
-        Ptr {
-            gen: PtrTrait::new(gen),
-            raw: p,
-        }
-    }
-
-    #[inline]
-    pub(crate) fn get_raw(self) -> usize {
-        self.raw
-    }
-
     /// Returns a new `Ptr<P>` with a generation value (if it exists) set to 1.
     /// Because the arena starts with generation 2, this is guaranteed invalid
     /// when generation counters are used. The raw index is also set to
@@ -177,6 +180,21 @@ impl<P: PtrTrait> Ptr<P> {
     #[inline]
     pub fn invalid() -> Self {
         Self::from_raw(usize::MAX, Some(NonZeroU64::new(1).unwrap()))
+    }
+
+    /// This can be useful when getting a unique id for every entry. Do not rely
+    /// on this if the pointer is invalidated after `get_raw` is used.
+    #[inline]
+    pub fn get_raw(self) -> usize {
+        self.raw
+    }
+
+    #[inline]
+    pub(crate) fn from_raw(p: usize, gen: Option<NonZeroU64>) -> Self {
+        Ptr {
+            gen: PtrTrait::new(gen),
+            raw: p,
+        }
     }
 
     /// Return the generation of `self` as a `P`
@@ -219,5 +237,12 @@ impl<P: PtrTrait> fmt::Debug for Ptr<P> {
 impl<P: PtrTrait> fmt::Display for Ptr<P> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
+    }
+}
+
+impl<P: PtrTrait> Default for Ptr<P> {
+    /// Defaults to `Self::invalid()`
+    fn default() -> Self {
+        Self::invalid()
     }
 }
