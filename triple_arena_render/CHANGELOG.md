@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.5.0] - 2022-05-31
+### Changes
+- `triple_arena_render` 0.5.0
+
 ## [0.4.0] - 2022-01-17
 
 ### Changes

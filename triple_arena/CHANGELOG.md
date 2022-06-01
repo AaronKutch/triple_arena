@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.5.0] - 2022-05-31
+### Additions
+- Added `Default` bounds and impls for `PtrTrait` and `Ptr<P>`
+
 ## [0.4.1] - 2022-04-09
 ### Fixes
 - Fixed that the `clear` function resulted in a broken freelist and could cause exponential capacity
