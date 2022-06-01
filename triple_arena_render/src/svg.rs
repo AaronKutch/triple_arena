@@ -1,6 +1,7 @@
 use std::{
-    fs::{self, OpenOptions},
-    io::Write,
+    fmt::Write,
+    fs::{self, File, OpenOptions},
+    io,
     path::PathBuf,
 };
 
@@ -37,23 +38,28 @@ pub(crate) fn gen_svg<P: PtrTrait>(rg: &RenderGrid<P>) -> String {
     // .0, tmp.0 .1);
 
     // background
-    s += &format!(
+    write!(
+        s,
         "<rect fill=\"#000\" x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"/>",
         rg.tot_wx, rg.tot_wy
-    );
+    )
+    .unwrap();
 
     // rectangles and outlines first
     for vert in &rg.grid {
         for node in (*vert).iter().flatten() {
             for rect in &node.rects {
-                s += &format!(
-                    "<rect fill=\"#{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/>\n",
+                writeln!(
+                    s,
+                    "<rect fill=\"#{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/>",
                     NODE_FILL, rect.0, rect.1, rect.2, rect.3
-                );
+                )
+                .unwrap();
                 // outline the rectangle
-                s += &format!(
+                writeln!(
+                    s,
                     "<polyline stroke=\"#0000\" stroke-width=\"0\" points=\"{},{} {},{} {},{} \
-                     {},{} {},{}\"  fill=\"#0000\"/>\n",
+                     {},{} {},{}\"  fill=\"#0000\"/>",
                     rect.0,
                     rect.1,
                     rect.0 + rect.2,
@@ -64,7 +70,8 @@ pub(crate) fn gen_svg<P: PtrTrait>(rg: &RenderGrid<P>) -> String {
                     rect.1 + rect.3,
                     rect.0,
                     rect.1,
-                );
+                )
+                .unwrap();
             }
         }
     }
@@ -79,9 +86,10 @@ pub(crate) fn gen_svg<P: PtrTrait>(rg: &RenderGrid<P>) -> String {
                     let color = COLORS[o_i % COLORS.len()];
                     let o = rg.grid[o_i][o_j].as_ref().unwrap().output_points[inx.unwrap_or(0)].0;
                     let p = NODE_PAD / 2;
-                    s += &format!(
+                    writeln!(
+                        s,
                         "<path stroke=\"#{}\" stroke-width=\"{}\" fill=\"#0000\" d=\"M {},{} C \
-                         {},{} {},{} {},{}\"/>\n",
+                         {},{} {},{} {},{}\"/>",
                         color,
                         RELATION_WIDTH,
                         o.0,
@@ -92,15 +100,20 @@ pub(crate) fn gen_svg<P: PtrTrait>(rg: &RenderGrid<P>) -> String {
                         i.1 - p,
                         i.0,
                         i.1
-                    );
-                    /*s += &format!(
+                    )
+                    .unwrap();
+                    /*write!(
+                        s,
                         "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"orange\"/>",
                         o.0, o.1, DEBUG_WIDTH
-                    );
-                    s += &format!(
+                    )
+                    .unwrap();
+                    write!(
+                        s,
                         "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"orange\"/>",
                         i.0, i.1, DEBUG_WIDTH
-                    );*/
+                    )
+                    .unwrap();*/
                 }
             } else {
                 continue
@@ -121,15 +134,19 @@ pub(crate) fn gen_svg<P: PtrTrait>(rg: &RenderGrid<P>) -> String {
                     .replace('\'', "&apos;")
                     .replace('<', "&lt;")
                     .replace('>', "&gt;");
-                s += &format!(
+                writeln!(
+                    s,
                     "<text fill=\"#{}\" font-size=\"{}\" font-family=\"{}\" x=\"{}\" y=\"{}\" \
-                     textLength=\"{}\">{}</text>\n",
+                     textLength=\"{}\">{}</text>",
                     TEXT_COLOR, size, FONT_FAMILY, tmp.0 .0, tmp.0 .1, tmp.2, final_text
-                );
-                /*s += &format!(
+                )
+                .unwrap();
+                /*write!(
+                    s,
                     "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"red\"/>",
                     tmp.0 .0, tmp.0 .1, DEBUG_WIDTH
-                );*/
+                )
+                .unwrap();*/
             }
         }
     }
@@ -173,13 +190,13 @@ pub fn render_to_svg_file<P: PtrTrait, T: DebugNodeTrait<P>>(
 ) -> Result<(), RenderError<P>> {
     let s = render_to_svg(arena, error_on_invalid_ptr)?;
     drop(fs::remove_file(&out_file));
-    OpenOptions::new()
+    let mut file = OpenOptions::new()
         .write(true)
         .append(true)
         .create(true)
         .open(out_file)
-        .map_err(|e| RenderError::IoError(e))?
-        .write_all(s.as_bytes())
         .map_err(|e| RenderError::IoError(e))?;
+    // avoid trait collision
+    <File as io::Write>::write_all(&mut file, s.as_bytes()).map_err(|e| RenderError::IoError(e))?;
     Ok(())
 }
