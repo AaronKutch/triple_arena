@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.0] - TODO
+## [0.5.0] - 2022-05-31
 ### Additions
 - Added `Default` bounds and impls for `PtrTrait` and `Ptr<P>`
 
