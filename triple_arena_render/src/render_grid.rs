@@ -29,7 +29,7 @@ impl<P: PtrTrait> RenderGrid<P> {
         // find maximum column and row widths, and cumulative positions
         let mut max_y_nodes = 0;
         for vert in &grid {
-            for slot in &*vert {
+            for slot in vert {
                 max_y_nodes = max(max_y_nodes, slot.1 + 1);
             }
         }
@@ -43,7 +43,7 @@ impl<P: PtrTrait> RenderGrid<P> {
             rg.grid.push(v);
         }
         for (x_i, vertical) in grid.iter().enumerate() {
-            for (ptr, pos) in &*vertical {
+            for (ptr, pos) in vertical {
                 let node = RenderNode::new(
                     &rg.dag[ptr].sources,
                     &rg.dag[ptr].center,

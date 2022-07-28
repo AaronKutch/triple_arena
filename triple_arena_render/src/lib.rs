@@ -8,7 +8,7 @@ use triple_arena::{Ptr, PtrTrait};
 /// Internal structs and functions for experimenting with new rendering backends
 pub mod internal {
     pub use crate::{
-        grid_process::{grid_process, ANode, VisitState},
+        grid_process::{grid_process, ANode},
         render_grid::RenderGrid,
         render_node::RenderNode,
     };

@@ -2,33 +2,9 @@
 
 use std::cmp::Ordering;
 
-/// For different node states used by algorithms
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VisitState {
-    Initial,
-    Unelided,
-    RootReachable,
-    Prepared,
-    OnStack0,
-    DFSExplored0,
-    OnStack1,
-    DFSExplored1,
-    OnStack2,
-    DFSExplored2,
-    OnStack3,
-    DFSExplored3,
-}
-
 use triple_arena::{Arena, Ptr, PtrTrait};
-use VisitState::*;
 
 use crate::{render_grid::RenderGrid, DebugNodeTrait, RenderError};
-
-impl Default for VisitState {
-    fn default() -> Self {
-        Initial
-    }
-}
 
 /// Algorithmic node. Contains some additional information alongside the
 /// `DebugNode` information needed for fast processing
@@ -38,7 +14,6 @@ pub struct ANode<P: PtrTrait> {
     pub sources: Vec<(Ptr<P>, String, Option<usize>)>,
     pub center: Vec<String>,
     pub sinks: Vec<(Ptr<P>, String)>,
-    pub state: VisitState,
     /// Used in initial topological sorting
     pub sort_position: usize,
     /// Used for grid positioning
@@ -46,6 +21,8 @@ pub struct ANode<P: PtrTrait> {
     pub lineage_num: Option<usize>,
     pub indep_num: Option<usize>,
     pub second_order_num: Option<usize>,
+    // visitation number
+    pub visit: u64,
 }
 
 impl<P: PtrTrait> Default for ANode<P> {
@@ -54,12 +31,12 @@ impl<P: PtrTrait> Default for ANode<P> {
             sources: vec![],
             center: vec![],
             sinks: vec![],
-            state: VisitState::default(),
             sort_position: 0,
             grid_position: (0, 0),
             lineage_num: None,
             indep_num: None,
             second_order_num: None,
+            visit: 0,
         }
     }
 }
@@ -69,6 +46,12 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     arena: &Arena<P, T>,
     error_on_invalid_ptr: bool,
 ) -> Result<RenderGrid<P>, RenderError<P>> {
+    let mut visit_counter = 0u64;
+    let mut next_visit = || {
+        let prev = visit_counter;
+        visit_counter = prev.checked_add(1).unwrap();
+        (prev, visit_counter)
+    };
     // this is not guaranteed to be a DAG yet but will become one
     let mut dag: Arena<P, ANode<P>> = Arena::new();
     dag.clone_from_with(arena, |_, t| {
@@ -92,8 +75,9 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
 
     // We need to unelide nonexistant sinks that have a corresponding source, and
     // vice versa. This also checks for invalid pointers.
+    let (prev_visit, this_visit) = next_visit();
     for p0 in &ptrs {
-        if dag[p0].state == Initial {
+        if dag[p0].visit == prev_visit {
             // check all sinks
             for i0 in 0..dag[p0].sinks.len() {
                 let p1 = dag[p0].sinks[i0].0;
@@ -125,9 +109,9 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                     return Err(RenderError::InvalidPtr(p1))
                 }
             }
-            dag[p0].state = Unelided;
+            dag[p0].visit = this_visit;
         } else {
-            assert_eq!(dag[p0].state, Unelided);
+            assert_eq!(dag[p0].visit, this_visit);
         }
     }
 
@@ -142,7 +126,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                     let p1_prime = dag.insert(ANode {
                         sources: vec![(p0, String::new(), Some(i0))],
                         center: vec![format!("{:?}(invalid)", p1)],
-                        state: Unelided,
+                        visit: this_visit,
                         ..Default::default()
                     });
                     dag[p0].sinks[i0].0 = p1_prime;
@@ -155,7 +139,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                     let p1_prime = dag.insert(ANode {
                         center: vec![format!("{:?}(invalid)", p1)],
                         sinks: vec![(p0, String::new())],
-                        state: Unelided,
+                        visit: this_visit,
                         ..Default::default()
                     });
                     dag[p0].sources[i0].0 = p1_prime;
@@ -175,28 +159,26 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
 
     // Some kinds of cycles will have no roots leading to them. Here, we find nodes
     // reachable from a root. DFS
+    let (unelided_visit, root_reachable_visit) = next_visit();
     let mut path: Vec<(usize, Ptr<P>)> = vec![];
     for root in &roots {
         let root = *root;
-        if dag[root].state == Unelided {
+        if dag[root].visit == unelided_visit {
             path.push((0, root));
             loop {
                 let current = path[path.len() - 1].1;
-                dag[current].state = RootReachable;
+                dag[current].visit = root_reachable_visit;
                 match dag[current].sinks.get(path[path.len() - 1].0) {
                     Some((p0, _)) => {
                         let p0 = *p0;
-                        match dag[p0].state {
-                            Unelided => {
-                                // explore further
-                                path.push((0, p0));
-                            }
-                            RootReachable => {
-                                // cross edge, check next
-                                let len = path.len();
-                                path[len - 1].0 += 1;
-                            }
-                            _ => unreachable!(),
+                        if dag[p0].visit == unelided_visit {
+                            // explore further
+                            path.push((0, p0));
+                        } else {
+                            assert_eq!(dag[p0].visit, root_reachable_visit);
+                            // cross edge, check next
+                            let len = path.len();
+                            path[len - 1].0 += 1;
                         }
                     }
                     None => {
@@ -221,82 +203,80 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     // check unreachable nodes
     let mut starts = roots.clone();
     for p in &ptrs {
-        if dag[p].state == Unelided {
+        if dag[p].visit == unelided_visit {
             starts.push(*p);
         } else {
-            assert_eq!(dag[p].state, RootReachable);
+            assert_eq!(dag[p].visit, root_reachable_visit);
         }
-        dag[p].state = Prepared;
+        dag[p].visit = root_reachable_visit;
     }
 
     // DFS for conversion to DAG
     // path from root, with the `usize` indicating which sink was followed
+    let (prev_visit, on_stack_visit) = next_visit();
+    let (_, dfs_explored_visit) = next_visit();
     let mut path: Vec<(usize, Ptr<P>)> = vec![];
     for start in &starts {
         let start = *start;
-        if dag[start].state == Prepared {
+        if dag[start].visit == prev_visit {
             path.push((0, start));
             loop {
                 let current = path[path.len() - 1].1;
                 // self-cycles are handled also if this is done first
-                dag[current].state = OnStack0;
+                dag[current].visit = on_stack_visit;
                 match dag[current].sinks.get(path[path.len() - 1].0) {
                     Some((p0, _)) => {
                         let p0 = *p0;
-                        match dag[p0].state {
-                            Prepared => {
-                                // explore further
-                                path.push((0, p0));
-                            }
-                            OnStack0 => {
-                                // cycle found, break cycle by repointing `current`'s sink
-                                // pointer to `p0_prime0` and repointing the corresponding
-                                // source of `p0` to `p0_prime1`
-                                let p0_prime0 = dag.insert(ANode {
-                                    sources: vec![(
-                                        current,
-                                        String::new(),
-                                        Some(path[path.len() - 1].0),
-                                    )],
-                                    center: vec![format!("{:?}", p0)],
-                                    state: DFSExplored0,
-                                    ..Default::default()
-                                });
-                                dag[current].sinks[path[path.len() - 1].0].0 = p0_prime0;
-                                // special case explore
-                                ptrs.push(p0_prime0);
+                        if dag[p0].visit == prev_visit {
+                            // explore further
+                            path.push((0, p0));
+                        } else if dag[p0].visit == on_stack_visit {
+                            // cycle found, break cycle by repointing `current`'s sink
+                            // pointer to `p0_prime0` and repointing the corresponding
+                            // source of `p0` to `p0_prime1`
+                            let p0_prime0 = dag.insert(ANode {
+                                sources: vec![(
+                                    current,
+                                    String::new(),
+                                    Some(path[path.len() - 1].0),
+                                )],
+                                center: vec![format!("{:?}", p0)],
+                                visit: dfs_explored_visit,
+                                ..Default::default()
+                            });
+                            dag[current].sinks[path[path.len() - 1].0].0 = p0_prime0;
+                            // special case explore
+                            ptrs.push(p0_prime0);
 
-                                let p0_prime1 = dag.insert(ANode {
-                                    center: vec![format!("{:?}", p0)],
-                                    sinks: vec![(p0, String::new())],
-                                    state: DFSExplored0,
-                                    ..Default::default()
-                                });
-                                // find the corresponding source
-                                for i1 in 0..dag[p0].sources.len() {
-                                    if dag[p0].sources[i1].0 == current {
-                                        dag[p0].sources[i1].0 = p0_prime1;
-                                        dag[p0].sources[i1].2 = Some(0);
-                                    }
+                            let p0_prime1 = dag.insert(ANode {
+                                center: vec![format!("{:?}", p0)],
+                                sinks: vec![(p0, String::new())],
+                                visit: dfs_explored_visit,
+                                ..Default::default()
+                            });
+                            // find the corresponding source
+                            for i1 in 0..dag[p0].sources.len() {
+                                if dag[p0].sources[i1].0 == current {
+                                    dag[p0].sources[i1].0 = p0_prime1;
+                                    dag[p0].sources[i1].2 = Some(0);
                                 }
-                                ptrs.push(p0_prime1);
-                                // new root
-                                roots.push(p0_prime1);
+                            }
+                            ptrs.push(p0_prime1);
+                            // new root
+                            roots.push(p0_prime1);
 
-                                // do nothing so this node is restarted in case
-                                // of more cycles in the same node
-                            }
-                            DFSExplored0 => {
-                                // cross edge, check next
-                                let len = path.len();
-                                path[len - 1].0 += 1;
-                            }
-                            _ => unreachable!(),
+                            // do nothing so this node is restarted in case
+                            // of more cycles in the same node
+                        } else {
+                            assert_eq!(dag[p0].visit, dfs_explored_visit);
+                            // cross edge, check next
+                            let len = path.len();
+                            path[len - 1].0 += 1;
                         }
                     }
                     None => {
                         // no more sinks, backtrack
-                        dag[current].state = DFSExplored0;
+                        dag[current].visit = dfs_explored_visit;
                         path.pop().unwrap();
                         if path.is_empty() {
                             break
@@ -308,13 +288,15 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                 }
             }
         } else {
-            assert_eq!(dag[start].state, DFSExplored0);
+            assert_eq!(dag[start].visit, dfs_explored_visit);
         }
     }
 
     // `dag` is now actually a DAG
 
     // topological sorting
+    let (prev_visit, on_stack_visit) = next_visit();
+    let (_, dfs_explored_visit) = next_visit();
     let mut sort_num = 0usize;
     // path from root, with the `usize` indicating which sink was followed
     let mut path: Vec<(usize, Ptr<P>)> = vec![];
@@ -322,11 +304,13 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     let original_root_len = roots.len();
     for root_i in 0..original_root_len {
         let root = roots[root_i];
-        if dag[root].state == DFSExplored0 {
+        if dag[root].visit == prev_visit {
             path.push((0, root));
             loop {
                 let current = path[path.len() - 1].1;
-                dag[current].state = OnStack1;
+                // reaching the `on_stack` state later should not be possible since this is a
+                // DAG
+                dag[current].visit = on_stack_visit;
                 let tmp = if let Some((tmp, _)) = dag[current].sinks.get(path[path.len() - 1].0) {
                     Some(*tmp)
                 } else {
@@ -334,22 +318,19 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                 };
                 match tmp {
                     Some(p0) => {
-                        match dag[p0].state {
-                            DFSExplored0 => {
-                                // explore further
-                                path.push((0, p0));
-                            }
-                            DFSExplored1 => {
-                                // cross edge, check next
-                                let len = path.len();
-                                path[len - 1].0 += 1;
-                            }
-                            _ => unreachable!(),
+                        if dag[p0].visit == prev_visit {
+                            // explore further
+                            path.push((0, p0));
+                        } else {
+                            assert_eq!(dag[p0].visit, dfs_explored_visit);
+                            // cross edge, check next
+                            let len = path.len();
+                            path[len - 1].0 += 1;
                         }
                     }
                     None => {
                         // no more sinks, backtrack
-                        dag[current].state = DFSExplored1;
+                        dag[current].visit = dfs_explored_visit;
                         dag[current].sort_position = sort_num;
                         sort_num += 1;
                         path.pop().unwrap();
@@ -363,7 +344,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                 }
             }
         } else {
-            assert!(dag[root].state == DFSExplored1);
+            assert_eq!(dag[root].visit, dfs_explored_visit);
         }
     }
 
@@ -438,16 +419,19 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     // Separate sets of lineages that have no relations between each other.
     // DFS through relations (sinks and sources). The `bool` in `path`
     // differentiates between searching sources and sinks
+    let (prev_visit, on_stack_visit) = next_visit();
+    let (_, dfs_explored_visit) = next_visit();
     let mut path: Vec<(bool, usize, Ptr<P>)> = vec![];
     let mut indep_num = 0;
     for lineage in &lineages {
         let node = lineage[0];
         if dag[node].indep_num.is_none() {
-            if dag[node].state == DFSExplored1 {
+            if dag[node].visit == prev_visit {
                 path.push((false, 0, node));
                 loop {
                     let current = path.last().unwrap().2;
-                    dag[current].state = OnStack2;
+                    // reaching this visit is possible because we are going through both sinks and sources
+                    dag[current].visit = on_stack_visit;
                     dag[current].indep_num = Some(indep_num);
                     let relation = if path.last().unwrap().0 {
                         dag[current]
@@ -463,24 +447,19 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                     match relation {
                         Some(p0) => {
                             let p0 = *p0;
-                            match dag[p0].state {
-                                DFSExplored1 => {
-                                    // explore further
-                                    path.push((false, 0, p0));
-                                }
-                                // `DFSExplored2` needs to be included for multigraph conditions
-                                OnStack2 | DFSExplored2 => {
-                                    // cross edge, check next
-                                    let len = path.len();
-                                    path[len - 1].1 += 1;
-                                }
-                                _ => unreachable!(),
+                            if dag[p0].visit == prev_visit {
+                                // explore further
+                                path.push((false, 0, p0));
+                            } else {
+                                // cross edge, check next
+                                let len = path.len();
+                                path[len - 1].1 += 1;
                             }
                         }
                         None => {
                             if path.last().unwrap().0 {
                                 // no more relations, backtrack
-                                dag[current].state = DFSExplored2;
+                                dag[current].visit = dfs_explored_visit;
                                 path.pop().unwrap();
                                 if path.is_empty() {
                                     break
@@ -498,7 +477,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                     }
                 }
             } else {
-                assert_eq!(dag[node].state, DFSExplored2);
+                assert_eq!(dag[node].visit, dfs_explored_visit);
             }
             indep_num += 1;
         }
@@ -513,15 +492,17 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     }
 
     // For reducing line crossings further.
+    let (prev_visit, on_stack_visit) = next_visit();
+    let (_, dfs_explored_visit) = next_visit();
     let mut path: Vec<(usize, Ptr<P>)> = vec![];
     let mut order_num = 0;
     for leaf in &leaves {
         let node = *leaf;
-        if dag[node].state == DFSExplored2 {
+        if dag[node].visit == prev_visit {
             path.push((0, node));
             loop {
                 let current = path.last().unwrap().1;
-                dag[current].state = OnStack3;
+                dag[current].visit = on_stack_visit;
                 if dag[current].second_order_num.is_none() {
                     dag[current].second_order_num = Some(order_num);
                 }
@@ -532,24 +513,20 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                 {
                     Some(p0) => {
                         let p0 = *p0;
-                        match dag[p0].state {
-                            DFSExplored2 => {
-                                // explore further
-                                path.push((0, p0));
-                            }
-                            // `DFSExplored3` needs to be included for multigraph conditions
-                            OnStack3 | DFSExplored3 => {
-                                // cross edge, check next
-                                let len = path.len();
-                                path[len - 1].0 += 1;
-                            }
-                            _ => unreachable!(),
+                        if dag[p0].visit == prev_visit {
+                            // explore further
+                            path.push((0, p0));
+                        } else {
+                            assert_eq!(dag[p0].visit, dfs_explored_visit);
+                            // cross edge, check next
+                            let len = path.len();
+                            path[len - 1].0 += 1;
                         }
                     }
                     None => {
                         // no more relations, backtrack
                         order_num += 1;
-                        dag[current].state = DFSExplored3;
+                        dag[current].visit = dfs_explored_visit;
                         path.pop().unwrap();
                         if path.is_empty() {
                             break
@@ -561,7 +538,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                 }
             }
         } else {
-            assert_eq!(dag[node].state, DFSExplored3);
+            assert_eq!(dag[node].visit, dfs_explored_visit);
         }
     }
 
@@ -606,7 +583,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                 }
                 if pos < slot.1 {
                     // There is room to slide down
-                    (*slot).1 = pos;
+                    slot.1 = pos;
                     dag[slot.0].sort_position = pos;
                     changed = true;
                 }
