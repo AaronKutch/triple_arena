@@ -1,6 +1,10 @@
 #![allow(clippy::needless_range_loop)]
 
-use std::cmp::Ordering;
+use std::{
+    cmp::{min, Ordering},
+    collections::BinaryHeap,
+    num::NonZeroU64,
+};
 
 use triple_arena::{Arena, Ptr, PtrTrait};
 
@@ -20,7 +24,8 @@ pub struct ANode<P: PtrTrait> {
     pub grid_position: (usize, usize),
     pub lineage_num: Option<usize>,
     pub indep_num: Option<usize>,
-    pub second_order_num: Option<usize>,
+    pub second_orders: Vec<isize>,
+    pub color: Option<NonZeroU64>,
     // visitation number
     pub visit: u64,
 }
@@ -35,8 +40,135 @@ impl<P: PtrTrait> Default for ANode<P> {
             grid_position: (0, 0),
             lineage_num: None,
             indep_num: None,
-            second_order_num: None,
+            second_orders: vec![],
+            color: None,
             visit: 0,
+        }
+    }
+}
+
+// used in the second order algorithm
+fn colored_forest<P: PtrTrait, F: FnMut() -> (u64, u64)>(
+    dag: &mut Arena<P, ANode<P>>,
+    next_visit: &mut F,
+    color_visit: &mut u64,
+    p0: Ptr<P>,
+    p1: Ptr<P>,
+    weight: isize,
+) {
+    let base = (*color_visit as isize) << 15;
+    let base_plus_weight = base + weight;
+    match (dag[p0].color, dag[p1].color) {
+        (None, None) => {
+            // new tree
+            let nonce = Some(NonZeroU64::new(*color_visit).unwrap());
+            // increment for next tree
+            *color_visit = next_visit().1;
+            dag[p0].color = nonce;
+            dag[p1].color = nonce;
+            dag[p0].visit = *color_visit;
+            dag[p1].visit = *color_visit;
+            dag[p0].second_orders.push(base);
+            dag[p1].second_orders.push(base_plus_weight);
+        }
+        (Some(color0), None) => {
+            dag[p1].color = Some(color0);
+            dag[p1].visit = *color_visit;
+            let tmp = dag[p0].second_orders.last().unwrap() + weight;
+            dag[p1].second_orders.push(tmp);
+        }
+        (None, Some(color1)) => {
+            dag[p0].color = Some(color1);
+            dag[p0].visit = *color_visit;
+            let tmp = dag[p1].second_orders.last().unwrap() - weight;
+            dag[p0].second_orders.push(tmp);
+        }
+        (Some(color0), Some(color1)) => {
+            if color0 != color1 {
+                // Different trees.
+
+                // new color for combining the trees
+                let combined_color = NonZeroU64::new(*color_visit).unwrap();
+                // increment for next tree
+                *color_visit = next_visit().1;
+
+                // overwriting the tree of `p1` with the combined nonce and second order weight
+                let mut path = vec![(p1, 0, false)];
+                dag[p1].visit = combined_color.get();
+                dag[p1].color = Some(combined_color);
+                dag[p1].second_orders.push(base_plus_weight);
+                loop {
+                    let (p, i, r) = path[path.len() - 1];
+                    let relation = if r {
+                        dag[p].sinks.get(i).map(|(q, _)| *q)
+                    } else {
+                        dag[p].sources.get(i).map(|(q, ..)| *q)
+                    };
+                    match relation {
+                        Some(q) => {
+                            if dag[q].color == Some(color1) {
+                                path.push((q, 0, false));
+                                dag[q].visit = combined_color.get();
+                                dag[q].color = Some(combined_color);
+                                dag[q].second_orders.push(base_plus_weight);
+                            } else {
+                                path.last_mut().unwrap().1 += 1;
+                            }
+                        }
+                        None => {
+                            if r {
+                                path.pop().unwrap();
+                                if path.is_empty() {
+                                    break
+                                }
+                                path.last_mut().unwrap().1 += 1;
+                            } else {
+                                path.last_mut().unwrap().1 = 0;
+                                path.last_mut().unwrap().2 = true;
+                            }
+                        }
+                    }
+                }
+
+                // overwriting the tree of `p0` with combined nonce to combine the trees, and 0
+                // weight just to the `p0` tree
+                let mut path = vec![(p0, 0, false)];
+                dag[p0].visit = combined_color.get();
+                dag[p0].color = Some(combined_color);
+                dag[p0].second_orders.push(base);
+                loop {
+                    let (p, i, r) = path[path.len() - 1];
+                    let relation = if r {
+                        dag[p].sinks.get(i).map(|(q, _)| *q)
+                    } else {
+                        dag[p].sources.get(i).map(|(q, ..)| *q)
+                    };
+                    match relation {
+                        Some(q) => {
+                            if dag[q].color == Some(color0) {
+                                path.push((q, 0, false));
+                                dag[q].visit = combined_color.get();
+                                dag[q].color = Some(combined_color);
+                                dag[q].second_orders.push(base);
+                            } else {
+                                path.last_mut().unwrap().1 += 1;
+                            }
+                        }
+                        None => {
+                            if r {
+                                path.pop().unwrap();
+                                if path.is_empty() {
+                                    break
+                                }
+                                path.last_mut().unwrap().1 += 1;
+                            } else {
+                                path.last_mut().unwrap().1 = 0;
+                                path.last_mut().unwrap().2 = true;
+                            }
+                        }
+                    }
+                }
+            } // else the same color
         }
     }
 }
@@ -72,6 +204,9 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     for p in dag.ptrs() {
         ptrs.push(p);
     }
+
+    // TODO apply more of the up-to-date DFS style and use a struct for the source
+    // and sink assemblies
 
     // We need to unelide nonexistant sinks that have a corresponding source, and
     // vice versa. This also checks for invalid pointers.
@@ -300,7 +435,6 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     let mut sort_num = 0usize;
     // path from root, with the `usize` indicating which sink was followed
     let mut path: Vec<(usize, Ptr<P>)> = vec![];
-    // we will be adding in more root nodes
     let original_root_len = roots.len();
     for root_i in 0..original_root_len {
         let root = roots[root_i];
@@ -309,7 +443,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
             loop {
                 let current = path[path.len() - 1].1;
                 // reaching the `on_stack` state later should not be possible since this is a
-                // DAG
+                // DAG and the visiting is in the sink direction only
                 dag[current].visit = on_stack_visit;
                 let tmp = if let Some((tmp, _)) = dag[current].sinks.get(path[path.len() - 1].0) {
                     Some(*tmp)
@@ -346,6 +480,57 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
         } else {
             assert_eq!(dag[root].visit, dfs_explored_visit);
         }
+    }
+
+    // beginning with the nodes with the most sources and sinks, `second_orders` are
+    // pushed on that prioritize local orderings between nodes. A forest of
+    // different colored trees is started, with a new color starting when a node
+    // sees that none of its neighbors are already colored. When different colors
+    // collide, a new lesser order is pushed on to supply progressively more global
+    // orders.
+    let mut ranked_nodes = BinaryHeap::<(usize, Ptr<P>)>::new();
+    for (p_node, node) in &dag {
+        ranked_nodes.push((node.sinks.len() + node.sources.len(), p_node))
+    }
+
+    // `color_visit` will be used as both a rolling visit value and a node coloring
+    // value
+    let (base_visit, mut color_visit) = next_visit();
+    while let Some((_, p_node)) = ranked_nodes.pop() {
+        // note the sink weights are even and the source weights are odd to even out
+        // vertical columns
+        for i_sink in 0..dag[p_node].sinks.len() {
+            let p_sink = dag[p_node].sinks[i_sink].0;
+            colored_forest(
+                &mut dag,
+                &mut next_visit,
+                &mut color_visit,
+                p_node,
+                p_sink,
+                isize::try_from(i_sink).unwrap() * 2,
+            );
+        }
+        for i_source in 0..dag[p_node].sources.len() {
+            let p_source = dag[p_node].sources[i_source].0;
+            colored_forest(
+                &mut dag,
+                &mut next_visit,
+                &mut color_visit,
+                p_node,
+                p_source,
+                isize::try_from(i_source).unwrap() * 2 + 1,
+            );
+        }
+        if dag[p_node].sinks.is_empty() && dag[p_node].sources.is_empty() {
+            dag[p_node].visit = next_visit().1;
+        }
+    }
+    let new_visit = next_visit().1;
+    for (_, node) in &mut dag {
+        assert!(node.visit > base_visit);
+        node.visit = new_visit;
+        //node.center.push(format!("{:?}", node.second_orders));
+        //node.center.push(format!("{:?}", p));
     }
 
     // we structure the DAG by looking at the first operand of an operation and
@@ -430,7 +615,8 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
                 path.push((false, 0, node));
                 loop {
                     let current = path.last().unwrap().2;
-                    // reaching this visit is possible because we are going through both sinks and sources
+                    // reaching this visit is possible because we are going through both sinks and
+                    // sources
                     dag[current].visit = on_stack_visit;
                     dag[current].indep_num = Some(indep_num);
                     let relation = if path.last().unwrap().0 {
@@ -484,74 +670,24 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
         // else the lineage is connected to a known set
     }
 
-    let mut leaves = vec![];
-    for p in &ptrs {
-        if dag[p].sinks.is_empty() {
-            leaves.push(*p);
-        }
-    }
-
-    // For reducing line crossings further.
-    let (prev_visit, on_stack_visit) = next_visit();
-    let (_, dfs_explored_visit) = next_visit();
-    let mut path: Vec<(usize, Ptr<P>)> = vec![];
-    let mut order_num = 0;
-    for leaf in &leaves {
-        let node = *leaf;
-        if dag[node].visit == prev_visit {
-            path.push((0, node));
-            loop {
-                let current = path.last().unwrap().1;
-                dag[current].visit = on_stack_visit;
-                if dag[current].second_order_num.is_none() {
-                    dag[current].second_order_num = Some(order_num);
-                }
-                match dag[current]
-                    .sources
-                    .get(path.last().unwrap().0)
-                    .map(|(p0, ..)| p0)
-                {
-                    Some(p0) => {
-                        let p0 = *p0;
-                        if dag[p0].visit == prev_visit {
-                            // explore further
-                            path.push((0, p0));
-                        } else {
-                            assert_eq!(dag[p0].visit, dfs_explored_visit);
-                            // cross edge, check next
-                            let len = path.len();
-                            path[len - 1].0 += 1;
-                        }
-                    }
-                    None => {
-                        // no more relations, backtrack
-                        order_num += 1;
-                        dag[current].visit = dfs_explored_visit;
-                        path.pop().unwrap();
-                        if path.is_empty() {
-                            break
-                        }
-                        // check next dependency
-                        let len = path.len();
-                        path[len - 1].0 += 1;
-                    }
-                }
-            }
-        } else {
-            assert_eq!(dag[node].visit, dfs_explored_visit);
-        }
-    }
-
     // stable sort horizontally so that the lineage numbers are monotonically
-    // increasing, followed in priority by the second_sort_num
+    // increasing, followed in priority by the second_orders
     lineages.sort_by(|lhs, rhs| {
         let lhs0 = dag[lhs[0]].indep_num.unwrap();
         let rhs0 = dag[rhs[0]].indep_num.unwrap();
         match lhs0.cmp(&rhs0) {
             Ordering::Equal => {
-                let lhs0 = dag[lhs[0]].second_order_num.unwrap();
-                let rhs0 = dag[rhs[0]].second_order_num.unwrap();
-                lhs0.cmp(&rhs0)
+                let order0 = &dag[lhs[0]].second_orders;
+                let order1 = &dag[rhs[0]].second_orders;
+                let mut res = Ordering::Equal;
+                for i in 0..min(order0.len(), order1.len()) {
+                    match order0[order0.len() - 1 - i].cmp(&order1[order1.len() - 1 - i]) {
+                        Ordering::Equal => continue,
+                        ne => res = ne,
+                    }
+                    break
+                }
+                res
             }
             c => c,
         }
@@ -594,10 +730,8 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
         }
     }
 
-    // TODO we really need the square grid in `(Ptr<P>, usize)` form in this
-    // function in order to exploit empty space. We should use a "rubber band"
-    // based method to minimize more crossings and make large graphs more
-    // compact.
+    // TODO we need a more general square grid processing to exploit empty
+    // horizontal space
 
     Ok(RenderGrid::new(dag, grid))
 }

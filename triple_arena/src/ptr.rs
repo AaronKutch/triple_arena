@@ -168,8 +168,9 @@ macro_rules! ptr_trait_struct_with_gen {
 /// invalidated.
 #[derive(Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Ptr<P: PtrTrait> {
-    gen: P,
+    // note: PartialOrd should order on `raw` primarily followed by `gen`
     raw: usize,
+    gen: P,
 }
 
 impl<P: PtrTrait> Ptr<P> {

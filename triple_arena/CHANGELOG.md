@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.6.0] - TODO
+### Changes
+- The `PartialOrd` on `Ptr`s now sorts first by the internal raw index followed by generation value
+
 ## [0.5.0] - 2022-05-31
 ### Additions
 - Added `Default` bounds and impls for `PtrTrait` and `Ptr<P>`

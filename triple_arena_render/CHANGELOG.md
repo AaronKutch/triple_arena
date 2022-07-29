@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.6.0] - TODO
+### Changes
+- Improved graph arrangement algorithm
+
 ## [0.5.0] - 2022-05-31
 ### Crate
 - `triple_arena` 0.5.0
