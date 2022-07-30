@@ -1,6 +1,6 @@
 name: Triple Arena CI
 
-on: [pull_request]
+on: []
 
 env:
   RUSTFLAGS: -D warnings
