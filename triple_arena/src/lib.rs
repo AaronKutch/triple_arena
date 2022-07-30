@@ -7,15 +7,15 @@ mod misc;
 mod ptr;
 mod traits;
 pub(crate) use entry::InternalEntry;
-pub use ptr::{Ptr, PtrTrait};
+pub use ptr::{Ptr, PtrGen, PtrInx};
 pub use traits::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
 
 extern crate alloc;
 use alloc::vec::Vec;
-use core::{borrow::Borrow, mem, num::NonZeroU64};
+use core::{borrow::Borrow, mem};
 
 pub mod prelude {
-    pub use crate::{ptr_trait_struct, ptr_trait_struct_with_gen, Arena, Ptr, PtrTrait};
+    pub use crate::{ptr_trait_struct, Arena, Ptr};
 }
 
 use InternalEntry::*;
@@ -24,15 +24,15 @@ use InternalEntry::*;
 /// `Sized`, but some traits are only active if `T` implements them), deletion,
 /// and optional generation counters.
 ///
-/// `P` is a `PtrTrait` struct shared by the `Ptr<P>` type used with this arena.
+/// `P` is a `Ptr` struct shared by the `P` type used with this arena.
 /// When using multiple arenas, it is encouraged to use different `P` in order
 /// to have the type system guard against confusion and mistakenly using
 /// pointers from one arena in another. If `P` has a generation value, the arena
 /// will use generation counters to check for invalidated pointers if `P` has a
 /// generation counter.
 ///
-/// Panics or unexpected behaviour could result if `PtrTrait` is not implemented
-/// properly for `P`. The macros should be used for quickly making `PtrTrait`
+/// Panics or unexpected behaviour could result if `Ptr` is not implemented
+/// properly for `P`. The macros should be used for quickly making `Ptr`
 /// structs.
 ///
 /// ```
@@ -41,9 +41,9 @@ use InternalEntry::*;
 /// // In implementations that always use valid indexes and only want the
 /// // generation counter in debug mode, we can use `cfg`s like this:
 /// //#[cfg(Debug)]
-/// ptr_trait_struct_with_gen!(Ex; P2);
+/// ptr_trait_struct!(Ex; P2);
 /// //#[cfg(not(Debug))]
-/// //ptr_trait_struct!(Ex; P2);
+/// //ptr_trait_struct!(Ex(); P2());
 ///
 /// let mut arena: Arena<Ex, String> = Arena::new();
 ///
@@ -86,7 +86,7 @@ use InternalEntry::*;
 ///
 /// // In cases where we are forced to have the same `P`, we can still have
 /// // type guards against semantically different `Ptr`s by using generics:
-/// fn example<P0: PtrTrait, P1: PtrTrait, T>(
+/// fn example<P0: Ptr, P1: Ptr, T>(
 ///     a0: &mut Arena<P0, T>,
 ///     a1: &mut Arena<P1, T>,
 ///     p1: Ptr<P1>
@@ -104,9 +104,7 @@ use InternalEntry::*;
 ///
 /// Note: See the `triple_arena_render` crate for a trait-based way to visualize
 /// graph structures in `Arena`s
-pub struct Arena<P: PtrTrait, T> {
-    /// Number of `T` currently contained in the arena
-    len: usize,
+pub struct Arena<P: Ptr, T> {
     /// The main memory of entries.
     ///
     /// # Capacity
@@ -148,43 +146,46 @@ pub struct Arena<P: PtrTrait, T> {
     ///   generation updated to equal the arena's `gen`. Newer allocations must
     ///   use the new `gen` value.
     m: Vec<InternalEntry<P, T>>,
+    /// Number of `T` currently contained in the arena
+    len: P::Inx,
     /// Points to the root of the chain of freelist nodes
-    freelist_root: Option<usize>,
-    gen: P,
+    freelist_root: Option<P::Inx>,
+    gen: P::Gen,
 }
 
 /// # Note
 ///
-/// A `Ptr<P>` is logically invalid if:
+/// A `Ptr` is logically invalid if:
 ///  - it points to a different arena than the one it is being used as an
 ///    argument to
-///  - it points to a `T` that has been the target of some pointer invalidation
+///  - it points to a `T` that has been the target of some `Ptr` invalidation
 ///    operation such as removal
 ///
 /// However, the functions here might not detect invalidity and return a `T`
-/// different than the one a pointer originally pointed to. The first case is
+/// different than the one a `Ptr` originally pointed to. The first case is
 /// caught if different `P` are being used for different arenas, in which case
 /// Rust's type system will prevent using the wrong pointers. The second case is
 /// only guaranteed to be caught if `P` has a generation counter. Otherwise, it
 /// is possible for another `T` to get allocated in the same allocation, and
 /// pointers to the previous `T` will now point to a different `T`. If this is
 /// intentional, [Arena::replace_and_keep_gen] should be used.
-impl<P: PtrTrait, T> Arena<P, T> {
+impl<P: Ptr, T> Arena<P, T> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_arena_invariants(this: &Self) -> Result<(), &'static str> {
-        if let Some(gen) = this.gen_nz() {
-            if gen.get() < 2 {
-                return Err("bad generation")
-            }
+        if this.gen() < P::Gen::two() {
+            return Err("bad generation")
         }
-        let m_len = this.m.len();
+        let m_len = P::Inx::new(this.m.len());
         if this.capacity() != m_len {
             return Err("virtual capacity != m_len")
         }
-        let n_allocated = this.iter().fold(0, |acc, _| acc + 1);
-        let n_free = m_len - n_allocated;
-        if this.len() != n_allocated {
+        let mut n_allocated = 0;
+        for entry in &this.m {
+            n_allocated += matches!(entry, Allocated(..)) as usize;
+        }
+        let n_free = P::Inx::get(m_len) - n_allocated;
+        if P::Inx::get(this.len()) != n_allocated {
             return Err("len != n_allocated")
         }
         // checking freelist integrity
@@ -192,7 +193,7 @@ impl<P: PtrTrait, T> Arena<P, T> {
         if let Some(root) = this.freelist_root {
             let mut tmp_inx = root;
             for i in 0.. {
-                let entry = this.m.get(tmp_inx).unwrap();
+                let entry = this.m.get(P::Inx::get(tmp_inx)).unwrap();
                 if let Free(inx) = entry {
                     freelist_len += 1;
                     if *inx == tmp_inx {
@@ -215,65 +216,60 @@ impl<P: PtrTrait, T> Arena<P, T> {
     }
 
     /// Creates a new arena for fast allocation for the type `T`, which are
-    /// pointed to by `Ptr<P>`s.
+    /// pointed to by `P`s.
     pub fn new() -> Arena<P, T> {
         Arena {
-            len: 0,
+            len: PtrInx::new(0),
             m: Vec::new(),
             freelist_root: None,
-            gen: PtrTrait::new(Some(NonZeroU64::new(2).unwrap())),
+            gen: PtrGen::two(),
         }
     }
 
     /// Returns the number of `T` in the arena
-    pub fn len(&self) -> usize {
+    pub fn len(&self) -> P::Inx {
         self.len
     }
 
     /// Returns if the arena is empty
     pub fn is_empty(&self) -> bool {
-        self.len == 0
+        PtrInx::get(self.len) == 0
     }
 
     /// Returns the capacity of the arena.
     ///
-    /// Technical note: this is usually equal to the true allocated capacity but
+    /// Technical note: This is usually equal to the true allocated capacity but
     /// is sometimes less in order to prevent exponential capacity growth
     /// with some combinations of functions (see the "Capacity" section in
     /// lib.rs for details).
-    pub fn capacity(&self) -> usize {
-        self.m.len()
+    pub fn capacity(&self) -> P::Inx {
+        P::Inx::new(self.m.len())
     }
 
-    /// Return the arena generation counter (or `None` if `P` does not have a
-    /// generation), which is equal to the number of invalidation operations
-    /// performed on this arena plus 2
+    /// Return the arena generation counter (unless `P::Gen` is `()` in which
+    /// case there is no generation counting), which is equal to the number of
+    /// invalidation operations performed on this arena plus 2
     #[inline]
-    pub fn gen_nz(&self) -> Option<NonZeroU64> {
-        PtrTrait::get(&self.gen)
-    }
-
-    /// Return the arena generation counter as a `P`
-    #[inline]
-    pub fn gen_p(&self) -> P {
+    pub fn gen(&self) -> P::Gen {
         self.gen
+    }
+
+    fn raw_inc_len(&mut self) {
+        self.len = P::Inx::new(P::Inx::get(self.len).wrapping_add(1))
+    }
+
+    fn raw_dec_len(&mut self) {
+        self.len = P::Inx::new(P::Inx::get(self.len).wrapping_sub(1))
     }
 
     #[inline]
     fn inc_gen(&mut self) {
-        if let Some(gen) = PtrTrait::get_mut(&mut self.gen) {
-            // if addition overflows, it will result in 0 and the second branch
-            match NonZeroU64::new(gen.get().wrapping_add(1)) {
-                Some(new_gen) => {
-                    *gen = new_gen;
-                }
-                None => panic!("generation overflow"),
-            }
-        }
+        self.gen = PtrGen::increment(self.gen);
     }
 
     /// Reserves capacity for at least `additional` more `T`, in accordance
-    /// with `Vec::reserve`
+    /// with `Vec::reserve`, except if the capacity would be more than
+    /// `P::Inx::max()` in which case capacity is capped at `P::Inx::max()`.
     pub fn reserve(&mut self, additional: usize) {
         let end = self.m.len();
         let true_remaining = self.m.capacity().wrapping_sub(end);
@@ -290,17 +286,23 @@ impl<P: PtrTrait, T> Arena<P, T> {
             // always go here.
             additional
         };
-
+        // cap resultant virtual capacity to P::Inx::max(), so no internal entries can
+        // have an overflowing `Free` `Ptr::Inx`.
+        let remaining = if remaining.wrapping_add(self.m.len()) > <P::Inx as PtrInx>::max() {
+            <P::Inx as PtrInx>::max()
+        } else {
+            remaining
+        };
         // we will use up this remaining capacity and prepare the virtual capacity
         // with extended freelist
         if remaining > 0 {
             let old_root = self.freelist_root;
             // we can choose the new root to go anywhere in the new capacity, but we choose
             // here
-            self.freelist_root = Some(end);
+            self.freelist_root = Some(P::Inx::new(end));
             // initialize the freelist with each entry pointing to the next
             for i in 1..remaining {
-                self.m.push(Free(end.wrapping_add(i)));
+                self.m.push(Free(P::Inx::new(end.wrapping_add(i))));
             }
             match old_root {
                 Some(old_root) => {
@@ -309,21 +311,29 @@ impl<P: PtrTrait, T> Arena<P, T> {
                 }
                 None => {
                     // the last `Free` points to itself
-                    self.m
-                        .push(Free(end.wrapping_add(remaining).wrapping_sub(1)));
+                    self.m.push(Free(P::Inx::new(
+                        end.wrapping_add(remaining).wrapping_sub(1),
+                    )));
                 }
             }
         }
     }
 
+    fn m_get(&self, inx: P::Inx) -> Option<&InternalEntry<P, T>> {
+        self.m.get(P::Inx::get(inx))
+    }
+
+    fn m_get_mut(&mut self, inx: P::Inx) -> Option<&mut InternalEntry<P, T>> {
+        self.m.get_mut(P::Inx::get(inx))
+    }
+
     /// Panics if index `inx` does not point to a `Free` entry.
     #[inline]
-    fn unwrap_replace_free(&mut self, inx: usize, allocation: (P, T)) {
+    fn unwrap_replace_free(&mut self, inx: P::Inx, gen: P::Gen, t: T) {
         let next = self
-            .m
-            .get_mut(inx)
+            .m_get_mut(inx)
             .unwrap()
-            .replace_free_with_allocated(allocation)
+            .replace_free_with_allocated(gen, t)
             .unwrap();
         if next == inx {
             // end of freelist
@@ -340,11 +350,11 @@ impl<P: PtrTrait, T> Arena<P, T> {
     ///
     /// Returns ownership of `t` if there are no remaining unallocated entries
     /// in the arena.
-    pub fn try_insert(&mut self, t: T) -> Result<Ptr<P>, T> {
+    pub fn try_insert(&mut self, t: T) -> Result<P, T> {
         if let Some(inx) = self.freelist_root {
-            self.unwrap_replace_free(inx, (self.gen_p(), t));
-            self.len += 1;
-            Ok(Ptr::from_raw(inx, self.gen_nz()))
+            self.unwrap_replace_free(inx, self.gen(), t);
+            self.raw_inc_len();
+            Ok(Ptr::_from_raw(inx, self.gen()))
         } else {
             Err(t)
         }
@@ -358,11 +368,11 @@ impl<P: PtrTrait, T> Arena<P, T> {
     ///
     /// Does not run `create` and returns ownership if there are no remaining
     /// unallocated entries in the arena.
-    pub fn try_insert_with<F: FnOnce(Ptr<P>) -> T>(&mut self, create: F) -> Result<Ptr<P>, F> {
+    pub fn try_insert_with<F: FnOnce(P) -> T>(&mut self, create: F) -> Result<P, F> {
         if let Some(inx) = self.freelist_root {
-            let ptr = Ptr::from_raw(inx, self.gen_nz());
-            self.unwrap_replace_free(inx, (self.gen_p(), create(ptr)));
-            self.len += 1;
+            let ptr = P::_from_raw(inx, self.gen());
+            self.unwrap_replace_free(inx, self.gen(), create(ptr));
+            self.raw_inc_len();
             Ok(ptr)
         } else {
             Err(create)
@@ -371,7 +381,7 @@ impl<P: PtrTrait, T> Arena<P, T> {
 
     /// Inserts `t` into the arena and returns a `Ptr` to it. This function
     /// allocates if capacity in the arena runs out.
-    pub fn insert(&mut self, t: T) -> Ptr<P> {
+    pub fn insert(&mut self, t: T) -> P {
         match self.try_insert(t) {
             Ok(inx) => inx,
             Err(t) => {
@@ -385,7 +395,9 @@ impl<P: PtrTrait, T> Arena<P, T> {
                 // can't unwrap unless T: Debug
                 match self.try_insert(t) {
                     Ok(p) => p,
-                    Err(_) => unreachable!(),
+                    Err(_) => panic!(
+                        "called `insert` on an `Arena<P, T>` with maximum length `P::Inx::max()`"
+                    ),
                 }
             }
         }
@@ -395,7 +407,7 @@ impl<P: PtrTrait, T> Arena<P, T> {
     /// to it. `create` is given the the same `Ptr` that is returned, which is
     /// useful for initialization of immutable structures that need to reference
     /// themselves. This function allocates if capacity in the arena runs out.
-    pub fn insert_with<F: FnOnce(Ptr<P>) -> T>(&mut self, create: F) -> Ptr<P> {
+    pub fn insert_with<F: FnOnce(P) -> T>(&mut self, create: F) -> P {
         // can't use `try_insert_with` analogously like `insert` uses `try_insert`
         // because `create` is `FnOnce`
         let inx = if let Some(inx) = self.freelist_root {
@@ -410,29 +422,29 @@ impl<P: PtrTrait, T> Arena<P, T> {
             self.reserve(additional);
             self.freelist_root.unwrap()
         };
-        let ptr = Ptr::from_raw(inx, self.gen_nz());
-        self.unwrap_replace_free(inx, (self.gen_p(), create(ptr)));
-        self.len += 1;
+        let ptr = P::_from_raw(inx, self.gen());
+        self.unwrap_replace_free(inx, self.gen(), create(ptr));
+        self.raw_inc_len();
         ptr
     }
 
-    /// Returns if `p` is a valid pointer
-    pub fn contains(&self, p: Ptr<P>) -> bool {
-        match self.m.get(p.get_raw()) {
-            Some(Allocated(gen, _)) => *gen == p.gen_p(),
+    /// Returns if `p` is a valid `Ptr`
+    pub fn contains(&self, p: P) -> bool {
+        match self.m_get(p.inx()) {
+            Some(Allocated(gen, _)) => *gen == p.gen(),
             _ => false,
         }
     }
 
     /// Returns a reference to a `T` pointed to by `p`. Returns `None` if `p` is
     /// invalid.
-    pub fn get(&self, p: Ptr<P>) -> Option<&T> {
-        match self.m.get(p.get_raw()) {
+    pub fn get(&self, p: P) -> Option<&T> {
+        match self.m_get(p.inx()) {
             Some(Allocated(gen, t)) => {
-                if *gen != p.gen_p() {
-                    None
-                } else {
+                if *gen == p.gen() {
                     Some(t)
+                } else {
+                    None
                 }
             }
             _ => None,
@@ -441,14 +453,14 @@ impl<P: PtrTrait, T> Arena<P, T> {
 
     /// Returns a mutable reference to a `T` pointed to by `p`. Returns `None`
     /// if `p` is invalid.
-    pub fn get_mut(&mut self, p: Ptr<P>) -> Option<&mut T> {
+    pub fn get_mut(&mut self, p: P) -> Option<&mut T> {
         let p = *p.borrow();
-        match self.m.get_mut(p.get_raw()) {
+        match self.m_get_mut(p.inx()) {
             Some(Allocated(gen, t)) => {
-                if *gen != p.gen_p() {
-                    None
-                } else {
+                if *gen == p.gen() {
                     Some(t)
+                } else {
+                    None
                 }
             }
             _ => None,
@@ -458,15 +470,15 @@ impl<P: PtrTrait, T> Arena<P, T> {
     /// Removes the `T` pointed to by `p`, returns the `T`, and invalidates old
     /// `Ptr`s to the `T`. Does no invalidation and returns `None` if `p` is
     /// invalid.
-    pub fn remove(&mut self, p: Ptr<P>) -> Option<T> {
+    pub fn remove(&mut self, p: P) -> Option<T> {
         let freelist_ptr = if let Some(free) = self.freelist_root {
             // points to previous root
             free
         } else {
             // points to itself
-            p.get_raw()
+            p.inx()
         };
-        let allocation = self.m.get_mut(p.get_raw())?;
+        let allocation = self.m_get_mut(p.inx())?;
         let old = mem::replace(allocation, Free(freelist_ptr));
         match old {
             Free(old_free) => {
@@ -475,14 +487,14 @@ impl<P: PtrTrait, T> Arena<P, T> {
                 None
             }
             Allocated(gen, old_t) => {
-                if gen != p.gen_p() {
+                if gen != p.gen() {
                     // undo
                     *allocation = Allocated(gen, old_t);
                     None
                 } else {
                     // in both cases the new root is the entry we just removed
-                    self.freelist_root = Some(p.get_raw());
-                    self.len -= 1;
+                    self.freelist_root = Some(p.inx());
+                    self.raw_dec_len();
                     self.inc_gen();
                     Some(old_t)
                 }
@@ -493,11 +505,12 @@ impl<P: PtrTrait, T> Arena<P, T> {
     /// For every `T` in the arena, `pred` is called with a tuple of the `Ptr`
     /// to that `T` and a mutable reference to the `T`. If `pred` returns `true`
     /// that `T` is dropped and pointers to it invalidated.
-    pub fn remove_by<F: FnMut(Ptr<P>, &mut T) -> bool>(&mut self, mut pred: F) {
+    pub fn remove_by<F: FnMut(P, &mut T) -> bool>(&mut self, mut pred: F) {
         for (inx, entry) in self.m.iter_mut().enumerate() {
-            if let Allocated(p, t) = entry {
-                if pred(Ptr::from_raw(inx, PtrTrait::get(p)), t) {
-                    self.len -= 1;
+            let inx = P::Inx::new(inx);
+            if let Allocated(gen, t) = entry {
+                if pred(P::_from_raw(inx, *gen), t) {
+                    self.len = P::Inx::new(P::Inx::get(self.len).wrapping_sub(1));
                     if let Some(free) = self.freelist_root {
                         // point to previous root
                         *entry = Free(free);
@@ -516,10 +529,10 @@ impl<P: PtrTrait, T> Arena<P, T> {
     /// Invalidates all references to the `T` pointed to by `p`, and returns a
     /// new valid reference. Does no invalidation and returns `None` if `p` is
     /// invalid.
-    pub fn invalidate(&mut self, p: Ptr<P>) -> Option<Ptr<P>> {
-        match self.m.get(p.get_raw()) {
+    pub fn invalidate(&mut self, p: P) -> Option<P> {
+        match self.m_get(p.inx()) {
             Some(Allocated(gen, _)) => {
-                if *gen != p.gen_p() {
+                if *gen != p.gen() {
                     return None
                 }
             }
@@ -527,11 +540,11 @@ impl<P: PtrTrait, T> Arena<P, T> {
         }
         // redo to get around borrowing issues
         self.inc_gen();
-        let new_gen = self.gen_p();
-        match self.m.get_mut(p.get_raw()) {
+        let new_gen = self.gen();
+        match self.m_get_mut(p.inx()) {
             Some(Allocated(gen, _)) => {
                 *gen = new_gen;
-                Some(Ptr::from_raw(p.get_raw(), self.gen_nz()))
+                Some(P::_from_raw(p.inx(), self.gen()))
             }
             _ => unreachable!(),
         }
@@ -544,50 +557,44 @@ impl<P: PtrTrait, T> Arena<P, T> {
     /// # Errors
     ///
     /// Returns ownership of `new` instead if `p` is invalid
-    pub fn replace_and_keep_gen(&mut self, p: Ptr<P>, new: T) -> Result<T, T> {
-        let old_gen = match self.m.get(p.get_raw()) {
+    pub fn replace_and_keep_gen(&mut self, p: P, new: T) -> Result<T, T> {
+        let old_gen = match self.m_get(p.inx()) {
             Some(Allocated(gen, _)) => {
-                if *gen != p.gen_p() {
+                if *gen != p.gen() {
                     return Err(new)
                 }
                 *gen
             }
             _ => return Err(new),
         };
-        let old = mem::replace(
-            self.m.get_mut(p.get_raw()).unwrap(),
-            Allocated(old_gen, new),
-        );
+        let old = mem::replace(self.m_get_mut(p.inx()).unwrap(), Allocated(old_gen, new));
         match old {
-            Allocated(_, old) => Ok(old),
+            Allocated(_, old_gen) => Ok(old_gen),
             _ => unreachable!(),
         }
     }
 
     /// Replaces the `T` pointed to by `p` with `new`, returns a tuple of the
-    /// new pointer and old `T`, and updates the internal generation
+    /// new `Ptr` and old `T`, and updates the internal generation
     /// counter so that previous `Ptr`s to this allocation are invalidated.
     ///
     /// # Errors
     ///
     /// Does no invalidation and returns ownership of `new` if `p` is invalid
-    pub fn replace_and_update_gen(&mut self, p: Ptr<P>, new: T) -> Result<(Ptr<P>, T), T> {
-        match self.m.get(p.get_raw()) {
+    pub fn replace_and_update_gen(&mut self, p: P, new: T) -> Result<(P, T), T> {
+        match self.m_get(p.inx()) {
             Some(Allocated(gen, _)) => {
-                if *gen != p.gen_p() {
+                if *gen != p.gen() {
                     return Err(new)
                 }
             }
             _ => return Err(new),
         }
         self.inc_gen();
-        let new_gen = self.gen_p();
-        let old = mem::replace(
-            self.m.get_mut(p.get_raw()).unwrap(),
-            Allocated(new_gen, new),
-        );
+        let new_gen = self.gen();
+        let old = mem::replace(self.m_get_mut(p.inx()).unwrap(), Allocated(new_gen, new));
         match old {
-            Allocated(_, old) => Ok((Ptr::from_raw(p.get_raw(), PtrTrait::get(&new_gen)), old)),
+            Allocated(_, old) => Ok((P::_from_raw(p.inx(), new_gen), old)),
             _ => unreachable!(),
         }
     }
@@ -597,18 +604,18 @@ impl<P: PtrTrait, T> Arena<P, T> {
     pub fn clear(&mut self) {
         // drop all `T` and recreate the freelist
         for i in 1..self.m.len() {
-            *self.m.get_mut(i.wrapping_sub(1)).unwrap() = Free(i);
+            *self.m_get_mut(P::Inx::new(i.wrapping_sub(1))).unwrap() = Free(P::Inx::new(i));
         }
         if !self.m.is_empty() {
             // the last freelist node points to itself
             let last = self.m.len().wrapping_sub(1);
-            *self.m.get_mut(last).unwrap() = Free(last);
-            self.freelist_root = Some(0);
+            *self.m.get_mut(last).unwrap() = Free(P::Inx::new(last));
+            self.freelist_root = Some(P::Inx::new(0));
         } else {
             self.freelist_root = None;
         }
         self.inc_gen();
-        self.len = 0;
+        self.len = P::Inx::new(0);
     }
 
     /// Performs an [Arena::clear] and resets capacity to 0
@@ -617,19 +624,15 @@ impl<P: PtrTrait, T> Arena<P, T> {
         self.m.shrink_to_fit();
         self.freelist_root = None;
         self.inc_gen();
-        self.len = 0;
+        self.len = P::Inx::new(0);
     }
 
     /// Like [Arena::clone_from] except the `Clone` bound is not required
     /// and `source` can have arbitrary `U`. For every `U`, the `P` pointing to
     /// that `U` and a reference to itself is passed to `map` to generate
-    /// the corresponding `T` in `self`. Validity is cloned with a `Ptr<P>`
+    /// the corresponding `T` in `self`. Validity is cloned with a `P`
     /// being able to reference `U` in the `source` arena and `T` in `self`.
-    pub fn clone_from_with<U, F: FnMut(Ptr<P>, &U) -> T>(
-        &mut self,
-        source: &Arena<P, U>,
-        mut map: F,
-    ) {
+    pub fn clone_from_with<U, F: FnMut(P, &U) -> T>(&mut self, source: &Arena<P, U>, mut map: F) {
         // exponential growth mitigation factor, absolutely do not use `self.m.capacity`
         // in the extra freelist additions
         let old_virtual_capacity = self.m.len();
@@ -647,23 +650,23 @@ impl<P: PtrTrait, T> Arena<P, T> {
                 // copy `source` freelist
                 Free(inx) => Free(*inx),
                 // map `source` allocated
-                Allocated(gen, u) => Allocated(*gen, map(Ptr::from_raw(i, PtrTrait::get(gen)), u)),
+                Allocated(gen, u) => Allocated(*gen, map(P::_from_raw(P::Inx::new(i), *gen), u)),
             };
             self.m.push(new);
         }
 
         for i in self.m.len().wrapping_add(1)..old_virtual_capacity {
             // point to next
-            self.m.push(Free(i));
+            self.m.push(Free(P::Inx::new(i)));
         }
         if self.m.len() < old_virtual_capacity {
             // new root starting at extension of `self.m` beyond `source.m`
-            self.freelist_root = Some(source.m.len());
+            self.freelist_root = Some(P::Inx::new(source.m.len()));
             self.m.push(match source.freelist_root {
                 // points to old root
                 Some(inx) => Free(inx),
                 // points to itself
-                None => Free(self.m.len()),
+                None => Free(P::Inx::new(self.m.len())),
             });
         } else {
             self.freelist_root = source.freelist_root;

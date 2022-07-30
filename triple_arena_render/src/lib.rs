@@ -3,7 +3,7 @@ mod render_grid;
 mod render_node;
 mod svg;
 pub use svg::{render_to_svg, render_to_svg_file};
-use triple_arena::{Ptr, PtrTrait};
+use triple_arena::Ptr;
 
 /// Internal structs and functions for experimenting with new rendering backends
 pub mod internal {
@@ -49,19 +49,19 @@ pub(crate) const TEXT_COLOR: &str = "a0a0a0";
 /// "source-to-sink" edges. Arbitrary combinations can also be chosen depending
 /// on what ordering is preferred.
 #[derive(Debug, Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct DebugNode<P: PtrTrait> {
+pub struct DebugNode<P: Ptr> {
     /// Sources should be a tuple of `Ptr`s to source nodes in the graph and
     /// short one line strings that will be used for input annotations (or empty
     /// strings if no annotations are wanted).
-    pub sources: Vec<(Ptr<P>, String)>,
+    pub sources: Vec<(P, String)>,
     /// The center text can have multiple lines or be empty
     pub center: Vec<String>,
     /// Sinks should follow what sources do, except with `Ptr`s to sink nodes in
     /// the graph.
-    pub sinks: Vec<(Ptr<P>, String)>,
+    pub sinks: Vec<(P, String)>,
 }
 
-impl<P: PtrTrait> Default for DebugNode<P> {
+impl<P: Ptr> Default for DebugNode<P> {
     /// Start with all parts empty
     fn default() -> Self {
         Self {
@@ -72,13 +72,9 @@ impl<P: PtrTrait> Default for DebugNode<P> {
     }
 }
 
-impl<P: PtrTrait> DebugNode<P> {
+impl<P: Ptr> DebugNode<P> {
     /// Shorthand construction
-    pub fn new(
-        sources: Vec<(Ptr<P>, String)>,
-        center: Vec<String>,
-        sinks: Vec<(Ptr<P>, String)>,
-    ) -> Self {
+    pub fn new(sources: Vec<(P, String)>, center: Vec<String>, sinks: Vec<(P, String)>) -> Self {
         Self {
             sources,
             center,
@@ -89,13 +85,13 @@ impl<P: PtrTrait> DebugNode<P> {
 
 /// A trait implemented for the `T` in `triple_arena::Arena<P, T>`, intended
 /// where `T` is some kind of graph node element. `P` corresponds to the
-/// `Ptr<P>` being used for the arena, and allows renderers to automatically
+/// `P` being used for the arena, and allows renderers to automatically
 /// traverse the graph in the arena.
-pub trait DebugNodeTrait<P: PtrTrait> {
+pub trait DebugNodeTrait<P: Ptr> {
     fn debug_node(this: &Self) -> DebugNode<P>;
 }
 
-impl<P: PtrTrait> DebugNodeTrait<P> for DebugNode<P> {
+impl<P: Ptr> DebugNodeTrait<P> for DebugNode<P> {
     /// Useful for cases where a graph is in some structure that is not an
     /// `Arena`, but we derive an `Arena` from that structure and decide we
     /// should just place `DebugNode`s in that arena instead of needing to
@@ -107,9 +103,9 @@ impl<P: PtrTrait> DebugNodeTrait<P> for DebugNode<P> {
 
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum RenderError<P: PtrTrait> {
-    /// A pointer in one of the edges was invalid
-    InvalidPtr(Ptr<P>),
+pub enum RenderError<P: Ptr> {
+    /// A `Ptr` in one of the edges was invalid
+    InvalidPtr(P),
     /// A `std::io` error
     IoError(std::io::Error),
 }

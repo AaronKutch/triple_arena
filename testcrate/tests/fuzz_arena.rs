@@ -4,7 +4,7 @@ use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::{ptr_trait_struct, ptr_trait_struct_with_gen, Arena, Ptr};
+use triple_arena::{ptr_trait_struct, Arena, Ptr};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
@@ -12,9 +12,7 @@ macro_rules! next_inx {
     };
 }
 
-ptr_trait_struct_with_gen!(P0);
-// just make sure that the other kind compiles
-ptr_trait_struct!(P1);
+ptr_trait_struct!(P0);
 
 #[test]
 fn fuzz() {
@@ -29,14 +27,14 @@ fn fuzz() {
 
     let mut a: Arena<P0, u64> = Arena::new();
     // map of all `T` and their pointers contained in the arena
-    let mut b: HashMap<u64, Ptr<P0>> = HashMap::new();
+    let mut b: HashMap<u64, P0> = HashMap::new();
     // list of `T`. We need this alongside the hashmap because we need random
     // indexing (and hashmaps will be prone to biases)
     let mut list: Vec<u64> = vec![];
 
     // these are set by the `clone_from` variants
     let mut a1: Arena<P0, u64> = Arena::new();
-    let mut b1: HashMap<u64, Ptr<P0>> = HashMap::new();
+    let mut b1: HashMap<u64, P0> = HashMap::new();
     let mut list1: Vec<u64> = vec![];
 
     let mut op_inx;
@@ -45,7 +43,7 @@ fn fuzz() {
     let mut iters999 = 0;
     let mut max_len = 0;
 
-    // get invalid pointer (from 0th index and not `Ptr::invalid()`)
+    // get invalid `Ptr` (from 0th index and not `Ptr::invalid()`)
     let invalid = a.insert(0);
     a.remove(invalid);
     a.clear_and_shrink();
@@ -344,7 +342,7 @@ fn fuzz() {
     }
     assert_eq!(iters999, 1064);
     assert_eq!(max_len, 57);
-    assert_eq!(a.gen_nz(), Some(core::num::NonZeroU64::new(68264).unwrap()));
+    assert_eq!(a.gen(), core::num::NonZeroU64::new(68264).unwrap());
 }
 
 // for testing `clone` and `clone_from` which interact between multiple arenas
@@ -353,7 +351,7 @@ fn multi_arena() {
     fn inner(
         rng: &mut Xoshiro128StarStar,
         a: &mut Arena<P0, u64>,
-        b: &mut HashMap<u64, Ptr<P0>>,
+        b: &mut HashMap<u64, P0>,
         list: &mut Vec<u64>,
         new_t: &mut dyn FnMut() -> u64,
     ) {
@@ -407,8 +405,8 @@ fn multi_arena() {
     let mut a1: Arena<P0, u64> = Arena::new();
 
     // map of all `T` and their pointers contained in the arena
-    let mut b0: HashMap<u64, Ptr<P0>> = HashMap::new();
-    let mut b1: HashMap<u64, Ptr<P0>> = HashMap::new();
+    let mut b0: HashMap<u64, P0> = HashMap::new();
+    let mut b1: HashMap<u64, P0> = HashMap::new();
 
     // list of `T`. We need this alongside the hashmap because we need random
     // indexing (and hashmaps will be prone to biases)
@@ -456,8 +454,5 @@ fn multi_arena() {
         }
     }
     assert_eq!(max_len0, 77);
-    assert_eq!(
-        a0.gen_nz(),
-        Some(core::num::NonZeroU64::new(46957).unwrap())
-    );
+    assert_eq!(a0.gen(), core::num::NonZeroU64::new(46957).unwrap());
 }

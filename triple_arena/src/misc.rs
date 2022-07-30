@@ -1,8 +1,8 @@
-use crate::{Arena, InternalEntry::*, PtrTrait};
+use crate::{Arena, InternalEntry::*, Ptr, PtrInx};
 
 /// Implemented if `T: Clone`.
-impl<P: PtrTrait, T: Clone> Clone for Arena<P, T> {
-    /// When an `Arena<P, T>` is cloned, the `Ptr<P>`s to an original `T` will
+impl<P: Ptr, T: Clone> Clone for Arena<P, T> {
+    /// When an `Arena<P, T>` is cloned, the `P`s to an original `T` will
     /// initially be valid to the corresponding `T` in the cloned arena.
     /// Invalidations will continue independently, so the meaning of the `Ptr`
     /// with respect to the different arenas can diverge.
@@ -43,16 +43,16 @@ impl<P: PtrTrait, T: Clone> Clone for Arena<P, T> {
 
         for i in self.m.len().wrapping_add(1)..old_virtual_capacity {
             // point to next
-            self.m.push(Free(i));
+            self.m.push(Free(P::Inx::new(i)));
         }
         if self.m.len() < old_virtual_capacity {
             // new root starting at extension of `self.m` beyond `source.m`
-            self.freelist_root = Some(source.m.len());
+            self.freelist_root = Some(P::Inx::new(source.m.len()));
             self.m.push(match source.freelist_root {
                 // points to old root
                 Some(inx) => Free(inx),
                 // points to itself
-                None => Free(self.m.len()),
+                None => Free(P::Inx::new(self.m.len())),
             });
         } else {
             self.freelist_root = source.freelist_root;

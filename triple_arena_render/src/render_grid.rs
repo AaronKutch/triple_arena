@@ -1,6 +1,6 @@
 use std::cmp::max;
 
-use triple_arena::{Arena, Ptr, PtrTrait};
+use triple_arena::{Arena, Ptr};
 
 use crate::{
     internal::{ANode, RenderNode},
@@ -9,16 +9,16 @@ use crate::{
 
 /// Final grid of `RenderNodes`
 #[derive(Debug)]
-pub struct RenderGrid<P: PtrTrait> {
+pub struct RenderGrid<P: Ptr> {
     pub dag: Arena<P, ANode<P>>,
     pub grid: Vec<Vec<Option<RenderNode<P>>>>,
     pub tot_wx: i32,
     pub tot_wy: i32,
 }
 
-impl<P: PtrTrait> RenderGrid<P> {
+impl<P: Ptr> RenderGrid<P> {
     /// Used by `grid_process`
-    pub fn new(dag: Arena<P, ANode<P>>, grid: Vec<Vec<(Ptr<P>, usize)>>) -> Self {
+    pub fn new(dag: Arena<P, ANode<P>>, grid: Vec<Vec<(P, usize)>>) -> Self {
         let mut rg = Self {
             dag,
             grid: vec![],

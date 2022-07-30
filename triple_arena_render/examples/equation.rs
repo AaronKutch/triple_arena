@@ -5,18 +5,18 @@ use triple_arena_render::{render_to_svg_file, DebugNode, DebugNodeTrait};
 
 // Suppose we are storing an equation evaluation tree in an arena
 // with this type of node
-enum MyNode<P: PtrTrait> {
+enum MyNode<P: Ptr> {
     /// A literal value in the equation
     Literal(i64),
     /// Negation of the node this `Ptr` is pointing to
-    Negation(Ptr<P>),
+    Negation(P),
     /// Summation of all the nodes pointed to
-    Summation(Vec<Ptr<P>>),
+    Summation(Vec<P>),
 }
 
 use MyNode::*;
 
-impl<P: PtrTrait> DebugNodeTrait<P> for MyNode<P> {
+impl<P: Ptr> DebugNodeTrait<P> for MyNode<P> {
     fn debug_node(this: &Self) -> DebugNode<P> {
         // Here we manually write out the fields of the `DebugNode`,
         // but you can also use its `Default` implementation or
@@ -59,7 +59,7 @@ impl<P: PtrTrait> DebugNodeTrait<P> for MyNode<P> {
     }
 }
 
-ptr_trait_struct_with_gen!(P0);
+ptr_trait_struct!(P0);
 
 fn main() {
     let mut a: Arena<P0, MyNode<P0>> = Arena::new();
@@ -77,7 +77,7 @@ fn main() {
 
     let _sum = a.insert(Summation(vec![neg_lit42, inner_sum, will_be_removed]));
 
-    // example of an invalid pointer in a graph
+    // example of an invalid `Ptr` in a graph
     a.remove(will_be_removed).unwrap();
 
     render_to_svg_file(

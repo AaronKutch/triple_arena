@@ -6,18 +6,18 @@ use std::{
     num::NonZeroU64,
 };
 
-use triple_arena::{Arena, Ptr, PtrTrait};
+use triple_arena::{Arena, Ptr};
 
 use crate::{render_grid::RenderGrid, DebugNodeTrait, RenderError};
 
 /// Algorithmic node. Contains some additional information alongside the
 /// `DebugNode` information needed for fast processing
 #[derive(Debug)]
-pub struct ANode<P: PtrTrait> {
+pub struct ANode<P: Ptr> {
     // the additional `usize` enables pointing to a specific output in the source node
-    pub sources: Vec<(Ptr<P>, String, Option<usize>)>,
+    pub sources: Vec<(P, String, Option<usize>)>,
     pub center: Vec<String>,
-    pub sinks: Vec<(Ptr<P>, String)>,
+    pub sinks: Vec<(P, String)>,
     /// Used in initial topological sorting
     pub sort_position: usize,
     /// Used for grid positioning
@@ -30,7 +30,7 @@ pub struct ANode<P: PtrTrait> {
     pub visit: u64,
 }
 
-impl<P: PtrTrait> Default for ANode<P> {
+impl<P: Ptr> Default for ANode<P> {
     fn default() -> Self {
         Self {
             sources: vec![],
@@ -48,12 +48,12 @@ impl<P: PtrTrait> Default for ANode<P> {
 }
 
 // used in the second order algorithm
-fn colored_forest<P: PtrTrait, F: FnMut() -> (u64, u64)>(
+fn colored_forest<P: Ptr, F: FnMut() -> (u64, u64)>(
     dag: &mut Arena<P, ANode<P>>,
     next_visit: &mut F,
     color_visit: &mut u64,
-    p0: Ptr<P>,
-    p1: Ptr<P>,
+    p0: P,
+    p1: P,
     weight: isize,
 ) {
     let base = (*color_visit as isize) << 15;
@@ -174,7 +174,7 @@ fn colored_forest<P: PtrTrait, F: FnMut() -> (u64, u64)>(
 }
 
 /// Processes an `Arena<P, T>` into a `RenderGrid<P>`
-pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
+pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     arena: &Arena<P, T>,
     error_on_invalid_ptr: bool,
 ) -> Result<RenderGrid<P>, RenderError<P>> {
@@ -295,7 +295,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     // Some kinds of cycles will have no roots leading to them. Here, we find nodes
     // reachable from a root. DFS
     let (unelided_visit, root_reachable_visit) = next_visit();
-    let mut path: Vec<(usize, Ptr<P>)> = vec![];
+    let mut path: Vec<(usize, P)> = vec![];
     for root in &roots {
         let root = *root;
         if dag[root].visit == unelided_visit {
@@ -350,7 +350,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     // path from root, with the `usize` indicating which sink was followed
     let (prev_visit, on_stack_visit) = next_visit();
     let (_, dfs_explored_visit) = next_visit();
-    let mut path: Vec<(usize, Ptr<P>)> = vec![];
+    let mut path: Vec<(usize, P)> = vec![];
     for start in &starts {
         let start = *start;
         if dag[start].visit == prev_visit {
@@ -434,7 +434,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     let (_, dfs_explored_visit) = next_visit();
     let mut sort_num = 0usize;
     // path from root, with the `usize` indicating which sink was followed
-    let mut path: Vec<(usize, Ptr<P>)> = vec![];
+    let mut path: Vec<(usize, P)> = vec![];
     let original_root_len = roots.len();
     for root_i in 0..original_root_len {
         let root = roots[root_i];
@@ -488,7 +488,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     // sees that none of its neighbors are already colored. When different colors
     // collide, a new lesser order is pushed on to supply progressively more global
     // orders.
-    let mut ranked_nodes = BinaryHeap::<(usize, Ptr<P>)>::new();
+    let mut ranked_nodes = BinaryHeap::<(usize, P)>::new();
     for (p_node, node) in &dag {
         ranked_nodes.push((node.sinks.len() + node.sources.len(), p_node))
     }
@@ -541,7 +541,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     // touched on the first exploration, later explorations through
     // the same lineage will overwrite the lineage number.
     let mut lineage_num = 0;
-    let mut lineage_leaves: Vec<(usize, Ptr<P>)> = vec![];
+    let mut lineage_leaves: Vec<(usize, P)> = vec![];
     for p0 in &ptrs {
         let mut next = *p0;
         if dag[next].lineage_num.is_none() {
@@ -586,7 +586,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     }
 
     // get lineages
-    let mut lineages: Vec<Vec<Ptr<P>>> = vec![];
+    let mut lineages: Vec<Vec<P>> = vec![];
     for (lineage_num, leaf) in lineage_leaves {
         let mut next = leaf;
         let mut lineage = vec![next];
@@ -606,7 +606,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     // differentiates between searching sources and sinks
     let (prev_visit, on_stack_visit) = next_visit();
     let (_, dfs_explored_visit) = next_visit();
-    let mut path: Vec<(bool, usize, Ptr<P>)> = vec![];
+    let mut path: Vec<(bool, usize, P)> = vec![];
     let mut indep_num = 0;
     for lineage in &lineages {
         let node = lineage[0];
@@ -696,7 +696,7 @@ pub fn grid_process<P: PtrTrait, T: DebugNodeTrait<P>>(
     // Finally, make a grid such that any dependency must flow one way. The second
     // element in the tuple says how far back from the leaf line the node should be
     // placed.
-    let mut grid: Vec<Vec<(Ptr<P>, usize)>> = vec![];
+    let mut grid: Vec<Vec<(P, usize)>> = vec![];
     for lineage in &lineages {
         let mut vertical = vec![];
         for ptr in lineage {
