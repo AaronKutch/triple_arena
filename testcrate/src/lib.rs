@@ -1,4 +1,4 @@
-use triple_arena::prelude::*;
+use triple_arena::{ptr_struct, Ptr};
 use triple_arena_render::*;
 
 pub struct MyNode<P: Ptr> {

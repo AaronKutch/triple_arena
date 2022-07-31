@@ -14,10 +14,6 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::{borrow::Borrow, mem};
 
-pub mod prelude {
-    pub use crate::{ptr_struct, Arena, Ptr};
-}
-
 use InternalEntry::*;
 
 /// An arena supporting non-Clone `T` (`T` has no requirements other than
@@ -39,7 +35,7 @@ use InternalEntry::*;
 /// structs.
 ///
 /// ```
-/// use triple_arena::prelude::*;
+/// use triple_arena::{ptr_struct, Arena, Ptr};
 ///
 /// // In implementations that always use valid indexes and only want the
 /// // generation counter in debug mode, we can use `cfg`s like this:

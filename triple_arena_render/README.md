@@ -8,7 +8,7 @@ complete.
 In the future, we could have more rendering styles and backends.
 
 ```rust
-use triple_arena::prelude::*;
+use triple_arena::{ptr_struct, Arena, Ptr};
 use triple_arena_render::{render_to_svg_file, DebugNode, DebugNodeTrait};
 
 // Suppose we are storing an equation evaluation tree in an arena
