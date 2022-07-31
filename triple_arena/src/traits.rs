@@ -65,7 +65,7 @@ impl<P: Ptr, T> Arena<P, T> {
         } else {
             self.freelist_root = Some(P::Inx::new(0));
         }
-        self.len = P::Inx::new(0);
+        self.len = 0;
         self.inc_gen();
         Drain {
             ptr: P::Inx::new(0),

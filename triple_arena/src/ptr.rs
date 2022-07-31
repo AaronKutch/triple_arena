@@ -146,14 +146,14 @@ pub trait Ptr:
     fn _from_raw(inx: Self::Inx, gen: Self::Gen) -> Self;
 }
 
-/// Convenience macro for quickly making new unit structs that implement
-/// `Ptr`. By default, `usize` is used for the index type and `NonZeroU64` is
-/// used for the generation type. The struct name can be followed by square
-/// brackets containing the type used for the index which can include `u8`
-/// through `u128`. After the optional square brackets, optional parenthesis can
-/// be added which contain the the generation type which can be `NonZeroU8`
-/// through `NonZeroU128`. The parenthesis can also be empty in which case the
-/// Arena will not use generation counters. This all can be followed by a comma
+/// Convenience macro for quickly making new structs that implement `Ptr`. By
+/// default, `usize` is used for the index type and `NonZeroU64` is used for the
+/// generation type. The struct name can be followed by square brackets
+/// containing the type used for the index which can include `u8` through
+/// `u128`. After the optional square brackets, optional parenthesis can be
+/// added which contain the the generation type which can be `NonZeroU8` through
+/// `NonZeroU128`. The parenthesis can also be empty in which case the Arena
+/// will not use generation counters. This all can be followed by a comma
 /// separated list of attributes.
 ///
 /// ```
@@ -239,7 +239,7 @@ macro_rules! ptr_struct {
         impl core::default::Default for $struct_name {
             #[inline]
             fn default() -> Self {
-                Self::invalid()
+                $crate::Ptr::invalid()
             }
         }
 
@@ -250,8 +250,8 @@ macro_rules! ptr_struct {
                 f.write_fmt(format_args!(
                     "{}[{:?}]({:?})",
                     stringify!($struct_name),
-                    self.inx(),
-                    self.gen(),
+                    $crate::Ptr::inx(*self),
+                    $crate::Ptr::gen(*self),
                 ))
             }
         }

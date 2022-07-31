@@ -156,8 +156,10 @@ pub struct Arena<P: Ptr, T> {
     ///   generation updated to equal the arena's `gen`. Newer allocations must
     ///   use the new `gen` value.
     m: Vec<InternalEntry<P, T>>,
-    /// Number of `T` currently contained in the arena
-    len: P::Inx,
+    /// Number of `T` currently contained in the arena, must be a `usize`
+    /// because of the `P::Inx::max()` corner case where the index is
+    /// `P::Inx::max()` but the number of elements is `P::Inx::max() + 1`.
+    len: usize,
     /// Points to the root of the chain of freelist nodes
     freelist_root: Option<P::Inx>,
     gen: P::Gen,
@@ -179,6 +181,15 @@ pub struct Arena<P: Ptr, T> {
 /// Otherwise, it is possible for another `T` to get allocated in the same
 /// allocation, and pointers to the previous `T` will now point to a different
 /// `T`. If this is intentional, [Arena::replace_and_keep_gen] should be used.
+///
+/// # Overflow
+///
+/// When using the default `P::Inx = usize` and `P::Gen = NonZeroU64`, only
+/// memory exhaustion should be a concern on all platforms, but if smaller types
+/// are used then panics can realistically happen under these conditions: If
+/// `Arena::len() == (P::Inx::max() + 1)` and an insertion function is called, a
+/// panic occurs. If `Arena::gen()` is the maximum value of its type and an
+/// invalidation occurs, a panic occurs.
 impl<P: Ptr, T> Arena<P, T> {
     /// Used by tests
     #[doc(hidden)]
@@ -186,16 +197,15 @@ impl<P: Ptr, T> Arena<P, T> {
         if this.gen() < P::Gen::two() {
             return Err("bad generation")
         }
-        let m_len = P::Inx::new(this.m.len());
-        if this.capacity() != m_len {
+        if this.capacity() != this.m.len() {
             return Err("virtual capacity != m_len")
         }
         let mut n_allocated = 0;
         for entry in &this.m {
             n_allocated += matches!(entry, Allocated(..)) as usize;
         }
-        let n_free = P::Inx::get(m_len) - n_allocated;
-        if P::Inx::get(this.len()) != n_allocated {
+        let n_free = this.m.len() - n_allocated;
+        if this.len() != n_allocated {
             return Err("len != n_allocated")
         }
         // checking freelist integrity
@@ -237,7 +247,7 @@ impl<P: Ptr, T> Arena<P, T> {
     }
 
     /// Returns the number of `T` in the arena
-    pub fn len(&self) -> P::Inx {
+    pub fn len(&self) -> usize {
         self.len
     }
 
@@ -252,8 +262,8 @@ impl<P: Ptr, T> Arena<P, T> {
     /// is sometimes less in order to prevent exponential capacity growth
     /// with some combinations of functions (see the "Capacity" section in
     /// lib.rs for details).
-    pub fn capacity(&self) -> P::Inx {
-        P::Inx::new(self.m.len())
+    pub fn capacity(&self) -> usize {
+        self.m.len()
     }
 
     /// Return the arena generation counter (unless `P::Gen` is `()` in which
@@ -264,14 +274,6 @@ impl<P: Ptr, T> Arena<P, T> {
         self.gen
     }
 
-    fn raw_inc_len(&mut self) {
-        self.len = P::Inx::new(P::Inx::get(self.len).wrapping_add(1))
-    }
-
-    fn raw_dec_len(&mut self) {
-        self.len = P::Inx::new(P::Inx::get(self.len).wrapping_sub(1))
-    }
-
     #[inline]
     fn inc_gen(&mut self) {
         self.gen = PtrGen::increment(self.gen);
@@ -279,32 +281,35 @@ impl<P: Ptr, T> Arena<P, T> {
 
     /// Reserves capacity for at least `additional` more `T`, in accordance
     /// with `Vec::reserve`, except if the capacity would be more than
-    /// `P::Inx::max()` in which case capacity is capped at `P::Inx::max()`.
+    /// `P::Inx::max() + 1` in which case capacity is capped at `P::Inx::max() +
+    /// 1`.
     pub fn reserve(&mut self, additional: usize) {
         let end = self.m.len();
-        let true_remaining = self.m.capacity().wrapping_sub(end);
-        let remaining = if true_remaining < additional {
-            self.m.reserve(additional.wrapping_sub(true_remaining));
-            self.m.capacity()
-        } else {
-            // because of the performance edge case with [clone_from], we need to use up
-            // existing true allocated capacity first, or else even `additional == 0` can
-            // cause exponential growth problems. If the doubling in `insert` or capacity
-            // increase in [clone_from] causes the reserve to overstep, and if
-            // `true_remaining >= additional`, then `reserve` will not be called
-            // until `true_remaining < additional` again. `additional == 0` will
-            // always go here.
-            additional
-        };
-        // cap resultant virtual capacity to P::Inx::max(), so no internal entries can
-        // have an overflowing `Free` `Ptr::Inx`.
-        let remaining = if remaining.wrapping_add(self.m.len()) > <P::Inx as PtrInx>::max() {
+        let cap = self.m.capacity();
+        // first determine target `m.len()`
+        let target = end.checked_add(additional).unwrap_or(usize::MAX).clamp(
+            0,
             <P::Inx as PtrInx>::max()
+                .checked_add(1)
+                .unwrap_or(usize::MAX),
+        );
+        // then determine if we need to real reserve any real capacity
+        let reserve_amt = if target <= cap {
+            // this both handles the overflow case and prevents the exponential capacity
+            // growth problem, because if the real capacity is greater than target virtual
+            // capacity, then this is reached.
+            0
         } else {
-            remaining
+            target.wrapping_sub(cap)
         };
-        // we will use up this remaining capacity and prepare the virtual capacity
-        // with extended freelist
+        // check for greater than zero, `reserve(0)` can trigger allocation and thus
+        // exponential growth problems
+        if reserve_amt > 0 {
+            self.m.reserve(reserve_amt);
+        }
+        // get to `target` virtual capacity and no more, do not go all way to
+        // `self.m.capacity()`
+        let remaining = target.wrapping_sub(end);
         if remaining > 0 {
             let old_root = self.freelist_root;
             // we can choose the new root to go anywhere in the new capacity, but we choose
@@ -321,9 +326,7 @@ impl<P: Ptr, T> Arena<P, T> {
                 }
                 None => {
                     // the last `Free` points to itself
-                    self.m.push(Free(P::Inx::new(
-                        end.wrapping_add(remaining).wrapping_sub(1),
-                    )));
+                    self.m.push(Free(P::Inx::new(target.wrapping_sub(1))));
                 }
             }
         }
@@ -363,7 +366,7 @@ impl<P: Ptr, T> Arena<P, T> {
     pub fn try_insert(&mut self, t: T) -> Result<P, T> {
         if let Some(inx) = self.freelist_root {
             self.unwrap_replace_free(inx, self.gen(), t);
-            self.raw_inc_len();
+            self.len += 1;
             Ok(Ptr::_from_raw(inx, self.gen()))
         } else {
             Err(t)
@@ -382,7 +385,7 @@ impl<P: Ptr, T> Arena<P, T> {
         if let Some(inx) = self.freelist_root {
             let ptr = P::_from_raw(inx, self.gen());
             self.unwrap_replace_free(inx, self.gen(), create(ptr));
-            self.raw_inc_len();
+            self.len += 1;
             Ok(ptr)
         } else {
             Err(create)
@@ -434,7 +437,7 @@ impl<P: Ptr, T> Arena<P, T> {
         };
         let ptr = P::_from_raw(inx, self.gen());
         self.unwrap_replace_free(inx, self.gen(), create(ptr));
-        self.raw_inc_len();
+        self.len += 1;
         ptr
     }
 
@@ -504,7 +507,7 @@ impl<P: Ptr, T> Arena<P, T> {
                 } else {
                     // in both cases the new root is the entry we just removed
                     self.freelist_root = Some(p.inx());
-                    self.raw_dec_len();
+                    self.len -= 1;
                     self.inc_gen();
                     Some(old_t)
                 }
@@ -520,7 +523,7 @@ impl<P: Ptr, T> Arena<P, T> {
             let inx = P::Inx::new(inx);
             if let Allocated(gen, t) = entry {
                 if pred(P::_from_raw(inx, *gen), t) {
-                    self.len = P::Inx::new(P::Inx::get(self.len).wrapping_sub(1));
+                    self.len -= 1;
                     if let Some(free) = self.freelist_root {
                         // point to previous root
                         *entry = Free(free);
@@ -625,7 +628,7 @@ impl<P: Ptr, T> Arena<P, T> {
             self.freelist_root = None;
         }
         self.inc_gen();
-        self.len = P::Inx::new(0);
+        self.len = 0;
     }
 
     /// Performs an [Arena::clear] and resets capacity to 0
@@ -634,7 +637,7 @@ impl<P: Ptr, T> Arena<P, T> {
         self.m.shrink_to_fit();
         self.freelist_root = None;
         self.inc_gen();
-        self.len = P::Inx::new(0);
+        self.len = 0;
     }
 
     /// Like [Arena::clone_from] except the `Clone` bound is not required

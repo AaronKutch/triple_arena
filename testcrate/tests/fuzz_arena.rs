@@ -4,7 +4,7 @@ use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::{ptr_struct, Arena, Ptr};
+use triple_arena::{ptr_struct, Arena};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
@@ -340,9 +340,9 @@ fn fuzz() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!(iters999, 1064);
-    assert_eq!(max_len, 57);
-    assert_eq!(a.gen(), core::num::NonZeroU64::new(68264).unwrap());
+    assert_eq!(iters999, 1068);
+    assert_eq!(max_len, 54);
+    assert_eq!(a.gen(), core::num::NonZeroU64::new(67391).unwrap());
 }
 
 // for testing `clone` and `clone_from` which interact between multiple arenas
