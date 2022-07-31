@@ -61,7 +61,7 @@ impl<P: Ptr> DebugNodeTrait<P> for MyNode<P> {
     }
 }
 
-ptr_trait_struct!(P0);
+ptr_struct!(P0);
 
 fn main() {
     let mut a: Arena<P0, MyNode<P0>> = Arena::new();

@@ -15,21 +15,24 @@ use alloc::vec::Vec;
 use core::{borrow::Borrow, mem};
 
 pub mod prelude {
-    pub use crate::{ptr_trait_struct, Arena, Ptr};
+    pub use crate::{ptr_struct, Arena, Ptr};
 }
 
 use InternalEntry::*;
 
 /// An arena supporting non-Clone `T` (`T` has no requirements other than
 /// `Sized`, but some traits are only active if `T` implements them), deletion,
-/// and optional generation counters.
+/// and optional generation counters. The index and generation types can be
+/// changed to be smaller for less memory footprint in exchange for smaller
+/// maximum capacity.
 ///
-/// `P` is a `Ptr` struct shared by the `P` type used with this arena.
+/// `P` is a struct implementing `Ptr`, which has associated types for
+/// determining what the arena's indexes and generation counters should be.
 /// When using multiple arenas, it is encouraged to use different `P` in order
 /// to have the type system guard against confusion and mistakenly using
-/// pointers from one arena in another. If `P` has a generation value, the arena
-/// will use generation counters to check for invalidated pointers if `P` has a
-/// generation counter.
+/// pointers from one arena in another. If `P` has a generation value, the
+/// arena will use generation counters to check for invalidated pointers if `P`
+/// has a generation counter.
 ///
 /// Panics or unexpected behaviour could result if `Ptr` is not implemented
 /// properly for `P`. The macros should be used for quickly making `Ptr`
@@ -41,19 +44,30 @@ use InternalEntry::*;
 /// // In implementations that always use valid indexes and only want the
 /// // generation counter in debug mode, we can use `cfg`s like this:
 /// //#[cfg(Debug)]
-/// ptr_trait_struct!(Ex; P2);
+/// ptr_struct!(P0);
+/// //#[cfg(Debug)]
+/// ptr_struct!(Q2);
 /// //#[cfg(not(Debug))]
-/// //ptr_trait_struct!(Ex(); P2());
+/// //ptr_struct!(P0());
+/// //#[cfg(not(Debug))]
+/// //ptr_struct!(Q2());
 ///
-/// let mut arena: Arena<Ex, String> = Arena::new();
+/// // By convention we use short names for `Ptr` structs beginning with `P`,
+/// // `Q`, or `R`. In simple contexts we add a single digit to differentiate
+/// // the generic `P: Ptr` from a instantiated `P0`. If the number of arenas
+/// // exceeds a small number you should use more descriptive names like
+/// // `PEntry` or `PComponent`.
 ///
-/// let test_ptr: Ptr<Ex> = arena.insert("test".to_string());
-/// let hello_ptr: Ptr<Ex> = arena.insert("hello".to_string());
+/// let mut arena: Arena<P0, String> = Arena::new();
 ///
-/// // nice debug representations
+/// let test_ptr: P0 = arena.insert("test".to_string());
+/// let hello_ptr: P0 = arena.insert("hello".to_string());
+///
+/// // Nice debug representations. See also the `triple_arena_render` crate for
+/// // trait-based rendering of graphs.
 /// assert_eq!(
 ///     &format!("{:?}", arena),
-///     "{Ptr<Ex>(0)[2]: \"test\", Ptr<Ex>(1)[2]: \"hello\"}"
+///     "{P0[0](2): \"test\", P0[1](2): \"hello\"}"
 /// );
 ///
 /// // use the `Ptr`s we got from insertion to reference the stored data
@@ -68,36 +82,32 @@ use InternalEntry::*;
 /// // never work again
 /// assert!(arena.get(test_ptr).is_none());
 ///
-/// // Using different `P` generics is extremely useful in complicated multiple
-/// // arena code with self pointers and inter-arena pointers. This is an arena
-/// // storing a tuple of pointers that work on the first arena and itself.
-/// let mut arena2: Arena<P2, (Ptr<Ex>, Ptr<P2>)> = Arena::new();
+/// // Using different `Ptr` generics is extremely useful in complicated
+/// // multiple arena code with self pointers and inter-arena pointers. This is
+/// // an arena storing a tuple of pointers that work on the first arena and
+/// // itself.
+/// let mut arena2: Arena<Q2, (P0, Q2)> = Arena::new();
 ///
-/// let p2_ptr: Ptr<P2> = arena2.insert((hello_ptr, Ptr::invalid()));
-/// let another: Ptr<P2> = arena2.insert((hello_ptr, p2_ptr));
+/// let p2_ptr: Q2 = arena2.insert((hello_ptr, Ptr::invalid()));
+/// let another: Q2 = arena2.insert((hello_ptr, p2_ptr));
 ///
-/// // With other arena crates, no compile time or runtime checks would prevent
+/// // With many arena crates, no compile time or runtime checks would prevent
 /// // you from using the wrong pointers. Here, the compiler protects us.
-/// // error: expected struct `triple_arena::Ptr<Ex>`
-/// //           found struct `triple_arena::Ptr<P2>`
+/// // error: expected struct `P0`, found struct `Q2`
 /// //let _ = arena.get(p2_ptr);
 ///
 /// assert_eq!(arena[arena2[p2_ptr].0], "hello");
 ///
-/// // In cases where we are forced to have the same `P`, we can still have
-/// // type guards against semantically different `Ptr`s by using generics:
-/// fn example<P0: Ptr, P1: Ptr, T>(
-///     a0: &mut Arena<P0, T>,
-///     a1: &mut Arena<P1, T>,
-///     p1: Ptr<P1>
-/// ) {
-///    // error: expected type parameter `P0`, found type parameter `P1`
-///    //let _ = a0.remove(p1);
+/// // In cases where we are forced to have the same `Ptr` struct, we can still
+/// // have type guards against semantically different `Ptr`s by using generics:
+/// fn example<P0: Ptr, P1: Ptr, T>(a0: &mut Arena<P0, T>, a1: &mut Arena<P1, T>, p1: P1) {
+///     // error: expected type parameter `P0`, found type parameter `P1`
+///     //let _ = a0.remove(p1);
 ///
-///    a0.insert(a1.remove(p1).unwrap());
+///     a0.insert(a1.remove(p1).unwrap());
 /// }
 ///
-/// let mut arena3: Arena<Ex, String> = Arena::new();
+/// let mut arena3: Arena<Q2, String> = Arena::new();
 /// example(&mut arena3, &mut arena, hello_ptr);
 /// assert_eq!(arena3.iter().next().unwrap().1, "hello");
 /// ```
@@ -163,12 +173,12 @@ pub struct Arena<P: Ptr, T> {
 ///
 /// However, the functions here might not detect invalidity and return a `T`
 /// different than the one a `Ptr` originally pointed to. The first case is
-/// caught if different `P` are being used for different arenas, in which case
-/// Rust's type system will prevent using the wrong pointers. The second case is
-/// only guaranteed to be caught if `P` has a generation counter. Otherwise, it
-/// is possible for another `T` to get allocated in the same allocation, and
-/// pointers to the previous `T` will now point to a different `T`. If this is
-/// intentional, [Arena::replace_and_keep_gen] should be used.
+/// caught if different `Ptr` structs are being used for different arenas, in
+/// which case Rust's type system will prevent using the wrong pointers. The
+/// second case is only guaranteed to be caught if `P` has a generation counter.
+/// Otherwise, it is possible for another `T` to get allocated in the same
+/// allocation, and pointers to the previous `T` will now point to a different
+/// `T`. If this is intentional, [Arena::replace_and_keep_gen] should be used.
 impl<P: Ptr, T> Arena<P, T> {
     /// Used by tests
     #[doc(hidden)]

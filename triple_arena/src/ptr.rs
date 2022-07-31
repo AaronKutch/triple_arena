@@ -107,8 +107,9 @@ macro_rules! impl_ptr_inx {
 
 impl_ptr_inx!(usize u8 u16 u32 u64 u128);
 
-/// Note: this crate supplies macros for automatically implementing types
-/// implementing this trait efficiently.
+/// A trait containing index and generation information for the `Arena` type.
+/// This crate supplies macros for automatically implementing types implementing
+/// this trait efficiently.
 ///
 /// Notes: This trait also has many bounds on it, so that users do not regularly
 /// encounter friction with using `Ptr`s in data structures. The
@@ -146,21 +147,44 @@ pub trait Ptr:
 }
 
 /// Convenience macro for quickly making new unit structs that implement
-/// `Ptr` with a generation value. Each struct name can be followed by a
-/// comma separated list of attributes, and structs are separated by semicolons.
+/// `Ptr`. By default, `usize` is used for the index type and `NonZeroU64` is
+/// used for the generation type. The struct name can be followed by square
+/// brackets containing the type used for the index which can include `u8`
+/// through `u128`. After the optional square brackets, optional parenthesis can
+/// be added which contain the the generation type which can be `NonZeroU8`
+/// through `NonZeroU128`. The parenthesis can also be empty in which case the
+/// Arena will not use generation counters. This all can be followed by a comma
+/// separated list of attributes.
 ///
 /// ```
 /// use triple_arena::prelude::*;
 ///
-/// ptr_trait_struct!(
-///     P0 doc="An example struct `P0` that implements `Ptr`";
-///     Example2 doc="Another struct. ", doc="Another doc attribute."
-/// );
+/// // Note that in most use cases the default types or default index with no
+/// // generation counter are what should be used
 ///
-/// let _: Arena<Example2, String>;
+/// // create struct `P0` implementing a default `Ptr` and having a doc comment
+/// ptr_struct!(P0 doc="An example struct `P0` that implements `Ptr`");
+/// let _: Arena<P0, String>;
+///
+/// // `P1` will have a smaller `u16` index type
+/// ptr_struct!(P1[u16]);
+///
+/// use core::num::NonZeroU16;
+///
+/// // `P2` will have a smaller `NonZeroU16` generation type
+/// ptr_struct!(P2(NonZeroU16));
+///
+/// // both the index and generation type are custom
+/// ptr_struct!(P3[u16](NonZeroU16));
+///
+/// // no generation counter
+/// ptr_struct!(P4());
+///
+/// // byte index with no generation counter
+/// ptr_struct!(P5[u8]());
 /// ```
 #[macro_export]
-macro_rules! ptr_trait_struct {
+macro_rules! ptr_struct {
     ($struct_name:ident[$inx_type:path]($gen_type:path) $($attributes:meta),*) => {
         $(#[$attributes])*
         #[derive(
@@ -314,20 +338,26 @@ macro_rules! ptr_trait_struct {
             }
         }
     };
+    ($struct_name:ident[$inx_type:path] $($attributes:meta),*) => {
+        $crate::ptr_struct!(
+            $struct_name[$inx_type](core::num::NonZeroU64)
+            $($attributes),*
+        );
+    };
     ($struct_name:ident($gen_type:path) $($attributes:meta),*) => {
-        $crate::ptr_trait_struct!(
+        $crate::ptr_struct!(
             $struct_name[core::primitive::usize]($gen_type)
             $($attributes),*
         );
     };
     ($struct_name:ident() $($attributes:meta),*) => {
-        $crate::ptr_trait_struct!(
+        $crate::ptr_struct!(
             $struct_name[core::primitive::usize]()
             $($attributes),*
         );
     };
     ($struct_name:ident $($attributes:meta),*) => {
-        $crate::ptr_trait_struct!(
+        $crate::ptr_struct!(
             $struct_name[core::primitive::usize](core::num::NonZeroU64)
             $($attributes),*
         );

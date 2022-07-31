@@ -3,7 +3,7 @@
 ## [0.6.0] - TODO
 ### Changes
 - Major overhaul of `Ptr`s that reduces `Ptr<P0>` down to just `P0` and allows for different index
-  and generation number sizes
+  and generation number sizes. There is now just one `ptr_struct` macro for all use cases.
 - The `PartialOrd` on `Ptr`s now sorts first by the internal raw index followed by generation value
 
 ## [0.5.0] - 2022-05-31

@@ -1,6 +1,9 @@
 # Changelog
 
 ## [0.6.0] - TODO
+### Crate
+- `triple_arena` 0.6.0
+
 ### Changes
 - Improved graph arrangement algorithm
 
