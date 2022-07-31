@@ -113,7 +113,7 @@ impl<P: Ptr> RenderNode<P> {
         if sinks.iter().any(|(_, s)| !s.is_empty()) {
             wy += INPUT_FONT_WY;
         }
-        let separation = if sources.len() < 2 {
+        let separation = if sinks.len() < 2 {
             extra_sink_space / 2
         } else {
             extra_sink_space

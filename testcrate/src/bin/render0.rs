@@ -55,6 +55,52 @@ fn main() {
     a[n8].sources.push((n8, "i".to_string()));
     a[n8].sinks.push((n8, "o".to_string()));
 
+    // many sources and sinks
+
+    let sources: Vec<(P0, String)> = (0..1)
+        .map(|i| {
+            (
+                a.insert(MyNode::new(vec![], vec![], vec![])),
+                format!("i{}", i),
+            )
+        })
+        .collect();
+    let sinks: Vec<(P0, String)> = (0..9)
+        .map(|i| {
+            (
+                a.insert(MyNode::new(vec![], vec![format!("o{}", i)], vec![])),
+                String::new(),
+            )
+        })
+        .collect();
+    a.insert(MyNode {
+        sources,
+        center: vec![],
+        sinks,
+    });
+
+    let sources: Vec<(P0, String)> = (0..9)
+        .map(|i| {
+            (
+                a.insert(MyNode::new(vec![], vec![], vec![])),
+                format!("i{}", i),
+            )
+        })
+        .collect();
+    let sinks: Vec<(P0, String)> = (0..1)
+        .map(|i| {
+            (
+                a.insert(MyNode::new(vec![], vec![format!("o{}", i)], vec![])),
+                String::new(),
+            )
+        })
+        .collect();
+    a.insert(MyNode {
+        sources,
+        center: vec![],
+        sinks,
+    });
+
     render_to_svg_file(
         &a,
         false,
