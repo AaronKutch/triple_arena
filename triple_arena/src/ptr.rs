@@ -316,7 +316,7 @@ macro_rules! ptr_struct {
         impl core::default::Default for $struct_name {
             #[inline]
             fn default() -> Self {
-                Self::invalid()
+                $crate::Ptr::invalid()
             }
         }
 
@@ -327,7 +327,7 @@ macro_rules! ptr_struct {
                 f.write_fmt(format_args!(
                     "{}[{:?}]",
                     stringify!($struct_name),
-                    self.inx(),
+                    $crate::Ptr::inx(*self),
                 ))
             }
         }

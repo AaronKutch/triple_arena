@@ -27,9 +27,4 @@ impl<P: Ptr> DebugNodeTrait<P> for MyNode<P> {
     }
 }
 
-ptr_struct!(P0[core::primitive::usize](core::num::NonZeroU64));
-ptr_struct!(P1[core::primitive::usize]());
-ptr_struct!(P2[core::primitive::usize]);
-ptr_struct!(P3(core::num::NonZeroU64));
-ptr_struct!(P4());
-ptr_struct!(P5);
+ptr_struct!(P0);
