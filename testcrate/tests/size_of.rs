@@ -1,4 +1,7 @@
-use std::{mem::size_of, num::{NonZeroU64, NonZeroU8}};
+use std::{
+    mem::size_of,
+    num::{NonZeroU64, NonZeroU8},
+};
 
 use triple_arena::ptr_struct;
 

@@ -182,184 +182,200 @@ pub trait Ptr:
 ///
 /// // byte index with no generation counter
 /// ptr_struct!(P5[u8]());
+///
+/// // a single macro can have multiple structs of the same matching kind with
+/// // semicolon separators
+/// ptr_struct!(Q0(); Q1(); R0());
 /// ```
 #[macro_export]
 macro_rules! ptr_struct {
-    ($struct_name:ident[$inx_type:path]($gen_type:path) $($attributes:meta),*) => {
-        $(#[$attributes])*
-        #[derive(
-            core::hash::Hash,
-            core::clone::Clone,
-            core::marker::Copy,
-            core::cmp::PartialEq,
-            core::cmp::Eq,
-            core::cmp::PartialOrd,
-            core::cmp::Ord
-        )]
-        pub struct $struct_name {
-            // note: in this order `PartialOrd` will order primarily off of `_internal_inx`
-            #[doc(hidden)]
-            _internal_inx: $inx_type,
-            #[doc(hidden)]
-            _internal_gen: $gen_type,
-        }
+    ($($struct_name:ident[$inx_type:path]($gen_type:path) $($attributes:meta),*);*) => {
+        $(
+            $(#[$attributes])*
+            #[derive(
+                core::hash::Hash,
+                core::clone::Clone,
+                core::marker::Copy,
+                core::cmp::PartialEq,
+                core::cmp::Eq,
+                core::cmp::PartialOrd,
+                core::cmp::Ord
+            )]
+            pub struct $struct_name {
+                // note: in this order `PartialOrd` will order primarily off of `_internal_inx`
+                #[doc(hidden)]
+                _internal_inx: $inx_type,
+                #[doc(hidden)]
+                _internal_gen: $gen_type,
+            }
 
-        impl $crate::Ptr for $struct_name {
-            type Inx = $inx_type;
-            type Gen = $gen_type;
+            impl $crate::Ptr for $struct_name {
+                type Inx = $inx_type;
+                type Gen = $gen_type;
 
-            #[inline]
-            fn invalid() -> Self {
-                Self {
-                    _internal_inx: $crate::PtrInx::new(core::primitive::usize::MAX),
-                    _internal_gen: $crate::PtrGen::one()
+                #[inline]
+                fn invalid() -> Self {
+                    Self {
+                        _internal_inx: $crate::PtrInx::new(core::primitive::usize::MAX),
+                        _internal_gen: $crate::PtrGen::one()
+                    }
+                }
+
+                #[inline]
+                fn inx(self) -> Self::Inx {
+                    self._internal_inx
+                }
+
+                #[inline]
+                fn gen(self) -> Self::Gen {
+                    self._internal_gen
+                }
+
+                #[inline]
+                #[doc(hidden)]
+                fn _from_raw(_internal_inx: Self::Inx, _internal_gen: Self::Gen) -> Self {
+                    Self {
+                        _internal_inx,
+                        _internal_gen,
+                    }
                 }
             }
 
-            #[inline]
-            fn inx(self) -> Self::Inx {
-                self._internal_inx
-            }
-
-            #[inline]
-            fn gen(self) -> Self::Gen {
-                self._internal_gen
-            }
-
-            #[inline]
-            #[doc(hidden)]
-            fn _from_raw(_internal_inx: Self::Inx, _internal_gen: Self::Gen) -> Self {
-                Self {
-                    _internal_inx,
-                    _internal_gen,
-                }
-            }
-        }
-
-        impl core::default::Default for $struct_name {
-            #[inline]
-            fn default() -> Self {
-                $crate::Ptr::invalid()
-            }
-        }
-
-        // This is manually implemented so that it is inline and has no newlines, which
-        // makes the `Debug` implementation on `Arena` look much nicer.
-        impl core::fmt::Debug for $struct_name {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                f.write_fmt(format_args!(
-                    "{}[{:?}]({:?})",
-                    stringify!($struct_name),
-                    $crate::Ptr::inx(*self),
-                    $crate::Ptr::gen(*self),
-                ))
-            }
-        }
-
-        impl core::fmt::Display for $struct_name {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                core::fmt::Debug::fmt(self, f)
-            }
-        }
-    };
-    ($struct_name:ident[$inx_type:path]() $($attributes:meta),*) => {
-        $(#[$attributes])*
-        #[derive(
-            core::hash::Hash,
-            core::clone::Clone,
-            core::marker::Copy,
-            core::cmp::PartialEq,
-            core::cmp::Eq,
-            core::cmp::PartialOrd,
-            core::cmp::Ord
-        )]
-        pub struct $struct_name {
-            // note: in this order `PartialOrd` will order primarily off of `_internal_inx`
-            #[doc(hidden)]
-            _internal_inx: $inx_type,
-            #[doc(hidden)]
-            _internal_gen: (),
-        }
-
-        impl $crate::Ptr for $struct_name {
-            type Inx = $inx_type;
-            type Gen = ();
-
-            #[inline]
-            fn invalid() -> Self {
-                Self {
-                    _internal_inx: $crate::PtrInx::new(core::primitive::usize::MAX),
-                    _internal_gen: $crate::PtrGen::one()
+            impl core::default::Default for $struct_name {
+                #[inline]
+                fn default() -> Self {
+                    $crate::Ptr::invalid()
                 }
             }
 
-            #[inline]
-            fn inx(self) -> Self::Inx {
-                self._internal_inx
-            }
-
-            #[inline]
-            fn gen(self) -> Self::Gen {
-                self._internal_gen
-            }
-
-            #[inline]
-            #[doc(hidden)]
-            fn _from_raw(_internal_inx: Self::Inx, _internal_gen: Self::Gen) -> Self {
-                Self {
-                    _internal_inx,
-                    _internal_gen,
+            // This is manually implemented so that it is inline and has no newlines, which
+            // makes the `Debug` implementation on `Arena` look much nicer.
+            impl core::fmt::Debug for $struct_name {
+                fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                    f.write_fmt(format_args!(
+                        "{}[{:?}]({:?})",
+                        stringify!($struct_name),
+                        $crate::Ptr::inx(*self),
+                        $crate::Ptr::gen(*self),
+                    ))
                 }
             }
-        }
 
-        impl core::default::Default for $struct_name {
-            #[inline]
-            fn default() -> Self {
-                $crate::Ptr::invalid()
+            impl core::fmt::Display for $struct_name {
+                fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                    core::fmt::Debug::fmt(self, f)
+                }
             }
-        }
+        )*
+    };
+    ($($struct_name:ident[$inx_type:path]() $($attributes:meta),*);*) => {
+        $(
+            $(#[$attributes])*
+            #[derive(
+                core::hash::Hash,
+                core::clone::Clone,
+                core::marker::Copy,
+                core::cmp::PartialEq,
+                core::cmp::Eq,
+                core::cmp::PartialOrd,
+                core::cmp::Ord
+            )]
+            pub struct $struct_name {
+                // note: in this order `PartialOrd` will order primarily off of `_internal_inx`
+                #[doc(hidden)]
+                _internal_inx: $inx_type,
+                #[doc(hidden)]
+                _internal_gen: (),
+            }
 
-        // This is manually implemented so that it is inline and has no newlines, which
-        // makes the `Debug` implementation on `Arena` look much nicer.
-        impl core::fmt::Debug for $struct_name {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                f.write_fmt(format_args!(
-                    "{}[{:?}]",
-                    stringify!($struct_name),
-                    $crate::Ptr::inx(*self),
-                ))
-            }
-        }
+            impl $crate::Ptr for $struct_name {
+                type Inx = $inx_type;
+                type Gen = ();
 
-        impl core::fmt::Display for $struct_name {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                core::fmt::Debug::fmt(self, f)
+                #[inline]
+                fn invalid() -> Self {
+                    Self {
+                        _internal_inx: $crate::PtrInx::new(core::primitive::usize::MAX),
+                        _internal_gen: $crate::PtrGen::one()
+                    }
+                }
+
+                #[inline]
+                fn inx(self) -> Self::Inx {
+                    self._internal_inx
+                }
+
+                #[inline]
+                fn gen(self) -> Self::Gen {
+                    self._internal_gen
+                }
+
+                #[inline]
+                #[doc(hidden)]
+                fn _from_raw(_internal_inx: Self::Inx, _internal_gen: Self::Gen) -> Self {
+                    Self {
+                        _internal_inx,
+                        _internal_gen,
+                    }
+                }
             }
-        }
+
+            impl core::default::Default for $struct_name {
+                #[inline]
+                fn default() -> Self {
+                    $crate::Ptr::invalid()
+                }
+            }
+
+            // This is manually implemented so that it is inline and has no newlines, which
+            // makes the `Debug` implementation on `Arena` look much nicer.
+            impl core::fmt::Debug for $struct_name {
+                fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                    f.write_fmt(format_args!(
+                        "{}[{:?}]",
+                        stringify!($struct_name),
+                        $crate::Ptr::inx(*self),
+                    ))
+                }
+            }
+
+            impl core::fmt::Display for $struct_name {
+                fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                    core::fmt::Debug::fmt(self, f)
+                }
+            }
+        )*
     };
-    ($struct_name:ident[$inx_type:path] $($attributes:meta),*) => {
-        $crate::ptr_struct!(
-            $struct_name[$inx_type](core::num::NonZeroU64)
-            $($attributes),*
-        );
+    ($($struct_name:ident[$inx_type:path] $($attributes:meta),*);*) => {
+        $(
+            $crate::ptr_struct!(
+                $struct_name[$inx_type](core::num::NonZeroU64)
+                $($attributes),*
+            );
+        )*
     };
-    ($struct_name:ident($gen_type:path) $($attributes:meta),*) => {
-        $crate::ptr_struct!(
-            $struct_name[core::primitive::usize]($gen_type)
-            $($attributes),*
-        );
+    ($($struct_name:ident($gen_type:path) $($attributes:meta),*);*) => {
+        $(
+            $crate::ptr_struct!(
+                $struct_name[core::primitive::usize]($gen_type)
+                $($attributes),*
+            );
+        )*
     };
-    ($struct_name:ident() $($attributes:meta),*) => {
-        $crate::ptr_struct!(
-            $struct_name[core::primitive::usize]()
-            $($attributes),*
-        );
+    ($($struct_name:ident() $($attributes:meta),*);*) => {
+        $(
+            $crate::ptr_struct!(
+                $struct_name[core::primitive::usize]()
+                $($attributes),*
+            );
+        )*
     };
-    ($struct_name:ident $($attributes:meta),*) => {
-        $crate::ptr_struct!(
-            $struct_name[core::primitive::usize](core::num::NonZeroU64)
-            $($attributes),*
-        );
+    ($($struct_name:ident $($attributes:meta),*);*) => {
+        $(
+            $crate::ptr_struct!(
+                $struct_name[core::primitive::usize](core::num::NonZeroU64)
+                $($attributes),*
+            );
+        )*
     };
 }
