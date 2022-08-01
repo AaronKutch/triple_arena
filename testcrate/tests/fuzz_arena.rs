@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    num::NonZeroU64,
-};
+use std::collections::{HashMap, HashSet};
 
 use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
@@ -199,7 +196,7 @@ fn fuzz() {
                     assert!(!a.contains(invalid));
                 }
             }
-            800..=849 => {
+            800..=839 => {
                 // get and index
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
@@ -207,6 +204,23 @@ fn fuzz() {
                     assert_eq!(t, a[b[&t]]);
                 } else {
                     assert!(a.get(invalid).is_none())
+                }
+            }
+            840..=849 => {
+                // get2_mut
+                if len != 0 {
+                    let t0 = list[next_inx!(rng, len)];
+                    let t1 = list[next_inx!(rng, len)];
+                    if t0 != t1 {
+                        let tmp = a.get2_mut(b[&t0], b[&t1]).unwrap();
+                        assert_eq!((*tmp.0, *tmp.1), (t0, t1));
+                    } else {
+                        assert!(a.get2_mut(b[&t0], invalid).is_none());
+                        assert!(a.get2_mut(invalid, b[&t0]).is_none());
+                        assert!(a.get2_mut(b[&t0], b[&t0]).is_none());
+                    }
+                } else {
+                    assert!(a.get2_mut(invalid, invalid).is_none())
                 }
             }
             850..=899 => {
@@ -359,9 +373,7 @@ fn fuzz() {
     }
     // I may need a custom allocator, because some of the determinism is dependent
     // on the interactions between `reserve` and `try_insert`
-    assert_eq!(iters999, 1066);
-    assert_eq!(max_len, 62);
-    assert_eq!(a.gen(), NonZeroU64::new(64858).unwrap());
+    assert_eq!((iters999, max_len, a.gen().get()), (1071, 63, 64317));
 }
 
 // for testing `clone` and `clone_from` which interact between multiple arenas
@@ -472,6 +484,5 @@ fn multi_arena() {
             _ => unreachable!(),
         }
     }
-    assert_eq!(max_len0, 77);
-    assert_eq!(a0.gen(), NonZeroU64::new(46957).unwrap());
+    assert_eq!((max_len0, a0.gen().get()), (77, 46957));
 }

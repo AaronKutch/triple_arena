@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZeroU64};
+use std::collections::HashMap;
 
 use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
@@ -146,7 +146,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!(max_len, 42);
-    assert_eq!(iters999, 1043);
-    assert_eq!(a.gen(), NonZeroU64::new(42812).unwrap());
+    assert_eq!((max_len, iters999, a.gen().get()), (42, 1043, 42812));
 }

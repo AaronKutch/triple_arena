@@ -8,7 +8,7 @@
 - The `PartialOrd` on `Ptr`s now sorts first by the internal raw index followed by generation value
 
 ### Additions
-- Added `Arena::swap`
+- Added `swap` and `get2_mut` to `Arena`
 - Added `ChainArena`
 
 ## [0.5.0] - 2022-05-31

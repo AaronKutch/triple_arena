@@ -480,6 +480,34 @@ impl<P: Ptr, T> Arena<P, T> {
         }
     }
 
+    /// Gets two `&mut T` references pointed to by `p0` and `p1`. If `p0 == p1`
+    /// or a pointer is invalid, `None` is returned.
+    pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<(&mut T, &mut T)> {
+        if self.contains(p0) && self.contains(p1) && (p0 != p1) {
+            if p0.inx() < p1.inx() {
+                let (lhs, rhs) = self.m.split_at_mut(PtrInx::get(p1.inx()));
+                if let (Allocated(_, t0), Allocated(_, t1)) =
+                    (&mut lhs[PtrInx::get(p0.inx())], &mut rhs[0])
+                {
+                    Some((t0, t1))
+                } else {
+                    unreachable!()
+                }
+            } else {
+                let (lhs, rhs) = self.m.split_at_mut(PtrInx::get(p0.inx()));
+                if let (Allocated(_, t1), Allocated(_, t0)) =
+                    (&mut lhs[PtrInx::get(p1.inx())], &mut rhs[0])
+                {
+                    Some((t0, t1))
+                } else {
+                    unreachable!()
+                }
+            }
+        } else {
+            None
+        }
+    }
+
     /// Removes the `T` pointed to by `p`, returns the `T`, and invalidates old
     /// `Ptr`s to the `T`. Does no invalidation and returns `None` if `p` is
     /// invalid.
@@ -623,6 +651,7 @@ impl<P: Ptr, T> Arena<P, T> {
                 } else {
                     (p1, p0)
                 };
+                // don't need to reorder because of `swap`'s symmetry
                 let (lhs, rhs) = self.m.split_at_mut(PtrInx::get(p1.inx()));
                 if let (Allocated(_, t0), Allocated(_, t1)) =
                     (&mut lhs[PtrInx::get(p0.inx())], &mut rhs[0])
