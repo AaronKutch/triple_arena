@@ -2,15 +2,14 @@
 // false positives
 #![allow(clippy::while_let_on_iterator)]
 
+pub mod arena_iter;
 mod chain;
 mod entry;
 mod misc;
 mod ptr;
-mod traits;
 pub use chain::{ChainArena, Link};
 pub(crate) use entry::InternalEntry;
 pub use ptr::{Ptr, PtrGen, PtrInx};
-pub use traits::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
 
 extern crate alloc;
 use alloc::vec::Vec;

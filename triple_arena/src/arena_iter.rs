@@ -1,3 +1,5 @@
+//! Iterators for `Arena`
+
 use core::{
     borrow::Borrow,
     fmt,

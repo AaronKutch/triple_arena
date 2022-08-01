@@ -108,13 +108,13 @@ macro_rules! impl_ptr_inx {
 impl_ptr_inx!(usize u8 u16 u32 u64 u128);
 
 /// A trait containing index and generation information for the `Arena` type.
-/// This crate supplies macros for automatically implementing types implementing
-/// this trait efficiently.
+/// This crate supplies the `ptr_struct` macro for automatically implementing
+/// types implementing this trait efficiently. The `PartialEq`/`Eq`
+/// implementation should differentiate between pointers at the same index but
+/// different generation. `Default` should use the `invalid` function.
 ///
 /// Notes: This trait also has many bounds on it, so that users do not regularly
-/// encounter friction with using `Ptr`s in data structures. The
-/// `PartialEq`/`Eq` implementation is used for generation value comparison.
-/// `Default` should use the `invalid` function.
+/// encounter friction with using `Ptr`s in data structures.
 pub trait Ptr:
     Default + Debug + Hash + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Send + Sync
 {
