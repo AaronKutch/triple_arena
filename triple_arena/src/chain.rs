@@ -66,7 +66,7 @@ impl<PLink: Ptr, T> DerefMut for Link<PLink, T> {
 /// call "chains" of "links". The arena supports multiple chains and cyclical
 /// chains.
 pub struct ChainArena<PLink: Ptr, T> {
-    a: Arena<PLink, Link<PLink, T>>,
+    pub(crate) a: Arena<PLink, Link<PLink, T>>,
 }
 
 impl<PLink: Ptr, T> ChainArena<PLink, T> {

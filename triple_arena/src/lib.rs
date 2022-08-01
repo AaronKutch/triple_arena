@@ -2,9 +2,9 @@
 // false positives
 #![allow(clippy::while_let_on_iterator)]
 
-pub mod arena_iter;
 mod chain;
 mod entry;
+pub mod iterators;
 mod misc;
 mod ptr;
 pub use chain::{ChainArena, Link};
@@ -13,7 +13,11 @@ pub use ptr::{Ptr, PtrGen, PtrInx};
 
 extern crate alloc;
 use alloc::vec::Vec;
-use core::{borrow::Borrow, mem};
+use core::{
+    borrow::Borrow,
+    fmt, mem,
+    ops::{Index, IndexMut},
+};
 
 use InternalEntry::*;
 
@@ -681,5 +685,34 @@ impl<P: Ptr, T> Arena<P, T> {
         } else {
             self.freelist_root = source.freelist_root;
         }
+    }
+}
+
+impl<T, P: Ptr> Default for Arena<P, T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<P: Ptr, T, B: Borrow<P>> Index<B> for Arena<P, T> {
+    type Output = T;
+
+    fn index(&self, inx: B) -> &T {
+        let p: P = *inx.borrow();
+        self.get(p).expect("indexed arena with invalidated `Ptr`")
+    }
+}
+
+impl<P: Ptr, T, B: Borrow<P>> IndexMut<B> for Arena<P, T> {
+    fn index_mut(&mut self, inx: B) -> &mut T {
+        let p: P = *inx.borrow();
+        self.get_mut(p)
+            .expect("indexed arena with invalidated `Ptr`")
+    }
+}
+
+impl<P: Ptr, T: fmt::Debug> fmt::Debug for Arena<P, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map().entries(self.iter()).finish()
     }
 }

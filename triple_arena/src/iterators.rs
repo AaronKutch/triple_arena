@@ -1,17 +1,10 @@
 //! Iterators for `Arena`
 
-use core::{
-    borrow::Borrow,
-    fmt,
-    fmt::Debug,
-    mem,
-    ops::{Index, IndexMut},
-    slice,
-};
+use core::{mem, slice};
 
 use InternalEntry::*;
 
-use crate::{Arena, InternalEntry, Ptr, PtrInx};
+use crate::{Arena, ChainArena, InternalEntry, Link, Ptr, PtrInx};
 
 /// All the iterators here can return values in arbitrary order
 impl<P: Ptr, T> Arena<P, T> {
@@ -89,26 +82,40 @@ impl<P: Ptr, T> Arena<P, T> {
     }
 }
 
-impl<T, P: Ptr> Default for Arena<P, T> {
-    fn default() -> Self {
-        Self::new()
+impl<PLink: Ptr, T> ChainArena<PLink, T> {
+    /// Iteration over all valid `PLink`s in the arena
+    pub fn ptrs(&self) -> Ptrs<PLink, Link<PLink, T>> {
+        self.a.ptrs()
     }
-}
 
-impl<P: Ptr, T, B: Borrow<P>> Index<B> for Arena<P, T> {
-    type Output = T;
-
-    fn index(&self, inx: B) -> &T {
-        let p: P = *inx.borrow();
-        self.get(p).expect("indexed arena with invalidated `Ptr`")
+    /// Iteration over `&Link<PLink, T>`
+    pub fn vals(&self) -> Vals<PLink, Link<PLink, T>> {
+        self.a.vals()
     }
-}
 
-impl<P: Ptr, T, B: Borrow<P>> IndexMut<B> for Arena<P, T> {
-    fn index_mut(&mut self, inx: B) -> &mut T {
-        let p: P = *inx.borrow();
-        self.get_mut(p)
-            .expect("indexed arena with invalidated `Ptr`")
+    /// Mutable iteration over `&mut Link<PLink, T>`
+    pub fn vals_mut(&mut self) -> ValsMut<PLink, Link<PLink, T>> {
+        self.a.vals_mut()
+    }
+
+    /// Iteration over `(PLink, &Link<PLink, T>)` tuples
+    pub fn iter(&self) -> Iter<PLink, Link<PLink, T>> {
+        self.a.iter()
+    }
+
+    /// Mutable iteration over `(PLink, &mut Link<PLink, T>)` tuples
+    pub fn iter_mut(&mut self) -> IterMut<PLink, Link<PLink, T>> {
+        self.a.iter_mut()
+    }
+
+    /// Same as [Arena::drain]
+    pub fn drain(&mut self) -> Drain<PLink, Link<PLink, T>> {
+        self.a.drain()
+    }
+
+    /// Same as [Arena::capacity_drain]
+    pub fn capacity_drain(self) -> CapacityDrain<PLink, Link<PLink, T>> {
+        self.a.capacity_drain()
     }
 }
 
@@ -307,11 +314,5 @@ impl<P: Ptr, T> FromIterator<T> for Arena<P, T> {
             a.insert(t);
         }
         a
-    }
-}
-
-impl<P: Ptr, T: Debug> Debug for Arena<P, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_map().entries(self.iter()).finish()
     }
 }
