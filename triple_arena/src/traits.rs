@@ -1,6 +1,8 @@
 use core::{
     borrow::Borrow,
-    fmt, mem,
+    fmt,
+    fmt::Debug,
+    mem,
     ops::{Index, IndexMut},
     slice,
 };
@@ -306,7 +308,7 @@ impl<P: Ptr, T> FromIterator<T> for Arena<P, T> {
     }
 }
 
-impl<P: Ptr, T: fmt::Debug> fmt::Debug for Arena<P, T> {
+impl<P: Ptr, T: Debug> Debug for Arena<P, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_map().entries(self.iter()).finish()
     }

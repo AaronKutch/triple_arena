@@ -2,10 +2,12 @@
 // false positives
 #![allow(clippy::while_let_on_iterator)]
 
+mod chain;
 mod entry;
 mod misc;
 mod ptr;
 mod traits;
+pub use chain::{ChainArena, Link};
 pub(crate) use entry::InternalEntry;
 pub use ptr::{Ptr, PtrGen, PtrInx};
 pub use traits::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
@@ -189,7 +191,7 @@ pub struct Arena<P: Ptr, T> {
 impl<P: Ptr, T> Arena<P, T> {
     /// Used by tests
     #[doc(hidden)]
-    pub fn _check_arena_invariants(this: &Self) -> Result<(), &'static str> {
+    pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
         if this.gen() < P::Gen::two() {
             return Err("bad generation")
         }

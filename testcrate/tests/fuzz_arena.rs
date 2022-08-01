@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    num::NonZeroU64,
+};
 
 use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
@@ -53,7 +56,7 @@ fn fuzz() {
         assert_eq!(a.len(), b.len());
         let len = list.len();
         assert_eq!(a.is_empty(), b.is_empty());
-        Arena::_check_arena_invariants(&a).unwrap();
+        Arena::_check_invariants(&a).unwrap();
         op_inx = rng.next_u32() % 1000;
         // I am only using inclusive ranges because exclusive ones are not stable as of
         // writing
@@ -342,7 +345,7 @@ fn fuzz() {
     }
     assert_eq!(iters999, 1068);
     assert_eq!(max_len, 54);
-    assert_eq!(a.gen(), core::num::NonZeroU64::new(67391).unwrap());
+    assert_eq!(a.gen(), NonZeroU64::new(67391).unwrap());
 }
 
 // for testing `clone` and `clone_from` which interact between multiple arenas
@@ -358,7 +361,7 @@ fn multi_arena() {
         assert_eq!(b.len(), list.len());
         assert_eq!(a.len(), b.len());
         assert_eq!(a.is_empty(), b.is_empty());
-        Arena::_check_arena_invariants(a).unwrap();
+        Arena::_check_invariants(a).unwrap();
         let len = a.len();
         match rng.next_u32() % 1000 {
             0..=499 => {
@@ -454,5 +457,5 @@ fn multi_arena() {
         }
     }
     assert_eq!(max_len0, 77);
-    assert_eq!(a0.gen(), core::num::NonZeroU64::new(46957).unwrap());
+    assert_eq!(a0.gen(), NonZeroU64::new(46957).unwrap());
 }
