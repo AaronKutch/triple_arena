@@ -176,7 +176,21 @@ fn fuzz() {
                     );
                 }
             }
-            550..=799 => {
+            550..=599 => {
+                // swap
+                if len != 0 {
+                    let t0 = list[next_inx!(rng, len)];
+                    let t1 = list[next_inx!(rng, len)];
+                    let tmp0 = b[&t0];
+                    let tmp1 = b[&t1];
+                    a.swap(tmp0, tmp1).unwrap();
+                    *b.get_mut(&t1).unwrap() = tmp0;
+                    *b.get_mut(&t0).unwrap() = tmp1;
+                } else {
+                    assert!(a.swap(invalid, invalid).is_none())
+                }
+            }
+            600..=799 => {
                 // contains
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
@@ -343,9 +357,11 @@ fn fuzz() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!(iters999, 1068);
-    assert_eq!(max_len, 54);
-    assert_eq!(a.gen(), NonZeroU64::new(67391).unwrap());
+    // I may need a custom allocator, because some of the determinism is dependent
+    // on the interactions between `reserve` and `try_insert`
+    assert_eq!(iters999, 1066);
+    assert_eq!(max_len, 62);
+    assert_eq!(a.gen(), NonZeroU64::new(64858).unwrap());
 }
 
 // for testing `clone` and `clone_from` which interact between multiple arenas

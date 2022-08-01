@@ -31,9 +31,8 @@ use InternalEntry::*;
 /// determining what the arena's indexes and generation counters should be.
 /// When using multiple arenas, it is encouraged to use different `P` in order
 /// to have the type system guard against confusion and mistakenly using
-/// pointers from one arena in another. If `P` has a generation value, the
-/// arena will use generation counters to check for invalidated pointers if `P`
-/// has a generation counter.
+/// pointers from one arena in another. The arena will use generation counters
+/// to check for invalidated pointers if `P` has a generation counter.
 ///
 /// Panics or unexpected behaviour could result if `Ptr` is not implemented
 /// properly for `P`. The macros should be used for quickly making `Ptr`
@@ -610,6 +609,32 @@ impl<P: Ptr, T> Arena<P, T> {
         match old {
             Allocated(_, old) => Ok((P::_from_raw(p.inx(), new_gen), old)),
             _ => unreachable!(),
+        }
+    }
+
+    /// Swaps the `T` at indexes `p0` and `p1` and keeps the generation counters
+    /// as-is. If `p0 == p1` then nothing occurs. Returns `None` if `p0` or `p1`
+    /// are invalid.
+    pub fn swap(&mut self, p0: P, p1: P) -> Option<()> {
+        if self.contains(p0) && self.contains(p1) {
+            if p0 != p1 {
+                let (p0, p1) = if p0.inx() < p1.inx() {
+                    (p0, p1)
+                } else {
+                    (p1, p0)
+                };
+                let (lhs, rhs) = self.m.split_at_mut(PtrInx::get(p1.inx()));
+                if let (Allocated(_, t0), Allocated(_, t1)) =
+                    (&mut lhs[PtrInx::get(p0.inx())], &mut rhs[0])
+                {
+                    mem::swap(t0, t1);
+                } else {
+                    unreachable!()
+                }
+            }
+            Some(())
+        } else {
+            None
         }
     }
 

@@ -4,7 +4,12 @@
 ### Changes
 - Major overhaul of `Ptr`s that reduces `Ptr<P0>` down to just `P0` and allows for different index
   and generation number sizes. There is now just one `ptr_struct` macro for all use cases.
+- Moved the iterator structs into their own module
 - The `PartialOrd` on `Ptr`s now sorts first by the internal raw index followed by generation value
+
+### Additions
+- Added `Arena::swap`
+- Added `ChainArena`
 
 ## [0.5.0] - 2022-05-31
 ### Additions
