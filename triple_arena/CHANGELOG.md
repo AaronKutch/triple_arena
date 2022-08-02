@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.6.0] - TODO
+## [0.6.0] - 2022-08-02
 ### Changes
 - Major overhaul of `Ptr`s that reduces `Ptr<P0>` down to just `P0` and allows for different index
   and generation number sizes. There is now just one `ptr_struct` macro for all use cases.
