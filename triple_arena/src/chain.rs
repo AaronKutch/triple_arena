@@ -139,8 +139,8 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// If `prev_next.0.is_none() && prev_next.1.is_none()` then a new chain is
     /// started in the arena. If
     /// `prev_next.0.is_some() || prev_next.1.is_some()` then the link is
-    /// inserted in an existing chain and the neighboring links are rerouted
-    /// to be consistent. `prev_next.0.is_some() && prev_next.1.is_none()`
+    /// inserted in an existing chain and the neighboring interlinks reroute to
+    /// the new link. `prev_next.0.is_some() && prev_next.1.is_none()`
     /// and the reverse is allowed even if the link is not at the start or
     /// end of the chain; this function will detect this and derive the
     /// unknown `PLink`, inserting in the middle of the chain as usual. The

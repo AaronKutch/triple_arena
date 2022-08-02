@@ -120,7 +120,7 @@ fn fuzz_chain() {
             }
             100..=199 => {
                 // insert_start and insert_end and insert
-                /*if len != 0 {
+                if len != 0 {
                     let t_mid = list[next_inx!(rng, len)];
                     let t = new_t();
                     list.push(t);
@@ -128,7 +128,7 @@ fn fuzz_chain() {
                         (None, None) => {
                             if (rng.next_u32() & 1) == 0 {
                                 let p = a.insert_start(b[&t_mid].0, t).unwrap();
-                                b.insert(t, (p, (Some(t_mid), None)));
+                                b.insert(t, (p, (None, Some(t_mid))));
                                 b.get_mut(&t_mid).unwrap().1 .0 = Some(t);
                             } else {
                                 let p = a.insert_end(b[&t_mid].0, t).unwrap();
@@ -138,7 +138,7 @@ fn fuzz_chain() {
                         }
                         (None, Some(_)) => {
                             let p = a.insert_start(b[&t_mid].0, t).unwrap();
-                            b.insert(t, (p, (Some(t_mid), None)));
+                            b.insert(t, (p, (None, Some(t_mid))));
                             b.get_mut(&t_mid).unwrap().1 .0 = Some(t);
                         }
                         (Some(_), None) => {
@@ -150,7 +150,7 @@ fn fuzz_chain() {
                             // can't use `insert_end` or `insert_start`, use `insert` with both
                             // `Some`
                             let p = a.insert((Some(b[&t_mid].0), Some(b[&t1].0)), t).unwrap();
-                            b.insert(t, (p, (Some(t_mid), Some(t1)))).unwrap();
+                            b.insert(t, (p, (Some(t_mid), Some(t1))));
                             b.get_mut(&t_mid).unwrap().1 .1 = Some(t);
                             b.get_mut(&t1).unwrap().1 .0 = Some(t);
                         }
@@ -158,7 +158,7 @@ fn fuzz_chain() {
                 } else {
                     assert!(a.insert_start(invalid, u64::MAX).is_none());
                     assert!(a.insert_end(invalid, u64::MAX).is_none());
-                }*/
+                }
             }
             200..=399 => {
                 // remove
@@ -234,5 +234,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (15, 1047, 99667));
+    assert_eq!((max_len, iters999, a.gen().get()), (125, 1062, 166469));
 }
