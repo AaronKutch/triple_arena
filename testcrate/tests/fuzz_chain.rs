@@ -48,7 +48,19 @@ fn fuzz_chain() {
         match op_inx {
             // testing all nontrivial functions on `ChainArena` not already tested by the regular
             // `Arena` tests
-            0..=49 => {
+            /*let mut tmp = vec![];
+            for (t, entry) in &b {
+                tmp.push((t, entry));
+            }
+            for (t, entry) in tmp {
+                if let Some(x) = entry.1.0 {
+                    assert_eq!(b[&x].1.1, Some(*t));
+                }
+                if let Some(x) = entry.1.1 {
+                    assert_eq!(b[&x].1.0, Some(*t));
+                }
+            }*/
+            0..=99 => {
                 // insert, insert_new_cyclic
                 let op = if len == 0 { 0 } else { rng.next_u32() % 4 };
                 let t = new_t();
@@ -106,7 +118,49 @@ fn fuzz_chain() {
                     _ => unreachable!(),
                 }
             }
-            50..=99 => {
+            100..=199 => {
+                // insert_start and insert_end and insert
+                /*if len != 0 {
+                    let t_mid = list[next_inx!(rng, len)];
+                    let t = new_t();
+                    list.push(t);
+                    match b[&t_mid].1 {
+                        (None, None) => {
+                            if (rng.next_u32() & 1) == 0 {
+                                let p = a.insert_start(b[&t_mid].0, t).unwrap();
+                                b.insert(t, (p, (Some(t_mid), None)));
+                                b.get_mut(&t_mid).unwrap().1 .0 = Some(t);
+                            } else {
+                                let p = a.insert_end(b[&t_mid].0, t).unwrap();
+                                b.insert(t, (p, (Some(t_mid), None)));
+                                b.get_mut(&t_mid).unwrap().1 .1 = Some(t);
+                            }
+                        }
+                        (None, Some(_)) => {
+                            let p = a.insert_start(b[&t_mid].0, t).unwrap();
+                            b.insert(t, (p, (Some(t_mid), None)));
+                            b.get_mut(&t_mid).unwrap().1 .0 = Some(t);
+                        }
+                        (Some(_), None) => {
+                            let p = a.insert_end(b[&t_mid].0, t).unwrap();
+                            b.insert(t, (p, (Some(t_mid), None)));
+                            b.get_mut(&t_mid).unwrap().1 .1 = Some(t);
+                        }
+                        (Some(_), Some(t1)) => {
+                            // can't use `insert_end` or `insert_start`, use `insert` with both
+                            // `Some`
+                            let p = a.insert((Some(b[&t_mid].0), Some(b[&t1].0)), t).unwrap();
+                            b.insert(t, (p, (Some(t_mid), Some(t1)))).unwrap();
+                            b.get_mut(&t_mid).unwrap().1 .1 = Some(t);
+                            b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                        }
+                    }
+                } else {
+                    assert!(a.insert_start(invalid, u64::MAX).is_none());
+                    assert!(a.insert_end(invalid, u64::MAX).is_none());
+                }*/
+            }
+            200..=399 => {
                 // remove
                 if len != 0 {
                     let t = list.swap_remove(next_inx!(rng, len));
@@ -130,7 +184,41 @@ fn fuzz_chain() {
                     assert!(a.remove(invalid).is_none());
                 }
             }
-            100..=997 => (),
+            400..=849 => (),
+            850..=899 => {
+                if len != 0 {
+                    let t0 = list[next_inx!(rng, len)];
+                    let t1 = list[next_inx!(rng, len)];
+                    if t0 == t1 {
+                        let t = b[&t0].0;
+                        a.swap(t, t).unwrap();
+                    } else {
+                        let tmp0 = b[&t0];
+                        let tmp1 = b[&t1];
+                        a.swap(tmp0.0, tmp1.0).unwrap();
+                        // because we are using reverse lookups other nodes need to be rerouted
+                        if let Some(prev) = tmp0.1 .0 {
+                            b.get_mut(&prev).unwrap().1 .1 = Some(t1);
+                        }
+                        if let Some(next) = tmp0.1 .1 {
+                            b.get_mut(&next).unwrap().1 .0 = Some(t1);
+                        }
+                        if let Some(prev) = tmp1.1 .0 {
+                            b.get_mut(&prev).unwrap().1 .1 = Some(t0);
+                        }
+                        if let Some(next) = tmp1.1 .1 {
+                            b.get_mut(&next).unwrap().1 .0 = Some(t0);
+                        }
+                        let tmp0 = b[&t0];
+                        let tmp1 = b[&t1];
+                        *b.get_mut(&t0).unwrap() = tmp1;
+                        *b.get_mut(&t1).unwrap() = tmp0;
+                    }
+                } else {
+                    assert!(a.swap(invalid, invalid).is_none());
+                }
+            }
+            900..=997 => (),
             998 => {
                 // clear
                 a.clear();
@@ -146,5 +234,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (42, 1043, 42812));
+    assert_eq!((max_len, iters999, a.gen().get()), (15, 1047, 99667));
 }

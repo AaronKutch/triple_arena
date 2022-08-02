@@ -3,6 +3,7 @@ use core::{
     fmt,
     fmt::{Debug, Display},
     hash::Hash,
+    mem,
     ops::{Deref, DerefMut, Index, IndexMut},
 };
 
@@ -212,17 +213,30 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
             .insert_with(|p| Link::_from_raw((Some(p), Some(p)), t))
     }
 
+    /// Inserts `t` as a new link at the start of a chain which has `p` as its
+    /// first link. Returns ownership of `t` if `p` is not valid or is not the
+    /// start of a chain
+    pub fn insert_start(&mut self, p: PLink, t: T) -> Option<PLink> {
+        if Link::prev(self.a.get_mut(p)?).is_some() {
+            // not at start of chain
+            None
+        } else {
+            let res = Some(self.a.insert(Link::_from_raw((None, Some(p)), t)));
+            self.a.get_mut(p).unwrap().prev_next.0 = res;
+            res
+        }
+    }
+
     /// Inserts `t` as a new link at the end of a chain which has `p` as its
     /// last link. Returns ownership of `t` if `p` is not valid or is not the
     /// end of a chain
-    pub fn insert_last(&mut self, p: PLink, t: T) -> Option<PLink> {
-        let p0 = p;
-        if Link::next(self.a.get_mut(p0)?).is_some() {
+    pub fn insert_end(&mut self, p: PLink, t: T) -> Option<PLink> {
+        if Link::next(self.a.get_mut(p)?).is_some() {
             // not at end of chain
             None
         } else {
-            let res = Some(self.a.insert(Link::_from_raw((Some(p0), None), t)));
-            self.a.get_mut(p0).unwrap().prev_next.1 = res;
+            let res = Some(self.a.insert(Link::_from_raw((Some(p), None), t)));
+            self.a.get_mut(p).unwrap().prev_next.1 = res;
             res
         }
     }
@@ -285,6 +299,24 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         Some(l)
     }
 
+    /// Swaps the `T` at indexes `p0` and `p1` and keeps the generation counters
+    /// and link connections as-is. If `p0 == p1` then nothing occurs.
+    /// Returns `None` if `p0` or `p1` are invalid.
+    pub fn swap(&mut self, p0: PLink, p1: PLink) -> Option<()> {
+        if p0 == p1 {
+            // need to check that they are valid
+            if self.contains(p0) && self.contains(p1) {
+                Some(())
+            } else {
+                None
+            }
+        } else {
+            let (lhs, rhs) = self.a.get2_mut(p0, p1)?;
+            mem::swap(&mut lhs.t, &mut rhs.t);
+            Some(())
+        }
+    }
+
     // exchanges the endpoints of the interlinks right after two given nodes
     // note: if the two interlinks are adjacent, there is a special case where the
     // middle node becomes a single link circular chain and the first node
@@ -295,10 +327,6 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     //pub fn break(&mut self, p)
 
     //pub fn connect(&mut self, p0, p1)
-
-    // TODO add Arena::swap so this can be done efficiently
-    /*pub fn swap(&self, p0: Ptr<PLink>, p1: Ptr<PLink>) -> Option<()> {
-    }*/
 
     /// Drops all links from the arena and invalidates all pointers previously
     /// created from it. This has no effect on allocated capacity.
