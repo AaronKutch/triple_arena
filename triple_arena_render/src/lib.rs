@@ -2,8 +2,10 @@ mod grid_process;
 mod render_grid;
 mod render_node;
 mod svg;
+use std::fmt::Debug;
+
 pub use svg::{render_to_svg, render_to_svg_file};
-use triple_arena::Ptr;
+use triple_arena::{Link, Ptr};
 
 /// Internal structs and functions for experimenting with new rendering backends
 pub mod internal {
@@ -98,6 +100,27 @@ impl<P: Ptr> DebugNodeTrait<P> for DebugNode<P> {
     /// create a single use struct.
     fn debug_node(this: &Self) -> DebugNode<P> {
         this.clone()
+    }
+}
+
+impl<P: Ptr, T: Debug> DebugNodeTrait<P> for Link<P, T> {
+    fn debug_node(this: &Self) -> DebugNode<P> {
+        DebugNode {
+            sources: if let Some(prev) = Link::prev(this) {
+                vec![(prev, String::new())]
+            } else {
+                vec![]
+            },
+            center: format!("{:?}", this.t)
+                .lines()
+                .map(|l| l.to_owned())
+                .collect(),
+            sinks: if let Some(next) = Link::prev(this) {
+                vec![(next, String::new())]
+            } else {
+                vec![]
+            },
+        }
     }
 }
 

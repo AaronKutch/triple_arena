@@ -330,7 +330,8 @@ impl<'a, P: Ptr, T> IntoIterator for &'a mut ChainArena<P, T> {
     type IntoIter = IterMut<'a, P, Link<P, T>>;
     type Item = (P, &'a mut Link<P, T>);
 
-    /// This returns an `IterMut`. Use `ChainArena::drain` for by-value consumption.
+    /// This returns an `IterMut`. Use `ChainArena::drain` for by-value
+    /// consumption.
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
     }
