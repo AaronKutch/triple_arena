@@ -316,3 +316,22 @@ impl<P: Ptr, T> FromIterator<T> for Arena<P, T> {
         a
     }
 }
+
+impl<'a, P: Ptr, T> IntoIterator for &'a ChainArena<P, T> {
+    type IntoIter = Iter<'a, P, Link<P, T>>;
+    type Item = (P, &'a Link<P, T>);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, P: Ptr, T> IntoIterator for &'a mut ChainArena<P, T> {
+    type IntoIter = IterMut<'a, P, Link<P, T>>;
+    type Item = (P, &'a mut Link<P, T>);
+
+    /// This returns an `IterMut`. Use `ChainArena::drain` for by-value consumption.
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
