@@ -60,7 +60,13 @@ fn fuzz_chain() {
                     assert_eq!(b[&x].1.0, Some(*t));
                 }
             }*/
-            0..=99 => {
+            0..=19 => {
+                let t = new_t();
+                list.push(t);
+                let p = a.insert_new(t);
+                b.insert(t, (p, (None, None)));
+            }
+            20..=99 => {
                 // insert, insert_new_cyclic
                 let op = if len == 0 { 0 } else { rng.next_u32() % 4 };
                 let t = new_t();
@@ -218,7 +224,18 @@ fn fuzz_chain() {
                     assert!(a.swap(invalid, invalid).is_none());
                 }
             }
-            900..=997 => (),
+            900..=997 => {
+                if len != 0 {
+                    let t0 = list[next_inx!(rng, len)];
+                    let t1 = list[next_inx!(rng, len)];
+                    if a.are_neighbors(b[&t0].0, b[&t1].0) {
+                        assert_eq!(b[&t0].1.1, Some(t1));
+                        assert_eq!(b[&t1].1.0, Some(t0));
+                    }
+                } else {
+                    assert!(!a.are_neighbors(invalid, invalid));
+                }
+            },
             998 => {
                 // clear
                 a.clear();
@@ -234,5 +251,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (125, 1062, 166469));
+    assert_eq!((max_len, iters999, a.gen().get()), (120, 1051, 166444));
 }
