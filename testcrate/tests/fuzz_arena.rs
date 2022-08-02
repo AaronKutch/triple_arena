@@ -4,7 +4,7 @@ use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::{ptr_trait_struct, ptr_trait_struct_with_gen, Arena, Ptr};
+use triple_arena::{ptr_struct, Arena};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
@@ -12,9 +12,7 @@ macro_rules! next_inx {
     };
 }
 
-ptr_trait_struct_with_gen!(P0);
-// just make sure that the other kind compiles
-ptr_trait_struct!(P1);
+ptr_struct!(P0);
 
 #[test]
 fn fuzz() {
@@ -29,14 +27,14 @@ fn fuzz() {
 
     let mut a: Arena<P0, u64> = Arena::new();
     // map of all `T` and their pointers contained in the arena
-    let mut b: HashMap<u64, Ptr<P0>> = HashMap::new();
+    let mut b: HashMap<u64, P0> = HashMap::new();
     // list of `T`. We need this alongside the hashmap because we need random
     // indexing (and hashmaps will be prone to biases)
     let mut list: Vec<u64> = vec![];
 
     // these are set by the `clone_from` variants
     let mut a1: Arena<P0, u64> = Arena::new();
-    let mut b1: HashMap<u64, Ptr<P0>> = HashMap::new();
+    let mut b1: HashMap<u64, P0> = HashMap::new();
     let mut list1: Vec<u64> = vec![];
 
     let mut op_inx;
@@ -45,7 +43,7 @@ fn fuzz() {
     let mut iters999 = 0;
     let mut max_len = 0;
 
-    // get invalid pointer (from 0th index and not `Ptr::invalid()`)
+    // get invalid `Ptr` (from 0th index and not `Ptr::invalid()`)
     let invalid = a.insert(0);
     a.remove(invalid);
     a.clear_and_shrink();
@@ -55,7 +53,7 @@ fn fuzz() {
         assert_eq!(a.len(), b.len());
         let len = list.len();
         assert_eq!(a.is_empty(), b.is_empty());
-        Arena::_check_arena_invariants(&a).unwrap();
+        Arena::_check_invariants(&a).unwrap();
         op_inx = rng.next_u32() % 1000;
         // I am only using inclusive ranges because exclusive ones are not stable as of
         // writing
@@ -175,7 +173,21 @@ fn fuzz() {
                     );
                 }
             }
-            550..=799 => {
+            550..=599 => {
+                // swap
+                if len != 0 {
+                    let t0 = list[next_inx!(rng, len)];
+                    let t1 = list[next_inx!(rng, len)];
+                    let tmp0 = b[&t0];
+                    let tmp1 = b[&t1];
+                    a.swap(tmp0, tmp1).unwrap();
+                    *b.get_mut(&t1).unwrap() = tmp0;
+                    *b.get_mut(&t0).unwrap() = tmp1;
+                } else {
+                    assert!(a.swap(invalid, invalid).is_none())
+                }
+            }
+            600..=799 => {
                 // contains
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
@@ -184,7 +196,7 @@ fn fuzz() {
                     assert!(!a.contains(invalid));
                 }
             }
-            800..=849 => {
+            800..=839 => {
                 // get and index
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
@@ -192,6 +204,23 @@ fn fuzz() {
                     assert_eq!(t, a[b[&t]]);
                 } else {
                     assert!(a.get(invalid).is_none())
+                }
+            }
+            840..=849 => {
+                // get2_mut
+                if len != 0 {
+                    let t0 = list[next_inx!(rng, len)];
+                    let t1 = list[next_inx!(rng, len)];
+                    if t0 != t1 {
+                        let tmp = a.get2_mut(b[&t0], b[&t1]).unwrap();
+                        assert_eq!((*tmp.0, *tmp.1), (t0, t1));
+                    } else {
+                        assert!(a.get2_mut(b[&t0], invalid).is_none());
+                        assert!(a.get2_mut(invalid, b[&t0]).is_none());
+                        assert!(a.get2_mut(b[&t0], b[&t0]).is_none());
+                    }
+                } else {
+                    assert!(a.get2_mut(invalid, invalid).is_none())
                 }
             }
             850..=899 => {
@@ -342,9 +371,9 @@ fn fuzz() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!(iters999, 1064);
-    assert_eq!(max_len, 57);
-    assert_eq!(a.gen_nz(), Some(core::num::NonZeroU64::new(68264).unwrap()));
+    // I may need a custom allocator, because some of the determinism is dependent
+    // on the interactions between `reserve` and `try_insert`
+    assert_eq!((iters999, max_len, a.gen().get()), (1071, 63, 64317));
 }
 
 // for testing `clone` and `clone_from` which interact between multiple arenas
@@ -353,14 +382,14 @@ fn multi_arena() {
     fn inner(
         rng: &mut Xoshiro128StarStar,
         a: &mut Arena<P0, u64>,
-        b: &mut HashMap<u64, Ptr<P0>>,
+        b: &mut HashMap<u64, P0>,
         list: &mut Vec<u64>,
         new_t: &mut dyn FnMut() -> u64,
     ) {
         assert_eq!(b.len(), list.len());
         assert_eq!(a.len(), b.len());
         assert_eq!(a.is_empty(), b.is_empty());
-        Arena::_check_arena_invariants(a).unwrap();
+        Arena::_check_invariants(a).unwrap();
         let len = a.len();
         match rng.next_u32() % 1000 {
             0..=499 => {
@@ -407,8 +436,8 @@ fn multi_arena() {
     let mut a1: Arena<P0, u64> = Arena::new();
 
     // map of all `T` and their pointers contained in the arena
-    let mut b0: HashMap<u64, Ptr<P0>> = HashMap::new();
-    let mut b1: HashMap<u64, Ptr<P0>> = HashMap::new();
+    let mut b0: HashMap<u64, P0> = HashMap::new();
+    let mut b1: HashMap<u64, P0> = HashMap::new();
 
     // list of `T`. We need this alongside the hashmap because we need random
     // indexing (and hashmaps will be prone to biases)
@@ -455,9 +484,5 @@ fn multi_arena() {
             _ => unreachable!(),
         }
     }
-    assert_eq!(max_len0, 77);
-    assert_eq!(
-        a0.gen_nz(),
-        Some(core::num::NonZeroU64::new(46957).unwrap())
-    );
+    assert_eq!((max_len0, a0.gen().get()), (77, 46957));
 }

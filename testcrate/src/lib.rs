@@ -1,18 +1,14 @@
-use triple_arena::prelude::*;
+use triple_arena::{ptr_struct, Ptr};
 use triple_arena_render::*;
 
-pub struct MyNode<P: PtrTrait> {
-    pub sources: Vec<(Ptr<P>, String)>,
+pub struct MyNode<P: Ptr> {
+    pub sources: Vec<(P, String)>,
     pub center: Vec<String>,
-    pub sinks: Vec<(Ptr<P>, String)>,
+    pub sinks: Vec<(P, String)>,
 }
 
-impl<P: PtrTrait> MyNode<P> {
-    pub fn new(
-        sources: Vec<(Ptr<P>, String)>,
-        center: Vec<String>,
-        sinks: Vec<(Ptr<P>, String)>,
-    ) -> Self {
+impl<P: Ptr> MyNode<P> {
+    pub fn new(sources: Vec<(P, String)>, center: Vec<String>, sinks: Vec<(P, String)>) -> Self {
         Self {
             sources,
             center,
@@ -21,7 +17,7 @@ impl<P: PtrTrait> MyNode<P> {
     }
 }
 
-impl<P: PtrTrait> DebugNodeTrait<P> for MyNode<P> {
+impl<P: Ptr> DebugNodeTrait<P> for MyNode<P> {
     fn debug_node(this: &Self) -> DebugNode<P> {
         DebugNode {
             sources: this.sources.clone(),
@@ -31,4 +27,4 @@ impl<P: PtrTrait> DebugNodeTrait<P> for MyNode<P> {
     }
 }
 
-ptr_trait_struct_with_gen!(P0);
+ptr_struct!(P0);

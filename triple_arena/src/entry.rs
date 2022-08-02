@@ -2,23 +2,23 @@ use core::mem;
 
 use InternalEntry::*;
 
-use crate::PtrTrait;
+use crate::Ptr;
 
 /// Internal entry for an `Arena`.
 #[derive(Clone)]
-pub(crate) enum InternalEntry<P: PtrTrait, T> {
+pub(crate) enum InternalEntry<P: Ptr, T> {
     /// A free entry with no `T`. The `usize` points to the next free entry,
     /// except if it points to the self entry in which case it is the last free
     /// entry.
-    Free(usize),
-    /// An entry allocated for a `(P, T)` pair in the arena.
-    Allocated(P, T),
+    Free(P::Inx),
+    /// An entry allocated for a `(P::Gen, T)` pair in the arena.
+    Allocated(P::Gen, T),
 }
 
-impl<P: PtrTrait, T> InternalEntry<P, T> {
+impl<P: Ptr, T> InternalEntry<P, T> {
     #[inline]
-    pub fn replace_free_with_allocated(&mut self, gen_element: (P, T)) -> Option<usize> {
-        let free = mem::replace(self, Allocated(gen_element.0, gen_element.1));
+    pub fn replace_free_with_allocated(&mut self, gen: P::Gen, t: T) -> Option<P::Inx> {
+        let free = mem::replace(self, Allocated(gen, t));
         if let Free(free) = free {
             Some(free)
         } else {

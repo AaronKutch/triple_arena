@@ -11,7 +11,7 @@ use triple_arena::Arena;
 use crate::*;
 
 /// create the SVG code
-pub(crate) fn gen_svg<P: PtrTrait>(rg: &RenderGrid<P>) -> String {
+pub(crate) fn gen_svg<P: Ptr>(rg: &RenderGrid<P>) -> String {
     // example code for future reference
     //<circle cx="128" cy="128" r="128" fill="orange"/>
     //<rect fill="#f00" x="64" y="64" width="64" height="64"/>
@@ -170,11 +170,11 @@ pub(crate) fn gen_svg<P: PtrTrait>(rg: &RenderGrid<P>) -> String {
 }
 
 /// Renders an SVG graph representation of `arena` in a top-down order from
-/// sources to sinks. Cycles are broken up by inserting pointer reference nodes.
+/// sources to sinks. Cycles are broken up by inserting `Ptr` reference nodes.
 /// If `error_on_invalid_ptr` then this will return an error if an invalid
-/// pointer is encountered, otherwise it will insert pointer nodes with
+/// `Ptr` is encountered, otherwise it will insert `Ptr` nodes with
 /// "(invalid)" appended.
-pub fn render_to_svg<P: PtrTrait, T: DebugNodeTrait<P>>(
+pub fn render_to_svg<P: Ptr, T: DebugNodeTrait<P>>(
     arena: &Arena<P, T>,
     error_on_invalid_ptr: bool,
 ) -> Result<String, RenderError<P>> {
@@ -183,7 +183,7 @@ pub fn render_to_svg<P: PtrTrait, T: DebugNodeTrait<P>>(
 }
 
 /// Writes the result of [render_to_svg] to `out_file`
-pub fn render_to_svg_file<P: PtrTrait, T: DebugNodeTrait<P>>(
+pub fn render_to_svg_file<P: Ptr, T: DebugNodeTrait<P>>(
     arena: &Arena<P, T>,
     error_on_invalid_ptr: bool,
     out_file: PathBuf,

@@ -1,120 +1,198 @@
-use core::{fmt, hash::Hash, num::NonZeroU64};
+use core::{
+    fmt::Debug,
+    hash::Hash,
+    num::{NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8},
+};
 
-/// Most users should use [ptr_trait_struct_with_gen] or [ptr_trait_struct] for
-/// generating structs with this trait automatically implemented for them.
-///
-/// Notes: This trait also has many bounds on it, so that users do not regularly
-/// encounter friction with using `Ptr`s in data structures. The `PartialEq`
-/// implementation is used for generation value comparison. When implementing
-/// this trait manually, `#[inline]` should be applied to all these functions.
-/// `Default` should default to the always invalid generation of 1 if there is a
-/// generation value.
-pub trait PtrTrait:
-    Default + fmt::Debug + Hash + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Send + Sync
+/// This should only be implemented on Rust's `NonZeroU...` types, because of
+/// their memory saving properties. This is also implemented for `()` for the
+/// generationless case.
+#[doc(hidden)]
+pub trait PtrGen:
+    Debug + Hash + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Send + Sync
 {
-    /// Used by the Debug implementation of `Ptr<P>`
-    fn ptr_debug_str() -> &'static str;
-
-    /// If there is a generation value, this should assume `_gen.is_some()`
-    /// and create `Self` with the given `NonZeroU64`. Otherwise, the
-    /// argument can be ignored.
-    fn new(_gen: Option<NonZeroU64>) -> Self;
-
-    /// This should always return `None` if there is no generation value
-    /// associated with the struct this trait is being implemented for.
-    /// Otherwise, this should always return a mutable reference to a plain
-    /// internal `NonZeroU64`.
-    fn get_mut(this: &mut Self) -> Option<&mut NonZeroU64>;
-
-    /// Same as `get_mut`, but with no reference
-    fn get(this: &Self) -> Option<NonZeroU64>;
+    /// Returns the first element after 0, which is special because Arenas with
+    /// generation counters always start at generation 2, which means invalid
+    /// pointers can use generation 1 and be guaranteed to always be invalid.
+    fn one() -> Self;
+    /// The value of 2
+    fn two() -> Self;
+    /// Returns `this` incremented by one. This should detect overflow and
+    /// should panic if overflow happens.
+    fn increment(this: Self) -> Self;
 }
 
-/// Convenience macro for quickly making new unit structs that implement
-/// `PtrTrait` _without_ a generation value. Each struct name can be followed by
-/// a comma separated list of attributes, and structs are separated by
-/// semicolons.
-///
-/// ```
-/// use triple_arena::prelude::*;
-///
-/// ptr_trait_struct!(
-///     P0 doc="An example struct `P0` that implements `PtrTrait`";
-///     Example2 doc="Another struct. ", doc="Another doc attribute."
-/// );
-///
-/// let _: Arena<P0, String>;
-/// ```
-#[macro_export]
-macro_rules! ptr_trait_struct {
-    ($($struct_name:ident $($attributes:meta),*);*) => {
+// I am using aggressive inlining even on trivial functions because there may
+// otherwise be problems if the inlining is happening across compilation units.
+
+macro_rules! impl_gen {
+    ($($x: ident)*) => {
         $(
-            $(#[$attributes])*
-            #[derive(
-                core::fmt::Debug,
-                core::hash::Hash,
-                core::clone::Clone,
-                core::marker::Copy,
-                core::cmp::PartialEq,
-                core::cmp::Eq,
-                core::cmp::PartialOrd,
-                core::cmp::Ord
-            )]
-            pub struct $struct_name {}
-
-            impl triple_arena::PtrTrait for $struct_name {
+            impl PtrGen for $x {
                 #[inline]
-                fn ptr_debug_str() -> &'static str {
-                    stringify!($struct_name)
+                fn one() -> Self {
+                    Self::new(1).unwrap()
                 }
 
                 #[inline]
-                fn new(_gen: Option<core::num::NonZeroU64>) -> Self {
-                    Self {}
+                fn two() -> Self {
+                    Self::new(2).unwrap()
                 }
 
                 #[inline]
-                fn get_mut(this: &mut Self) -> Option<&mut core::num::NonZeroU64> {
-                    None
-                }
-
-                #[inline]
-                fn get(this: &Self) -> Option<core::num::NonZeroU64> {
-                    None
-                }
-            }
-
-            impl core::default::Default for $struct_name {
-                #[inline]
-                fn default() -> Self {
-                    Self {}
+                fn increment(this: Self) -> Self {
+                    match Self::new(this.get().wrapping_add(1)) {
+                        Some(x) => x,
+                        None => panic!("generation overflow"),
+                    }
                 }
             }
         )*
     };
 }
 
-/// Convenience macro for quickly making new unit structs that implement
-/// `PtrTrait` with a generation value. Each struct name can be followed by a
-/// comma separated list of attributes, and structs are separated by semicolons.
+impl_gen!(NonZeroU8 NonZeroU16 NonZeroU32 NonZeroU64 NonZeroU128);
+
+impl PtrGen for () {
+    #[inline]
+    fn one() -> Self {}
+
+    #[inline]
+    fn two() -> Self {}
+
+    #[inline]
+    fn increment(_this: Self) -> Self {}
+}
+
+/// This is a trait for the index type used by the arena.
+///
+/// This should only be implemented for Rust's unsigned integers.
+#[doc(hidden)]
+pub trait PtrInx:
+    Default + Debug + Hash + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Send + Sync
+{
+    /// Note: this should be truncating or zero extending cast, higher level
+    /// functions should handle fallible cases
+    fn new(inx: usize) -> Self;
+    /// Note: this should be truncating or zero extending cast, higher level
+    /// functions should handle fallible cases
+    fn get(this: Self) -> usize;
+    /// The maximum representable value, which should be truncated down to
+    /// `usize::MAX` if necessary
+    fn max() -> usize;
+}
+
+macro_rules! impl_ptr_inx {
+    ($($x: ident)*) => {
+        $(
+            impl PtrInx for $x {
+                #[inline]
+                fn new(inx: usize) -> Self {
+                    inx as $x
+                }
+
+                #[inline]
+                fn get(this: Self) -> usize {
+                    this as usize
+                }
+
+                #[inline]
+                fn max() -> usize {
+                    $x::MAX as usize
+                }
+            }
+        )*
+    };
+}
+
+impl_ptr_inx!(usize u8 u16 u32 u64 u128);
+
+/// A trait containing index and generation information for the `Arena` type.
+/// This crate supplies the `ptr_struct` macro for automatically implementing
+/// types implementing this trait efficiently. The `PartialEq`/`Eq`
+/// implementation should differentiate between pointers at the same index but
+/// different generation. `Default` should use the `invalid` function.
+///
+/// Notes: This trait also has many bounds on it, so that users do not regularly
+/// encounter friction with using `Ptr`s in data structures.
+pub trait Ptr:
+    Default + Debug + Hash + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Send + Sync
+{
+    /// The recommended general purpose type for this is `usize`
+    type Inx: PtrInx;
+
+    /// The recommended general purpose type for this is `NonZeroU64` if
+    /// generation tracking is wanted, otherwise `()`.
+    type Gen: PtrGen;
+
+    /// Returns a new `Ptr` with a generation value `PtrGen::one()`. Because the
+    /// arena starts with generation 2, this is guaranteed invalid when
+    /// generation counters are used. The raw index is also set to `Inx::max()`
+    /// which should also cause failures with the generationless case, but be
+    /// aware this can be reached practically with small `Inx` types.
+    fn invalid() -> Self;
+
+    /// Returns a raw `Inx`. This can be useful when getting a unique id for
+    /// every entry. Do not rely on this if the `Ptr` is invalidated after
+    /// `get_raw` is used.
+    fn inx(self) -> Self::Inx;
+
+    /// Returns the generation of this `Ptr`.
+    fn gen(self) -> Self::Gen;
+
+    /// Do not use this. This is only exposed because trait methods cannot be
+    /// made private.
+    #[doc(hidden)]
+    fn _from_raw(inx: Self::Inx, gen: Self::Gen) -> Self;
+}
+
+/// Convenience macro for quickly making new structs that implement `Ptr`. By
+/// default, `usize` is used for the index type and `NonZeroU64` is used for the
+/// generation type. The struct name can be followed by square brackets
+/// containing the type used for the index which can include `u8` through
+/// `u128`. After the optional square brackets, optional parenthesis can be
+/// added which contain the the generation type which can be `NonZeroU8` through
+/// `NonZeroU128`. The parenthesis can also be empty in which case the Arena
+/// will not use generation counters. This all can be followed by a comma
+/// separated list of attributes.
 ///
 /// ```
-/// use triple_arena::prelude::*;
+/// use triple_arena::{ptr_struct, Arena, Ptr};
 ///
-/// ptr_trait_struct_with_gen!(
-///     P0 doc="An example struct `P0` that implements `PtrTrait`";
-///     Example2 doc="Another struct. ", doc="Another doc attribute."
-/// );
+/// // Note that in most use cases the default types or default index with no
+/// // generation counter are what should be used
 ///
-/// let _: Arena<Example2, String>;
+/// // create struct `P0` implementing a default `Ptr` and having a doc comment
+/// ptr_struct!(P0 doc="An example struct `P0` that implements `Ptr`");
+/// let _: Arena<P0, String>;
+///
+/// // `P1` will have a smaller `u16` index type
+/// ptr_struct!(P1[u16]);
+///
+/// use core::num::NonZeroU16;
+///
+/// // `P2` will have a smaller `NonZeroU16` generation type
+/// ptr_struct!(P2(NonZeroU16));
+///
+/// // both the index and generation type are custom
+/// ptr_struct!(P3[u16](NonZeroU16));
+///
+/// // no generation counter
+/// ptr_struct!(P4());
+///
+/// // byte index with no generation counter
+/// ptr_struct!(P5[u8]());
+///
+/// // a single macro can have multiple structs of the same matching kind with
+/// // semicolon separators
+/// ptr_struct!(Q0(); Q1(); R0());
 /// ```
 #[macro_export]
-macro_rules! ptr_trait_struct_with_gen {
-    ($($struct_name:ident $($attributes:meta),*);*) => {
+macro_rules! ptr_struct {
+    ($($struct_name:ident[$inx_type:path]($gen_type:path) $($attributes:meta),*);*) => {
         $(
             $(#[$attributes])*
             #[derive(
-                core::fmt::Debug,
                 core::hash::Hash,
                 core::clone::Clone,
                 core::marker::Copy,
@@ -124,125 +202,180 @@ macro_rules! ptr_trait_struct_with_gen {
                 core::cmp::Ord
             )]
             pub struct $struct_name {
-                _internal_value: core::num::NonZeroU64
+                // note: in this order `PartialOrd` will order primarily off of `_internal_inx`
+                #[doc(hidden)]
+                _internal_inx: $inx_type,
+                #[doc(hidden)]
+                _internal_gen: $gen_type,
             }
 
-            impl triple_arena::PtrTrait for $struct_name {
-                #[inline]
-                fn ptr_debug_str() -> &'static str {
-                    stringify!($struct_name)
-                }
+            impl $crate::Ptr for $struct_name {
+                type Inx = $inx_type;
+                type Gen = $gen_type;
 
                 #[inline]
-                fn new(_gen: Option<core::num::NonZeroU64>) -> Self {
+                fn invalid() -> Self {
                     Self {
-                        _internal_value: _gen.unwrap()
+                        _internal_inx: $crate::PtrInx::new(core::primitive::usize::MAX),
+                        _internal_gen: $crate::PtrGen::one()
                     }
                 }
 
                 #[inline]
-                fn get_mut(this: &mut Self) -> Option<&mut core::num::NonZeroU64> {
-                    Some(&mut this._internal_value)
+                fn inx(self) -> Self::Inx {
+                    self._internal_inx
                 }
 
                 #[inline]
-                fn get(this: &Self) -> Option<core::num::NonZeroU64> {
-                    Some(this._internal_value)
+                fn gen(self) -> Self::Gen {
+                    self._internal_gen
+                }
+
+                #[inline]
+                #[doc(hidden)]
+                fn _from_raw(_internal_inx: Self::Inx, _internal_gen: Self::Gen) -> Self {
+                    Self {
+                        _internal_inx,
+                        _internal_gen,
+                    }
                 }
             }
 
             impl core::default::Default for $struct_name {
                 #[inline]
                 fn default() -> Self {
-                    Self { _internal_value: core::num::NonZeroU64::new(1).unwrap() }
+                    $crate::Ptr::invalid()
+                }
+            }
+
+            // This is manually implemented so that it is inline and has no newlines, which
+            // makes the `Debug` implementation on `Arena` look much nicer.
+            impl core::fmt::Debug for $struct_name {
+                fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                    f.write_fmt(format_args!(
+                        "{}[{:?}]({:?})",
+                        stringify!($struct_name),
+                        $crate::Ptr::inx(*self),
+                        $crate::Ptr::gen(*self),
+                    ))
+                }
+            }
+
+            impl core::fmt::Display for $struct_name {
+                fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                    core::fmt::Debug::fmt(self, f)
                 }
             }
         )*
     };
-}
+    ($($struct_name:ident[$inx_type:path]() $($attributes:meta),*);*) => {
+        $(
+            $(#[$attributes])*
+            #[derive(
+                core::hash::Hash,
+                core::clone::Clone,
+                core::marker::Copy,
+                core::cmp::PartialEq,
+                core::cmp::Eq,
+                core::cmp::PartialOrd,
+                core::cmp::Ord
+            )]
+            pub struct $struct_name {
+                // note: in this order `PartialOrd` will order primarily off of `_internal_inx`
+                #[doc(hidden)]
+                _internal_inx: $inx_type,
+                #[doc(hidden)]
+                _internal_gen: (),
+            }
 
-/// An arena pointer returned from an `Arena<T, P>`. Different `P` can be used
-/// to leverage the type system to distinguish between `Ptr`s from different
-/// arenas. If `P` has a generation value, a `Ptr<P>` will keep the generation
-/// information for later arena accesses to determine if the pointer has been
-/// invalidated.
-#[derive(Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Ptr<P: PtrTrait> {
-    gen: P,
-    raw: usize,
-}
+            impl $crate::Ptr for $struct_name {
+                type Inx = $inx_type;
+                type Gen = ();
 
-impl<P: PtrTrait> Ptr<P> {
-    /// Returns a new `Ptr<P>` with a generation value (if it exists) set to 1.
-    /// Because the arena starts with generation 2, this is guaranteed invalid
-    /// when generation counters are used. The raw index is also set to
-    /// `usize::MAX`.
-    #[inline]
-    pub fn invalid() -> Self {
-        Self::from_raw(usize::MAX, Some(NonZeroU64::new(1).unwrap()))
-    }
+                #[inline]
+                fn invalid() -> Self {
+                    Self {
+                        _internal_inx: $crate::PtrInx::new(core::primitive::usize::MAX),
+                        _internal_gen: $crate::PtrGen::one()
+                    }
+                }
 
-    /// This can be useful when getting a unique id for every entry. Do not rely
-    /// on this if the pointer is invalidated after `get_raw` is used.
-    #[inline]
-    pub fn get_raw(self) -> usize {
-        self.raw
-    }
+                #[inline]
+                fn inx(self) -> Self::Inx {
+                    self._internal_inx
+                }
 
-    #[inline]
-    pub(crate) fn from_raw(p: usize, gen: Option<NonZeroU64>) -> Self {
-        Ptr {
-            gen: PtrTrait::new(gen),
-            raw: p,
-        }
-    }
+                #[inline]
+                fn gen(self) -> Self::Gen {
+                    self._internal_gen
+                }
 
-    /// Return the generation of `self` as a `P`
-    #[inline]
-    pub fn gen_p(self) -> P {
-        self.gen
-    }
+                #[inline]
+                #[doc(hidden)]
+                fn _from_raw(_internal_inx: Self::Inx, _internal_gen: Self::Gen) -> Self {
+                    Self {
+                        _internal_inx,
+                        _internal_gen,
+                    }
+                }
+            }
 
-    /// Return the generation of `self` as a `Option<NonZeroU64>`
-    #[inline]
-    pub fn gen_nz(self) -> Option<NonZeroU64> {
-        PtrTrait::get(&self.gen)
-    }
-}
+            impl core::default::Default for $struct_name {
+                #[inline]
+                fn default() -> Self {
+                    $crate::Ptr::invalid()
+                }
+            }
 
-// This is manually implemented so that it is inline and has no newlines, which
-// makes the `Debug` implementation on `Arena` look much nicer.
-impl<P: PtrTrait> fmt::Debug for Ptr<P> {
-    /// Formats as `Ptr<{P::ptr_debug_str()}>({raw index})[{generation}]` (if
-    /// generation number is included), or
-    /// `Ptr<{P::ptr_debug_str()}>({raw index})`
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(gen) = self.gen_nz() {
-            f.write_fmt(format_args!(
-                "Ptr<{}>({})[{}]",
-                P::ptr_debug_str(),
-                self.get_raw(),
-                gen
-            ))
-        } else {
-            f.write_fmt(format_args!(
-                "Ptr<{}>({})",
-                P::ptr_debug_str(),
-                self.get_raw(),
-            ))
-        }
-    }
-}
+            // This is manually implemented so that it is inline and has no newlines, which
+            // makes the `Debug` implementation on `Arena` look much nicer.
+            impl core::fmt::Debug for $struct_name {
+                fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                    f.write_fmt(format_args!(
+                        "{}[{:?}]",
+                        stringify!($struct_name),
+                        $crate::Ptr::inx(*self),
+                    ))
+                }
+            }
 
-impl<P: PtrTrait> fmt::Display for Ptr<P> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(self, f)
-    }
-}
-
-impl<P: PtrTrait> Default for Ptr<P> {
-    /// Defaults to `Self::invalid()`
-    fn default() -> Self {
-        Self::invalid()
-    }
+            impl core::fmt::Display for $struct_name {
+                fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                    core::fmt::Debug::fmt(self, f)
+                }
+            }
+        )*
+    };
+    ($($struct_name:ident[$inx_type:path] $($attributes:meta),*);*) => {
+        $(
+            $crate::ptr_struct!(
+                $struct_name[$inx_type](core::num::NonZeroU64)
+                $($attributes),*
+            );
+        )*
+    };
+    ($($struct_name:ident($gen_type:path) $($attributes:meta),*);*) => {
+        $(
+            $crate::ptr_struct!(
+                $struct_name[core::primitive::usize]($gen_type)
+                $($attributes),*
+            );
+        )*
+    };
+    ($($struct_name:ident() $($attributes:meta),*);*) => {
+        $(
+            $crate::ptr_struct!(
+                $struct_name[core::primitive::usize]()
+                $($attributes),*
+            );
+        )*
+    };
+    ($($struct_name:ident $($attributes:meta),*);*) => {
+        $(
+            $crate::ptr_struct!(
+                $struct_name[core::primitive::usize](core::num::NonZeroU64)
+                $($attributes),*
+            );
+        )*
+    };
 }

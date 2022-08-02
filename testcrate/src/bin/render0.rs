@@ -1,7 +1,7 @@
 //! For manual inspection of SVG output
 
 use testcrate::*;
-use triple_arena::prelude::*;
+use triple_arena::{Arena, Ptr};
 use triple_arena_render::*;
 
 fn main() {
@@ -54,6 +54,52 @@ fn main() {
     let n8 = a.insert(MyNode::new(vec![], vec!["n8".to_string()], vec![]));
     a[n8].sources.push((n8, "i".to_string()));
     a[n8].sinks.push((n8, "o".to_string()));
+
+    // many sources and sinks
+
+    let sources: Vec<(P0, String)> = (0..1)
+        .map(|i| {
+            (
+                a.insert(MyNode::new(vec![], vec![], vec![])),
+                format!("i{}", i),
+            )
+        })
+        .collect();
+    let sinks: Vec<(P0, String)> = (0..9)
+        .map(|i| {
+            (
+                a.insert(MyNode::new(vec![], vec![format!("o{}", i)], vec![])),
+                String::new(),
+            )
+        })
+        .collect();
+    a.insert(MyNode {
+        sources,
+        center: vec![],
+        sinks,
+    });
+
+    let sources: Vec<(P0, String)> = (0..9)
+        .map(|i| {
+            (
+                a.insert(MyNode::new(vec![], vec![], vec![])),
+                format!("i{}", i),
+            )
+        })
+        .collect();
+    let sinks: Vec<(P0, String)> = (0..1)
+        .map(|i| {
+            (
+                a.insert(MyNode::new(vec![], vec![format!("o{}", i)], vec![])),
+                String::new(),
+            )
+        })
+        .collect();
+    a.insert(MyNode {
+        sources,
+        center: vec![],
+        sinks,
+    });
 
     render_to_svg_file(
         &a,

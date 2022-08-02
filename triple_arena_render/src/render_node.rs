@@ -2,37 +2,37 @@
 
 use std::cmp::max;
 
-use triple_arena::{Ptr, PtrTrait};
+use triple_arena::Ptr;
 
 use crate::*;
 
 /// Graphics for a single node
 #[derive(Debug, Clone)]
-pub struct RenderNode<P: PtrTrait> {
+pub struct RenderNode<P: Ptr> {
     /// Pointer to node this is representing
-    pub ptr: Ptr<P>,
+    pub ptr: P,
     /// Rectangles in (x position, y position, x width, y width)
     pub rects: Vec<(i32, i32, i32, i32)>,
     /// Text location, size, length, and string
     pub text: Vec<((i32, i32), i32, i32, String)>,
     /// Location of input points and pointers to where they should go
-    pub input_points: Vec<((i32, i32), Ptr<P>, Option<usize>)>,
+    pub input_points: Vec<((i32, i32), P, Option<usize>)>,
     /// Location of output points and where they should go
-    pub output_points: Vec<((i32, i32), Ptr<P>)>,
+    pub output_points: Vec<((i32, i32), P)>,
     /// width in x direction
     pub wx: i32,
     /// width in y direction
     pub wy: i32,
 }
 
-impl<P: PtrTrait> RenderNode<P> {
+impl<P: Ptr> RenderNode<P> {
     /// Generates a `RenderNode` from the parts of a `DebugNode`. `ptr` is the
     /// node itself.
     pub fn new(
-        sources: &[(Ptr<P>, String, Option<usize>)],
+        sources: &[(P, String, Option<usize>)],
         center: &[String],
-        sinks: &[(Ptr<P>, String)],
-        ptr: Ptr<P>,
+        sinks: &[(P, String)],
+        ptr: P,
     ) -> Self {
         let mut rects = vec![];
         let mut text = vec![];
@@ -113,7 +113,7 @@ impl<P: PtrTrait> RenderNode<P> {
         if sinks.iter().any(|(_, s)| !s.is_empty()) {
             wy += INPUT_FONT_WY;
         }
-        let separation = if sources.len() < 2 {
+        let separation = if sinks.len() < 2 {
             extra_sink_space / 2
         } else {
             extra_sink_space

@@ -1,6 +1,6 @@
 use std::cmp::max;
 
-use triple_arena::{Arena, Ptr, PtrTrait};
+use triple_arena::{Arena, Ptr};
 
 use crate::{
     internal::{ANode, RenderNode},
@@ -9,16 +9,16 @@ use crate::{
 
 /// Final grid of `RenderNodes`
 #[derive(Debug)]
-pub struct RenderGrid<P: PtrTrait> {
+pub struct RenderGrid<P: Ptr> {
     pub dag: Arena<P, ANode<P>>,
     pub grid: Vec<Vec<Option<RenderNode<P>>>>,
     pub tot_wx: i32,
     pub tot_wy: i32,
 }
 
-impl<P: PtrTrait> RenderGrid<P> {
+impl<P: Ptr> RenderGrid<P> {
     /// Used by `grid_process`
-    pub fn new(dag: Arena<P, ANode<P>>, grid: Vec<Vec<(Ptr<P>, usize)>>) -> Self {
+    pub fn new(dag: Arena<P, ANode<P>>, grid: Vec<Vec<(P, usize)>>) -> Self {
         let mut rg = Self {
             dag,
             grid: vec![],
@@ -29,7 +29,7 @@ impl<P: PtrTrait> RenderGrid<P> {
         // find maximum column and row widths, and cumulative positions
         let mut max_y_nodes = 0;
         for vert in &grid {
-            for slot in &*vert {
+            for slot in vert {
                 max_y_nodes = max(max_y_nodes, slot.1 + 1);
             }
         }
@@ -43,7 +43,7 @@ impl<P: PtrTrait> RenderGrid<P> {
             rg.grid.push(v);
         }
         for (x_i, vertical) in grid.iter().enumerate() {
-            for (ptr, pos) in &*vertical {
+            for (ptr, pos) in vertical {
                 let node = RenderNode::new(
                     &rg.dag[ptr].sources,
                     &rg.dag[ptr].center,
