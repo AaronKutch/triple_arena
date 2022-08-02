@@ -190,7 +190,64 @@ fn fuzz_chain() {
                     assert!(a.remove(invalid).is_none());
                 }
             }
-            400..=849 => (),
+            400..=499 => {
+                // connect
+                if len != 0 {
+                    let t0 = list[next_inx!(rng, len)];
+                    let t1 = list[next_inx!(rng, len)];
+                    if b[&t0].1 .1.is_none() && b[&t1].1 .0.is_none() {
+                        a.connect(b[&t0].0, b[&t1].0).unwrap();
+                        b.get_mut(&t0).unwrap().1 .1 = Some(t1);
+                        b.get_mut(&t1).unwrap().1 .0 = Some(t0);
+                    }
+                } else {
+                    assert!(a.connect(invalid, invalid).is_none());
+                }
+            }
+            500..=549 => {
+                // break_prev
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    if a.break_prev(b[&t].0).is_some() {
+                        let u = b.get_mut(&t).unwrap().1 .0.unwrap();
+                        b.get_mut(&u).unwrap().1 .1 = None;
+                        b.get_mut(&t).unwrap().1 .0 = None;
+                    }
+                } else {
+                    assert!(a.break_prev(invalid).is_none());
+                }
+            }
+            550..=599 => {
+                // break_next
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    if a.break_next(b[&t].0).is_some() {
+                        let d = b.get_mut(&t).unwrap().1 .1.unwrap();
+                        b.get_mut(&d).unwrap().1 .0 = None;
+                        b.get_mut(&t).unwrap().1 .1 = None;
+                    }
+                } else {
+                    assert!(a.break_prev(invalid).is_none());
+                }
+            }
+            600..=699 => {
+                // exchange_next
+                if len != 0 {
+                    let t0 = list[next_inx!(rng, len)];
+                    let t1 = list[next_inx!(rng, len)];
+                    if a.exchange_next(b[&t0].0, b[&t1].0).is_some() {
+                        let d0 = b.get_mut(&t0).unwrap().1 .1.unwrap();
+                        let d1 = b.get_mut(&t1).unwrap().1 .1.unwrap();
+                        b.get_mut(&t0).unwrap().1 .1 = Some(d1);
+                        b.get_mut(&t1).unwrap().1 .1 = Some(d0);
+                        b.get_mut(&d0).unwrap().1 .0 = Some(t1);
+                        b.get_mut(&d1).unwrap().1 .0 = Some(t0);
+                    }
+                } else {
+                    assert!(a.exchange_next(invalid, invalid).is_none());
+                }
+            }
+            700..=849 => (),
             850..=899 => {
                 if len != 0 {
                     let t0 = list[next_inx!(rng, len)];
@@ -229,13 +286,13 @@ fn fuzz_chain() {
                     let t0 = list[next_inx!(rng, len)];
                     let t1 = list[next_inx!(rng, len)];
                     if a.are_neighbors(b[&t0].0, b[&t1].0) {
-                        assert_eq!(b[&t0].1.1, Some(t1));
-                        assert_eq!(b[&t1].1.0, Some(t0));
+                        assert_eq!(b[&t0].1 .1, Some(t1));
+                        assert_eq!(b[&t1].1 .0, Some(t0));
                     }
                 } else {
                     assert!(!a.are_neighbors(invalid, invalid));
                 }
-            },
+            }
             998 => {
                 // clear
                 a.clear();
@@ -251,5 +308,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (120, 1051, 166444));
+    assert_eq!((max_len, iters999, a.gen().get()), (99, 1036, 166739));
 }

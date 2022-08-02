@@ -264,16 +264,27 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         are_neighbors
     }
 
-    /// Returns a reference to a `Link<PLink, T>` pointed to by `p`. Returns
+    /// Returns a reference to a link pointed to by `p`. Returns
     /// `None` if `p` is invalid.
     pub fn get(&self, p: PLink) -> Option<&Link<PLink, T>> {
         self.a.get(p)
     }
 
-    /// Returns a mutable reference to a `Link<PLink, T>` pointed to by `p`.
+    /// Returns a mutable reference to a link pointed to by `p`.
     /// Returns `None` if `p` is invalid.
     pub fn get_mut(&mut self, p: PLink) -> Option<&mut Link<PLink, T>> {
         self.a.get_mut(p)
+    }
+
+    /// Gets two `&mut Link<PLink, T>` references pointed to by `p0` and `p1`.
+    /// If `p0 == p1` or a pointer is invalid, `None` is returned.
+    #[allow(clippy::type_complexity)]
+    pub fn get2_mut(
+        &mut self,
+        p0: PLink,
+        p1: PLink,
+    ) -> Option<(&mut Link<PLink, T>, &mut Link<PLink, T>)> {
+        self.a.get2_mut(p0, p1)
     }
 
     /// Removes the link at `p`. If the link is in the middle of the chain, the
@@ -299,6 +310,13 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         Some(l)
     }
 
+    /// Invalidates all references to the link pointed to by `p`, and returns a
+    /// new valid reference. Does no invalidation and returns `None` if `p` is
+    /// invalid.
+    pub fn invalidate(&mut self, p: PLink) -> Option<PLink> {
+        self.a.invalidate(p)
+    }
+
     /// Swaps the `T` at indexes `p0` and `p1` and keeps the generation counters
     /// and link connections as-is. If `p0 == p1` then nothing occurs.
     /// Returns `None` if `p0` or `p1` are invalid.
@@ -317,16 +335,54 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         }
     }
 
-    // exchanges the endpoints of the interlinks right after two given nodes
-    // note: if the two interlinks are adjacent, there is a special case where the
-    // middle node becomes a single link circular chain and the first node
-    // interlinks to the last node. It is its own inverse like the other cases so it
-    // appears to be the correct behavior.
-    //pub fn exchange(&mut self, p0, p1)
+    /// Connects the link at `p0` as previous to the link at `p1`. Returns
+    /// `None` if `p0` has a next link, `p1` has a prev link, or the pointers
+    /// are invalid.
+    pub fn connect(&mut self, p0: PLink, p1: PLink) -> Option<()> {
+        if Link::next(self.get(p0)?).is_none() && Link::prev(self.get(p1)?).is_none() {
+            self[p0].prev_next.1 = Some(p1);
+            self[p1].prev_next.0 = Some(p0);
+            Some(())
+        } else {
+            None
+        }
+    }
 
-    //pub fn break(&mut self, p)
+    /// Breaks the previous interlink of `p`. Returns `None` if `p` is invalid
+    /// or does not have a prev link.
+    pub fn break_prev(&mut self, p: PLink) -> Option<()> {
+        let u = Link::prev(self.get(p)?)?;
+        self[p].prev_next.0 = None;
+        self[u].prev_next.1 = None;
+        Some(())
+    }
 
-    //pub fn connect(&mut self, p0, p1)
+    /// Breaks the next interlink of `p`. Returns `None` if `p` is invalid or
+    /// does not have a next link.
+    pub fn break_next(&mut self, p: PLink) -> Option<()> {
+        let d = Link::next(self.get(p)?)?;
+        self[p].prev_next.1 = None;
+        self[d].prev_next.0 = None;
+        Some(())
+    }
+
+    /// Exchanges the endpoints of the interlinks right after `p0` and `p1`.
+    /// Returns `None` if the links do not have next interlinks or if the
+    /// pointers are invalid.
+    pub fn exchange_next(&mut self, p0: PLink, p1: PLink) -> Option<()> {
+        if self.contains(p0) && self.contains(p1) {
+            // get downstream links
+            let d0 = Link::next(&self[p0])?;
+            let d1 = Link::next(&self[p1])?;
+            self[p0].prev_next.1 = Some(d1);
+            self[p1].prev_next.1 = Some(d0);
+            self[d0].prev_next.0 = Some(p1);
+            self[d1].prev_next.0 = Some(p0);
+            Some(())
+        } else {
+            None
+        }
+    }
 
     /// Drops all links from the arena and invalidates all pointers previously
     /// created from it. This has no effect on allocated capacity.
