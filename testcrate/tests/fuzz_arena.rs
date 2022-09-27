@@ -45,7 +45,7 @@ fn fuzz() {
 
     // get invalid `Ptr` (from 0th index and not `Ptr::invalid()`)
     let invalid = a.insert(0);
-    a.remove(invalid);
+    a.remove(invalid).unwrap();
     a.clear_and_shrink();
 
     for _ in 0..1_000_000 {

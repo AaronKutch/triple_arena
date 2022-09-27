@@ -216,6 +216,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Inserts `t` as a new link at the start of a chain which has `p` as its
     /// first link. Returns ownership of `t` if `p` is not valid or is not the
     /// start of a chain
+    #[must_use]
     pub fn insert_start(&mut self, p: PLink, t: T) -> Option<PLink> {
         if Link::prev(self.a.get_mut(p)?).is_some() {
             // not at start of chain
@@ -230,6 +231,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Inserts `t` as a new link at the end of a chain which has `p` as its
     /// last link. Returns ownership of `t` if `p` is not valid or is not the
     /// end of a chain
+    #[must_use]
     pub fn insert_end(&mut self, p: PLink, t: T) -> Option<PLink> {
         if Link::next(self.a.get_mut(p)?).is_some() {
             // not at end of chain
@@ -266,12 +268,14 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
 
     /// Returns a reference to a link pointed to by `p`. Returns
     /// `None` if `p` is invalid.
+    #[must_use]
     pub fn get(&self, p: PLink) -> Option<&Link<PLink, T>> {
         self.a.get(p)
     }
 
     /// Returns a mutable reference to a link pointed to by `p`.
     /// Returns `None` if `p` is invalid.
+    #[must_use]
     pub fn get_mut(&mut self, p: PLink) -> Option<&mut Link<PLink, T>> {
         self.a.get_mut(p)
     }
@@ -279,6 +283,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Gets two `&mut Link<PLink, T>` references pointed to by `p0` and `p1`.
     /// If `p0 == p1` or a pointer is invalid, `None` is returned.
     #[allow(clippy::type_complexity)]
+    #[must_use]
     pub fn get2_mut(
         &mut self,
         p0: PLink,
@@ -290,6 +295,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Removes the link at `p`. If the link is in the middle of the chain, the
     /// neighbors of `p` are rerouted to be neighbors of each other so that the
     /// chain remains continuous. Returns `None` if `p` is not valid.
+    #[must_use]
     pub fn remove(&mut self, p: PLink) -> Option<Link<PLink, T>> {
         let l = self.a.remove(p)?;
         match Link::prev_next(&l) {
@@ -313,6 +319,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Invalidates all references to the link pointed to by `p`, and returns a
     /// new valid reference. Does no invalidation and returns `None` if `p` is
     /// invalid.
+    #[must_use]
     pub fn invalidate(&mut self, p: PLink) -> Option<PLink> {
         self.a.invalidate(p)
     }
@@ -320,6 +327,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Swaps the `T` at indexes `p0` and `p1` and keeps the generation counters
     /// and link connections as-is. If `p0 == p1` then nothing occurs.
     /// Returns `None` if `p0` or `p1` are invalid.
+    #[must_use]
     pub fn swap(&mut self, p0: PLink, p1: PLink) -> Option<()> {
         if p0 == p1 {
             // need to check that they are valid
@@ -338,6 +346,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Connects the link at `p0` as previous to the link at `p1`. Returns
     /// `None` if `p0` has a next link, `p1` has a prev link, or the pointers
     /// are invalid.
+    #[must_use]
     pub fn connect(&mut self, p0: PLink, p1: PLink) -> Option<()> {
         if Link::next(self.get(p0)?).is_none() && Link::prev(self.get(p1)?).is_none() {
             self[p0].prev_next.1 = Some(p1);
@@ -350,6 +359,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
 
     /// Breaks the previous interlink of `p`. Returns `None` if `p` is invalid
     /// or does not have a prev link.
+    #[must_use]
     pub fn break_prev(&mut self, p: PLink) -> Option<()> {
         let u = Link::prev(self.get(p)?)?;
         self[p].prev_next.0 = None;
@@ -359,6 +369,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
 
     /// Breaks the next interlink of `p`. Returns `None` if `p` is invalid or
     /// does not have a next link.
+    #[must_use]
     pub fn break_next(&mut self, p: PLink) -> Option<()> {
         let d = Link::next(self.get(p)?)?;
         self[p].prev_next.1 = None;
@@ -369,6 +380,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Exchanges the endpoints of the interlinks right after `p0` and `p1`.
     /// Returns `None` if the links do not have next interlinks or if the
     /// pointers are invalid.
+    #[must_use]
     pub fn exchange_next(&mut self, p0: PLink, p1: PLink) -> Option<()> {
         if self.contains(p0) && self.contains(p1) {
             // get downstream links

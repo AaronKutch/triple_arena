@@ -332,10 +332,12 @@ impl<P: Ptr, T> Arena<P, T> {
         }
     }
 
+    #[must_use]
     fn m_get(&self, inx: P::Inx) -> Option<&InternalEntry<P, T>> {
         self.m.get(P::Inx::get(inx))
     }
 
+    #[must_use]
     fn m_get_mut(&mut self, inx: P::Inx) -> Option<&mut InternalEntry<P, T>> {
         self.m.get_mut(P::Inx::get(inx))
     }
@@ -451,6 +453,7 @@ impl<P: Ptr, T> Arena<P, T> {
 
     /// Returns a reference to a `T` pointed to by `p`. Returns `None` if `p` is
     /// invalid.
+    #[must_use]
     pub fn get(&self, p: P) -> Option<&T> {
         match self.m_get(p.inx()) {
             Some(Allocated(gen, t)) => {
@@ -466,6 +469,7 @@ impl<P: Ptr, T> Arena<P, T> {
 
     /// Returns a mutable reference to a `T` pointed to by `p`. Returns `None`
     /// if `p` is invalid.
+    #[must_use]
     pub fn get_mut(&mut self, p: P) -> Option<&mut T> {
         let p = *p.borrow();
         match self.m_get_mut(p.inx()) {
@@ -482,6 +486,7 @@ impl<P: Ptr, T> Arena<P, T> {
 
     /// Gets two `&mut T` references pointed to by `p0` and `p1`. If `p0 == p1`
     /// or a pointer is invalid, `None` is returned.
+    #[must_use]
     pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<(&mut T, &mut T)> {
         if self.contains(p0) && self.contains(p1) && (p0 != p1) {
             if p0.inx() < p1.inx() {
@@ -511,6 +516,7 @@ impl<P: Ptr, T> Arena<P, T> {
     /// Removes the `T` pointed to by `p`, returns the `T`, and invalidates old
     /// `Ptr`s to the `T`. Does no invalidation and returns `None` if `p` is
     /// invalid.
+    #[must_use]
     pub fn remove(&mut self, p: P) -> Option<T> {
         let freelist_ptr = if let Some(free) = self.freelist_root {
             // points to previous root
@@ -570,6 +576,7 @@ impl<P: Ptr, T> Arena<P, T> {
     /// Invalidates all references to the `T` pointed to by `p`, and returns a
     /// new valid reference. Does no invalidation and returns `None` if `p` is
     /// invalid.
+    #[must_use]
     pub fn invalidate(&mut self, p: P) -> Option<P> {
         match self.m_get(p.inx()) {
             Some(Allocated(gen, _)) => {
@@ -643,6 +650,7 @@ impl<P: Ptr, T> Arena<P, T> {
     /// Swaps the `T` at indexes `p0` and `p1` and keeps the generation counters
     /// as-is. If `p0 == p1` then nothing occurs. Returns `None` if `p0` or `p1`
     /// are invalid.
+    #[must_use]
     pub fn swap(&mut self, p0: P, p1: P) -> Option<()> {
         if self.contains(p0) && self.contains(p1) {
             if p0 != p1 {
