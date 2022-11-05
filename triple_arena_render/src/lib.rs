@@ -89,8 +89,12 @@ impl<P: Ptr> DebugNode<P> {
 /// where `T` is some kind of graph node element. `P` corresponds to the
 /// `P` being used for the arena, and allows renderers to automatically
 /// traverse the graph in the arena.
+///
+/// `p_this` corresponds to the `Ptr` that the renderer finds the `this` node at
+/// when calling `debug_node` (much of the time it is ignored, but it can useful
+/// when including `format!("{:?}", p_this))` in the `center`.
 pub trait DebugNodeTrait<P: Ptr> {
-    fn debug_node(this: &Self) -> DebugNode<P>;
+    fn debug_node(p_this: P, this: &Self) -> DebugNode<P>;
 }
 
 impl<P: Ptr> DebugNodeTrait<P> for DebugNode<P> {
@@ -98,13 +102,13 @@ impl<P: Ptr> DebugNodeTrait<P> for DebugNode<P> {
     /// `Arena`, but we derive an `Arena` from that structure and decide we
     /// should just place `DebugNode`s in that arena instead of needing to
     /// create a single use struct.
-    fn debug_node(this: &Self) -> DebugNode<P> {
+    fn debug_node(_p_this: P, this: &Self) -> DebugNode<P> {
         this.clone()
     }
 }
 
 impl<P: Ptr, T: Debug> DebugNodeTrait<P> for Link<P, T> {
-    fn debug_node(this: &Self) -> DebugNode<P> {
+    fn debug_node(_p_this: P, this: &Self) -> DebugNode<P> {
         DebugNode {
             sources: if let Some(prev) = Link::prev(this) {
                 vec![(prev, String::new())]

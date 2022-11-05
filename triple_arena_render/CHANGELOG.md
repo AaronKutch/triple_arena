@@ -1,6 +1,10 @@
 # Changelog
 
-## [0.6.0] - TODO
+## [0.7.0] - TODO
+### Changes
+- Added a `p_this` argument to `DebugNodeTrait::debug_node`
+
+## [0.6.0] - 2022-08-02
 ### Crate
 - `triple_arena` 0.6.0
 

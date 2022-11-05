@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.7.0] - TODO
+### Additions
+- added `must_use` attributes where applicable
+
 ## [0.6.0] - 2022-08-02
 ### Changes
 - Major overhaul of `Ptr`s that reduces `Ptr<P0>` down to just `P0` and allows for different index
