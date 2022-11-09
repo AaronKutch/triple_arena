@@ -2,6 +2,7 @@
 
 ## [0.7.0] - TODO
 ### Additions
+- added `first_ptr` and `next_ptr` functions
 - added `must_use` attributes where applicable
 
 ## [0.6.0] - 2022-08-02

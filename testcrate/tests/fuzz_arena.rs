@@ -273,7 +273,38 @@ fn fuzz() {
                 }
                 assert_eq!(n, list.len());
             }
-            940..=993 => {
+            940..=949 => {
+                // canonical first_ptr/next_ptr loop
+                let mut i = 0;
+                let rand_remove_i = if len == 0 { 0 } else { next_inx!(rng, len) };
+                let rand_insert_i = if len == 0 { 0 } else { next_inx!(rng, len) };
+                let (mut p, mut bo) = a.first_ptr();
+                loop {
+                    if bo {
+                        break
+                    }
+                    assert_eq!(p, b[&a[p]]);
+
+                    // remove and insert at random times
+                    if i == rand_insert_i {
+                        let t = new_t();
+                        let ptr = a.insert(t);
+                        b.insert(t, ptr);
+                        list.push(t);
+                    }
+                    if i == rand_remove_i {
+                        let t = list.swap_remove(rand_remove_i);
+                        let ptr = b.remove(&t).unwrap();
+                        assert_eq!(t, a.remove(ptr).unwrap());
+                    }
+
+                    a.next_ptr(&mut p, &mut bo);
+                    i += 1;
+                }
+                // depends on the invalidated elements witnessed
+                assert!((i == len.saturating_sub(1)) || (i == len) || (i == (len + 1)));
+            }
+            950..=993 => {
                 // iter_mut
                 let mut n = 0;
                 for (ptr, t) in a.iter_mut() {
@@ -373,7 +404,7 @@ fn fuzz() {
     }
     // I may need a custom allocator, because some of the determinism is dependent
     // on the interactions between `reserve` and `try_insert`
-    assert_eq!((iters999, max_len, a.gen().get()), (1071, 63, 64317));
+    assert_eq!((iters999, max_len, a.gen().get()), (1069, 63, 68564));
 }
 
 // for testing `clone` and `clone_from` which interact between multiple arenas
