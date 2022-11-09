@@ -83,6 +83,7 @@ impl<P: Ptr, T> Arena<P, T> {
 
     /// Returns a `P` intended for use with [Arena::next_ptr] in a loop. Note
     /// that the `P` can be invalid and the boolean true if the arena is empty.
+    #[must_use]
     pub fn first_ptr(&self) -> (P, bool) {
         if self.is_empty() {
             (P::invalid(), true)
@@ -196,6 +197,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     }
 
     /// Same as [Arena::first_ptr]
+    #[must_use]
     pub fn first_ptr(&self) -> (PLink, bool) {
         self.a.first_ptr()
     }
