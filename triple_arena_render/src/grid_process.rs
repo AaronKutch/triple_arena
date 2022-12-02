@@ -200,10 +200,8 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         }
     });
 
-    let mut ptrs = vec![];
-    for p in dag.ptrs() {
-        ptrs.push(p);
-    }
+    // just do this because we add on `Ptr`s and iterate many times
+    let mut ptrs: Vec<P> = dag.ptrs().collect();
 
     // TODO apply more of the up-to-date DFS style and use a struct for the source
     // and sink assemblies

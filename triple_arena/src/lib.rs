@@ -235,8 +235,7 @@ impl<P: Ptr, T> Arena<P, T> {
         Ok(())
     }
 
-    /// Creates a new arena for fast allocation for the type `T`, which are
-    /// pointed to by `P`s.
+    /// Creates a new arena of type `T`, which are pointed to by `P`s.
     pub fn new() -> Arena<P, T> {
         Arena {
             len: PtrInx::new(0),
@@ -281,8 +280,9 @@ impl<P: Ptr, T> Arena<P, T> {
 
     /// Reserves capacity for at least `additional` more `T`, in accordance
     /// with `Vec::reserve`, except if the capacity would be more than
-    /// `P::Inx::max() + 1` in which case capacity is capped at `P::Inx::max() +
-    /// 1`.
+    /// `P::Inx::max() + 1` in which case capacity is capped at that value.
+    // note: it is not normally possible to allocate more than `isize::MAX`, so we
+    // do not need to mention it.
     pub fn reserve(&mut self, additional: usize) {
         let end = self.m.len();
         let cap = self.m.capacity();
@@ -411,7 +411,8 @@ impl<P: Ptr, T> Arena<P, T> {
                 match self.try_insert(t) {
                     Ok(p) => p,
                     Err(_) => panic!(
-                        "called `insert` on an `Arena<P, T>` with maximum length `P::Inx::max()`"
+                        "called `insert` on an `Arena<P, T>` with maximum length `P::Inx::max() + \
+                         1`"
                     ),
                 }
             }
