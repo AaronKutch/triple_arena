@@ -139,12 +139,11 @@ impl<P: Ptr, T> Arena<P, T> {
     ///     ... arena.get_mut(any_ptr) ...
     ///     // any kind of invalidation operation is ok (including the current `p`,
     ///     // it will not break `next_ptr` or prevent the loop from witnessing a
-    ///     // valid element inserted from before the loop began),
+    ///     // continuously valid element inserted from before the loop began),
     ///     ... arena.remove(p) ...
-    ///     // but new elements from insertions and invalidations done during the loop,
-    ///     // can both be encountered or not encountered before the loop terminates.
+    ///     // but note that new elements from insertions done during the loop, can
+    ///     // both be encountered or not encountered before the loop terminates.
     ///     ... let p_inserted = arena.insert(node) ...
-    ///     ... arena.invalidate(any_ptr) ...
     ///
     ///     arena.next_ptr(&mut p, &mut b);
     /// }
