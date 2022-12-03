@@ -1,4 +1,7 @@
 #![no_std]
+// because `Ptr` is based on user-controlled code we will not use unsafe code for the foreseeable
+// future
+#![deny(unsafe_code)]
 // false positives
 #![allow(clippy::while_let_on_iterator)]
 
@@ -489,7 +492,7 @@ impl<P: Ptr, T> Arena<P, T> {
     /// or a pointer is invalid, `None` is returned.
     #[must_use]
     pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<(&mut T, &mut T)> {
-        if self.contains(p0) && self.contains(p1) && (p0 != p1) {
+        if self.contains(p0) && self.contains(p1) && (p0.inx() != p1.inx()) {
             if p0.inx() < p1.inx() {
                 let (lhs, rhs) = self.m.split_at_mut(PtrInx::get(p1.inx()));
                 if let (Allocated(_, t0), Allocated(_, t1)) =
