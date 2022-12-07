@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.7.0] - TODO
+## [0.7.0] - 2022-12-07
 ### Additions
 - added `first_ptr` and `next_ptr` functions
 - added `must_use` attributes where applicable
