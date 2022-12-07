@@ -17,7 +17,7 @@
 <polyline stroke="#0000" stroke-width="0" points="10624,128 11264,128 11264,768 10624,768 10624,128"  fill="#0000"/>
 <path stroke="#a0a0a0" stroke-width="48" fill="#0000" d="M 576,768 C 576,1280 448,1280 448,1792"/>
 <path stroke="#a0a0a0" stroke-width="48" fill="#0000" d="M 448,2432 C 448,2944 448,3200 448,3712"/>
-<path stroke="#00b2ff" stroke-width="48" fill="#0000" d="M 2816,2688 C 2816,3200 896,3200 896,3712"/>
+<path stroke="#00b2ff" stroke-width="48" fill="#0000" d="M 3264,2688 C 3264,3200 896,3200 896,3712"/>
 <path stroke="#00cb9d" stroke-width="48" fill="#0000" d="M 7232,2432 C 7232,2944 1344,3200 1344,3712"/>
 <path stroke="#00b2ff" stroke-width="48" fill="#0000" d="M 3264,768 C 3264,1280 3008,1280 3008,1792"/>
 <path stroke="#c49d00" stroke-width="48" fill="#0000" d="M 10944,768 C 10944,1280 3520,1280 3520,1792"/>

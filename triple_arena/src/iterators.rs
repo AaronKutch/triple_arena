@@ -80,6 +80,83 @@ impl<P: Ptr, T> Arena<P, T> {
             arena: self,
         }
     }
+
+    /// Returns a `P` intended for use with [Arena::next_ptr] in a loop. Note
+    /// that the `P` can be invalid and the boolean true if the arena is empty.
+    #[must_use]
+    pub fn first_ptr(&self) -> (P, bool) {
+        if self.is_empty() {
+            (P::invalid(), true)
+        } else {
+            for (i, e) in self.m.iter().enumerate() {
+                if let Allocated(g, _) = e {
+                    return (P::_from_raw(P::Inx::new(i), *g), false)
+                }
+            }
+            unreachable!()
+        }
+    }
+
+    /// Used to avoid borrowing conflicts in complicated iterative algorithms.
+    /// This function does exactly one of two things depending on if a next
+    /// valid `P` exists in the iteration sequence: updates `p` to the
+    /// next valid `P` if one exists, or updates `b` to `true` otherwise.
+    ///
+    /// The motivation of this function is that often in algorithms being
+    /// applied to the whole `Arena`, the user will need to call
+    /// `.ptrs().collect()` and allocate just to avoid borrowing conflicts
+    /// between the iteration and arbitrary mutations on the arena. In a
+    /// typical structure such as a `Vec`, you can do
+    ///
+    /// ```text
+    /// let mut i = 0;
+    /// loop {
+    ///     if i >= vec.len() {
+    ///         break
+    ///     }
+    ///     ... vec.get(i) ...
+    ///     ... vec.get_mut(i) ...
+    ///     ... vec.get(any_i) ...
+    ///     ... vec.get_mut(any_i) ...
+    ///
+    ///     i += 1;
+    /// }
+    /// ```
+    ///
+    /// This function allows an analogous loop strategy:
+    ///
+    /// ```text
+    /// // a boolean is used for the termination condition to account for
+    /// // non-generation-counter cases where all possible `Ptr`s would be valid
+    /// let (mut p, mut b) = arena.first_ptr();
+    /// loop {
+    ///     if b {
+    ///         break
+    ///     }
+    ///     ... arena.get(p) ...
+    ///     ... arena.get_mut(p) ...
+    ///     ... arena.get(any_ptr) ...
+    ///     ... arena.get_mut(any_ptr) ...
+    ///     // any kind of invalidation operation is ok (including the current `p`,
+    ///     // it will not break `next_ptr` or prevent the loop from witnessing a
+    ///     // continuously valid element inserted from before the loop began),
+    ///     ... arena.remove(p) ...
+    ///     // but note that new elements from insertions done during the loop, can
+    ///     // both be encountered or not encountered before the loop terminates.
+    ///     ... let p_inserted = arena.insert(node) ...
+    ///
+    ///     arena.next_ptr(&mut p, &mut b);
+    /// }
+    /// ```
+    pub fn next_ptr(&self, p: &mut P, b: &mut bool) {
+        for i in P::Inx::get(p.inx()).checked_add(1).unwrap()..self.m.len() {
+            if let Allocated(g, _) = self.m.get(i).unwrap() {
+                *p = P::_from_raw(P::Inx::new(i), *g);
+                return
+            }
+        }
+        *b = true;
+    }
 }
 
 impl<PLink: Ptr, T> ChainArena<PLink, T> {
@@ -116,6 +193,17 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Same as [Arena::capacity_drain]
     pub fn capacity_drain(self) -> CapacityDrain<PLink, Link<PLink, T>> {
         self.a.capacity_drain()
+    }
+
+    /// Same as [Arena::first_ptr]
+    #[must_use]
+    pub fn first_ptr(&self) -> (PLink, bool) {
+        self.a.first_ptr()
+    }
+
+    /// Same as [Arena::next_ptr]
+    pub fn next_ptr(&self, p: &mut PLink, b: &mut bool) {
+        self.a.next_ptr(p, b);
     }
 }
 

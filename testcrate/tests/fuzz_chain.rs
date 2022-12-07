@@ -32,7 +32,7 @@ fn fuzz_chain() {
     let mut b: HashMap<u64, (P0, (Option<u64>, Option<u64>))> = HashMap::new();
 
     let invalid = a.insert_new(u64::MAX);
-    a.remove(invalid);
+    a.remove(invalid).unwrap();
     let mut op_inx;
     // makes sure there is not some problem with the test harness itself or
     // determinism

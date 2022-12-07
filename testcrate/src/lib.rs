@@ -18,7 +18,7 @@ impl<P: Ptr> MyNode<P> {
 }
 
 impl<P: Ptr> DebugNodeTrait<P> for MyNode<P> {
-    fn debug_node(this: &Self) -> DebugNode<P> {
+    fn debug_node(_p_this: P, this: &Self) -> DebugNode<P> {
         DebugNode {
             sources: this.sources.clone(),
             center: this.center.clone(),

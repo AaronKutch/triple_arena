@@ -186,8 +186,8 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     };
     // this is not guaranteed to be a DAG yet but will become one
     let mut dag: Arena<P, ANode<P>> = Arena::new();
-    dag.clone_from_with(arena, |_, t| {
-        let debug_node = DebugNodeTrait::debug_node(t);
+    dag.clone_from_with(arena, |p, t| {
+        let debug_node = DebugNodeTrait::debug_node(p, t);
         ANode {
             sources: debug_node
                 .sources
@@ -200,10 +200,8 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         }
     });
 
-    let mut ptrs = vec![];
-    for p in dag.ptrs() {
-        ptrs.push(p);
-    }
+    // just do this because we add on `Ptr`s and iterate many times
+    let mut ptrs: Vec<P> = dag.ptrs().collect();
 
     // TODO apply more of the up-to-date DFS style and use a struct for the source
     // and sink assemblies

@@ -17,7 +17,7 @@ enum MyNode<P: Ptr> {
 use MyNode::*;
 
 impl<P: Ptr> DebugNodeTrait<P> for MyNode<P> {
-    fn debug_node(this: &Self) -> DebugNode<P> {
+    fn debug_node(_p_this: P, this: &Self) -> DebugNode<P> {
         // Here we manually write out the fields of the `DebugNode`,
         // but you can also use its `Default` implementation or
         // new` constructor

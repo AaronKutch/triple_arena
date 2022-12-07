@@ -4,6 +4,7 @@ use triple_arena::{ptr_struct, Arena};
 
 ptr_struct!(P0[u8]);
 ptr_struct!(P1(NonZeroU8));
+ptr_struct!(P2[u8]());
 
 // note: we have two tests, because we need to make sure both that there is not
 // a premature panic and that there is a panic when is should happen
@@ -52,4 +53,37 @@ fn overflow_cap_panic() {
     }
     let p = a.insert(());
     let _ = a.remove(p);
+}
+
+#[test]
+fn next_ptr_cap() {
+    let mut a = Arena::<P2, ()>::new();
+    let mut v = vec![];
+    for _ in 0..256 {
+        v.push(a.insert(()));
+    }
+    let (mut p, mut b) = a.first_ptr();
+    let mut i = 0;
+    loop {
+        if b {
+            break
+        }
+        assert_eq!(p, v[i]);
+        a.next_ptr(&mut p, &mut b);
+        i += 1;
+    }
+    assert_eq!(i, 256);
+    a.remove(v[0]).unwrap();
+    a.remove(v[255]).unwrap();
+    let (mut p, mut b) = a.first_ptr();
+    let mut i = 1;
+    loop {
+        if b {
+            break
+        }
+        assert_eq!(p, v[i]);
+        a.next_ptr(&mut p, &mut b);
+        i += 1;
+    }
+    assert_eq!(i, 255);
 }
