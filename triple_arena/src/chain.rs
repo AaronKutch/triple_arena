@@ -75,6 +75,9 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
         for (p, link) in &this.a {
+            // note: we must check both cases of equality when checking for single link
+            // cyclic chains, because we _must_ not rely on any kind of induction (any set
+            // of interlinks could be bad or misplaced at the same time).
             if let Some(prev) = Link::prev(link) {
                 if let Some(prev) = this.a.get(prev) {
                     if let Some(next) = Link::next(prev) {
@@ -86,6 +89,12 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
                     }
                 } else {
                     return Err("prev node does not exist")
+                }
+                if p == prev {
+                    // should be a single link cyclic chain
+                    if Link::next(link) != Some(p) {
+                        return Err("broken single link cyclic chain")
+                    }
                 }
             }
             // there are going to be duplicate checks but this must be done for invariant
@@ -101,6 +110,12 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
                     }
                 } else {
                     return Err("next node does not exist")
+                }
+                if p == next {
+                    // should be a single link cyclic chain
+                    if Link::prev(link) != Some(p) {
+                        return Err("broken single link cyclic chain")
+                    }
                 }
             }
         }
@@ -310,18 +325,41 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
                 if p != p0 {
                     self.a.get_mut(p0).unwrap().prev_next.1 = Some(p1);
                     self.a.get_mut(p1).unwrap().prev_next.0 = Some(p0);
-                } // else it is a single link circular chain
+                } // else it is a single link cyclic chain
             }
         }
         Some(l)
     }
 
     /// Invalidates all references to the link pointed to by `p`, and returns a
-    /// new valid reference. Does no invalidation and returns `None` if `p` is
+    /// new valid reference. Any interlinks inside the arena that also pointed
+    /// to `p` are updated to use the new valid reference. Remember that any
+    /// external interlink pointers that used `p` are invalidated as well as the
+    /// link itself. Does no invalidation and returns `None` if `p` is
     /// invalid.
     #[must_use]
     pub fn invalidate(&mut self, p: PLink) -> Option<PLink> {
-        self.a.invalidate(p)
+        let p_new = self.a.invalidate(p)?;
+        // fix invalidated interlinks
+        match Link::prev_next(&self.a[p_new]) {
+            (None, None) => (),
+            (None, Some(p1)) => {
+                self.a.get_mut(p1).unwrap().prev_next.0 = Some(p_new);
+            }
+            (Some(p0), None) => {
+                self.a.get_mut(p0).unwrap().prev_next.1 = Some(p_new);
+            }
+            (Some(p0), Some(p1)) => {
+                if p0 == p {
+                    // single link cyclical chain must be handled separately
+                    self.a.get_mut(p_new).unwrap().prev_next = (Some(p_new), Some(p_new));
+                } else {
+                    self.a.get_mut(p1).unwrap().prev_next.0 = Some(p_new);
+                    self.a.get_mut(p0).unwrap().prev_next.1 = Some(p_new);
+                }
+            }
+        }
+        Some(p_new)
     }
 
     /// Swaps the `T` at indexes `p0` and `p1` and keeps the generation counters

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0] - TODO
+### Fixes
+- Fixed subtle blind spot in `ChainArena::_assert_invariants` involving single link cyclical chains
+- Fixed that `ChainArena::invalidate` would break chain invariants, now it can update interlinks
+- Added generation counter checking to all fuzz tests
+- Added several special cases involving single link chains for `ChainArena` tests
+
 ## [0.7.0] - 2022-12-07
 ### Additions
 - added `first_ptr` and `next_ptr` functions

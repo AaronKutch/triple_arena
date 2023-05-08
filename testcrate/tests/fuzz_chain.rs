@@ -29,11 +29,15 @@ fn fuzz_chain() {
     let mut list: Vec<u64> = vec![];
 
     let mut a: ChainArena<P0, u64> = ChainArena::new();
+    let mut gen = 2;
     let mut b: HashMap<u64, (P0, (Option<u64>, Option<u64>))> = HashMap::new();
 
     let invalid = a.insert_new(u64::MAX);
     a.remove(invalid).unwrap();
-    let mut op_inx;
+    gen += 1;
+    a.clear_and_shrink();
+    gen += 1;
+    let mut op_inx = u32::MAX;
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut iters999 = 0;
@@ -41,34 +45,38 @@ fn fuzz_chain() {
 
     for _ in 0..1_000_000 {
         assert_eq!(a.len(), list.len());
+        if a.gen().get() != gen {
+            dbg!(a.gen().get(), gen, op_inx);
+            panic!();
+        }
+        assert_eq!(a.gen().get(), gen);
         assert_eq!(a.is_empty(), list.is_empty());
         let len = list.len();
-        ChainArena::_check_invariants(&a).unwrap();
+        if let Err(e) = ChainArena::_check_invariants(&a) {
+            dbg!(op_inx);
+            panic!("{e}");
+        }
         op_inx = rng.next_u32() % 1000;
         match op_inx {
             // testing all nontrivial functions on `ChainArena` not already tested by the regular
             // `Arena` tests
-            /*let mut tmp = vec![];
-            for (t, entry) in &b {
-                tmp.push((t, entry));
-            }
-            for (t, entry) in tmp {
-                if let Some(x) = entry.1.0 {
-                    assert_eq!(b[&x].1.1, Some(*t));
-                }
-                if let Some(x) = entry.1.1 {
-                    assert_eq!(b[&x].1.0, Some(*t));
-                }
-            }*/
             0..=19 => {
+                // insert_new
                 let t = new_t();
                 list.push(t);
                 let p = a.insert_new(t);
                 b.insert(t, (p, (None, None)));
             }
-            20..=99 => {
-                // insert, insert_new_cyclic
-                let op = if len == 0 { 0 } else { rng.next_u32() % 4 };
+            20..=39 => {
+                // insert_new_cyclic
+                let t = new_t();
+                list.push(t);
+                let p = a.insert_new_cyclic(t);
+                b.insert(t, (p, (Some(t), Some(t))));
+            }
+            40..=99 => {
+                // insert
+                let op = if len == 0 { 0 } else { rng.next_u32() % 5 };
                 let t = new_t();
                 list.push(t);
                 match op {
@@ -100,7 +108,6 @@ fn fuzz_chain() {
                             b.insert(t, (p, (None, Some(t1))));
                         }
                     }
-                    // has `insert_new_cyclic` as a backup
                     3 => {
                         let t0 = list[next_inx!(rng, len)];
                         let t1 = list[next_inx!(rng, len)];
@@ -114,11 +121,31 @@ fn fuzz_chain() {
                                 b.insert(t, (p, (Some(t0), None)));
                             }
                         } else {
-                            if let Some(next) = b[&t0].1 .1 {
-                                assert_ne!(next, t1);
+                            // check that the failure is expected
+                            assert_ne!(b[&t0].1 .1, Some(t1));
+                            assert_ne!(b[&t1].1 .0, Some(t0));
+                            // undo
+                            list.pop().unwrap();
+                        }
+                    }
+                    4 => {
+                        // test double sided insertion for single link cyclical chains
+                        let t0 = list[next_inx!(rng, len)];
+                        if let Ok(p) = a.insert((Some(b[&t0].0), Some(b[&t0].0)), t) {
+                            if let Some(t1) = b[&t0].1 .1 {
+                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                                b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                                b.insert(t, (p, (Some(t0), Some(t1))));
+                            } else {
+                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                                b.insert(t, (p, (Some(t0), None)));
                             }
-                            let p = a.insert_new_cyclic(t);
-                            b.insert(t, (p, (Some(t), Some(t))));
+                        } else {
+                            // check that the failure is expected
+                            assert_ne!(b[&t0].1 .1, Some(t0));
+                            assert_ne!(b[&t0].1 .0, Some(t0));
+                            // undo
+                            list.pop().unwrap();
                         }
                     }
                     _ => unreachable!(),
@@ -185,6 +212,7 @@ fn fuzz_chain() {
                         }
                     }
                     assert_eq!(a.remove(p).unwrap().t, t);
+                    gen += 1;
                     b.remove(&t);
                 } else {
                     assert!(a.remove(invalid).is_none());
@@ -199,6 +227,11 @@ fn fuzz_chain() {
                         a.connect(b[&t0].0, b[&t1].0).unwrap();
                         b.get_mut(&t0).unwrap().1 .1 = Some(t1);
                         b.get_mut(&t1).unwrap().1 .0 = Some(t0);
+                    } else if b[&t0].1 .0.is_none() && b[&t0].1 .1.is_none() {
+                        // connecting for single link cyclical chain case instead
+                        a.connect(b[&t0].0, b[&t0].0).unwrap();
+                        b.get_mut(&t0).unwrap().1 .0 = Some(t0);
+                        b.get_mut(&t0).unwrap().1 .1 = Some(t0);
                     }
                 } else {
                     assert!(a.connect(invalid, invalid).is_none());
@@ -230,7 +263,7 @@ fn fuzz_chain() {
                     assert!(a.break_prev(invalid).is_none());
                 }
             }
-            600..=699 => {
+            600..=689 => {
                 // exchange_next
                 if len != 0 {
                     let t0 = list[next_inx!(rng, len)];
@@ -242,18 +275,47 @@ fn fuzz_chain() {
                         b.get_mut(&t1).unwrap().1 .1 = Some(d0);
                         b.get_mut(&d0).unwrap().1 .0 = Some(t1);
                         b.get_mut(&d1).unwrap().1 .0 = Some(t0);
+                    } else {
+                        assert!(b[&t0].1 .1.is_none() || b[&t1].1 .1.is_none());
                     }
                 } else {
                     assert!(a.exchange_next(invalid, invalid).is_none());
                 }
             }
-            700..=849 => (),
+            690..=699 => {
+                // exchange_next with single nodes
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    if a.exchange_next(b[&t].0, b[&t].0).is_none() {
+                        assert!(b[&t].1 .1.is_none());
+                    }
+                } else {
+                    assert!(a.exchange_next(invalid, invalid).is_none());
+                }
+            }
+            700..=849 => {
+                // invalidate
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let (ptr, interlink) = b.remove(&t).unwrap();
+                    let new_ptr = a.invalidate(ptr).unwrap();
+                    gen += 1;
+                    // preserve interlink on node that was invalidated, the incident interlinks
+                    // do not need to be updated because we are looking up based on the `t` value
+                    // which is unchanged. This includes single link cyclic chains
+                    b.insert(t, (new_ptr, interlink));
+                    assert_eq!(t, a[new_ptr].t);
+                } else {
+                    assert!(a.invalidate(invalid).is_none());
+                }
+            }
             850..=899 => {
                 if len != 0 {
                     let t0 = list[next_inx!(rng, len)];
                     let t1 = list[next_inx!(rng, len)];
                     if t0 == t1 {
                         let t = b[&t0].0;
+                        // swapping a node with itself
                         a.swap(t, t).unwrap();
                     } else {
                         let tmp0 = b[&t0];
@@ -288,6 +350,9 @@ fn fuzz_chain() {
                     if a.are_neighbors(b[&t0].0, b[&t1].0) {
                         assert_eq!(b[&t0].1 .1, Some(t1));
                         assert_eq!(b[&t1].1 .0, Some(t0));
+                    } else {
+                        assert_ne!(b[&t0].1 .1, Some(t1));
+                        assert_ne!(b[&t1].1 .0, Some(t0));
                     }
                 } else {
                     assert!(!a.are_neighbors(invalid, invalid));
@@ -296,11 +361,13 @@ fn fuzz_chain() {
             998 => {
                 // clear
                 a.clear();
+                gen += 1;
                 list.clear();
             }
             999 => {
                 // clear_and_shrink
                 a.clear_and_shrink();
+                gen += 1;
                 list.clear();
                 iters999 += 1;
             }
@@ -308,5 +375,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (99, 1036, 166739));
+    assert_eq!((max_len, iters999, a.gen().get()), (57, 1050, 265090));
 }
