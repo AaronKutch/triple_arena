@@ -37,7 +37,7 @@ fn fuzz_chain() {
     gen += 1;
     a.clear_and_shrink();
     gen += 1;
-    let mut op_inx = u32::MAX;
+    let mut op_inx;
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut iters999 = 0;
@@ -45,15 +45,10 @@ fn fuzz_chain() {
 
     for _ in 0..1_000_000 {
         assert_eq!(a.len(), list.len());
-        if a.gen().get() != gen {
-            dbg!(a.gen().get(), gen, op_inx);
-            panic!();
-        }
         assert_eq!(a.gen().get(), gen);
         assert_eq!(a.is_empty(), list.is_empty());
         let len = list.len();
         if let Err(e) = ChainArena::_check_invariants(&a) {
-            dbg!(op_inx);
             panic!("{e}");
         }
         op_inx = rng.next_u32() % 1000;

@@ -14,15 +14,17 @@ struct Val<T> {
 
 /// A `SurjectArena` is a generalization of an `Arena` that allows multiple
 /// `Ptr`s to point to a single `T`. When all `Ptr`s to a single `T` are
-/// removed, the `T` is removed as well.
+/// removed, the `T` is removed as well. Efficient union-find functionality is
+/// also possible.
 ///
 /// This is a more powerful version of union-find data structures, incorporating
 /// a type, cheap ref counts, single indirection for all lookups, and allowing
 /// removal. Under the hood, this uses a `O(log n)` strategy for unions, but for
 /// many usecases this should actually be faster than the theoretical
 /// `O(iterated log n)`, because there is always only a single layer of
-/// indirections at any one time (we use a clever `ChainArena` based strategy
-/// that avoids any tree structures or key reinsertion).
+/// indirections at any one time for caches to deal with (we use a clever
+/// `ChainArena` based strategy that avoids any tree structures or key
+/// reinsertion).
 pub struct SurjectArena<P: Ptr, T> {
     keys: ChainArena<P, PVal>,
     vals: Arena<PVal, Val<T>>,
@@ -34,6 +36,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
         // there should be exactly one key chain associated with each val
         let mut count = Arena::<PVal, usize>::new();
+        count.clone_from_with(&this.vals, |_, _| 0);
         for key in this.keys.vals() {
             match count.get_mut(key.t) {
                 Some(p) => *p += 1,
@@ -60,19 +63,15 @@ impl<P: Ptr, T> SurjectArena<P, T> {
                 // because the count is zeroed afterwards.
                 let mut tmp = p;
                 loop {
+                    if c == 0 {
+                        return Err("did not reach end of key chain in expected time")
+                    }
                     c -= 1;
-                    match this.keys.get(tmp) {
-                        Some(link) => {
-                            if let Some(next) = Link::next(link) {
-                                tmp = next;
-                            } else {
-                                return Err("key chain is not cyclic")
-                            }
-                        }
-                        None => {
-                            // should not be possible unless `ChainArena` itself is broken
-                            return Err("broken chain")
-                        }
+                    let link = this.keys.get(tmp).unwrap();
+                    if let Some(next) = Link::next(link) {
+                        tmp = next;
+                    } else {
+                        return Err("key chain is not cyclic")
                     }
                     // have the test after the match so that we check for single node cyclics
                     if tmp == p {
@@ -109,6 +108,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
 
     /// Returns the size of the set of keys pointing to the same value, with `p`
     /// being one of those keys
+    #[must_use]
     pub fn len_key_set(&self, p: P) -> Option<NonZeroUsize> {
         let p_val = self.keys.get(p)?.t;
         Some(self.vals[p_val].key_count)
@@ -155,8 +155,9 @@ impl<P: Ptr, T> SurjectArena<P, T> {
         self.keys.insert_new_cyclic(p_val)
     }
 
-    /// Adds a new `Ptr` key to the same set of keys that `p` is in, and returns
-    /// the new key.
+    /// Adds a new `Ptr` key to the same key set that `p` is in (any `Ptr`
+    /// from the valid key set can be used as a reference), and returns the new
+    /// key.
     #[must_use]
     pub fn insert_key(&mut self, p: P) -> Option<P> {
         let p_val = match self.keys.get(p) {
@@ -175,7 +176,8 @@ impl<P: Ptr, T> SurjectArena<P, T> {
 
     /// Returns if keys `p0` and `p1` are in the same key set. This is
     /// especially useful in case two identical values were inserted (this
-    /// shows the difference between a hereditary set/map and an arena).
+    /// shows the difference between a hereditary set/map and a surjection
+    /// arena).
     #[must_use]
     pub fn in_same_set(&self, p0: P, p1: P) -> Option<bool> {
         Some(self.keys.get(p0)?.t == self.keys.get(p1)?.t)
@@ -215,8 +217,8 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     /// point to the value of `p1`'s key set. If `self.len_key_set(p0) >
     /// self.len_key_set(p1)`, the value pointed to by `p1` is removed and
     /// returned in a tuple with `p0`, and the key set of `p1` is changed to
-    /// point to the value of `p0`'s key set. Returns `None` if `self.
-    /// in_same_set(p0, p1)`.
+    /// point to the value of `p0`'s key set. Returns `None` if
+    /// `self.in_same_set(p0, p1)`.
     ///
     /// # Note
     ///
@@ -226,10 +228,11 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     /// have their union taken, then the contents of the `T` in the return tuple
     /// can be transferred to the value pointed to by the `P` also in the
     /// return tuple. This way, users do not actually need to consider key set
-    /// sizes.
+    /// sizes explicitly.
     //
     // note: we purposely reverse the typical order to `(T, P)` to give a visual
     // that the returned things were not pointing to each other.
+    #[must_use]
     pub fn union(&mut self, mut p0: P, mut p1: P) -> Option<(T, P)> {
         let mut p_link0 = *self.keys.get(p0)?;
         let mut p_link1 = *self.keys.get(p1)?;
@@ -278,5 +281,41 @@ impl<P: Ptr, T> SurjectArena<P, T> {
             self.vals[p_val].key_count = NonZeroUsize::new(key_count.wrapping_sub(1)).unwrap();
             Some(None)
         }
+    }
+
+    /// Invalidates the key `p` (no other keys in the key set are invalidated),
+    /// returning a new valid key. Returns `None` if `p` is not valid.
+    #[must_use]
+    pub fn invalidate(&mut self, p: P) -> Option<P> {
+        // the chain arena fixes interlinks
+        self.keys.invalidate(p)
+    }
+
+    /// Swaps the `T` values pointed to by keys `p0` and `p1` and keeps the
+    /// generation counters as-is. If `p0` and `p1` are in the same key set,
+    /// then nothing occurs. Returns `None` if `p0` or `p1` are invalid.
+    #[must_use]
+    pub fn swap(&mut self, p0: P, p1: P) -> Option<()> {
+        let p_val0 = self.keys.get(p0)?.t;
+        let p_val1 = self.keys.get(p1)?.t;
+        if p_val0 != p_val1 {
+            self.vals.swap(p_val0, p_val1).unwrap();
+        } // else no-op and we also checked for containment earlier
+        Some(())
+    }
+
+    /// Drops all keys and values from the arena and invalidates all pointers
+    /// previously created from it. This has no effect on allocated
+    /// capacities of keys or values.
+    pub fn clear(&mut self) {
+        self.keys.clear();
+        self.vals.clear();
+    }
+
+    /// Performs a [SurjectArena::clear] and resets key and value capacities to
+    /// 0
+    pub fn clear_and_shrink(&mut self) {
+        self.keys.clear_and_shrink();
+        self.vals.clear_and_shrink();
     }
 }

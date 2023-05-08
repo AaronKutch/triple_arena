@@ -440,7 +440,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         self.a.clear()
     }
 
-    /// Performs an [ChainArena::clear] and resets capacity to 0
+    /// Performs a [ChainArena::clear] and resets capacity to 0
     pub fn clear_and_shrink(&mut self) {
         self.a.clear_and_shrink()
     }

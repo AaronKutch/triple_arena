@@ -38,7 +38,7 @@ fn fuzz() {
     let mut list1: Vec<u64> = vec![];
     let mut gen = 2;
 
-    let mut op_inx = u32::MAX;
+    let mut op_inx;
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut iters999 = 0;
@@ -54,10 +54,6 @@ fn fuzz() {
     for _ in 0..1_000_000 {
         assert_eq!(b.len(), list.len());
         assert_eq!(a.len(), b.len());
-        if a.gen().get() != gen {
-            dbg!(op_inx, a.gen(), gen);
-            panic!();
-        }
         assert_eq!(a.gen().get(), gen);
         let len = list.len();
         assert_eq!(a.is_empty(), b.is_empty());
