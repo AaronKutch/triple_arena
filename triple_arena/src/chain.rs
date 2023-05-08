@@ -121,7 +121,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         self.a.is_empty()
     }
 
-    /// Returns the capacity of the arena.
+    /// Returns the capacity of the arena
     pub fn capacity(&self) -> usize {
         self.a.capacity()
     }

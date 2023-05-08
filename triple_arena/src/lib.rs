@@ -13,6 +13,8 @@ mod ptr;
 pub use chain::{ChainArena, Link};
 pub(crate) use entry::InternalEntry;
 pub use ptr::{Ptr, PtrGen, PtrInx};
+mod surject;
+pub use surject::SurjectArena;
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -475,7 +477,6 @@ impl<P: Ptr, T> Arena<P, T> {
     /// if `p` is invalid.
     #[must_use]
     pub fn get_mut(&mut self, p: P) -> Option<&mut T> {
-        let p = *p.borrow();
         match self.m_get_mut(p.inx()) {
             Some(Allocated(gen, t)) => {
                 if *gen == p.gen() {
