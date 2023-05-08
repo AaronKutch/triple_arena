@@ -110,8 +110,8 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     /// Returns the size of the set of keys pointing to the same value, with `p`
     /// being one of those keys
     pub fn len_key_set(&self, p: P) -> Option<NonZeroUsize> {
-        let p_val = self.keys.get(p)?;
-        Some(self.vals[p_val.t].key_count)
+        let p_val = self.keys.get(p)?.t;
+        Some(self.vals[p_val].key_count)
     }
 
     /// Returns if the arena is empty (`self.len_keys() == 0` if and only if
@@ -159,13 +159,13 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     /// the new key.
     #[must_use]
     pub fn insert_key(&mut self, p: P) -> Option<P> {
-        let link = match self.keys.get(p) {
+        let p_val = match self.keys.get(p) {
             None => return None,
-            Some(p) => *p,
+            Some(p) => p.t,
         };
-        self.vals[link.t].key_count =
-            NonZeroUsize::new(self.vals[link.t].key_count.get().wrapping_add(1)).unwrap();
-        Some(self.keys.insert((Some(p), None), link.t).unwrap())
+        self.vals[p_val].key_count =
+            NonZeroUsize::new(self.vals[p_val].key_count.get().wrapping_add(1)).unwrap();
+        Some(self.keys.insert((Some(p), None), p_val).unwrap())
     }
 
     /// Returns if `p` is a valid `Ptr`
@@ -184,15 +184,15 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     /// Returns a reference to the value pointed to by `p`.
     #[must_use]
     pub fn get(&self, p: P) -> Option<&T> {
-        let link = self.keys.get(p)?;
-        Some(&self.vals[link.t].t)
+        let p_val = self.keys.get(p)?.t;
+        Some(&self.vals[p_val].t)
     }
 
     /// Returns a mutable reference to the value pointed to by `p`.
     #[must_use]
     pub fn get_mut(&mut self, p: P) -> Option<&mut T> {
-        let link = self.keys.get(p)?;
-        Some(&mut self.vals[link.t].t)
+        let p_val = self.keys.get(p)?.t;
+        Some(&mut self.vals[p_val].t)
     }
 
     /// Gets two `&mut T` references pointed to by `p0` and `p1`. If
@@ -200,9 +200,9 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     /// returned.
     #[must_use]
     pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<(&mut T, &mut T)> {
-        let link0 = self.keys.get(p0)?;
-        let link1 = self.keys.get(p1)?;
-        match self.vals.get2_mut(link0.t, link1.t) {
+        let p_val0 = self.keys.get(p0)?.t;
+        let p_val1 = self.keys.get(p1)?.t;
+        match self.vals.get2_mut(p_val0, p_val1) {
             Some((val0, val1)) => Some((&mut val0.t, &mut val1.t)),
             None => None,
         }
@@ -260,5 +260,23 @@ impl<P: Ptr, T> SurjectArena<P, T> {
         // inserted `usize + 1` elements
         self.vals[p_link0.t].key_count = NonZeroUsize::new(len0.wrapping_add(len1)).unwrap();
         Some((self.vals.remove(p_link1.t).unwrap().t, p0))
+    }
+
+    /// Removes the key `p`. If there were other keys still in the key set, the
+    /// value is not removed and `Some(None)` is returned. If `p` was the last
+    /// key in the key set, then the value is removed and returned. Returns
+    /// `None` if `p` is not valid.
+    #[must_use]
+    pub fn remove(&mut self, p: P) -> Option<Option<T>> {
+        let p_val = self.keys.remove(p)?.t;
+        let key_count = self.vals[p_val].key_count.get();
+        if key_count == 1 {
+            // last key, remove the value
+            Some(Some(self.vals.remove(p_val).unwrap().t))
+        } else {
+            // decrement the key count
+            self.vals[p_val].key_count = NonZeroUsize::new(key_count.wrapping_sub(1)).unwrap();
+            Some(None)
+        }
     }
 }
