@@ -7,9 +7,15 @@
 - Added generation counter checking to all fuzz tests
 - Added several special cases involving single link chains for `ChainArena` tests
 
+### Changes
+- Changed `&mut Link<PLink, T>` to `Link<PLink, &mut T>` in some `ChainArena` signatures, because
+  even if the interlinks were not directly available the whole struct could be `mem::replaced` and
+  the chain invariants broken
+
 ### Additions
 - Added `SurjectArena`
 - Added `ChainArena::remove_chain`
+- Added `Link::new`
 
 ## [0.7.0] - 2022-12-07
 ### Additions

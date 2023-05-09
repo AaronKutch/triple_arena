@@ -263,7 +263,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
         // overwrite the `PVal`s in the smaller chain
         let mut tmp = p1;
         loop {
-            self.keys.get_mut(tmp).unwrap().t = p_link0.t;
+            *self.keys.get_mut(tmp).unwrap().t = p_link0.t;
             tmp = Link::next(self.keys.get(tmp).unwrap()).unwrap();
             if tmp == p1 {
                 break
