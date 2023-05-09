@@ -15,7 +15,7 @@ macro_rules! next_inx {
 ptr_struct!(P0);
 
 #[test]
-fn fuzz() {
+fn fuzz_arena() {
     let mut rng = Xoshiro128StarStar::seed_from_u64(0);
 
     // unique id for checking that the correct elements are returned

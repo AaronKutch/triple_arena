@@ -272,7 +272,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         let mut are_neighbors = false;
         if let Some(l0) = self.a.get(p0) {
             if let Some(p) = Link::next(l0) {
-                if p == p1 {
+                if p.inx() == p1.inx() {
                     // `p1` must implicitly exist if the invariants hold
                     are_neighbors = true;
                 }
@@ -322,7 +322,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
                 self.a.get_mut(p0).unwrap().prev_next.1 = None;
             }
             (Some(p0), Some(p1)) => {
-                if p != p0 {
+                if p.inx() != p0.inx() {
                     self.a.get_mut(p0).unwrap().prev_next.1 = Some(p1);
                     self.a.get_mut(p1).unwrap().prev_next.0 = Some(p0);
                 } // else it is a single link cyclic chain
@@ -334,21 +334,9 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     // this is tested by the `SurjectArena` fuzz test
     /// Like `remove_chain` but assumes the chain is cyclic and `p` is valid
     pub(crate) fn remove_cyclic_chain_internal(&mut self, p: PLink, inc_gen: bool) {
-        let mut tmp = self
-            .a
-            .remove_internal(p, false)
-            .unwrap()
-            .prev_next
-            .1
-            .unwrap();
-        while tmp != p {
-            tmp = self
-                .a
-                .remove_internal(tmp, false)
-                .unwrap()
-                .prev_next
-                .1
-                .unwrap();
+        let mut tmp = Link::next(&self.a.remove_internal(p, false).unwrap()).unwrap();
+        while tmp.inx() != p.inx() {
+            tmp = Link::next(&self.a.remove_internal(tmp, false).unwrap()).unwrap();
         }
         if inc_gen {
             self.a.inc_gen();
@@ -362,18 +350,18 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         let init = self.a.remove_internal(p, false)?;
         let mut len = 1;
         self.a.inc_gen();
-        let mut tmp = init.prev_next.1;
+        let mut tmp = Link::next(&init);
         while let Some(next) = tmp {
-            if next == p {
+            if next.inx() == p.inx() {
                 // cyclical
                 return Some(len)
             }
-            tmp = self.a.remove_internal(next, false).unwrap().prev_next.1;
+            tmp = Link::next(&self.a.remove_internal(next, false).unwrap());
             len += 1;
         }
-        let mut tmp = init.prev_next.0;
+        let mut tmp = Link::prev(&init);
         while let Some(prev) = tmp {
-            tmp = self.a.remove_internal(prev, false).unwrap().prev_next.0;
+            tmp = Link::prev(&self.a.remove_internal(prev, false).unwrap());
             len += 1;
         }
         Some(len)
@@ -398,7 +386,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
                 self.a.get_mut(p0).unwrap().prev_next.1 = Some(p_new);
             }
             (Some(p0), Some(p1)) => {
-                if p0 == p {
+                if p0.inx() == p.inx() {
                     // single link cyclical chain must be handled separately
                     self.a.get_mut(p_new).unwrap().prev_next = (Some(p_new), Some(p_new));
                 } else {
@@ -415,7 +403,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Returns `None` if `p0` or `p1` are invalid.
     #[must_use]
     pub fn swap(&mut self, p0: PLink, p1: PLink) -> Option<()> {
-        if p0 == p1 {
+        if p0.inx() == p1.inx() {
             // need to check that they are valid
             if self.contains(p0) && self.contains(p1) {
                 Some(())
