@@ -33,6 +33,76 @@ pub(crate) struct Val<T> {
 /// layer of indirections at any one time for caches to deal with (we use a
 /// clever `ChainArena` based strategy that avoids any tree structures
 /// or key reinsertion).
+///
+/// ```
+/// use triple_arena::{ptr_struct, SurjectArena};
+///
+/// ptr_struct!(P0);
+/// let mut a: SurjectArena<P0, String> = SurjectArena::new();
+///
+/// let p42_0 = a.insert_val("42".to_owned());
+/// let p42_1 = a.insert_key(p42_0).unwrap();
+/// let p42_2 = a.insert_key(p42_0).unwrap();
+///
+/// // any of the keys above point to the same value
+/// assert_eq!(&a[p42_0], "42");
+/// assert_eq!(&a[p42_1], "42");
+/// assert_eq!(&a[p42_2], "42");
+///
+/// // even if we don't use the union-find feature, even
+/// // `SurjectArena<P, ()>`  is useful for its O(1) set-like
+/// // operations and adding and removing keys in any order.
+/// // This is more powerful than pure reference counting or
+/// // epoch-like structures.
+/// assert_eq!(a.remove_key(p42_1), Some(None));
+/// assert!(a.contains(p42_0));
+/// assert!(!a.contains(p42_1));
+/// assert!(a.contains(p42_2));
+/// assert!(a.insert_key(p42_1).is_none());
+/// // need to use existing valid key
+/// let p42_3 = a.insert_key(p42_2).unwrap();
+/// assert_eq!(&a[p42_3], "42");
+///
+/// let other42 = a.insert_val("42".to_owned());
+/// // note this is still a general `Arena`-like structure and not a hereditary
+/// // set or map, so multiple of the same exact values can exist in different
+/// // surjects.
+/// assert!(!a.in_same_set(p42_0, other42).unwrap());
+/// a.remove_val(other42).unwrap();
+///
+/// let p7_0 = a.insert_val("7".to_owned());
+/// let p7_1 = a.insert_key(p7_0).unwrap();
+/// assert_eq!(&a[p7_0], "7");
+/// assert_eq!(&a[p42_2], "42");
+///
+/// let (removed_t, kept_p) = a.union(p42_0, p7_1).unwrap();
+/// // One of the "7" or "42" values was removed from the arena,
+/// // and the other remains in the arena. Suppose we want
+/// // to take a custom union of the `String`s to go along
+/// // with the union of the keys, we would do something like
+/// a[kept_p] = format!("{} + {}", a[kept_p], removed_t);
+/// assert_eq!(&a[p7_0], "42 + 7");
+/// assert_eq!(&a[p7_1], "42 + 7");
+/// assert_eq!(&a[p42_0], "42 + 7");
+/// assert_eq!(&a[p42_2], "42 + 7");
+/// assert_eq!(&a[p42_3], "42 + 7");
+/// assert_eq!(a.len_key_set(p7_0).unwrap().get(), 5);
+/// // iteration over the key value pairs can repeat the same value multiple times
+/// let v = "42 + 7";
+/// // I know the order ahead of time because the arena is deterministic
+/// let expected = [(p42_0, v), (p42_3, v), (p42_2, v), (p7_0, v), (p7_1, v)];
+/// for (i, (key, val)) in a.iter().enumerate() {
+///     assert_eq!(expected[i], (key, val.as_str()));
+/// }
+///
+/// // only upon removing the last key is the value is returned
+/// // (or we could use wholesale `remove_val`)
+/// assert_eq!(a.remove_key(p7_0), Some(None));
+/// assert_eq!(a.remove_key(p42_0), Some(None));
+/// assert_eq!(a.remove_key(p42_3), Some(None));
+/// assert_eq!(a.remove_key(p7_1), Some(None));
+/// assert_eq!(a.remove_key(p42_2), Some(Some("42 + 7".to_owned())));
+/// ```
 pub struct SurjectArena<P: Ptr, T> {
     pub(crate) keys: ChainArena<P, PVal>,
     pub(crate) vals: Arena<PVal, Val<T>>,

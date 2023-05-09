@@ -241,7 +241,8 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         self.a.insert_with(|p| Link::new((Some(p), Some(p)), t))
     }
 
-    /// Like [insert_new_with] but with a single link cyclical chain.
+    /// Like [ChainArena::insert_new_with] but with a single link cyclical
+    /// chain.
     pub fn insert_new_cyclic_with<F: FnOnce(PLink) -> T>(&mut self, create: F) -> PLink {
         self.a
             .insert_with(|p| Link::new((Some(p), Some(p)), create(p)))
