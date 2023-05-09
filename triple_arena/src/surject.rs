@@ -222,16 +222,19 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     }
 
     /// Takes the union of two key sets, of which `p0` is a key in one set and
-    /// `p1` is a key in the other set. If `self.len_key_set(p0) <=
+    /// `p1` is a key in the other set. If `self.len_key_set(p0) <
     /// self.len_key_set(p1)`, then the value pointed to by `p0` is removed and
     /// returned in a tuple with `p1`, and the key set of `p0` is changed to
-    /// point to the value of `p1`'s key set. If `self.len_key_set(p0) >
+    /// point to the value of `p1`'s key set. If `self.len_key_set(p0) >=
     /// self.len_key_set(p1)`, the value pointed to by `p1` is removed and
     /// returned in a tuple with `p0`, and the key set of `p1` is changed to
     /// point to the value of `p0`'s key set. Returns `None` if
     /// `self.in_same_set(p0, p1)`.
     ///
     /// # Note
+    ///
+    /// No `Ptr`s are invalidated even though a value is removed, all that
+    /// happens is both key sets are redirected point to a common value.
     ///
     /// This function is defined in this way to guarantee a `O(n log n)` cost
     /// for performing repeated unions in any order on a given starting arena.
@@ -253,7 +256,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
         }
         let len0 = self.vals.get(p_link0.t).unwrap().key_count.get();
         let len1 = self.vals.get(p_link1.t).unwrap().key_count.get();
-        if len0 > len1 {
+        if len0 < len1 {
             mem::swap(&mut p_link0, &mut p_link1);
             mem::swap(&mut p0, &mut p1);
         }

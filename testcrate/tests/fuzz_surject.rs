@@ -126,11 +126,123 @@ fn fuzz_surject() {
             }
             200..=249 => {
                 // contains
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let set = &b[&t];
+                    let set_len = set.len();
+                    let p = set[next_inx!(rng, set_len)];
+                    assert!(a.contains(p));
+                } else {
+                    assert!(!a.contains(invalid));
+                }
             }
             250..=299 => {
                 // in_same_set
+                if len != 0 {
+                    let t0 = list[next_inx!(rng, len)];
+                    let t1 = list[next_inx!(rng, len)];
+                    let set0 = &b[&t0];
+                    let set_len0 = set0.len();
+                    let set1 = &b[&t1];
+                    let set_len1 = set1.len();
+                    let p0 = set0[next_inx!(rng, set_len0)];
+                    let p1 = set1[next_inx!(rng, set_len1)];
+                    if t0 == t1 {
+                        assert!(a.in_same_set(p0, p1).unwrap());
+                    } else {
+                        assert!(!a.in_same_set(p0, p1).unwrap());
+                    }
+                } else {
+                    assert!(a.in_same_set(invalid, invalid).is_none());
+                }
             }
-            // get
+            300..=349 => {
+                // get
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let set = &b[&t];
+                    let set_len = set.len();
+                    let p = set[next_inx!(rng, set_len)];
+                    assert_eq!(*a.get(p).unwrap(), t);
+                } else {
+                    assert!(a.get(invalid).is_none());
+                }
+            }
+            350..=399 => {
+                // get_mut
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let set = &b[&t];
+                    let set_len = set.len();
+                    let p = set[next_inx!(rng, set_len)];
+                    assert_eq!(*a.get_mut(p).unwrap(), t);
+                } else {
+                    assert!(a.get_mut(invalid).is_none());
+                }
+            }
+            400..=449 => {
+                // get2_mut
+                if len != 0 {
+                    let t0 = list[next_inx!(rng, len)];
+                    let t1 = list[next_inx!(rng, len)];
+                    let set0 = &b[&t0];
+                    let set_len0 = set0.len();
+                    let set1 = &b[&t1];
+                    let set_len1 = set1.len();
+                    let p0 = set0[next_inx!(rng, set_len0)];
+                    let p1 = set1[next_inx!(rng, set_len1)];
+                    if t0 == t1 {
+                        assert!(a.get2_mut(p0, p1).is_none());
+                    } else {
+                        let tmp = a.get2_mut(p0, p1).unwrap();
+                        assert_eq!(*tmp.0, t0);
+                        assert_eq!(*tmp.1, t1);
+                    }
+                } else {
+                    assert!(a.get2_mut(invalid, invalid).is_none());
+                }
+            }
+            450..=499 => {
+                // union
+                if len != 0 {
+                    let i0 = next_inx!(rng, len);
+                    let i1 = next_inx!(rng, len);
+                    let t0 = list[i0];
+                    let t1 = list[i1];
+                    let set0 = &b[&t0];
+                    let set_len0 = set0.len();
+                    let set1 = &b[&t1];
+                    let set_len1 = set1.len();
+                    let p0 = set0[next_inx!(rng, set_len0)];
+                    let p1 = set1[next_inx!(rng, set_len1)];
+                    if t0 == t1 {
+                        assert!(a.union(p0, p1).is_none());
+                    } else {
+                        let res = a.union(p0, p1).unwrap();
+                        if set_len0 < set_len1 {
+                            assert_eq!(res.0, t0);
+                            assert_eq!(res.1, p1);
+                            list.swap_remove(i0);
+                            let mut other = set0.clone();
+                            b.remove(&t0).unwrap();
+                            b.get_mut(&t1).unwrap().append(&mut other);
+                        } else {
+                            assert_eq!(res.0, t1);
+                            assert_eq!(res.1, p0);
+                            list.swap_remove(i1);
+                            let mut other = set1.clone();
+                            b.remove(&t1).unwrap();
+                            b.get_mut(&t0).unwrap().append(&mut other);
+                        }
+                    }
+                } else {
+                    assert!(a.union(invalid, invalid).is_none());
+                }
+            }
+            // invalidate_key
+            // swap
+
+            // TODO insert_val_with, also insert_new/cyclic_with for chain arena
             300..=997 => {
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
