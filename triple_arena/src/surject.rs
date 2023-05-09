@@ -12,24 +12,28 @@ struct Val<T> {
     key_count: NonZeroUsize,
 }
 
-/// A `SurjectArena` is a generalization of an `Arena` that allows multiple
-/// `Ptr`s to point to a single `T`. When all `Ptr`s to a single `T` are
-/// removed, the `T` is removed as well. Efficient union-find functionality is
-/// also possible.
+/// A generalization of an `Arena` that allows multiple `Ptr`s to point to a
+/// single `T`. When all `Ptr`s to a single `T` are removed, the `T` is removed
+/// as well. Efficient union-find functionality is also possible.
 ///
 /// This is a more powerful version of union-find data structures, incorporating
-/// a type, cheap ref counts, single indirection for all lookups, and allowing
-/// removal. Under the hood, this uses a `O(log n)` strategy for unions, but for
-/// many usecases this should actually be faster than the theoretical
-/// `O(iterated log n)`, because there is always only a single layer of
-/// indirections at any one time for caches to deal with (we use a clever
-/// `ChainArena` based strategy that avoids any tree structures or key
-/// reinsertion).
+/// a type, `O(1)` single and double element operations, and allowing generation
+/// counted removal. Under the hood, this uses a `O(n log n)` strategy for
+/// union-find, but for many usecases this should actually be faster than the
+/// theoretical `O(n iterated log n)`, because there is always only a single
+/// layer of indirections at any one time for caches to deal with (we use a
+/// clever `ChainArena` based strategy that avoids any tree structures
+/// or key reinsertion).
 pub struct SurjectArena<P: Ptr, T> {
     keys: ChainArena<P, PVal>,
     vals: Arena<PVal, Val<T>>,
 }
 
+/// # Note
+///
+/// `Ptr`s in a `SurjectArena` follow the same validity rules as `Ptr`s in a
+/// regular `Arena` (see the documentation on the main
+/// `impl<P: Ptr, T> Arena<P, T>`). The validity of each `Ptr` is kept separate.
 impl<P: Ptr, T> SurjectArena<P, T> {
     /// Used by tests
     #[doc(hidden)]
@@ -107,7 +111,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     }
 
     /// Returns the size of the set of keys pointing to the same value, with `p`
-    /// being one of those keys
+    /// being one of those keys. Returns `None` if `p` is invalid.
     #[must_use]
     pub fn len_key_set(&self, p: P) -> Option<NonZeroUsize> {
         let p_val = self.keys.get(p)?.t;
@@ -121,12 +125,12 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     }
 
     /// Returns the key capacity of the arena
-    pub fn key_capacity(&self) -> usize {
+    pub fn capacity_keys(&self) -> usize {
         self.keys.capacity()
     }
 
     /// Returns the value capacity of the arena
-    pub fn val_capacity(&self) -> usize {
+    pub fn capacity_vals(&self) -> usize {
         self.vals.capacity()
     }
 
@@ -229,7 +233,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     ///
     /// # Note
     ///
-    /// This function is defined in this way to guarantee a `O(log n)` cost
+    /// This function is defined in this way to guarantee a `O(n log n)` cost
     /// for performing repeated unions in any order on a given starting arena.
     /// If the two `T`s are some kind of additive structure that also need to
     /// have their union taken, then the contents of the `T` in the return tuple
@@ -303,7 +307,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     /// Invalidates the key `p` (no other keys in the key set are invalidated),
     /// returning a new valid key. Returns `None` if `p` is not valid.
     #[must_use]
-    pub fn invalidate(&mut self, p: P) -> Option<P> {
+    pub fn invalidate_key(&mut self, p: P) -> Option<P> {
         // the chain arena fixes interlinks
         self.keys.invalidate(p)
     }

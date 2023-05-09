@@ -62,14 +62,22 @@ impl<PLink: Ptr, T> DerefMut for Link<PLink, T> {
     }
 }
 
-/// This is a specially managed `Arena` for handling usecases involving `O(1)`
-/// insertion, deletion, and other functions on linear lists of elements that we
-/// call "chains" of "links". The arena supports multiple chains and cyclical
-/// chains.
+/// A doubly-linked-list based on an arena for handling usecases involving
+/// `O(1)` insertion, deletion, and other functions on linear lists of elements
+/// that we call "chains" of "links". Multiple separate chains and cyclical
+/// chains are supported.
 pub struct ChainArena<PLink: Ptr, T> {
     pub(crate) a: Arena<PLink, Link<PLink, T>>,
 }
 
+/// # Note
+///
+/// `PLink` `Ptr`s to links in a `ChainArena` follow the same validity rules as
+/// `Ptr`s in a regular `Arena` (see the documentation on the main
+/// `impl<P: Ptr, T> Arena<P, T>`), except that `ChainArena`s automatically
+/// update internal interlinks to maintain the linked-list nature of the chains.
+/// Externally kept interlinks may be indirectly invalidated by operations on a
+/// neighboring link.
 impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Used by tests
     #[doc(hidden)]
@@ -454,6 +462,12 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Exchanges the endpoints of the interlinks right after `p0` and `p1`.
     /// Returns `None` if the links do not have next interlinks or if the
     /// pointers are invalid.
+    ///
+    /// An interesting property of this function when applied to cyclic chains,
+    /// is that `exchange_next` on two `Ptr`s of the same cyclic chain always
+    /// results in two cyclic chains (except for if `p0 == p1`), and
+    /// `exchange_next` on two `Ptr`s of two separate cyclic chains always
+    /// results in a single cyclic chain.
     #[must_use]
     pub fn exchange_next(&mut self, p0: PLink, p1: PLink) -> Option<()> {
         if self.contains(p0) && self.contains(p1) {

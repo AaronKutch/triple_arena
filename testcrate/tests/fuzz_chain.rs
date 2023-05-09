@@ -45,6 +45,7 @@ fn fuzz_chain() {
 
     for _ in 0..1_000_000 {
         assert_eq!(a.len(), list.len());
+        assert_eq!(b.len(), a.len());
         assert_eq!(a.gen().get(), gen);
         assert_eq!(a.is_empty(), list.is_empty());
         let len = list.len();
@@ -398,12 +399,14 @@ fn fuzz_chain() {
             998 => {
                 // clear
                 a.clear();
+                b.clear();
                 gen += 1;
                 list.clear();
             }
             999 => {
                 // clear_and_shrink
                 a.clear_and_shrink();
+                b.clear();
                 gen += 1;
                 list.clear();
                 iters999 += 1;
