@@ -170,9 +170,11 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         self.a.vals()
     }
 
-    /// Mutable iteration over `&mut Link<PLink, T>`
-    pub fn vals_mut(&mut self) -> ValsMut<PLink, Link<PLink, T>> {
-        self.a.vals_mut()
+    /// Mutable iteration over `Link<PLink, &mut T>`
+    pub fn vals_mut(&mut self) -> ValsLinkMut<PLink, T> {
+        ValsLinkMut {
+            iter_mut: self.a.vals_mut(),
+        }
     }
 
     /// Iteration over `(PLink, &Link<PLink, T>)` tuples
@@ -180,9 +182,11 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         self.a.iter()
     }
 
-    /// Mutable iteration over `(PLink, &mut Link<PLink, T>)` tuples
-    pub fn iter_mut(&mut self) -> IterMut<PLink, Link<PLink, T>> {
-        self.a.iter_mut()
+    /// Mutable iteration over `(PLink, Link<PLink, &mut T>)` tuples
+    pub fn iter_mut(&mut self) -> IterLinkMut<PLink, T> {
+        IterLinkMut {
+            iter_mut: self.a.iter_mut(),
+        }
     }
 
     /// Same as [Arena::drain]
@@ -272,6 +276,21 @@ impl<'a, P: Ptr, T> Iterator for ValsMut<'a, P, T> {
     }
 }
 
+/// An iterator over `Link<P, &mut T>` in a `ChainArena`
+pub struct ValsLinkMut<'a, P: Ptr, T> {
+    iter_mut: ValsMut<'a, P, Link<P, T>>,
+}
+
+impl<'a, P: Ptr, T> Iterator for ValsLinkMut<'a, P, T> {
+    type Item = Link<P, &'a mut T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter_mut
+            .next()
+            .map(|link| Link::new(Link::prev_next(link), &mut link.t))
+    }
+}
+
 /// An iterator over `(P, &T)` in an `Arena`
 pub struct Iter<'a, P: Ptr, T> {
     ptr: P::Inx,
@@ -320,6 +339,21 @@ impl<'a, P: Ptr, T> Iterator for IterMut<'a, P, T> {
             }
         }
         None
+    }
+}
+
+/// A mutable iterator over `(P, Link<P, &mut T>)` in a `ChainArena`
+pub struct IterLinkMut<'a, P: Ptr, T> {
+    iter_mut: IterMut<'a, P, Link<P, T>>,
+}
+
+impl<'a, P: Ptr, T> Iterator for IterLinkMut<'a, P, T> {
+    type Item = (P, Link<P, &'a mut T>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter_mut
+            .next()
+            .map(|(p, link)| (p, Link::new(Link::prev_next(link), &mut link.t)))
     }
 }
 
@@ -415,8 +449,8 @@ impl<'a, P: Ptr, T> IntoIterator for &'a ChainArena<P, T> {
 }
 
 impl<'a, P: Ptr, T> IntoIterator for &'a mut ChainArena<P, T> {
-    type IntoIter = IterMut<'a, P, Link<P, T>>;
-    type Item = (P, &'a mut Link<P, T>);
+    type IntoIter = IterLinkMut<'a, P, T>;
+    type Item = (P, Link<P, &'a mut T>);
 
     /// This returns an `IterMut`. Use `ChainArena::drain` for by-value
     /// consumption.

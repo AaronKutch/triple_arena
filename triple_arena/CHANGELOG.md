@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.8.0] - 2023-05-09
+### Fixes
+- Fixed subtle blind spot in `ChainArena::_assert_invariants` involving single link cyclical chains
+- Fixed that `ChainArena::invalidate` would break chain invariants, now it can update interlinks
+
+### Changes
+- Changed `&mut Link<PLink, T>` to `Link<PLink, &mut T>` in some `ChainArena` signatures, because
+  even if the interlinks were not directly available the whole struct could be `mem::replaced` and
+  the chain invariants broken
+
+### Additions
+- Added `SurjectArena`
+- Added `ChainArena::remove_chain`
+- Added some `_with` variation functions to `ChainArena`
+- Added `Link::new`
+
 ## [0.7.0] - 2022-12-07
 ### Additions
 - added `first_ptr` and `next_ptr` functions

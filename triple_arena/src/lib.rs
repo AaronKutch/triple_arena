@@ -13,6 +13,9 @@ mod ptr;
 pub use chain::{ChainArena, Link};
 pub(crate) use entry::InternalEntry;
 pub use ptr::{Ptr, PtrGen, PtrInx};
+mod surject;
+pub use surject::SurjectArena;
+pub mod surject_iterators;
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -475,7 +478,6 @@ impl<P: Ptr, T> Arena<P, T> {
     /// if `p` is invalid.
     #[must_use]
     pub fn get_mut(&mut self, p: P) -> Option<&mut T> {
-        let p = *p.borrow();
         match self.m_get_mut(p.inx()) {
             Some(Allocated(gen, t)) => {
                 if *gen == p.gen() {
@@ -517,11 +519,9 @@ impl<P: Ptr, T> Arena<P, T> {
         }
     }
 
-    /// Removes the `T` pointed to by `p`, returns the `T`, and invalidates old
-    /// `Ptr`s to the `T`. Does no invalidation and returns `None` if `p` is
-    /// invalid.
+    /// `remove` but with optional generation counter increment
     #[must_use]
-    pub fn remove(&mut self, p: P) -> Option<T> {
+    pub(crate) fn remove_internal(&mut self, p: P, inc_gen: bool) -> Option<T> {
         let freelist_ptr = if let Some(free) = self.freelist_root {
             // points to previous root
             free
@@ -546,11 +546,21 @@ impl<P: Ptr, T> Arena<P, T> {
                     // in both cases the new root is the entry we just removed
                     self.freelist_root = Some(p.inx());
                     self.len -= 1;
-                    self.inc_gen();
+                    if inc_gen {
+                        self.inc_gen();
+                    }
                     Some(old_t)
                 }
             }
         }
+    }
+
+    /// Removes the `T` pointed to by `p`, returns the `T`, and invalidates old
+    /// `Ptr`s to the `T`. Does no invalidation and returns `None` if `p` is
+    /// invalid.
+    #[must_use]
+    pub fn remove(&mut self, p: P) -> Option<T> {
+        self.remove_internal(p, true)
     }
 
     /// For every `T` in the arena, `pred` is called with a tuple of the `Ptr`
