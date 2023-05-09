@@ -44,7 +44,7 @@ fn fuzz_surject() {
     let mut max_val_len = 0;
 
     for _ in 0..1_000_000 {
-        assert_eq!(a.len_keys(), list.len());
+        assert_eq!(a.len_vals(), list.len());
         assert_eq!(a.len_vals(), b.len());
         let len = list.len();
         let mut len_keys = 0;
@@ -79,8 +79,18 @@ fn fuzz_surject() {
             }
             25..=99 => {
                 // insert_key
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let set = &b[&t];
+                    let set_len = set.len();
+                    let p = set[next_inx!(rng, set_len)];
+                    let p_new = a.insert_key(p).unwrap();
+                    b.get_mut(&t).unwrap().push(p_new);
+                } else {
+                    assert!(a.insert_key(invalid).is_none());
+                }
             }
-            100..=124 => {
+            100..=104 => {
                 // remove_val
                 if len != 0 {
                     let t = list.swap_remove(next_inx!(rng, len));
@@ -92,8 +102,27 @@ fn fuzz_surject() {
                     assert!(a.remove_val(invalid).is_none());
                 }
             }
-            125..=199 => {
+            105..=199 => {
                 // remove_key
+                if len != 0 {
+                    let i = next_inx!(rng, len);
+                    let t = list[i];
+                    let set = &b[&t];
+                    let set_len = set.len();
+                    let i_set = next_inx!(rng, set_len);
+                    let res = a.remove_key(set[i_set]);
+                    gen += 1;
+                    if set_len == 1 {
+                        list.swap_remove(i);
+                        b.remove(&t).unwrap();
+                        assert_eq!(res, Some(Some(t)));
+                    } else {
+                        b.get_mut(&t).unwrap().swap_remove(i_set);
+                        assert_eq!(res, Some(None));
+                    }
+                } else {
+                    assert!(a.remove_val(invalid).is_none());
+                }
             }
             200..=249 => {
                 // contains
@@ -102,7 +131,17 @@ fn fuzz_surject() {
                 // in_same_set
             }
             // get
-            300..=997 => {}
+            300..=997 => {
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let set = &b[&t];
+                    let set_len = set.len();
+                    let p = set[next_inx!(rng, set_len)];
+                    assert_eq!(*a.get(p).unwrap(), t);
+                } else {
+                    assert!(a.get(invalid).is_none());
+                }
+            }
             998 => {
                 // clear
                 a.clear();
