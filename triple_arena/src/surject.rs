@@ -44,7 +44,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
             }
         }
         for (p_val, n) in &count {
-            if this.vals[p_val].key_count.get() != *n {
+            if this.vals.get(p_val).unwrap().key_count.get() != *n {
                 return Err("key count does not match actual")
             }
         }
@@ -54,7 +54,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
             if b {
                 break
             }
-            let mut c = count[this.keys[p].t];
+            let mut c = *count.get(this.keys.get(p).unwrap().t).unwrap();
             if c != 0 {
                 // upon encountering a nonzero count for the first time, we follow the chain and
                 // count down, and if we reach back to the beginning (verifying cyclic chain)
@@ -78,7 +78,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
                         if c != 0 {
                             return Err("key chain did not have all keys associated with value")
                         }
-                        count[this.keys[p].t] = 0;
+                        *count.get_mut(this.keys.get(p).unwrap().t).unwrap() = 0;
                         break
                     }
                 }
@@ -111,7 +111,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     #[must_use]
     pub fn len_key_set(&self, p: P) -> Option<NonZeroUsize> {
         let p_val = self.keys.get(p)?.t;
-        Some(self.vals[p_val].key_count)
+        Some(self.vals.get(p_val).unwrap().key_count)
     }
 
     /// Returns if the arena is empty (`self.len_keys() == 0` if and only if
@@ -164,8 +164,15 @@ impl<P: Ptr, T> SurjectArena<P, T> {
             None => return None,
             Some(p) => p.t,
         };
-        self.vals[p_val].key_count =
-            NonZeroUsize::new(self.vals[p_val].key_count.get().wrapping_add(1)).unwrap();
+        self.vals[p_val].key_count = NonZeroUsize::new(
+            self.vals
+                .get(p_val)
+                .unwrap()
+                .key_count
+                .get()
+                .wrapping_add(1),
+        )
+        .unwrap();
         Some(self.keys.insert((Some(p), None), p_val).unwrap())
     }
 
@@ -187,14 +194,14 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     #[must_use]
     pub fn get(&self, p: P) -> Option<&T> {
         let p_val = self.keys.get(p)?.t;
-        Some(&self.vals[p_val].t)
+        Some(&self.vals.get(p_val).unwrap().t)
     }
 
     /// Returns a mutable reference to the value pointed to by `p`.
     #[must_use]
     pub fn get_mut(&mut self, p: P) -> Option<&mut T> {
         let p_val = self.keys.get(p)?.t;
-        Some(&mut self.vals[p_val].t)
+        Some(&mut self.vals.get_mut(p_val).unwrap().t)
     }
 
     /// Gets two `&mut T` references pointed to by `p0` and `p1`. If
@@ -240,8 +247,8 @@ impl<P: Ptr, T> SurjectArena<P, T> {
             // corresponds to same set
             return None
         }
-        let len0 = self.vals[p_link0.t].key_count.get();
-        let len1 = self.vals[p_link1.t].key_count.get();
+        let len0 = self.vals.get(p_link0.t).unwrap().key_count.get();
+        let len1 = self.vals.get(p_link1.t).unwrap().key_count.get();
         if len0 > len1 {
             mem::swap(&mut p_link0, &mut p_link1);
             mem::swap(&mut p0, &mut p1);
@@ -249,8 +256,8 @@ impl<P: Ptr, T> SurjectArena<P, T> {
         // overwrite the `PVal`s in the smaller chain
         let mut tmp = p1;
         loop {
-            self.keys[tmp].t = p_link0.t;
-            tmp = Link::next(&self.keys[tmp]).unwrap();
+            self.keys.get_mut(tmp).unwrap().t = p_link0.t;
+            tmp = Link::next(self.keys.get(tmp).unwrap()).unwrap();
             if tmp == p1 {
                 break
             }
@@ -261,8 +268,9 @@ impl<P: Ptr, T> SurjectArena<P, T> {
         self.keys.exchange_next(p0, p1).unwrap();
         // it is be impossible to overflow this, it would mean that we have already
         // inserted `usize + 1` elements
-        self.vals[p_link0.t].key_count = NonZeroUsize::new(len0.wrapping_add(len1)).unwrap();
-        Some((self.vals.remove(p_link1.t).unwrap().t, p0))
+        self.vals.get_mut(p_link0.t).unwrap().key_count =
+            NonZeroUsize::new(len0.wrapping_add(len1)).unwrap();
+        Some((self.vals.remove_internal(p_link1.t, false).unwrap().t, p0))
     }
 
     /// Removes the key `p`. If there were other keys still in the key set, the
@@ -270,17 +278,26 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     /// key in the key set, then the value is removed and returned. Returns
     /// `None` if `p` is not valid.
     #[must_use]
-    pub fn remove(&mut self, p: P) -> Option<Option<T>> {
+    pub fn remove_key(&mut self, p: P) -> Option<Option<T>> {
         let p_val = self.keys.remove(p)?.t;
-        let key_count = self.vals[p_val].key_count.get();
+        let key_count = self.vals.get(p_val).unwrap().key_count.get();
         if key_count == 1 {
             // last key, remove the value
             Some(Some(self.vals.remove(p_val).unwrap().t))
         } else {
             // decrement the key count
-            self.vals[p_val].key_count = NonZeroUsize::new(key_count.wrapping_sub(1)).unwrap();
+            self.vals.get_mut(p_val).unwrap().key_count =
+                NonZeroUsize::new(key_count.wrapping_sub(1)).unwrap();
             Some(None)
         }
+    }
+
+    /// Removes the entire key set and value cheaply, returning the value. `p`
+    /// should be any key from the key set. Returns `None` if `p` is invalid.
+    pub fn remove_val(&mut self, p: P) -> Option<T> {
+        let p_val = self.keys.get(p)?.t;
+        self.keys.remove_cyclic_chain_internal(p, true);
+        Some(self.vals.remove(p_val).unwrap().t)
     }
 
     /// Invalidates the key `p` (no other keys in the key set are invalidated),

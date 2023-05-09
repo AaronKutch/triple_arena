@@ -331,6 +331,54 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         Some(l)
     }
 
+    // this is tested by the `SurjectArena` fuzz test
+    /// Like `remove_chain` but assumes the chain is cyclic and `p` is valid
+    pub(crate) fn remove_cyclic_chain_internal(&mut self, p: PLink, inc_gen: bool) {
+        let mut tmp = self
+            .a
+            .remove_internal(p, false)
+            .unwrap()
+            .prev_next
+            .1
+            .unwrap();
+        while tmp != p {
+            tmp = self
+                .a
+                .remove_internal(tmp, false)
+                .unwrap()
+                .prev_next
+                .1
+                .unwrap();
+        }
+        if inc_gen {
+            self.a.inc_gen();
+        }
+    }
+
+    /// Efficiently removes the entire chain that `p` is connected to (which
+    /// might only include itself). Returns the length of the chain. Returns
+    /// `None` if `p` is not valid.
+    pub fn remove_chain(&mut self, p: PLink) -> Option<usize> {
+        let init = self.a.remove_internal(p, false)?;
+        let mut len = 1;
+        self.a.inc_gen();
+        let mut tmp = init.prev_next.1;
+        while let Some(next) = tmp {
+            if next == p {
+                // cyclical
+                return Some(len)
+            }
+            tmp = self.a.remove_internal(next, false).unwrap().prev_next.1;
+            len += 1;
+        }
+        let mut tmp = init.prev_next.0;
+        while let Some(prev) = tmp {
+            tmp = self.a.remove_internal(prev, false).unwrap().prev_next.0;
+            len += 1;
+        }
+        Some(len)
+    }
+
     /// Invalidates all references to the link pointed to by `p`, and returns a
     /// new valid reference. Any interlinks inside the arena that also pointed
     /// to `p` are updated to use the new valid reference. Remember that any

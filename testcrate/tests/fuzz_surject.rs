@@ -35,7 +35,7 @@ fn fuzz_surject() {
     let mut b: HashMap<u64, HashSet<P0>> = HashMap::new();
 
     let invalid = a.insert_val(u64::MAX);
-    a.remove(invalid).unwrap();
+    a.remove_key(invalid).unwrap();
     gen += 1;
     a.clear_and_shrink();
     gen += 1;
@@ -49,6 +49,11 @@ fn fuzz_surject() {
     for _ in 0..1_000_000 {
         let mut len_keys = 0;
         for set in b.values() {
+            assert!(!set.is_empty());
+            assert_eq!(
+                set.len(),
+                a.len_key_set(*set.iter().next().unwrap()).unwrap().get()
+            );
             len_keys += set.len();
         }
         assert_eq!(a.len_keys(), len_keys);
@@ -66,7 +71,21 @@ fn fuzz_surject() {
         }
         op_inx = rng.next_u32() % 1000;
         match op_inx {
-            0..=997 => (),
+            0..=24 => {
+                // insert value
+            }
+            25..=99 => {
+                // insert key
+            }
+            100..=199 => {
+                // remove
+            }
+            200..=249 => {
+                // contains
+                // in_same_set
+                // get
+            }
+            250..=997 => {}
             998 => {
                 // clear
                 a.clear();

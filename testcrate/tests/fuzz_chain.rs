@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
@@ -338,7 +338,7 @@ fn fuzz_chain() {
                     assert!(a.swap(invalid, invalid).is_none());
                 }
             }
-            900..=997 => {
+            900..=989 => {
                 if len != 0 {
                     let t0 = list[next_inx!(rng, len)];
                     let t1 = list[next_inx!(rng, len)];
@@ -351,6 +351,48 @@ fn fuzz_chain() {
                     }
                 } else {
                     assert!(!a.are_neighbors(invalid, invalid));
+                }
+            }
+            990..=997 => {
+                // remove_chain
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let mut t_to_remove = HashSet::new();
+                    t_to_remove.insert(t);
+                    let claim_num_removed = a.remove_chain(b[&t].0).unwrap();
+                    gen += 1;
+                    let init = b.remove(&t).unwrap();
+                    let mut num_removed = 1;
+                    let mut tmp = init.1 .1;
+                    let mut cyclical = false;
+                    while let Some(next) = tmp {
+                        if next == t {
+                            cyclical = true;
+                            break
+                        }
+                        t_to_remove.insert(next);
+                        tmp = b.remove(&next).unwrap().1 .1;
+                        num_removed += 1;
+                    }
+                    if !cyclical {
+                        let mut tmp = init.1 .0;
+                        while let Some(prev) = tmp {
+                            t_to_remove.insert(prev);
+                            tmp = b.remove(&prev).unwrap().1 .0;
+                            num_removed += 1;
+                        }
+                    }
+                    assert_eq!(claim_num_removed, num_removed);
+                    let mut i = 0;
+                    while i < list.len() {
+                        if t_to_remove.contains(&list[i]) {
+                            list.swap_remove(i);
+                        } else {
+                            i += 1;
+                        }
+                    }
+                } else {
+                    assert!(a.remove_chain(invalid).is_none());
                 }
             }
             998 => {
@@ -370,5 +412,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (57, 1050, 265090));
+    assert_eq!((max_len, iters999, a.gen().get()), (44, 1034, 249219));
 }
