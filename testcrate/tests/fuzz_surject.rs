@@ -239,11 +239,25 @@ fn fuzz_surject() {
                     assert!(a.union(invalid, invalid).is_none());
                 }
             }
-            // invalidate_key
+            500..=549 => {
+                // invalidate_key
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let set = &b[&t];
+                    let set_len = set.len();
+                    let i_set = next_inx!(rng, set_len);
+                    let p = set[i_set];
+                    let p_new = a.invalidate_key(p).unwrap();
+                    gen += 1;
+                    b.get_mut(&t).unwrap()[i_set] = p_new;
+                } else {
+                    assert!(a.invalidate_key(invalid).is_none());
+                }
+            }
             // swap
 
             // TODO insert_val_with, also insert_new/cyclic_with for chain arena
-            300..=997 => {
+            550..=997 => {
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
                     let set = &b[&t];
