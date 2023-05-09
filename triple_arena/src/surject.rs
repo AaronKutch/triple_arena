@@ -323,7 +323,9 @@ impl<P: Ptr, T> SurjectArena<P, T> {
         let p_val0 = self.keys.get(p0)?.t;
         let p_val1 = self.keys.get(p1)?.t;
         if p_val0 != p_val1 {
-            self.vals.swap(p_val0, p_val1).unwrap();
+            // we only want to swap the `T` and not the ref counts
+            let (lhs, rhs) = self.vals.get2_mut(p_val0, p_val1).unwrap();
+            mem::swap(&mut lhs.t, &mut rhs.t);
         } // else no-op and we also checked for containment earlier
         Some(())
     }
