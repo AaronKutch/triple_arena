@@ -15,6 +15,7 @@ pub(crate) use entry::InternalEntry;
 pub use ptr::{Ptr, PtrGen, PtrInx};
 mod surject;
 pub use surject::SurjectArena;
+pub mod surject_iterators;
 
 extern crate alloc;
 use alloc::vec::Vec;

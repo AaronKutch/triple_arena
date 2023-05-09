@@ -1,12 +1,21 @@
-use core::{mem, num::NonZeroUsize};
+use alloc::fmt;
+use core::{
+    borrow::Borrow,
+    mem,
+    num::NonZeroUsize,
+    ops::{Index, IndexMut},
+};
+
+use fmt::Debug;
 
 use crate::{ptr_struct, Arena, ChainArena, Link, Ptr};
 
 // does not need generation counter
 ptr_struct!(PVal());
 
-struct Val<T> {
-    t: T,
+#[derive(Clone)]
+pub(crate) struct Val<T> {
+    pub(crate) t: T,
     // we ultimately need a reference count for efficient unions, and it
     // has the bonus of being able to easily query key chain lengths
     key_count: NonZeroUsize,
@@ -25,8 +34,8 @@ struct Val<T> {
 /// clever `ChainArena` based strategy that avoids any tree structures
 /// or key reinsertion).
 pub struct SurjectArena<P: Ptr, T> {
-    keys: ChainArena<P, PVal>,
-    vals: Arena<PVal, Val<T>>,
+    pub(crate) keys: ChainArena<P, PVal>,
+    pub(crate) vals: Arena<PVal, Val<T>>,
 }
 
 /// # Note
@@ -364,5 +373,42 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     pub fn clear_and_shrink(&mut self) {
         self.keys.clear_and_shrink();
         self.vals.clear_and_shrink();
+    }
+}
+
+impl<P: Ptr, T, B: Borrow<P>> Index<B> for SurjectArena<P, T> {
+    type Output = T;
+
+    fn index(&self, index: B) -> &Self::Output {
+        let p_val = self.keys.get(*index.borrow()).unwrap().t;
+        &self.vals.get(p_val).unwrap().t
+    }
+}
+
+impl<P: Ptr, T, B: Borrow<P>> IndexMut<B> for SurjectArena<P, T> {
+    fn index_mut(&mut self, index: B) -> &mut Self::Output {
+        let p_val = self.keys.get(*index.borrow()).unwrap().t;
+        &mut self.vals.get_mut(p_val).unwrap().t
+    }
+}
+
+impl<P: Ptr, T: Debug> Debug for SurjectArena<P, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map().entries(self.iter()).finish()
+    }
+}
+
+impl<P: Ptr, T: Clone> Clone for SurjectArena<P, T> {
+    fn clone(&self) -> Self {
+        Self {
+            keys: self.keys.clone(),
+            vals: self.vals.clone(),
+        }
+    }
+}
+
+impl<PLink: Ptr, T> Default for SurjectArena<PLink, T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
