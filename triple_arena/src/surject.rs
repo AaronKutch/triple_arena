@@ -159,6 +159,27 @@ impl<P: Ptr, T> SurjectArena<P, T> {
         self.keys.insert_new_cyclic(p_val)
     }
 
+    /// Inserts the `T` returned by `create` into the arena and returns a `Ptr`
+    /// to it. `create` is given the the same `Ptr` that is returned, which is
+    /// useful for initialization of immutable structures that need to reference
+    /// themselves. This function allocates if capacity in the arena runs out.
+    pub fn insert_val_with<F: FnOnce(P) -> T>(&mut self, create: F) -> P {
+        let mut res = P::invalid();
+        self.vals.insert_with(|p_val| {
+            let mut created_t = None;
+            self.keys.insert_new_cyclic_with(|p| {
+                res = p;
+                created_t = Some(create(p));
+                p_val
+            });
+            Val {
+                t: created_t.unwrap(),
+                key_count: NonZeroUsize::new(1).unwrap(),
+            }
+        });
+        res
+    }
+
     /// Adds a new `Ptr` key to the same key set that `p` is in (any `Ptr`
     /// from the valid key set can be used as a reference), and returns the new
     /// key.

@@ -4,7 +4,7 @@ use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::{ptr_struct, SurjectArena};
+use triple_arena::{ptr_struct, Ptr, SurjectArena};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
@@ -70,10 +70,22 @@ fn fuzz_surject() {
         }
         op_inx = rng.next_u32() % 1000;
         match op_inx {
-            0..=24 => {
+            0..=19 => {
                 // insert_val
                 let t = new_t();
                 let p = a.insert_val(t);
+                list.push(t);
+                b.insert(t, vec![p]);
+            }
+            20..=24 => {
+                // insert_val_with
+                let t = new_t();
+                let mut outer = P0::invalid();
+                let p = a.insert_val_with(|p_create| {
+                    outer = p_create;
+                    t
+                });
+                assert_eq!(p, outer);
                 list.push(t);
                 b.insert(t, vec![p]);
             }
@@ -276,9 +288,8 @@ fn fuzz_surject() {
                     assert!(a.swap(invalid, invalid).is_none());
                 }
             }
-
-            // TODO insert_val_with, also insert_new/cyclic_with for chain arena
             600..=997 => {
+                // reserved
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
                     let set = &b[&t];
@@ -311,6 +322,6 @@ fn fuzz_surject() {
     }
     assert_eq!(
         (max_key_len, max_val_len, iters999, a.gen().get()),
-        (0, 0, 0, 0)
+        (54, 10, 1015, 79175)
     );
 }
