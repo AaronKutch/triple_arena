@@ -15,6 +15,7 @@
 ### Additions
 - Added `SurjectArena`
 - Added `ChainArena::remove_chain`
+- Added some `_with` variation functions to `ChainArena`
 - Added `Link::new`
 
 ## [0.7.0] - 2022-12-07

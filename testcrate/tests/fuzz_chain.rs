@@ -4,7 +4,7 @@ use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::{ptr_struct, ChainArena};
+use triple_arena::{ptr_struct, ChainArena, Ptr};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
@@ -56,18 +56,42 @@ fn fuzz_chain() {
         match op_inx {
             // testing all nontrivial functions on `ChainArena` not already tested by the regular
             // `Arena` tests
-            0..=19 => {
+            0..=9 => {
                 // insert_new
                 let t = new_t();
                 list.push(t);
                 let p = a.insert_new(t);
                 b.insert(t, (p, (None, None)));
             }
-            20..=39 => {
+            10..=19 => {
+                // insert_new_with
+                let t = new_t();
+                list.push(t);
+                let mut tmp = P0::invalid();
+                let p = a.insert_new_with(|p_create| {
+                    tmp = p_create;
+                    t
+                });
+                assert_eq!(p, tmp);
+                b.insert(t, (p, (None, None)));
+            }
+            20..=29 => {
                 // insert_new_cyclic
                 let t = new_t();
                 list.push(t);
                 let p = a.insert_new_cyclic(t);
+                b.insert(t, (p, (Some(t), Some(t))));
+            }
+            30..=39 => {
+                // insert_new_cyclic_with
+                let t = new_t();
+                list.push(t);
+                let mut tmp = P0::invalid();
+                let p = a.insert_new_cyclic_with(|p_create| {
+                    tmp = p_create;
+                    t
+                });
+                assert_eq!(p, tmp);
                 b.insert(t, (p, (Some(t), Some(t))));
             }
             40..=99 => {
@@ -306,6 +330,7 @@ fn fuzz_chain() {
                 }
             }
             850..=899 => {
+                // swap
                 if len != 0 {
                     let t0 = list[next_inx!(rng, len)];
                     let t1 = list[next_inx!(rng, len)];
@@ -340,6 +365,7 @@ fn fuzz_chain() {
                 }
             }
             900..=989 => {
+                // are_neighbors
                 if len != 0 {
                     let t0 = list[next_inx!(rng, len)];
                     let t1 = list[next_inx!(rng, len)];

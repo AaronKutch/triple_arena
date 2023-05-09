@@ -228,9 +228,27 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         self.a.insert(Link::new((None, None), t))
     }
 
+    /// Inserts the `T` returned by `create` as a new single link chain into the
+    /// arena and returns a `PLink` to it. `create` is given the the same
+    /// `PLink` that is returned, which is useful for initialization of
+    /// immutable structures that need to reference themselves.
+    pub fn insert_new_with<F: FnOnce(PLink) -> T>(&mut self, create: F) -> PLink {
+        self.a.insert_with(|p| Link::new((None, None), create(p)))
+    }
+
     /// Inserts `t` as a single link cyclical chain and returns a `PLink` to it
     pub fn insert_new_cyclic(&mut self, t: T) -> PLink {
         self.a.insert_with(|p| Link::new((Some(p), Some(p)), t))
+    }
+
+    /// Inserts the `T` returned by `create` as a new single link cyclical chain
+    /// into the arena and returns a `PLink` to it. `create` is given the
+    /// the same `PLink` that is returned, which is useful for
+    /// initialization of immutable structures that need to reference
+    /// themselves.
+    pub fn insert_new_cyclic_with<F: FnOnce(PLink) -> T>(&mut self, create: F) -> PLink {
+        self.a
+            .insert_with(|p| Link::new((Some(p), Some(p)), create(p)))
     }
 
     /// Inserts `t` as a new link at the start of a chain which has `p` as its
