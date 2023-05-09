@@ -1,11 +1,9 @@
 # Changelog
 
-## [0.8.0] - TODO
+## [0.8.0] - 2023-05-09
 ### Fixes
 - Fixed subtle blind spot in `ChainArena::_assert_invariants` involving single link cyclical chains
 - Fixed that `ChainArena::invalidate` would break chain invariants, now it can update interlinks
-- Added generation counter checking to all fuzz tests
-- Added several special cases involving single link chains for `ChainArena` tests
 
 ### Changes
 - Changed `&mut Link<PLink, T>` to `Link<PLink, &mut T>` in some `ChainArena` signatures, because
