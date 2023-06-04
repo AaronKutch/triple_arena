@@ -90,7 +90,7 @@ pub(crate) struct Val<V> {
 /// // set or map, so multiple of the same exact values can exist in different
 /// // surjects.
 /// assert!(!a.in_same_set(p0_42, other42).unwrap());
-/// a.remove_val(other42).unwrap();
+/// a.remove(other42).unwrap();
 ///
 /// let p4_7 = a.insert("key4".to_owned(), "7".to_owned());
 /// let p5_7 = a.insert_key(p4_7, "key5".to_owned()).unwrap();
@@ -135,7 +135,7 @@ pub(crate) struct Val<V> {
 /// }
 ///
 /// // only upon removing the last key is the value is returned
-/// // (or we could use the wholesale `remove_val`)
+/// // (or we could use the wholesale `remove`)
 /// assert_eq!(a.remove_key(p4_7), Some(("key4".to_owned(), None)));
 /// assert_eq!(a.remove_key(p0_42), Some(("key0".to_owned(), None)));
 /// assert_eq!(a.remove_key(p3_42), Some(("key3".to_owned(), None)));
@@ -384,7 +384,14 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         Some(&self.vals.get(p_val).unwrap().v)
     }
 
-    /// Returns a mutable reference to the value pointed to by `p`.
+    /// Returns a reference to the key-value pair pointed to by `p`
+    #[must_use]
+    pub fn get(&mut self, p: P) -> Option<(&K, &V)> {
+        let link = self.keys.get(p)?;
+        Some((&link.t.k, &self.vals.get(link.t.p_val).unwrap().v))
+    }
+
+    /// Returns a mutable reference to the value pointed to by `p`
     #[must_use]
     pub fn get_key_mut(&mut self, p: P) -> Option<&mut K> {
         if let Some(link) = self.keys.get_mut(p) {
@@ -395,14 +402,14 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     }
 
     /// Returns a mutable reference to the value associated with the key pointed
-    /// to by `p`.
+    /// to by `p`
     #[must_use]
     pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
         let p_val = self.keys.get(p)?.t.p_val;
         Some(&mut self.vals.get_mut(p_val).unwrap().v)
     }
 
-    /// Returns a mutable reference to the key-value pair pointed to by `p`.
+    /// Returns a mutable reference to the key-value pair pointed to by `p`
     #[must_use]
     pub fn get_mut(&mut self, p: P) -> Option<(&mut K, &mut V)> {
         let key = self.keys.get_mut(p)?.t;
@@ -538,7 +545,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// Removes the entire key set and value cheaply, returning the value. `p`
     /// can point to any key from the key set. Returns `None` if `p` is invalid.
     #[must_use]
-    pub fn remove_val(&mut self, p: P) -> Option<V> {
+    pub fn remove(&mut self, p: P) -> Option<V> {
         let p_val = self.keys.get(p)?.t.p_val;
         self.keys.remove_cyclic_chain_internal(p, true);
         Some(self.vals.remove(p_val).unwrap().v)
