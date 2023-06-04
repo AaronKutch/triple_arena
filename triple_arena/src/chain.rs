@@ -223,6 +223,76 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         }
     }
 
+    /// The same as [ChainArena::insert] except that the inserted `T` is created
+    /// by `create`. The `PLink` that will point to the new element is passed to
+    /// `create`, and this `PLink` is also returned. `create` is not called and
+    /// `None` is returned if the `prev_next` setup would be invalid.
+    pub fn insert_with<F: FnOnce(PLink) -> T>(
+        &mut self,
+        prev_next: (Option<PLink>, Option<PLink>),
+        create: F,
+    ) -> Option<PLink> {
+        match prev_next {
+            // new chain
+            (None, None) => Some(self.a.insert_with(|p| Link::new((None, None), create(p)))),
+            (None, Some(p1)) => {
+                // if there is a failure it cannot result in a node being inserted
+                if let Some(link) = self.a.get_mut(p1) {
+                    if let Some(p0) = Link::prev(link) {
+                        // insert into middle of chain
+                        let res = self
+                            .a
+                            .insert_with(|p| Link::new((Some(p0), Some(p1)), create(p)));
+                        self.a.get_mut(p0).unwrap().prev_next.1 = Some(res);
+                        self.a.get_mut(p1).unwrap().prev_next.0 = Some(res);
+                        Some(res)
+                    } else {
+                        let res = self
+                            .a
+                            .insert_with(|p| Link::new((None, Some(p1)), create(p)));
+                        self.a.get_mut(p1).unwrap().prev_next.0 = Some(res);
+                        Some(res)
+                    }
+                } else {
+                    None
+                }
+            }
+            (Some(p0), None) => {
+                if let Some(link) = self.a.get_mut(p0) {
+                    if let Some(p1) = Link::next(link) {
+                        // insert into middle of chain
+                        let res = self
+                            .a
+                            .insert_with(|p| Link::new((Some(p0), Some(p1)), create(p)));
+                        self.a.get_mut(p0).unwrap().prev_next.1 = Some(res);
+                        self.a.get_mut(p1).unwrap().prev_next.0 = Some(res);
+                        Some(res)
+                    } else {
+                        let res = self
+                            .a
+                            .insert_with(|p| Link::new((Some(p0), None), create(p)));
+                        self.a.get_mut(p0).unwrap().prev_next.1 = Some(res);
+                        Some(res)
+                    }
+                } else {
+                    None
+                }
+            }
+            (Some(p0), Some(p1)) => {
+                // check for existence and that the nodes are neighbors
+                if !self.are_neighbors(p0, p1) {
+                    return None
+                }
+                let res = self
+                    .a
+                    .insert_with(|p| Link::new((Some(p0), Some(p1)), create(p)));
+                self.a.get_mut(p0).unwrap().prev_next.1 = Some(res);
+                self.a.get_mut(p1).unwrap().prev_next.0 = Some(res);
+                Some(res)
+            }
+        }
+    }
+
     /// Inserts `t` as a single link in a new chain and returns a `PLink` to it
     pub fn insert_new(&mut self, t: T) -> PLink {
         self.a.insert(Link::new((None, None), t))

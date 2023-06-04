@@ -95,9 +95,8 @@ fn fuzz_arena() {
                     b.insert(t, ptr);
                     list.push(t);
                 } else {
-                    let t = new_t();
-                    let create = || t;
-                    assert!(a.try_insert(create()) == Err(create()));
+                    let create = |_p: P0| unreachable!();
+                    assert!(a.try_insert_with(create).is_err());
                 }
             }
             100..=149 => {

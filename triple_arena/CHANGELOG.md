@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0] - TODO add set iterator, render, test all
+### Changes
+- Completely overhauled `SurjectArena` to have three generic parameters
+
+### Additions
+- Added `ChainArena::insert_with`
+
 ## [0.8.0] - 2023-05-09
 ### Fixes
 - Fixed subtle blind spot in `ChainArena::_assert_invariants` involving single link cyclical chains
