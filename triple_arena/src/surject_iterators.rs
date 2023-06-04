@@ -42,24 +42,14 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     }
 
     /// Iteration over `(P, &K, &V)` tuples. For each surject with multiple `P`
-    /// pointing to the same `T`, the `T` side is repeated multiple times (but
-    /// remember this can be out of order)
+    /// pointing to the same `V`, the same reference to the `V` is returned
+    /// multiple times
     pub fn iter(&self) -> Iter<P, K, V> {
         Iter {
             iter: self.keys.iter(),
             vals: &self.vals,
         }
     }
-
-    /*
-    /// Mutable iteration over `(P, &mut T)` tuples
-    pub fn iter_mut(&mut self) -> IterMut<P, T> {
-        IterMut {
-            iter: self.keys.iter(),
-            vals_mut: &mut self.vals,
-        }
-    }
-    */
 
     /// Same as [Arena::first_ptr]
     #[must_use]

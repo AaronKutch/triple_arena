@@ -474,7 +474,7 @@ fn fuzz_chain() {
                     assert!(a.swap(invalid, invalid).is_none());
                 }
             }
-            900..=989 => {
+            900..=979 => {
                 // are_neighbors
                 if len != 0 {
                     let t0 = list[next_inx!(rng, len)];
@@ -488,6 +488,52 @@ fn fuzz_chain() {
                     }
                 } else {
                     assert!(!a.are_neighbors(invalid, invalid));
+                }
+            }
+            980..=989 => {
+                // next_chain_ptr
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let mut t_to_explore = HashSet::new();
+                    let mut iters = 0;
+
+                    let init = b[&t].0;
+                    let mut p = init;
+                    let mut switch = false;
+                    let mut stop = !a.contains(init);
+                    loop {
+                        if stop {
+                            break
+                        }
+                        t_to_explore.insert(a[p].t);
+                        // make sure we aren't double counting and the hash set is just dropping
+                        iters += 1;
+                        a.next_chain_ptr(init, &mut p, &mut switch, &mut stop);
+                    }
+                    assert_eq!(t_to_explore.len(), iters);
+
+                    let init = b[&t];
+                    let mut tmp = init.1 .1;
+                    let mut cyclical = false;
+                    while let Some(next) = tmp {
+                        if next == t {
+                            cyclical = true;
+                            break
+                        }
+                        assert!(t_to_explore.remove(&next));
+                        tmp = b[&next].1 .1;
+                    }
+                    if !cyclical {
+                        let mut tmp = init.1 .0;
+                        while let Some(prev) = tmp {
+                            assert!(t_to_explore.remove(&prev));
+                            tmp = b[&prev].1 .0;
+                        }
+                    }
+                } else {
+                    let mut stop = false;
+                    a.next_chain_ptr(invalid, &mut P0::invalid(), &mut false, &mut stop);
+                    assert!(stop);
                 }
             }
             990..=997 => {
@@ -551,5 +597,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (44, 1034, 249219));
+    assert_eq!((max_len, iters999, a.gen().get()), (35, 1051, 248502));
 }

@@ -591,13 +591,17 @@ impl<P: Ptr, T, B: Borrow<P>> Index<B> for ChainArena<P, T> {
     type Output = Link<P, T>;
 
     fn index(&self, index: B) -> &Self::Output {
-        self.a.get(*index.borrow()).unwrap()
+        self.a
+            .get(*index.borrow())
+            .expect("indexed arena with invalidated `Ptr`")
     }
 }
 
 impl<P: Ptr, T, B: Borrow<P>> IndexMut<B> for ChainArena<P, T> {
     fn index_mut(&mut self, index: B) -> &mut Self::Output {
-        self.a.get_mut(*index.borrow()).unwrap()
+        self.a
+            .get_mut(*index.borrow())
+            .expect("indexed arena with invalidated `Ptr`")
     }
 }
 

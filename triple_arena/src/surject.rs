@@ -616,6 +616,9 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     }
 }
 
+// we can't implement `Index` because the format would force `&(&K, &V)` which
+// causes many further problems
+
 impl<P: Ptr, K: Debug, V: Debug> Debug for SurjectArena<P, K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_set().entries(self.iter()).finish()

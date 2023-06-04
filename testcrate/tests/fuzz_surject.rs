@@ -494,6 +494,6 @@ fn fuzz_surject() {
     }
     assert_eq!(
         (max_key_len, max_val_len, iters999, a.gen().get()),
-        (54, 10, 1015, 79175)
+        (46, 12, 1004, 79192)
     );
 }
