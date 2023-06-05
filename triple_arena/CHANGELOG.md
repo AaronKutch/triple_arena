@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.9.0] - TODO add set iterator, render, test all
+## [0.9.0] - 2023-06-04
 ### Changes
 - Completely overhauled `SurjectArena` to have three generic parameters
 
