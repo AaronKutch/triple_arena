@@ -462,7 +462,7 @@ fn fuzz_surject() {
                     assert!(a.swap_vals(invalid, invalid).is_none());
                 }
             }
-            600..=989 => {
+            600..=979 => {
                 // reserved
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
@@ -475,7 +475,7 @@ fn fuzz_surject() {
                     assert!(a.get(invalid).is_none());
                 }
             }
-            990..=997 => {
+            980..=989 => {
                 // next_surject_ptr
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
@@ -508,6 +508,35 @@ fn fuzz_surject() {
                     let mut stop = false;
                     a.next_surject_ptr(invalid, &mut P0::invalid(), &mut stop);
                     assert!(stop);
+                }
+            }
+            990..=997 => {
+                // iter_surject
+                if len != 0 {
+                    let v = list[next_inx!(rng, len)];
+                    let set = &b[&v];
+                    let set_len = set.len();
+                    let pair = set[next_inx!(rng, set_len)];
+                    let mut iter = a.iter_surject(pair.p);
+
+                    let init = pair.p;
+                    let mut p = init;
+                    let mut stop = !a.contains(init);
+                    loop {
+                        if stop {
+                            break
+                        }
+
+                        assert_eq!(
+                            iter.next().unwrap(),
+                            (p, a.get_key(p).unwrap(), a.get_val(p).unwrap())
+                        );
+
+                        a.next_surject_ptr(init, &mut p, &mut stop);
+                    }
+                } else {
+                    let mut iter = a.iter_surject(invalid);
+                    assert!(iter.next().is_none());
                 }
             }
             998 => {

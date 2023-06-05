@@ -386,7 +386,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
 
     /// Returns a reference to the key-value pair pointed to by `p`
     #[must_use]
-    pub fn get(&mut self, p: P) -> Option<(&K, &V)> {
+    pub fn get(&self, p: P) -> Option<(&K, &V)> {
         let link = self.keys.get(p)?;
         Some((&link.t.k, &self.vals.get(link.t.p_val).unwrap().v))
     }

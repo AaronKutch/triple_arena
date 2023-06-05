@@ -51,6 +51,18 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         }
     }
 
+    /// Iteration over `(P, &K, &V)` tuples in the surject that contains `p`.
+    /// The same `&V` reference is used for all iterations.
+    pub fn iter_surject(&self, p: P) -> IterSurject<P, K, V> {
+        IterSurject {
+            arena: self,
+            surject_val: self.get_val(p),
+            init: p,
+            p,
+            stop: !self.contains(p),
+        }
+    }
+
     /// Same as [Arena::first_ptr]
     #[must_use]
     pub fn first_ptr(&self) -> (P, bool) {
@@ -176,6 +188,34 @@ impl<'a, P: Ptr, K, V> Iterator for Iter<'a, P, K, V> {
     fn next(&mut self) -> Option<Self::Item> {
         let (p, link) = self.iter.next()?;
         Some((p, &link.t.k, &self.vals.get(link.t.p_val).unwrap().v))
+    }
+}
+
+/// An iterator over `(P, &K, &V)` in a `SurjectArena` surject
+pub struct IterSurject<'a, P: Ptr, K, V> {
+    arena: &'a SurjectArena<P, K, V>,
+    surject_val: Option<&'a V>,
+    init: P,
+    p: P,
+    stop: bool,
+}
+
+impl<'a, P: Ptr, K, V> Iterator for IterSurject<'a, P, K, V> {
+    type Item = (P, &'a K, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.stop {
+            None
+        } else {
+            let p_res = self.p;
+            self.arena
+                .next_surject_ptr(self.init, &mut self.p, &mut self.stop);
+            Some((
+                p_res,
+                self.arena.get_key(p_res).unwrap(),
+                self.surject_val.unwrap(),
+            ))
+        }
     }
 }
 
