@@ -94,7 +94,7 @@ fn fuzz_chain() {
                 assert_eq!(p, tmp);
                 b.insert(t, (p, (Some(t), Some(t))));
             }
-            40..=99 => {
+            40..=79 => {
                 // insert
                 let op = if len == 0 { 0 } else { rng.next_u32() % 5 };
                 let t = new_t();
@@ -161,6 +161,116 @@ fn fuzz_chain() {
                                 b.insert(t, (p, (Some(t0), None)));
                             }
                         } else {
+                            // check that the failure is expected
+                            assert_ne!(b[&t0].1 .1, Some(t0));
+                            assert_ne!(b[&t0].1 .0, Some(t0));
+                            // undo
+                            list.pop().unwrap();
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            80..=99 => {
+                // insert_with
+                let op = if len == 0 { 0 } else { rng.next_u32() % 5 };
+                let t = new_t();
+                list.push(t);
+                match op {
+                    0 => {
+                        let mut inner_p = None;
+                        let p = a
+                            .insert_with((None, None), |p| {
+                                inner_p = Some(p);
+                                t
+                            })
+                            .unwrap();
+                        assert_eq!(inner_p.unwrap(), p);
+                        b.insert(t, (p, (None, None)));
+                    }
+                    1 => {
+                        let t0 = list[next_inx!(rng, len)];
+                        let mut inner_p = None;
+                        let p = a
+                            .insert_with((Some(b[&t0].0), None), |p| {
+                                inner_p = Some(p);
+                                t
+                            })
+                            .unwrap();
+                        assert_eq!(inner_p.unwrap(), p);
+                        if let Some(t1) = b[&t0].1 .1 {
+                            b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                            b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                            b.insert(t, (p, (Some(t0), Some(t1))));
+                        } else {
+                            b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                            b.insert(t, (p, (Some(t0), None)));
+                        }
+                    }
+                    2 => {
+                        let t1 = list[next_inx!(rng, len)];
+                        let mut inner_p = None;
+                        let p = a
+                            .insert_with((None, Some(b[&t1].0)), |p| {
+                                inner_p = Some(p);
+                                t
+                            })
+                            .unwrap();
+                        assert_eq!(inner_p.unwrap(), p);
+                        if let Some(t0) = b[&t1].1 .0 {
+                            b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                            b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                            b.insert(t, (p, (Some(t0), Some(t1))));
+                        } else {
+                            b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                            b.insert(t, (p, (None, Some(t1))));
+                        }
+                    }
+                    3 => {
+                        let t0 = list[next_inx!(rng, len)];
+                        let t1 = list[next_inx!(rng, len)];
+                        let mut inner_p = None;
+                        if let Some(p) = a.insert_with((Some(b[&t0].0), Some(b[&t1].0)), |p| {
+                            inner_p = Some(p);
+                            t
+                        }) {
+                            assert_eq!(inner_p.unwrap(), p);
+                            if let Some(t1) = b[&t0].1 .1 {
+                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                                b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                                b.insert(t, (p, (Some(t0), Some(t1))));
+                            } else {
+                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                                b.insert(t, (p, (Some(t0), None)));
+                            }
+                        } else {
+                            assert!(inner_p.is_none());
+                            // check that the failure is expected
+                            assert_ne!(b[&t0].1 .1, Some(t1));
+                            assert_ne!(b[&t1].1 .0, Some(t0));
+                            // undo
+                            list.pop().unwrap();
+                        }
+                    }
+                    4 => {
+                        // test double sided insertion for single link cyclical chains
+                        let t0 = list[next_inx!(rng, len)];
+                        let mut inner_p = None;
+                        if let Some(p) = a.insert_with((Some(b[&t0].0), Some(b[&t0].0)), |p| {
+                            inner_p = Some(p);
+                            t
+                        }) {
+                            assert_eq!(inner_p.unwrap(), p);
+                            if let Some(t1) = b[&t0].1 .1 {
+                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                                b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                                b.insert(t, (p, (Some(t0), Some(t1))));
+                            } else {
+                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                                b.insert(t, (p, (Some(t0), None)));
+                            }
+                        } else {
+                            assert!(inner_p.is_none());
                             // check that the failure is expected
                             assert_ne!(b[&t0].1 .1, Some(t0));
                             assert_ne!(b[&t0].1 .0, Some(t0));
@@ -364,7 +474,7 @@ fn fuzz_chain() {
                     assert!(a.swap(invalid, invalid).is_none());
                 }
             }
-            900..=989 => {
+            900..=979 => {
                 // are_neighbors
                 if len != 0 {
                     let t0 = list[next_inx!(rng, len)];
@@ -378,6 +488,75 @@ fn fuzz_chain() {
                     }
                 } else {
                     assert!(!a.are_neighbors(invalid, invalid));
+                }
+            }
+            980..=984 => {
+                // next_chain_ptr
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let mut t_to_explore = HashSet::new();
+                    let mut iters = 0;
+
+                    let init = b[&t].0;
+                    let mut p = init;
+                    let mut switch = false;
+                    let mut stop = !a.contains(init);
+                    loop {
+                        if stop {
+                            break
+                        }
+                        t_to_explore.insert(a[p].t);
+                        // make sure we aren't double counting and the hash set is just dropping
+                        iters += 1;
+                        a.next_chain_ptr(init, &mut p, &mut switch, &mut stop);
+                    }
+                    assert_eq!(t_to_explore.len(), iters);
+
+                    let init = b[&t];
+                    let mut tmp = init.1 .1;
+                    let mut cyclical = false;
+                    t_to_explore.remove(&t);
+                    while let Some(next) = tmp {
+                        if next == t {
+                            cyclical = true;
+                            break
+                        }
+                        assert!(t_to_explore.remove(&next));
+                        tmp = b[&next].1 .1;
+                    }
+                    if !cyclical {
+                        let mut tmp = init.1 .0;
+                        while let Some(prev) = tmp {
+                            assert!(t_to_explore.remove(&prev));
+                            tmp = b[&prev].1 .0;
+                        }
+                    }
+                    assert!(t_to_explore.is_empty());
+                } else {
+                    let mut stop = false;
+                    a.next_chain_ptr(invalid, &mut P0::invalid(), &mut false, &mut stop);
+                    assert!(stop);
+                }
+            }
+            985..=989 => {
+                // iter_chain
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let init = b[&t].0;
+                    let mut iter = a.iter_chain(init);
+                    let mut p = init;
+                    let mut switch = false;
+                    let mut stop = !a.contains(init);
+                    loop {
+                        if stop {
+                            break
+                        }
+                        assert_eq!(iter.next().unwrap(), (p, &a[p]));
+                        a.next_chain_ptr(init, &mut p, &mut switch, &mut stop);
+                    }
+                } else {
+                    let mut iter = a.iter_chain(invalid);
+                    assert!(iter.next().is_none());
                 }
             }
             990..=997 => {
@@ -441,5 +620,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (44, 1034, 249219));
+    assert_eq!((max_len, iters999, a.gen().get()), (35, 1051, 248502));
 }

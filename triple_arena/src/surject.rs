@@ -1,10 +1,5 @@
 use alloc::fmt;
-use core::{
-    borrow::Borrow,
-    mem,
-    num::NonZeroUsize,
-    ops::{Index, IndexMut},
-};
+use core::{mem, num::NonZeroUsize};
 
 use fmt::Debug;
 
@@ -14,98 +9,145 @@ use crate::{ptr_struct, Arena, ChainArena, Link, Ptr};
 ptr_struct!(PVal());
 
 #[derive(Clone)]
-pub(crate) struct Val<T> {
-    pub(crate) t: T,
+pub(crate) struct Key<K> {
+    pub(crate) k: K,
+    pub(crate) p_val: PVal,
+}
+
+#[derive(Clone)]
+pub(crate) struct Val<V> {
+    pub(crate) v: V,
     // we ultimately need a reference count for efficient unions, and it
     // has the bonus of being able to easily query key chain lengths
     key_count: NonZeroUsize,
 }
 
-/// A generalization of an `Arena` that allows multiple `Ptr`s to point to a
-/// single `T`. When all `Ptr`s to a single `T` are removed, the `T` is removed
+/// A generalization of an `Arena` with three parameters: a `P: Ptr` type, a `K`
+/// key type, and a `V` value type. Each `P` points to a single `K` like in a
+/// normal arena, but multiple `P` can point to a single `V` in a surjective map
+/// structure. When all `Ptr`s to a single `V` are removed, the `V` is removed
 /// as well. Efficient union-find functionality is also possible.
 ///
 /// This is a more powerful version of union-find data structures, incorporating
-/// a type, `O(1)` single and double element operations, and allowing generation
-/// counted removal. Under the hood, this uses a `O(n log n)` strategy for
-/// union-find, but for many usecases this should actually be faster than the
-/// theoretical `O(n iterated log n)`, because there is always only a single
-/// layer of indirections at any one time for caches to deal with (we use a
-/// clever `ChainArena` based strategy that avoids any tree structures
+/// types on both sides of the key-value surjection, individual pointer-key
+/// validity tracking, `O(1)` single and double element operations, and allowing
+/// generation counted removal. Under the hood, this uses a `O(n log n)`
+/// strategy for union-find, but for many usecases this should actually be
+/// faster than the theoretical `O(n iterated log n)`, because there is always
+/// only a single layer of indirections at any one time for caches to deal with
+/// (we use a clever `ChainArena` based strategy that avoids any tree structures
 /// or key reinsertion).
+///
+/// `SurjectArena<P, (), V>` is more like a classic union-find structure, and
+/// `SurjectArena<P, K, ()>` is a kind of non-hereditary set. Even
+/// `SurjectArena<P, (), ()>` can be useful (assuming `P` has generation
+/// counters) for its O(1) validity tracking capabilities under any order
+/// of adding and removing of pointers. This is more powerful than pure
+/// reference counting or epoch-like structures.
 ///
 /// ```
 /// use triple_arena::{ptr_struct, SurjectArena};
 ///
 /// ptr_struct!(P0);
-/// let mut a: SurjectArena<P0, String> = SurjectArena::new();
+/// let mut a: SurjectArena<P0, String, String> = SurjectArena::new();
 ///
-/// let p42_0 = a.insert_val("42".to_owned());
-/// let p42_1 = a.insert_key(p42_0).unwrap();
-/// let p42_2 = a.insert_key(p42_0).unwrap();
+/// // There must be at least one key associated with each value
+/// let p0_42 = a.insert("key0".to_owned(), "42".to_owned());
+/// // If we want new keys to be associated with the same key set pointing to
+/// // "42", then instead of calling `insert_val` we call `insert_key`
+/// let p1_42 = a.insert_key(p0_42, "key1".to_owned()).unwrap();
+/// // We could use either `p0_42` or `p1_42` as our reference to get
+/// // associated with the same key set; any valid pointer in the preexisting
+/// // set can be used with the same `O(1)` computational complexity incurred.
+/// let p2_42 = a.insert_key(p0_42, "key2".to_owned()).unwrap();
 ///
-/// // any of the keys above point to the same value
-/// assert_eq!(&a[p42_0], "42");
-/// assert_eq!(&a[p42_1], "42");
-/// assert_eq!(&a[p42_2], "42");
+/// assert_eq!(a.get_key(p0_42).unwrap(), "key0");
+/// assert_eq!(a.get_key(p1_42).unwrap(), "key1");
+/// assert_eq!(a.get_key(p2_42).unwrap(), "key2");
+/// assert_eq!(a.get_val(p0_42).unwrap(), "42");
+/// assert_eq!(a.get_val(p1_42).unwrap(), "42");
+/// assert_eq!(a.get_val(p2_42).unwrap(), "42");
 ///
-/// // even if we don't use the union-find feature, even
-/// // `SurjectArena<P, ()>`  is useful for its O(1) set-like
-/// // operations and adding and removing keys in any order.
-/// // This is more powerful than pure reference counting or
-/// // epoch-like structures.
-/// assert_eq!(a.remove_key(p42_1), Some(None));
-/// assert!(a.contains(p42_0));
-/// assert!(!a.contains(p42_1));
-/// assert!(a.contains(p42_2));
-/// assert!(a.insert_key(p42_1).is_none());
-/// // need to use existing valid key
-/// let p42_3 = a.insert_key(p42_2).unwrap();
-/// assert_eq!(&a[p42_3], "42");
+/// assert_eq!(a.remove_key(p1_42), Some(("key1".to_owned(), None)));
+/// assert!(a.contains(p0_42));
+/// assert!(!a.contains(p1_42));
+/// assert!(a.contains(p2_42));
+/// // the value is perpetuated as long as there is a nonempty set of
+/// // pointer-keys associated with it
+/// assert_eq!(a.get_val(p2_42).unwrap(), "42");
 ///
-/// let other42 = a.insert_val("42".to_owned());
+/// // We cannot use an invalidated pointer as a reference
+/// assert_eq!(
+///     a.insert_key(p1_42, "key3".to_owned()),
+///     Err("key3".to_owned())
+/// );
+/// // We need to use an existing valid key
+/// let p3_42 = a.insert_key(p2_42, "key3".to_owned()).unwrap();
+/// assert_eq!(a.get_val(p3_42).unwrap(), "42");
+///
+/// let other42 = a.insert("test".to_owned(), "42".to_owned());
 /// // note this is still a general `Arena`-like structure and not a hereditary
 /// // set or map, so multiple of the same exact values can exist in different
 /// // surjects.
-/// assert!(!a.in_same_set(p42_0, other42).unwrap());
-/// a.remove_val(other42).unwrap();
+/// assert!(!a.in_same_set(p0_42, other42).unwrap());
+/// a.remove(other42).unwrap();
 ///
-/// let p7_0 = a.insert_val("7".to_owned());
-/// let p7_1 = a.insert_key(p7_0).unwrap();
-/// assert_eq!(&a[p7_0], "7");
-/// assert_eq!(&a[p42_2], "42");
+/// let p4_7 = a.insert("key4".to_owned(), "7".to_owned());
+/// let p5_7 = a.insert_key(p4_7, "key5".to_owned()).unwrap();
 ///
-/// let (removed_t, kept_p) = a.union(p42_0, p7_1).unwrap();
+/// assert_eq!(a.len_key_set(p0_42).unwrap().get(), 3);
+/// assert_eq!(a.len_key_set(p4_7).unwrap().get(), 2);
+///
+/// // I know the order ahead of time because the arena is deterministic, but
+/// // note that in general this will be completely unsorted with respect to
+/// // keys or values.
+/// let expected = [
+///     (p0_42, "key0", "42"),
+///     (p3_42, "key3", "42"),
+///     (p2_42, "key2", "42"),
+///     (p4_7, "key4", "7"),
+///     (p5_7, "key5", "7"),
+/// ];
+/// // this iterator is not cloning the values, it is simply repeatedly
+/// // indexing the values when multiple keys are associated with a single
+/// // value
+/// for (i, (p, key, val)) in a.iter().enumerate() {
+///     assert_eq!(expected[i], (p, key.as_str(), val.as_str()));
+/// }
+///
+/// let (removed_v, kept_p) = a.union(p0_42, p4_7).unwrap();
 /// // One of the "7" or "42" values was removed from the arena,
 /// // and the other remains in the arena. Suppose we want
 /// // to take a custom union of the `String`s to go along
 /// // with the union of the keys, we would do something like
-/// a[kept_p] = format!("{} + {}", a[kept_p], removed_t);
-/// assert_eq!(&a[p7_0], "42 + 7");
-/// assert_eq!(&a[p7_1], "42 + 7");
-/// assert_eq!(&a[p42_0], "42 + 7");
-/// assert_eq!(&a[p42_2], "42 + 7");
-/// assert_eq!(&a[p42_3], "42 + 7");
-/// assert_eq!(a.len_key_set(p7_0).unwrap().get(), 5);
-/// // iteration over the key value pairs can repeat the same value multiple times
-/// let v = "42 + 7";
-/// // I know the order ahead of time because the arena is deterministic
-/// let expected = [(p42_0, v), (p42_3, v), (p42_2, v), (p7_0, v), (p7_1, v)];
-/// for (i, (key, val)) in a.iter().enumerate() {
-///     assert_eq!(expected[i], (key, val.as_str()));
+/// *a.get_val_mut(kept_p).unwrap() = format!("{} + {}", a.get_val(kept_p).unwrap(), removed_v);
+///
+/// assert_eq!(a.len_key_set(p0_42).unwrap().get(), 5);
+/// let expected = [
+///     (p0_42, "key0", "42 + 7"),
+///     (p3_42, "key3", "42 + 7"),
+///     (p2_42, "key2", "42 + 7"),
+///     (p4_7, "key4", "42 + 7"),
+///     (p5_7, "key5", "42 + 7"),
+/// ];
+/// for (i, (p, key, val)) in a.iter().enumerate() {
+///     assert_eq!(expected[i], (p, key.as_str(), val.as_str()));
 /// }
 ///
 /// // only upon removing the last key is the value is returned
-/// // (or we could use wholesale `remove_val`)
-/// assert_eq!(a.remove_key(p7_0), Some(None));
-/// assert_eq!(a.remove_key(p42_0), Some(None));
-/// assert_eq!(a.remove_key(p42_3), Some(None));
-/// assert_eq!(a.remove_key(p7_1), Some(None));
-/// assert_eq!(a.remove_key(p42_2), Some(Some("42 + 7".to_owned())));
+/// // (or we could use the wholesale `remove`)
+/// assert_eq!(a.remove_key(p4_7), Some(("key4".to_owned(), None)));
+/// assert_eq!(a.remove_key(p0_42), Some(("key0".to_owned(), None)));
+/// assert_eq!(a.remove_key(p3_42), Some(("key3".to_owned(), None)));
+/// assert_eq!(a.remove_key(p5_7), Some(("key5".to_owned(), None)));
+/// assert_eq!(
+///     a.remove_key(p2_42),
+///     Some(("key2".to_owned(), Some("42 + 7".to_owned())))
+/// );
 /// ```
-pub struct SurjectArena<P: Ptr, T> {
-    pub(crate) keys: ChainArena<P, PVal>,
-    pub(crate) vals: Arena<PVal, Val<T>>,
+pub struct SurjectArena<P: Ptr, K, V> {
+    pub(crate) keys: ChainArena<P, Key<K>>,
+    pub(crate) vals: Arena<PVal, Val<V>>,
 }
 
 /// # Note
@@ -113,15 +155,15 @@ pub struct SurjectArena<P: Ptr, T> {
 /// `Ptr`s in a `SurjectArena` follow the same validity rules as `Ptr`s in a
 /// regular `Arena` (see the documentation on the main
 /// `impl<P: Ptr, T> Arena<P, T>`). The validity of each `Ptr` is kept separate.
-impl<P: Ptr, T> SurjectArena<P, T> {
+impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
         // there should be exactly one key chain associated with each val
         let mut count = Arena::<PVal, usize>::new();
         count.clone_from_with(&this.vals, |_, _| 0);
-        for key in this.keys.vals() {
-            match count.get_mut(key.t) {
+        for link in this.keys.vals() {
+            match count.get_mut(link.t.p_val) {
                 Some(p) => *p += 1,
                 None => return Err("key points to nonexistent val"),
             }
@@ -137,7 +179,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
             if b {
                 break
             }
-            let mut c = *count.get(this.keys.get(p).unwrap().t).unwrap();
+            let mut c = *count.get(this.keys.get(p).unwrap().t.p_val).unwrap();
             if c != 0 {
                 // upon encountering a nonzero count for the first time, we follow the chain and
                 // count down, and if we reach back to the beginning (verifying cyclic chain)
@@ -161,7 +203,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
                         if c != 0 {
                             return Err("key chain did not have all keys associated with value")
                         }
-                        *count.get_mut(this.keys.get(p).unwrap().t).unwrap() = 0;
+                        *count.get_mut(this.keys.get(p).unwrap().t.p_val).unwrap() = 0;
                         break
                     }
                 }
@@ -178,22 +220,25 @@ impl<P: Ptr, T> SurjectArena<P, T> {
         }
     }
 
-    /// Returns the total number of `Ptr` keys in the arena. `self.len_keys() >=
-    /// self.len_vals()` is always true.
+    /// Returns the total number of valid `Ptr`s, or equivalently the number of
+    /// keys in the arena. `self.len_keys() >= self.len_vals()` is always
+    /// true.
     pub fn len_keys(&self) -> usize {
         self.keys.len()
     }
 
-    /// Returns the number of values in the arena
+    /// Returns the number of values, or equivalently the number of key sets in
+    /// the arena
     pub fn len_vals(&self) -> usize {
         self.vals.len()
     }
 
     /// Returns the size of the set of keys pointing to the same value, with `p`
-    /// being one of those keys. Returns `None` if `p` is invalid.
+    /// being a `Ptr` to any one of those keys. Returns `None` if `p` is
+    /// invalid.
     #[must_use]
     pub fn len_key_set(&self, p: P) -> Option<NonZeroUsize> {
-        let p_val = self.keys.get(p)?.t;
+        let p_val = self.keys.get(p)?.t.p_val;
         Some(self.vals.get(p_val).unwrap().key_count)
     }
 
@@ -213,8 +258,7 @@ impl<P: Ptr, T> SurjectArena<P, T> {
         self.vals.capacity()
     }
 
-    /// Follows [Arena::gen]. Note that each key in a key set keeps its own
-    /// generation counter.
+    /// Follows [Arena::gen]
     pub fn gen(&self) -> P::Gen {
         self.keys.gen()
     }
@@ -229,44 +273,46 @@ impl<P: Ptr, T> SurjectArena<P, T> {
         self.vals.reserve(additional)
     }
 
-    /// Inserts a new value and returns the first `Ptr` key to it.
-    pub fn insert_val(&mut self, t: T) -> P {
+    /// Inserts a new key and associated value. Returns a `Ptr` to the key.
+    pub fn insert(&mut self, k: K, v: V) -> P {
         let p_val = self.vals.insert(Val {
-            t,
+            v,
             key_count: NonZeroUsize::new(1).unwrap(),
         });
-        self.keys.insert_new_cyclic(p_val)
+        self.keys.insert_new_cyclic(Key { k, p_val })
     }
 
-    /// Inserts the `T` returned by `create` into the arena and returns a `Ptr`
-    /// to it. `create` is given the the same `Ptr` that is returned, which is
+    /// Inserts a surject into the arena, using the `K` and `V` returned by
+    /// `create` for the new key and value. Returns a `Ptr` to the new key.
+    /// `create` is given the the same `Ptr` that is returned, which is
     /// useful for initialization of immutable structures that need to reference
-    /// themselves. This function allocates if capacity in the arena runs out.
-    pub fn insert_val_with<F: FnOnce(P) -> T>(&mut self, create: F) -> P {
+    /// themselves.
+    pub fn insert_with<F: FnOnce(P) -> (K, V)>(&mut self, create_k_v: F) -> P {
         let mut res = P::invalid();
         self.vals.insert_with(|p_val| {
-            let mut created_t = None;
+            let mut created_v = None;
             self.keys.insert_new_cyclic_with(|p| {
                 res = p;
-                created_t = Some(create(p));
-                p_val
+                let (k, v) = create_k_v(p);
+                created_v = Some(v);
+                Key { k, p_val }
             });
             Val {
-                t: created_t.unwrap(),
+                v: created_v.unwrap(),
                 key_count: NonZeroUsize::new(1).unwrap(),
             }
         });
         res
     }
 
-    /// Adds a new `Ptr` key to the same key set that `p` is in (any `Ptr`
-    /// from the valid key set can be used as a reference), and returns the new
-    /// key.
-    #[must_use]
-    pub fn insert_key(&mut self, p: P) -> Option<P> {
+    /// Inserts a new key into the arena, associating it with the same key set
+    /// that `p` is in (any `Ptr` from the valid key set can be used as a
+    /// reference), and returns the new `Ptr` to the key. Returns `Err(k)`
+    /// if `p` was invalid.
+    pub fn insert_key(&mut self, p: P, k: K) -> Result<P, K> {
         let p_val = match self.keys.get(p) {
-            None => return None,
-            Some(p) => p.t,
+            None => return Err(k),
+            Some(p) => p.t.p_val,
         };
         self.vals[p_val].key_count = NonZeroUsize::new(
             self.vals
@@ -277,7 +323,40 @@ impl<P: Ptr, T> SurjectArena<P, T> {
                 .wrapping_add(1),
         )
         .unwrap();
-        Some(self.keys.insert((Some(p), None), p_val).unwrap())
+        if let Ok(p) = self.keys.insert((Some(p), None), Key { k, p_val }) {
+            Ok(p)
+        } else {
+            unreachable!()
+        }
+    }
+
+    /// The same as [SurjectArena::insert_key] except that the inserted `K` is
+    /// created by `create_k`. The `Ptr` that will point to the new key is
+    /// passed to `create_k`, and this `Ptr` is also returned. `create` is
+    /// not called and `None` is returned if `p` is invalid.
+    #[must_use]
+    pub fn insert_key_with<F: FnOnce(P) -> K>(&mut self, p: P, create_k: F) -> Option<P> {
+        let p_val = match self.keys.get(p) {
+            None => return None,
+            Some(p) => p.t.p_val,
+        };
+        self.vals[p_val].key_count = NonZeroUsize::new(
+            self.vals
+                .get(p_val)
+                .unwrap()
+                .key_count
+                .get()
+                .wrapping_add(1),
+        )
+        .unwrap();
+        if let Some(p) = self.keys.insert_with((Some(p), None), |p_link| Key {
+            k: create_k(p_link),
+            p_val,
+        }) {
+            Some(p)
+        } else {
+            unreachable!()
+        }
     }
 
     /// Returns if `p` is a valid `Ptr`
@@ -285,51 +364,111 @@ impl<P: Ptr, T> SurjectArena<P, T> {
         self.keys.contains(p)
     }
 
-    /// Returns if keys `p0` and `p1` are in the same key set. This is
-    /// especially useful in case two identical values were inserted (this
-    /// shows the difference between a hereditary set/map and a surjection
-    /// arena).
+    /// Returns if `p0` and `p1` point to keys in the same key set
     #[must_use]
     pub fn in_same_set(&self, p0: P, p1: P) -> Option<bool> {
-        Some(self.keys.get(p0)?.t == self.keys.get(p1)?.t)
+        Some(self.keys.get(p0)?.t.p_val == self.keys.get(p1)?.t.p_val)
     }
 
-    /// Returns a reference to the value pointed to by `p`.
+    /// Returns a reference to the key pointed to by `p`
     #[must_use]
-    pub fn get(&self, p: P) -> Option<&T> {
-        let p_val = self.keys.get(p)?.t;
-        Some(&self.vals.get(p_val).unwrap().t)
+    pub fn get_key(&self, p: P) -> Option<&K> {
+        self.keys.get(p).as_ref().map(|link| &link.t.k)
     }
 
-    /// Returns a mutable reference to the value pointed to by `p`.
+    /// Returns a reference to the value associated with the key pointed to by
+    /// `p`
     #[must_use]
-    pub fn get_mut(&mut self, p: P) -> Option<&mut T> {
-        let p_val = self.keys.get(p)?.t;
-        Some(&mut self.vals.get_mut(p_val).unwrap().t)
+    pub fn get_val(&self, p: P) -> Option<&V> {
+        let p_val = self.keys.get(p)?.p_val;
+        Some(&self.vals.get(p_val).unwrap().v)
     }
 
-    /// Gets two `&mut T` references pointed to by `p0` and `p1`. If
-    /// `self.in_same_set(p0, p1)` or a pointer is invalid, `None` is
-    /// returned.
+    /// Returns a reference to the key-value pair pointed to by `p`
     #[must_use]
-    pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<(&mut T, &mut T)> {
-        let p_val0 = self.keys.get(p0)?.t;
-        let p_val1 = self.keys.get(p1)?.t;
-        match self.vals.get2_mut(p_val0, p_val1) {
-            Some((val0, val1)) => Some((&mut val0.t, &mut val1.t)),
+    pub fn get(&self, p: P) -> Option<(&K, &V)> {
+        let link = self.keys.get(p)?;
+        Some((&link.t.k, &self.vals.get(link.t.p_val).unwrap().v))
+    }
+
+    /// Returns a mutable reference to the value pointed to by `p`
+    #[must_use]
+    pub fn get_key_mut(&mut self, p: P) -> Option<&mut K> {
+        if let Some(link) = self.keys.get_mut(p) {
+            Some(&mut link.t.k)
+        } else {
+            None
+        }
+    }
+
+    /// Returns a mutable reference to the value associated with the key pointed
+    /// to by `p`
+    #[must_use]
+    pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
+        let p_val = self.keys.get(p)?.t.p_val;
+        Some(&mut self.vals.get_mut(p_val).unwrap().v)
+    }
+
+    /// Returns a mutable reference to the key-value pair pointed to by `p`
+    #[must_use]
+    pub fn get_mut(&mut self, p: P) -> Option<(&mut K, &mut V)> {
+        let key = self.keys.get_mut(p)?.t;
+        Some((&mut key.k, &mut self.vals.get_mut(key.p_val).unwrap().v))
+    }
+
+    /// Gets two `&mut K` references pointed to by `p0` and `p1`. If
+    /// `p0 == p1` or a pointer is invalid, `None` is returned.
+    #[must_use]
+    pub fn get2_key_mut(&mut self, p0: P, p1: P) -> Option<(&mut K, &mut K)> {
+        match self.keys.get2_mut(p0, p1) {
+            Some((link0, link1)) => Some((&mut link0.t.k, &mut link1.t.k)),
             None => None,
         }
     }
 
-    /// Takes the union of two key sets, of which `p0` is a key in one set and
-    /// `p1` is a key in the other set. If `self.len_key_set(p0) <
-    /// self.len_key_set(p1)`, then the value pointed to by `p0` is removed and
-    /// returned in a tuple with `p1`, and the key set of `p0` is changed to
-    /// point to the value of `p1`'s key set. If `self.len_key_set(p0) >=
-    /// self.len_key_set(p1)`, the value pointed to by `p1` is removed and
-    /// returned in a tuple with `p0`, and the key set of `p1` is changed to
-    /// point to the value of `p0`'s key set. Returns `None` if
-    /// `self.in_same_set(p0, p1)`.
+    /// Gets two `&mut V` references pointed to by `p0` and `p1`. If
+    /// `self.in_same_set(p0, p1)` or a pointer is invalid, `None` is
+    /// returned.
+    #[must_use]
+    pub fn get2_val_mut(&mut self, p0: P, p1: P) -> Option<(&mut V, &mut V)> {
+        let p_val0 = self.keys.get(p0)?.t.p_val;
+        let p_val1 = self.keys.get(p1)?.t.p_val;
+        match self.vals.get2_mut(p_val0, p_val1) {
+            Some((val0, val1)) => Some((&mut val0.v, &mut val1.v)),
+            None => None,
+        }
+    }
+
+    /// Gets two mutable references to the key-value pairs pointed to by `p0`
+    /// and `p1`. If `self.in_same_set(p0, p1)` or a pointer is invalid,
+    /// `None` is returned.
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<((&mut K, &mut V), (&mut K, &mut V))> {
+        match self.keys.get2_mut(p0, p1) {
+            Some((link0, link1)) => {
+                let key0 = link0.t;
+                let key1 = link1.t;
+                match self.vals.get2_mut(key0.p_val, key1.p_val) {
+                    Some((val0, val1)) => {
+                        Some(((&mut key0.k, &mut val0.v), (&mut key1.k, &mut val1.v)))
+                    }
+                    None => None,
+                }
+            }
+            None => None,
+        }
+    }
+
+    /// Takes the union of two key sets, of which `p0` points to a key in one
+    /// set and `p1` points to a key in the other set. If
+    /// `self.len_key_set(p0) < self.len_key_set(p1)`, then the value
+    /// associated with `p0` is removed and returned in a tuple with `p1`,
+    /// and the key set of `p0` is changed to point to the value of `p1`'s
+    /// key set. If `self.len_key_set(p0) >= self.len_key_set(p1)`, the
+    /// value pointed to by `p1` is removed and returned in a tuple with
+    /// `p0`, and the key set of `p1` is changed to point to the value of
+    /// `p0`'s key set. Returns `None` if `self.in_same_set(p0, p1)`.
     ///
     /// # Note
     ///
@@ -338,32 +477,33 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     ///
     /// This function is defined in this way to guarantee a `O(n log n)` cost
     /// for performing repeated unions in any order on a given starting arena.
-    /// If the two `T`s are some kind of additive structure that also need to
-    /// have their union taken, then the contents of the `T` in the return tuple
+    /// If the two `V`s are some kind of additive structure that also need to
+    /// have their union taken, then the contents of the `V` in the return tuple
     /// can be transferred to the value pointed to by the `P` also in the
     /// return tuple. This way, users do not actually need to consider key set
     /// sizes explicitly.
-    //
-    // note: we purposely reverse the typical order to `(T, P)` to give a visual
-    // that the returned things were not pointing to each other.
+    ///
+    /// We purposely reverse the typical order from `(P, V)` to `(V, P)`
+    /// to give a visual that the returned things were not pointing to each
+    /// other.
     #[must_use]
-    pub fn union(&mut self, mut p0: P, mut p1: P) -> Option<(T, P)> {
-        let mut p_link0 = *self.keys.get(p0)?;
-        let mut p_link1 = *self.keys.get(p1)?;
-        if p_link0.t == p_link1.t {
+    pub fn union(&mut self, mut p0: P, mut p1: P) -> Option<(V, P)> {
+        let mut p_val0 = self.keys.get(p0)?.t.p_val;
+        let mut p_val1 = self.keys.get(p1)?.t.p_val;
+        if p_val0 == p_val1 {
             // corresponds to same set
             return None
         }
-        let len0 = self.vals.get(p_link0.t).unwrap().key_count.get();
-        let len1 = self.vals.get(p_link1.t).unwrap().key_count.get();
+        let len0 = self.vals.get(p_val0).unwrap().key_count.get();
+        let len1 = self.vals.get(p_val1).unwrap().key_count.get();
         if len0 < len1 {
-            mem::swap(&mut p_link0, &mut p_link1);
+            mem::swap(&mut p_val0, &mut p_val1);
             mem::swap(&mut p0, &mut p1);
         }
         // overwrite the `PVal`s in the smaller chain
         let mut tmp = p1;
         loop {
-            *self.keys.get_mut(tmp).unwrap().t = p_link0.t;
+            self.keys.get_mut(tmp).unwrap().t.p_val = p_val0;
             tmp = Link::next(self.keys.get(tmp).unwrap()).unwrap();
             if tmp == p1 {
                 break
@@ -375,57 +515,87 @@ impl<P: Ptr, T> SurjectArena<P, T> {
         self.keys.exchange_next(p0, p1).unwrap();
         // it is be impossible to overflow this, it would mean that we have already
         // inserted `usize + 1` elements
-        self.vals.get_mut(p_link0.t).unwrap().key_count =
+        self.vals.get_mut(p_val0).unwrap().key_count =
             NonZeroUsize::new(len0.wrapping_add(len1)).unwrap();
-        Some((self.vals.remove_internal(p_link1.t, false).unwrap().t, p0))
+        Some((self.vals.remove_internal(p_val1, false).unwrap().v, p0))
     }
 
-    /// Removes the key `p`. If there were other keys still in the key set, the
-    /// value is not removed and `Some(None)` is returned. If `p` was the last
-    /// key in the key set, then the value is removed and returned. Returns
+    /// Removes the key pointed to by `p`. If there were other keys still in the
+    /// key set, the value is not removed and `Some((key, None))` is
+    /// returned. If `p` was the last key in the key set, then the value is
+    /// removed and returned like `Some((key, Some(val)))`. Returns
     /// `None` if `p` is not valid.
     #[must_use]
-    pub fn remove_key(&mut self, p: P) -> Option<Option<T>> {
-        let p_val = self.keys.remove(p)?.t;
+    pub fn remove_key(&mut self, p: P) -> Option<(K, Option<V>)> {
+        let key = self.keys.remove(p)?.t;
+        let p_val = key.p_val;
+        let k = key.k;
         let key_count = self.vals.get(p_val).unwrap().key_count.get();
         if key_count == 1 {
             // last key, remove the value
-            Some(Some(self.vals.remove(p_val).unwrap().t))
+            Some((k, Some(self.vals.remove(p_val).unwrap().v)))
         } else {
             // decrement the key count
             self.vals.get_mut(p_val).unwrap().key_count =
                 NonZeroUsize::new(key_count.wrapping_sub(1)).unwrap();
-            Some(None)
+            Some((k, None))
         }
     }
 
     /// Removes the entire key set and value cheaply, returning the value. `p`
-    /// should be any key from the key set. Returns `None` if `p` is invalid.
-    pub fn remove_val(&mut self, p: P) -> Option<T> {
-        let p_val = self.keys.get(p)?.t;
+    /// can point to any key from the key set. Returns `None` if `p` is invalid.
+    #[must_use]
+    pub fn remove(&mut self, p: P) -> Option<V> {
+        let p_val = self.keys.get(p)?.t.p_val;
         self.keys.remove_cyclic_chain_internal(p, true);
-        Some(self.vals.remove(p_val).unwrap().t)
+        Some(self.vals.remove(p_val).unwrap().v)
     }
 
-    /// Invalidates the key `p` (no other keys in the key set are invalidated),
-    /// returning a new valid key. Returns `None` if `p` is not valid.
+    /// Invalidates the `Ptr` `p` (no other `Ptr`s to keys in the key set are
+    /// invalidated), returning a new valid `Ptr`. Returns `None` if `p` is
+    /// not valid.
     #[must_use]
-    pub fn invalidate_key(&mut self, p: P) -> Option<P> {
+    pub fn invalidate(&mut self, p: P) -> Option<P> {
         // the chain arena fixes interlinks
         self.keys.invalidate(p)
     }
 
-    /// Swaps the `T` values pointed to by keys `p0` and `p1` and keeps the
-    /// generation counters as-is. If `p0` and `p1` are in the same key set,
-    /// then nothing occurs. Returns `None` if `p0` or `p1` are invalid.
+    /// Swaps the `K` keys pointed to by `Ptr`s `p0` and `p1` and keeps the
+    /// generation counters as-is. Note that key-value associations are swapped
+    /// such that if `p0` and `p1` point to two different key sets, then the
+    /// first key becomes associated with the value of the second key and vice
+    /// versa. If `p0` and `p1` point to the same key set, no association
+    /// changes occur. If `p0 == p1`, then nothing occurs. Returns `None` if
+    /// `p0` or `p1` are invalid.
     #[must_use]
-    pub fn swap(&mut self, p0: P, p1: P) -> Option<()> {
-        let p_val0 = self.keys.get(p0)?.t;
-        let p_val1 = self.keys.get(p1)?.t;
+    pub fn swap_keys(&mut self, p0: P, p1: P) -> Option<()> {
+        if p0 == p1 {
+            // still need to check for containment
+            if self.contains(p0) {
+                Some(())
+            } else {
+                None
+            }
+        } else {
+            let (lhs, rhs) = self.keys.get2_mut(p0, p1)?;
+            // be careful to swap only the inner `K` values and not the `p_val`s
+            mem::swap(&mut lhs.t.k, &mut rhs.t.k);
+            Some(())
+        }
+    }
+
+    /// Swaps the `V` values pointed to by `Ptr`s `p0` and `p1` and keeps the
+    /// generation counters as-is. If `p0` and `p1` point to keys in the same
+    /// key set, then nothing occurs. Returns `None` if `p0` or `p1` are
+    /// invalid.
+    #[must_use]
+    pub fn swap_vals(&mut self, p0: P, p1: P) -> Option<()> {
+        let p_val0 = self.keys.get(p0)?.t.p_val;
+        let p_val1 = self.keys.get(p1)?.t.p_val;
         if p_val0 != p_val1 {
-            // we only want to swap the `T` and not the ref counts
+            // we only want to swap the `V` and not the ref counts
             let (lhs, rhs) = self.vals.get2_mut(p_val0, p_val1).unwrap();
-            mem::swap(&mut lhs.t, &mut rhs.t);
+            mem::swap(&mut lhs.v, &mut rhs.v);
         } // else no-op and we also checked for containment earlier
         Some(())
     }
@@ -446,29 +616,16 @@ impl<P: Ptr, T> SurjectArena<P, T> {
     }
 }
 
-impl<P: Ptr, T, B: Borrow<P>> Index<B> for SurjectArena<P, T> {
-    type Output = T;
+// we can't implement `Index` because the format would force `&(&K, &V)` which
+// causes many further problems
 
-    fn index(&self, index: B) -> &Self::Output {
-        let p_val = self.keys.get(*index.borrow()).unwrap().t;
-        &self.vals.get(p_val).unwrap().t
-    }
-}
-
-impl<P: Ptr, T, B: Borrow<P>> IndexMut<B> for SurjectArena<P, T> {
-    fn index_mut(&mut self, index: B) -> &mut Self::Output {
-        let p_val = self.keys.get(*index.borrow()).unwrap().t;
-        &mut self.vals.get_mut(p_val).unwrap().t
-    }
-}
-
-impl<P: Ptr, T: Debug> Debug for SurjectArena<P, T> {
+impl<P: Ptr, K: Debug, V: Debug> Debug for SurjectArena<P, K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_map().entries(self.iter()).finish()
+        f.debug_set().entries(self.iter()).finish()
     }
 }
 
-impl<P: Ptr, T: Clone> Clone for SurjectArena<P, T> {
+impl<P: Ptr, K: Clone, V: Clone> Clone for SurjectArena<P, K, V> {
     fn clone(&self) -> Self {
         Self {
             keys: self.keys.clone(),
@@ -477,7 +634,7 @@ impl<P: Ptr, T: Clone> Clone for SurjectArena<P, T> {
     }
 }
 
-impl<PLink: Ptr, T> Default for SurjectArena<PLink, T> {
+impl<PLink: Ptr, K, V> Default for SurjectArena<PLink, K, V> {
     fn default() -> Self {
         Self::new()
     }

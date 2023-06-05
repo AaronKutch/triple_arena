@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.0] - 2023-06-04
+### Changes
+- Completely overhauled `SurjectArena` to have three generic parameters
+
+### Additions
+- Added `ChainArena::insert_with`
+- Added `ChainArena::next_chain_ptr`
+- Added `ChainArena::iter_chain`
+
 ## [0.8.0] - 2023-05-09
 ### Fixes
 - Fixed subtle blind spot in `ChainArena::_assert_invariants` involving single link cyclical chains
