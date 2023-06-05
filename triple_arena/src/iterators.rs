@@ -192,6 +192,19 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         self.a.iter()
     }
 
+    /// Iteration over `(PLink, &Link<PLink, T>)` tuples corresponding to all
+    /// links in the chain that `p` is connected to. If `p` was invalid, this
+    /// iterator returns `None`.
+    pub fn iter_chain(&self, p: PLink) -> IterChain<PLink, T> {
+        IterChain {
+            init: p,
+            p,
+            switch: false,
+            stop: !self.contains(p),
+            arena: self,
+        }
+    }
+
     /// Mutable iteration over `(PLink, Link<PLink, &mut T>)` tuples
     pub fn iter_mut(&mut self) -> IterLinkMut<PLink, T> {
         IterLinkMut {
@@ -402,6 +415,30 @@ impl<'a, P: Ptr, T> Iterator for Iter<'a, P, T> {
             }
         }
         None
+    }
+}
+
+/// An iterator for links in a chain in a `ChainArena`
+pub struct IterChain<'a, P: Ptr, T> {
+    arena: &'a ChainArena<P, T>,
+    init: P,
+    p: P,
+    switch: bool,
+    stop: bool,
+}
+
+impl<'a, P: Ptr, T> Iterator for IterChain<'a, P, T> {
+    type Item = (P, &'a Link<P, T>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.stop {
+            None
+        } else {
+            let p_res = self.p;
+            self.arena
+                .next_chain_ptr(self.init, &mut self.p, &mut self.switch, &mut self.stop);
+            Some((p_res, self.arena.get(p_res).unwrap()))
+        }
     }
 }
 

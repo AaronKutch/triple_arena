@@ -7,6 +7,7 @@
 ### Additions
 - Added `ChainArena::insert_with`
 - Added `ChainArena::next_chain_ptr`
+- Added `ChainArena::iter_chain`
 
 ## [0.8.0] - 2023-05-09
 ### Fixes

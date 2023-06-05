@@ -490,7 +490,7 @@ fn fuzz_chain() {
                     assert!(!a.are_neighbors(invalid, invalid));
                 }
             }
-            980..=989 => {
+            980..=984 => {
                 // next_chain_ptr
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
@@ -534,6 +534,27 @@ fn fuzz_chain() {
                     let mut stop = false;
                     a.next_chain_ptr(invalid, &mut P0::invalid(), &mut false, &mut stop);
                     assert!(stop);
+                }
+            }
+            985..=989 => {
+                // iter_chain
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let init = b[&t].0;
+                    let mut iter = a.iter_chain(init);
+                    let mut p = init;
+                    let mut switch = false;
+                    let mut stop = !a.contains(init);
+                    loop {
+                        if stop {
+                            break
+                        }
+                        assert_eq!(iter.next().unwrap(), (p, &a[p]));
+                        a.next_chain_ptr(init, &mut p, &mut switch, &mut stop);
+                    }
+                } else {
+                    let mut iter = a.iter_chain(invalid);
+                    assert!(iter.next().is_none());
                 }
             }
             990..=997 => {
