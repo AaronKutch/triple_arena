@@ -61,6 +61,38 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     pub fn next_ptr(&self, p: &mut P, b: &mut bool) {
         self.keys.next_ptr(p, b)
     }
+
+    /// Same as [ChainArena::next_chain_ptr] except it explores a surject.
+    ///
+    /// ```text
+    /// let init = ...;
+    /// let mut p = init;
+    /// let mut stop = !arena.contains(init);
+    /// loop {
+    ///     if stop {
+    ///         break
+    ///     }
+    ///
+    ///     // use `p` here, but be aware that the removal or insertion of
+    ///     // elements within the surject of `init` is not supported
+    ///
+    ///     arena.next_surject_ptr(init, &mut p, &mut stop);
+    /// }
+    /// ```
+    pub fn next_surject_ptr(&self, init: P, p: &mut P, stop: &mut bool) {
+        let next = if let Some(link) = self.keys.get(*p) {
+            Link::next(link).unwrap()
+        } else {
+            *stop = true;
+            return
+        };
+        if next == init {
+            // reached the end
+            *stop = true;
+            return
+        }
+        *p = next;
+    }
 }
 
 // we need custom iterators like this because the `T` is required in the

@@ -249,8 +249,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     ///     }
     ///
     ///     // use `p` here, but be aware that the removal or insertion of
-    ///     // elements within the chain of `init` may stop the loop before
-    ///     // all elements are explored
+    ///     // elements within the chain of `init` is not supported
     ///
     ///     arena.next_chain_ptr(init, &mut p, &mut switch, &mut stop);
     /// }

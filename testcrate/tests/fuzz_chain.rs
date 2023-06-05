@@ -515,6 +515,7 @@ fn fuzz_chain() {
                     let init = b[&t];
                     let mut tmp = init.1 .1;
                     let mut cyclical = false;
+                    t_to_explore.remove(&t);
                     while let Some(next) = tmp {
                         if next == t {
                             cyclical = true;
@@ -530,6 +531,7 @@ fn fuzz_chain() {
                             tmp = b[&prev].1 .0;
                         }
                     }
+                    assert!(t_to_explore.is_empty());
                 } else {
                     let mut stop = false;
                     a.next_chain_ptr(invalid, &mut P0::invalid(), &mut false, &mut stop);

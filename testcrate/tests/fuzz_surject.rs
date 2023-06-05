@@ -1,4 +1,7 @@
-use std::{cmp::max, collections::HashMap};
+use std::{
+    cmp::max,
+    collections::{HashMap, HashSet},
+};
 
 use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
@@ -459,7 +462,7 @@ fn fuzz_surject() {
                     assert!(a.swap_vals(invalid, invalid).is_none());
                 }
             }
-            600..=997 => {
+            600..=989 => {
                 // reserved
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
@@ -470,6 +473,41 @@ fn fuzz_surject() {
                     assert_eq!((*tmp.0, *tmp.1), (pair.k, v));
                 } else {
                     assert!(a.get(invalid).is_none());
+                }
+            }
+            990..=997 => {
+                // next_surject_ptr
+                if len != 0 {
+                    let v = list[next_inx!(rng, len)];
+                    let set = &b[&v];
+                    let set_len = set.len();
+                    let pair = set[next_inx!(rng, set_len)];
+                    let mut iters = 0;
+                    let mut seen = HashSet::new();
+
+                    let init = pair.p;
+                    let mut p = init;
+                    let mut stop = !a.contains(init);
+                    loop {
+                        if stop {
+                            break
+                        }
+
+                        seen.insert(p);
+                        iters += 1;
+
+                        a.next_surject_ptr(init, &mut p, &mut stop);
+                    }
+                    assert_eq!(seen.len(), iters);
+
+                    for pair in set {
+                        assert!(seen.remove(&pair.p));
+                    }
+                    assert!(seen.is_empty());
+                } else {
+                    let mut stop = false;
+                    a.next_surject_ptr(invalid, &mut P0::invalid(), &mut stop);
+                    assert!(stop);
                 }
             }
             998 => {
