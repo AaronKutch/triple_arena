@@ -74,7 +74,8 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         self.keys.next_ptr(p, b)
     }
 
-    /// Same as [ChainArena::next_chain_ptr] except it explores a surject.
+    /// Same as [crate::ChainArena::next_chain_ptr] except it explores a
+    /// surject.
     ///
     /// ```text
     /// let init = ...;
@@ -86,7 +87,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     ///     }
     ///
     ///     // use `p` here, but be aware that the removal or insertion of
-    ///     // elements within the surject of `init` is not supported
+    ///     // keys within the surject of `init` is not supported
     ///
     ///     arena.next_surject_ptr(init, &mut p, &mut stop);
     /// }
