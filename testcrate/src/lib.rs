@@ -1,3 +1,5 @@
+use std::num::NonZeroU128;
+
 use triple_arena::{ptr_struct, Ptr};
 use triple_arena_render::*;
 
@@ -27,4 +29,6 @@ impl<P: Ptr> DebugNodeTrait<P> for MyNode<P> {
     }
 }
 
-ptr_struct!(P0);
+// This is constructed this way to guard against problems with stuff like
+// `PtrNoGen`
+ptr_struct!(P0[u32](NonZeroU128));

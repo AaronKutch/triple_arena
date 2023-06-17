@@ -12,7 +12,7 @@ mod misc;
 mod ptr;
 pub use chain::{ChainArena, Link};
 pub(crate) use entry::InternalEntry;
-pub use ptr::{Ptr, PtrGen, PtrInx};
+pub use ptr::{Ptr, PtrGen, PtrInx, PtrNoGen};
 mod surject;
 pub use surject::SurjectArena;
 pub mod surject_iterators;

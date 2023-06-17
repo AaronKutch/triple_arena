@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0] - TODO
+### Changes
+- Slightly optimized `SurjectArena`
+- Some iterator structs have more parameters
+
+### Additions
+- Added `PtrNoGen<P>`
+
 ## [0.9.0] - 2023-06-04
 ### Changes
 - Completely overhauled `SurjectArena` to have three generic parameters

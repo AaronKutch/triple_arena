@@ -379,3 +379,76 @@ macro_rules! ptr_struct {
         )*
     };
 }
+
+/// This wraps around any `P: Ptr` and acts like a `ptr_struct` implemented `P`
+/// but with the generation counter removed.
+#[derive(
+    core::hash::Hash,
+    core::clone::Clone,
+    core::marker::Copy,
+    core::cmp::PartialEq,
+    core::cmp::Eq,
+    core::cmp::PartialOrd,
+    core::cmp::Ord,
+)]
+pub struct PtrNoGen<P: Ptr> {
+    #[doc(hidden)]
+    _internal_inx: P::Inx,
+    #[doc(hidden)]
+    _internal_gen: (),
+}
+
+impl<P: Ptr> Ptr for PtrNoGen<P> {
+    type Gen = ();
+    type Inx = P::Inx;
+
+    #[inline]
+    fn invalid() -> Self {
+        Self {
+            _internal_inx: PtrInx::new(core::primitive::usize::MAX),
+            _internal_gen: PtrGen::one(),
+        }
+    }
+
+    #[inline]
+    fn inx(self) -> Self::Inx {
+        self._internal_inx
+    }
+
+    #[inline]
+    fn gen(self) -> Self::Gen {
+        self._internal_gen
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    fn _from_raw(_internal_inx: Self::Inx, _internal_gen: Self::Gen) -> Self {
+        Self {
+            _internal_inx,
+            _internal_gen,
+        }
+    }
+}
+
+impl<P: Ptr> core::default::Default for PtrNoGen<P> {
+    #[inline]
+    fn default() -> Self {
+        Ptr::invalid()
+    }
+}
+
+impl<P: Ptr> core::fmt::Debug for PtrNoGen<P> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.write_fmt(format_args!(
+            "{}[{:?}]",
+            stringify!($struct_name),
+            Ptr::inx(*self),
+        ))
+    }
+}
+
+impl<P: Ptr> core::fmt::Display for PtrNoGen<P> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        core::fmt::Debug::fmt(self, f)
+    }
+}

@@ -3,15 +3,14 @@ use core::{mem, num::NonZeroUsize};
 
 use fmt::Debug;
 
-use crate::{ptr_struct, Arena, ChainArena, Link, Ptr};
-
-// does not need generation counter
-ptr_struct!(PVal());
+use crate::{ptr::PtrNoGen, Arena, ChainArena, Link, Ptr};
 
 #[derive(Clone)]
-pub(crate) struct Key<K> {
+pub(crate) struct Key<P: Ptr, K> {
     pub(crate) k: K,
-    pub(crate) p_val: PVal,
+    // we want to have the size of `P::Inx` since we do not need the generation counter on the
+    // internal indirection
+    pub(crate) p_val: PtrNoGen<P>,
 }
 
 #[derive(Clone)]
@@ -146,8 +145,8 @@ pub(crate) struct Val<V> {
 /// );
 /// ```
 pub struct SurjectArena<P: Ptr, K, V> {
-    pub(crate) keys: ChainArena<P, Key<K>>,
-    pub(crate) vals: Arena<PVal, Val<V>>,
+    pub(crate) keys: ChainArena<P, Key<P, K>>,
+    pub(crate) vals: Arena<PtrNoGen<P>, Val<V>>,
 }
 
 /// # Note
@@ -160,7 +159,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
         // there should be exactly one key chain associated with each val
-        let mut count = Arena::<PVal, usize>::new();
+        let mut count = Arena::<PtrNoGen<P>, usize>::new();
         count.clone_from_with(&this.vals, |_, _| 0);
         for link in this.keys.vals() {
             match count.get_mut(link.t.p_val) {

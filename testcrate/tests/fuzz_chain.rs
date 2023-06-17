@@ -4,15 +4,14 @@ use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::{ptr_struct, ChainArena, Ptr};
+use testcrate::P0;
+use triple_arena::{ChainArena, Ptr};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
         $rng.next_u32() as usize % $len
     };
 }
-
-ptr_struct!(P0);
 
 #[test]
 #[allow(clippy::type_complexity)]

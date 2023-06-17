@@ -7,15 +7,14 @@ use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::{ptr_struct, Ptr, SurjectArena};
+use testcrate::P0;
+use triple_arena::{Ptr, SurjectArena};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
         $rng.next_u32() as usize % $len
     };
 }
-
-ptr_struct!(P0);
 
 #[test]
 fn fuzz_surject() {

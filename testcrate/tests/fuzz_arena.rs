@@ -4,15 +4,14 @@ use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::{ptr_struct, Arena};
+use testcrate::P0;
+use triple_arena::Arena;
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
         $rng.next_u32() as usize % $len
     };
 }
-
-ptr_struct!(P0);
 
 #[test]
 fn fuzz_arena() {
@@ -426,7 +425,7 @@ fn fuzz_multi_arena() {
     fn inner(
         rng: &mut Xoshiro128StarStar,
         a: &mut Arena<P0, u64>,
-        gen: &mut u64,
+        gen: &mut u128,
         b: &mut HashMap<u64, P0>,
         list: &mut Vec<u64>,
         new_t: &mut dyn FnMut() -> u64,

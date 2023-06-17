@@ -1,6 +1,7 @@
 use crate::{
     iterators::{self},
-    surject::{Key, PVal, Val},
+    ptr::PtrNoGen,
+    surject::{Key, Val},
     Arena, Link, Ptr, SurjectArena,
 };
 
@@ -21,7 +22,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     }
 
     /// Iteration over `&V`
-    pub fn vals(&self) -> Vals<V> {
+    pub fn vals(&self) -> Vals<P, V> {
         Vals {
             iter: self.vals.vals(),
         }
@@ -35,7 +36,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     }
 
     /// Mutable iteration over `&mut V`
-    pub fn vals_mut(&mut self) -> ValsMut<V> {
+    pub fn vals_mut(&mut self) -> ValsMut<P, V> {
         ValsMut {
             iter_mut: self.vals.vals_mut(),
         }
@@ -114,7 +115,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
 
 /// An iterator over the valid `P`s of a `SurjectArena`
 pub struct Ptrs<'a, P: Ptr, K> {
-    iter: iterators::Ptrs<'a, P, Link<P, Key<K>>>,
+    iter: iterators::Ptrs<'a, P, Link<P, Key<P, K>>>,
 }
 
 impl<'a, P: Ptr, K> Iterator for Ptrs<'a, P, K> {
@@ -127,7 +128,7 @@ impl<'a, P: Ptr, K> Iterator for Ptrs<'a, P, K> {
 
 /// An iterator over `&K` in a `SurjectArena`
 pub struct Keys<'a, P: Ptr, K> {
-    iter: iterators::Vals<'a, P, Link<P, Key<K>>>,
+    iter: iterators::Vals<'a, P, Link<P, Key<P, K>>>,
 }
 
 impl<'a, P: Ptr, K> Iterator for Keys<'a, P, K> {
@@ -139,11 +140,11 @@ impl<'a, P: Ptr, K> Iterator for Keys<'a, P, K> {
 }
 
 /// An iterator over `&V` in a `SurjectArena`
-pub struct Vals<'a, V> {
-    iter: iterators::Vals<'a, PVal, Val<V>>,
+pub struct Vals<'a, P: Ptr, V> {
+    iter: iterators::Vals<'a, PtrNoGen<P>, Val<V>>,
 }
 
-impl<'a, V> Iterator for Vals<'a, V> {
+impl<'a, P: Ptr, V> Iterator for Vals<'a, P, V> {
     type Item = &'a V;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -153,7 +154,7 @@ impl<'a, V> Iterator for Vals<'a, V> {
 
 /// A mutable iterator over `&mut K` in a `SurjectArena`
 pub struct KeysMut<'a, P: Ptr, K> {
-    iter_mut: iterators::ValsLinkMut<'a, P, Key<K>>,
+    iter_mut: iterators::ValsLinkMut<'a, P, Key<P, K>>,
 }
 
 impl<'a, P: Ptr, K> Iterator for KeysMut<'a, P, K> {
@@ -165,11 +166,11 @@ impl<'a, P: Ptr, K> Iterator for KeysMut<'a, P, K> {
 }
 
 /// A mutable iterator over `&mut V` in a `SurjectArena`
-pub struct ValsMut<'a, V> {
-    iter_mut: iterators::ValsMut<'a, PVal, Val<V>>,
+pub struct ValsMut<'a, P: Ptr, V> {
+    iter_mut: iterators::ValsMut<'a, PtrNoGen<P>, Val<V>>,
 }
 
-impl<'a, V> Iterator for ValsMut<'a, V> {
+impl<'a, P: Ptr, V> Iterator for ValsMut<'a, P, V> {
     type Item = &'a mut V;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -179,8 +180,8 @@ impl<'a, V> Iterator for ValsMut<'a, V> {
 
 /// An iterator over `(P, &K, &V)` in a `SurjectArena`
 pub struct Iter<'a, P: Ptr, K, V> {
-    iter: iterators::Iter<'a, P, Link<P, Key<K>>>,
-    vals: &'a Arena<PVal, Val<V>>,
+    iter: iterators::Iter<'a, P, Link<P, Key<P, K>>>,
+    vals: &'a Arena<PtrNoGen<P>, Val<V>>,
 }
 
 impl<'a, P: Ptr, K, V> Iterator for Iter<'a, P, K, V> {
