@@ -7,6 +7,7 @@
 
 ### Additions
 - Added `PtrNoGen<P>`
+- Added `ChainArena::replace_and_keep_gen` and `ChainArena::replace_and_update_gen`
 
 ## [0.9.0] - 2023-06-04
 ### Changes

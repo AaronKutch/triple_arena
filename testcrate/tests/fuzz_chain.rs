@@ -422,7 +422,7 @@ fn fuzz_chain() {
                     assert!(a.exchange_next(invalid, invalid).is_none());
                 }
             }
-            700..=849 => {
+            700..=749 => {
                 // invalidate
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
@@ -436,6 +436,93 @@ fn fuzz_chain() {
                     assert_eq!(t, a[new_ptr].t);
                 } else {
                     assert!(a.invalidate(invalid).is_none());
+                }
+            }
+            750..=799 => {
+                // replace_and_keep_gen
+                if len != 0 {
+                    let t = list.swap_remove(next_inx!(rng, len));
+                    let t_new = new_t();
+                    list.push(t_new);
+                    let interlink = b[&t].1;
+                    // correct `t`-based interlinks, do this before other replacements so we don't
+                    // have to special case cyclical chains
+                    if let Some(interlink) = interlink.0 {
+                        let tmp = b.get_mut(&interlink).unwrap();
+                        if let Some(ref mut tmp) = tmp.1 .0 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                        if let Some(ref mut tmp) = tmp.1 .1 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                    }
+                    if let Some(interlink) = interlink.1 {
+                        let tmp = b.get_mut(&interlink).unwrap();
+                        if let Some(ref mut tmp) = tmp.1 .0 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                        if let Some(ref mut tmp) = tmp.1 .1 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                    }
+                    let (ptr, interlink) = b.remove(&t).unwrap();
+                    let t_old = a.replace_and_keep_gen(ptr, t_new).unwrap();
+                    assert_eq!(t, t_old);
+                    b.insert(t_new, (ptr, interlink));
+                } else {
+                    assert_eq!(a.replace_and_keep_gen(invalid, u64::MAX), Err(u64::MAX));
+                }
+            }
+            800..=849 => {
+                // replace_and_update_gen
+                if len != 0 {
+                    let t = list.swap_remove(next_inx!(rng, len));
+                    let t_new = new_t();
+                    list.push(t_new);
+                    let interlink = b[&t].1;
+                    // correct `t`-based interlinks, do this before other replacements so we don't
+                    // have to special case cyclical chains
+                    if let Some(interlink) = interlink.0 {
+                        let tmp = b.get_mut(&interlink).unwrap();
+                        if let Some(ref mut tmp) = tmp.1 .0 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                        if let Some(ref mut tmp) = tmp.1 .1 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                    }
+                    if let Some(interlink) = interlink.1 {
+                        let tmp = b.get_mut(&interlink).unwrap();
+                        if let Some(ref mut tmp) = tmp.1 .0 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                        if let Some(ref mut tmp) = tmp.1 .1 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                    }
+                    let (ptr, interlink) = b.remove(&t).unwrap();
+                    let (ptr_new, t_old) = a.replace_and_update_gen(ptr, t_new).unwrap();
+                    gen += 1;
+                    assert_eq!(t, t_old);
+                    b.insert(t_new, (ptr_new, interlink));
+                } else {
+                    assert_eq!(a.replace_and_keep_gen(invalid, u64::MAX), Err(u64::MAX));
                 }
             }
             850..=899 => {
@@ -619,5 +706,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (35, 1051, 248502));
+    assert_eq!((max_len, iters999, a.gen().get()), (40, 1040, 214030));
 }

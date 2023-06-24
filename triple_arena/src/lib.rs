@@ -5,10 +5,15 @@
 // false positives
 #![allow(clippy::while_let_on_iterator)]
 
+// TODO all places where we have an internal .get_..().unwrap() need to have
+// .get_inx_unwrap() (removes both the return and generation input wastage) do
+// this after OrdArena is settled
+
 mod chain;
 mod entry;
 pub mod iterators;
 mod misc;
+mod ord;
 mod ptr;
 pub use chain::{ChainArena, Link};
 pub(crate) use entry::InternalEntry;
@@ -16,6 +21,7 @@ pub use ptr::{Ptr, PtrGen, PtrInx, PtrNoGen};
 mod surject;
 pub use surject::SurjectArena;
 pub mod surject_iterators;
+pub use ord::OrdArena;
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -760,6 +766,26 @@ impl<P: Ptr, T> Arena<P, T> {
             });
         } else {
             self.freelist_root = source.freelist_root;
+        }
+    }
+
+    /// Like [Arena::get], except generation counters are ignored and the
+    /// existing generation is returned.
+    #[doc(hidden)]
+    pub fn get_ignore_gen(&self, p: P::Inx) -> Option<(P::Gen, &T)> {
+        match self.m_get(p) {
+            Some(Allocated(gen, t)) => Some((*gen, t)),
+            _ => None,
+        }
+    }
+
+    /// Like [Arena::get_mut], except generation counters are ignored and the
+    /// existing generation is returned.
+    #[doc(hidden)]
+    pub fn get_ignore_gen_mut(&mut self, p: P::Inx) -> Option<(P::Gen, &mut T)> {
+        match self.m_get_mut(p) {
+            Some(Allocated(gen, t)) => Some((*gen, t)),
+            _ => None,
         }
     }
 }

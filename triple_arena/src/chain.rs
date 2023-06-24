@@ -497,6 +497,39 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         Some(p_new)
     }
 
+    /// Replaces the `T` in the link pointed to by `p` with `new`, returns the
+    /// old `T`, and keeps the internal generation counter as-is so that
+    /// previously constructed `PLink`s are still valid.
+    ///
+    /// # Errors
+    ///
+    /// Returns ownership of `new` instead if `p` is invalid
+    pub fn replace_and_keep_gen(&mut self, p: PLink, new: T) -> Result<T, T> {
+        if let Some(link) = self.get_mut(p) {
+            let old = mem::replace(link.t, new);
+            Ok(old)
+        } else {
+            Err(new)
+        }
+    }
+
+    /// Replaces the `T` in the link pointed to by `p` with `new`, returns a
+    /// tuple of the new `PLink` and old `T`, and updates the internal
+    /// generation counter so that previous `Plink`s to this link are
+    /// invalidated.
+    ///
+    /// # Errors
+    ///
+    /// Does no invalidation and returns ownership of `new` if `p` is invalid
+    pub fn replace_and_update_gen(&mut self, p: PLink, new: T) -> Result<(PLink, T), T> {
+        if let Some(p_new) = self.invalidate(p) {
+            let old = mem::replace(self.get_mut(p_new).unwrap().t, new);
+            Ok((p_new, old))
+        } else {
+            Err(new)
+        }
+    }
+
     /// Swaps the `T` at indexes `p0` and `p1` and keeps the generation counters
     /// and link connections as-is. If `p0 == p1` then nothing occurs.
     /// Returns `None` if `p0` or `p1` are invalid.
@@ -584,6 +617,25 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Performs a [ChainArena::clear] and resets capacity to 0
     pub fn clear_and_shrink(&mut self) {
         self.a.clear_and_shrink()
+    }
+
+    /// Like [ChainArena::get], except generation counters are ignored and the
+    /// existing generation is returned.
+    #[doc(hidden)]
+    pub fn get_ignore_gen(&self, p: PLink::Inx) -> Option<(PLink::Gen, &Link<PLink, T>)> {
+        self.a.get_ignore_gen(p)
+    }
+
+    /// Like [ChainArena::get_mut], except generation counters are ignored and
+    /// the existing generation is returned.
+    #[doc(hidden)]
+    pub fn get_ignore_gen_mut(
+        &mut self,
+        p: PLink::Inx,
+    ) -> Option<(PLink::Gen, Link<PLink, &mut T>)> {
+        self.a
+            .get_ignore_gen_mut(p)
+            .map(|(gen, link)| (gen, Link::new(link.prev_next, &mut link.t)))
     }
 }
 
