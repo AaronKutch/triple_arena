@@ -643,13 +643,13 @@ impl<P: Ptr, T> Arena<P, T> {
     }
 
     /// Replaces the `T` pointed to by `p` with `new`, returns a tuple of the
-    /// new `Ptr` and old `T`, and updates the internal generation
-    /// counter so that previous `Ptr`s to this allocation are invalidated.
+    /// old `T` and new `Ptr`, and updates the internal generation counter so
+    /// that previous `Ptr`s to this allocation are invalidated.
     ///
     /// # Errors
     ///
     /// Does no invalidation and returns ownership of `new` if `p` is invalid
-    pub fn replace_and_update_gen(&mut self, p: P, new: T) -> Result<(P, T), T> {
+    pub fn replace_and_update_gen(&mut self, p: P, new: T) -> Result<(T, P), T> {
         match self.m_get(p.inx()) {
             Some(Allocated(gen, _)) => {
                 if *gen != p.gen() {
@@ -662,7 +662,7 @@ impl<P: Ptr, T> Arena<P, T> {
         let new_gen = self.gen();
         let old = mem::replace(self.m_get_mut(p.inx()).unwrap(), Allocated(new_gen, new));
         match old {
-            Allocated(_, old) => Ok((P::_from_raw(p.inx(), new_gen), old)),
+            Allocated(_, old) => Ok((old, P::_from_raw(p.inx(), new_gen))),
             _ => unreachable!(),
         }
     }

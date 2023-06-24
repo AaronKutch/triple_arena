@@ -164,7 +164,7 @@ fn fuzz_arena() {
                     let t0 = list.swap_remove(next_inx!(rng, len));
                     let t1 = new_t();
                     let old_ptr = b.remove(&t0).unwrap();
-                    let (new_ptr, output_t) = a.replace_and_update_gen(old_ptr, t1).unwrap();
+                    let (output_t, new_ptr) = a.replace_and_update_gen(old_ptr, t1).unwrap();
                     gen += 1;
                     assert_eq!(t0, output_t);
                     list.push(t1);

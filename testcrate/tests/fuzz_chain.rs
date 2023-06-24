@@ -517,7 +517,7 @@ fn fuzz_chain() {
                         }
                     }
                     let (ptr, interlink) = b.remove(&t).unwrap();
-                    let (ptr_new, t_old) = a.replace_and_update_gen(ptr, t_new).unwrap();
+                    let (t_old, ptr_new) = a.replace_and_update_gen(ptr, t_new).unwrap();
                     gen += 1;
                     assert_eq!(t, t_old);
                     b.insert(t_new, (ptr_new, interlink));

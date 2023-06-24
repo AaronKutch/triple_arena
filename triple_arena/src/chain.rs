@@ -514,17 +514,17 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     }
 
     /// Replaces the `T` in the link pointed to by `p` with `new`, returns a
-    /// tuple of the new `PLink` and old `T`, and updates the internal
+    /// tuple of the old `T` and new `PLink`, and updates the internal
     /// generation counter so that previous `Plink`s to this link are
     /// invalidated.
     ///
     /// # Errors
     ///
     /// Does no invalidation and returns ownership of `new` if `p` is invalid
-    pub fn replace_and_update_gen(&mut self, p: PLink, new: T) -> Result<(PLink, T), T> {
+    pub fn replace_and_update_gen(&mut self, p: PLink, new: T) -> Result<(T, PLink), T> {
         if let Some(p_new) = self.invalidate(p) {
             let old = mem::replace(self.get_mut(p_new).unwrap().t, new);
-            Ok((p_new, old))
+            Ok((old, p_new))
         } else {
             Err(new)
         }

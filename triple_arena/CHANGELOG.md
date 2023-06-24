@@ -2,8 +2,9 @@
 
 ## [0.10.0] - TODO
 ### Changes
-- Slightly optimized `SurjectArena`
+- Changed order of returned parameters of the `replace_and_update_gen` functions
 - Some iterator structs have more parameters
+- Slightly optimized `SurjectArena`
 
 ### Additions
 - Added `PtrNoGen<P>`
