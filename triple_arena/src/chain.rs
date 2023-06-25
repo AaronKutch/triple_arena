@@ -555,8 +555,8 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     #[must_use]
     pub fn connect(&mut self, p0: PLink, p1: PLink) -> Option<()> {
         if Link::next(self.get(p0)?).is_none() && Link::prev(self.get(p1)?).is_none() {
-            self[p0].prev_next.1 = Some(p1);
-            self[p1].prev_next.0 = Some(p0);
+            self.a.get_mut(p0).unwrap().prev_next.1 = Some(p1);
+            self.a.get_mut(p1).unwrap().prev_next.0 = Some(p0);
             Some(())
         } else {
             None
@@ -568,8 +568,8 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     #[must_use]
     pub fn break_prev(&mut self, p: PLink) -> Option<()> {
         let u = Link::prev(self.get(p)?)?;
-        self[p].prev_next.0 = None;
-        self[u].prev_next.1 = None;
+        self.a.get_mut(p).unwrap().prev_next.0 = None;
+        self.a.get_mut(u).unwrap().prev_next.1 = None;
         Some(())
     }
 
@@ -578,8 +578,8 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     #[must_use]
     pub fn break_next(&mut self, p: PLink) -> Option<()> {
         let d = Link::next(self.get(p)?)?;
-        self[p].prev_next.1 = None;
-        self[d].prev_next.0 = None;
+        self.a.get_mut(p).unwrap().prev_next.1 = None;
+        self.a.get_mut(d).unwrap().prev_next.0 = None;
         Some(())
     }
 
@@ -596,12 +596,12 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     pub fn exchange_next(&mut self, p0: PLink, p1: PLink) -> Option<()> {
         if self.contains(p0) && self.contains(p1) {
             // get downstream links
-            let d0 = Link::next(&self[p0])?;
-            let d1 = Link::next(&self[p1])?;
-            self[p0].prev_next.1 = Some(d1);
-            self[p1].prev_next.1 = Some(d0);
-            self[d0].prev_next.0 = Some(p1);
-            self[d1].prev_next.0 = Some(p0);
+            let d0 = Link::next(&self.get(p0).unwrap())?;
+            let d1 = Link::next(&self.get(p1).unwrap())?;
+            self.a.get_mut(p0).unwrap().prev_next.1 = Some(d1);
+            self.a.get_mut(p1).unwrap().prev_next.1 = Some(d0);
+            self.a.get_mut(d0).unwrap().prev_next.0 = Some(p1);
+            self.a.get_mut(d1).unwrap().prev_next.0 = Some(p0);
             Some(())
         } else {
             None
@@ -637,22 +637,44 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
             .get_ignore_gen_mut(p)
             .map(|(gen, link)| (gen, Link::new(link.prev_next, &mut link.t)))
     }
+
+    /// Like [ChainArena::get], except generation counters are ignored and the
+    /// result is unwrapped internally
+    #[doc(hidden)]
+    pub fn get_inx_unwrap(&self, p: PLink::Inx) -> &Link<PLink, T> {
+        self.a.get_inx_unwrap(p)
+    }
+
+    /// Like [ChainArena::get_mut], except generation counters are ignored and
+    /// the result is unwrapped internally
+    #[doc(hidden)]
+    pub fn get_inx_mut_unwrap(&mut self, p: PLink::Inx) -> Link<PLink, &mut T> {
+        let link = self.a.get_inx_mut_unwrap(p);
+        Link::new(Link::prev_next(link), &mut link.t)
+    }
+
+    /// Like [ChainArena::get_mut], except generation counters are ignored and
+    /// the result is unwrapped internally, and only the `&mut T` is
+    /// returned
+    #[doc(hidden)]
+    pub fn get_inx_mut_unwrap_t(&mut self, p: PLink::Inx) -> &mut T {
+        let link = self.a.get_inx_mut_unwrap(p);
+        &mut link.t
+    }
 }
 
 impl<P: Ptr, T, B: Borrow<P>> Index<B> for ChainArena<P, T> {
-    type Output = Link<P, T>;
+    type Output = T;
 
     fn index(&self, index: B) -> &Self::Output {
-        self.a
-            .get(*index.borrow())
+        self.get(*index.borrow()).map(|link| &link.t)
             .expect("indexed arena with invalidated `Ptr`")
     }
 }
 
 impl<P: Ptr, T, B: Borrow<P>> IndexMut<B> for ChainArena<P, T> {
     fn index_mut(&mut self, index: B) -> &mut Self::Output {
-        self.a
-            .get_mut(*index.borrow())
+        self.a.get_mut(*index.borrow()).map(|link| &mut link.t)
             .expect("indexed arena with invalidated `Ptr`")
     }
 }

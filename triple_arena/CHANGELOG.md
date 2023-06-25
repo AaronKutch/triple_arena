@@ -1,6 +1,10 @@
 # Changelog
 
 ## [0.10.0] - TODO
+### Fixes
+- Changed the `Index` and `IndexMut` impls of `ChainArena` to return `&T` and `&mut T` respectively,
+  this removes an unintentional place where chains could be broken.
+
 ### Changes
 - Changed order of returned parameters of the `replace_and_update_gen` functions
 - Some iterator structs have more parameters
@@ -9,6 +13,7 @@
 ### Additions
 - Added `PtrNoGen<P>`
 - Added `ChainArena::replace_and_keep_gen` and `ChainArena::replace_and_update_gen`
+- Added several hidden functions for getting entries while ignoring generation counters
 
 ## [0.9.0] - 2023-06-04
 ### Changes
