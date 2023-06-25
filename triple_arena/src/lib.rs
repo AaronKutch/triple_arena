@@ -788,6 +788,26 @@ impl<P: Ptr, T> Arena<P, T> {
             _ => None,
         }
     }
+
+    /// Like [Arena::get], except generation counters are ignored and the
+    /// result is unwrapped internally
+    #[doc(hidden)]
+    pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
+        match self.m_get(p) {
+            Some(Allocated(_, t)) => t,
+            _ => panic!("get_inx_unwrap out of bounds"),
+        }
+    }
+
+    /// Like [Arena::get_mut], except generation counters are ignored and the
+    /// result is unwrapped internally
+    #[doc(hidden)]
+    pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
+        match self.m_get_mut(p) {
+            Some(Allocated(_, t)) => t,
+            _ => panic!("get_inx_mut_unwrap out of bounds"),
+        }
+    }
 }
 
 impl<T, P: Ptr> Default for Arena<P, T> {
