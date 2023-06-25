@@ -619,6 +619,30 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         self.a.clear_and_shrink()
     }
 
+    /// Has the same properties of [Arena::clone_from_with], preserving
+    /// interlinks as well.
+    pub fn clone_from_with<U, F: FnMut(PLink, &Link<PLink, U>) -> T>(
+        &mut self,
+        source: &ChainArena<PLink, U>,
+        mut map: F,
+    ) {
+        self.a.clone_from_with(&source.a, |p, link| {
+            let t = map(p, link);
+            Link::new(Link::prev_next(link), t)
+        })
+    }
+
+    /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
+    /// generation counter, and reusing capacity) with the `Ptr` mapping of
+    /// `self`, except that the interlink structure has been dropped.
+    pub fn clone_to_arena<U, F: FnMut(PLink, &Link<PLink, T>) -> U>(
+        &self,
+        arena: &mut Arena<PLink, U>,
+        map: F,
+    ) {
+        arena.clone_from_with(&self.a, map);
+    }
+
     /// Like [ChainArena::get], except generation counters are ignored and the
     /// existing generation is returned.
     #[doc(hidden)]
@@ -667,14 +691,17 @@ impl<P: Ptr, T, B: Borrow<P>> Index<B> for ChainArena<P, T> {
     type Output = T;
 
     fn index(&self, index: B) -> &Self::Output {
-        self.get(*index.borrow()).map(|link| &link.t)
+        self.get(*index.borrow())
+            .map(|link| &link.t)
             .expect("indexed arena with invalidated `Ptr`")
     }
 }
 
 impl<P: Ptr, T, B: Borrow<P>> IndexMut<B> for ChainArena<P, T> {
     fn index_mut(&mut self, index: B) -> &mut Self::Output {
-        self.a.get_mut(*index.borrow()).map(|link| &mut link.t)
+        self.a
+            .get_mut(*index.borrow())
+            .map(|link| &mut link.t)
             .expect("indexed arena with invalidated `Ptr`")
     }
 }
@@ -753,9 +780,16 @@ impl<P: Ptr, T: Debug> Debug for ChainArena<P, T> {
     }
 }
 
+/// Implemented if `T: Clone`.
 impl<P: Ptr, T: Clone> Clone for ChainArena<P, T> {
+    /// Has the `Ptr` preserving properties of [Arena::clone]
     fn clone(&self) -> Self {
         Self { a: self.a.clone() }
+    }
+
+    /// Has the `Ptr` and capacity preserving properties of [Arena::clone_from]
+    fn clone_from(&mut self, source: &Self) {
+        self.a.clone_from(&source.a)
     }
 }
 

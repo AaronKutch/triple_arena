@@ -792,6 +792,7 @@ impl<P: Ptr, T> Arena<P, T> {
     /// Like [Arena::get], except generation counters are ignored and the
     /// result is unwrapped internally
     #[doc(hidden)]
+    #[track_caller] // TODO comment out
     pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
         match self.m_get(p) {
             Some(Allocated(_, t)) => t,
@@ -802,6 +803,7 @@ impl<P: Ptr, T> Arena<P, T> {
     /// Like [Arena::get_mut], except generation counters are ignored and the
     /// result is unwrapped internally
     #[doc(hidden)]
+    #[track_caller] // TODO comment out
     pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
         match self.m_get_mut(p) {
             Some(Allocated(_, t)) => t,

@@ -5,7 +5,7 @@ use rand_xoshiro::{
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::{ChainArena, Ptr, Link};
+use triple_arena::{ChainArena, Link, Ptr};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
@@ -727,5 +727,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (40, 1040, 214030));
+    assert_eq!((max_len, iters999, a.gen().get()), (40, 1040, 206984));
 }

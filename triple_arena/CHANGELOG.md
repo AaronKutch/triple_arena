@@ -11,6 +11,7 @@
 - Slightly optimized `SurjectArena`
 
 ### Additions
+- Added several Arena cloning functions
 - Added `PtrNoGen<P>`
 - Added `ChainArena::replace_and_keep_gen` and `ChainArena::replace_and_update_gen`
 - Added several hidden functions for getting entries while ignoring generation counters

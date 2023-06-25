@@ -613,6 +613,45 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         self.keys.clear_and_shrink();
         self.vals.clear_and_shrink();
     }
+
+    /// Has the same properties of [Arena::clone_from_with]
+    pub fn clone_from_with<
+        K1: Ord,
+        V1,
+        F0: FnMut(P, &K1) -> K,
+        F1: FnMut(NonZeroUsize, &V1) -> V,
+    >(
+        &mut self,
+        source: &SurjectArena<P, K1, V1>,
+        mut map_key: F0,
+        mut map_val: F1,
+    ) {
+        self.keys.clone_from_with(&source.keys, |p, link| {
+            let k = map_key(p, &link.k);
+            Key {
+                k,
+                p_val: Ptr::_from_raw(p.inx(), ()),
+            }
+        });
+        self.vals.clone_from_with(&source.vals, |_, val| {
+            let v = map_val(val.key_count, &val.v);
+            Val {
+                v,
+                key_count: val.key_count,
+            }
+        });
+    }
+
+    /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
+    /// generation counter, and reusing capacity) with the `Ptr` mapping of
+    /// `self`, with groups of keys preserved as cyclical chains.
+    pub fn clone_keys_to_chain_arena<T, F: FnMut(P, &K) -> T>(
+        &self,
+        chain_arena: &mut ChainArena<P, T>,
+        mut map: F,
+    ) {
+        chain_arena.clone_from_with(&self.keys, |p, link| map(p, &link.k))
+    }
 }
 
 // we can't implement `Index` because the format would force `&(&K, &V)` which
@@ -624,12 +663,20 @@ impl<P: Ptr, K: Debug, V: Debug> Debug for SurjectArena<P, K, V> {
     }
 }
 
+/// Implemented if `K: Clone` and `V: Clone`.
 impl<P: Ptr, K: Clone, V: Clone> Clone for SurjectArena<P, K, V> {
+    /// Has the `Ptr` preserving properties of [Arena::clone]
     fn clone(&self) -> Self {
         Self {
             keys: self.keys.clone(),
             vals: self.vals.clone(),
         }
+    }
+
+    /// Has the `Ptr` and capacity preserving properties of [Arena::clone_from]
+    fn clone_from(&mut self, source: &Self) {
+        self.keys.clone_from(&source.keys);
+        self.vals.clone_from(&source.vals);
     }
 }
 
