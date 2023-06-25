@@ -1,6 +1,6 @@
-#![no_std]
-// because `Ptr` is based on user-controlled code we will not use unsafe code for the foreseeable
-// future
+//#![no_std]
+// because `Ptr` is based on user-controlled code we will not use unsafe code
+// for the foreseeable future
 #![deny(unsafe_code)]
 // false positives
 #![allow(clippy::while_let_on_iterator)]
@@ -22,6 +22,7 @@ mod surject;
 pub use surject::SurjectArena;
 pub mod surject_iterators;
 pub use ord::OrdArena;
+mod ord_iterators;
 
 extern crate alloc;
 use alloc::vec::Vec;
