@@ -1,4 +1,4 @@
-//#![no_std]
+#![no_std]
 // because `Ptr` is based on user-controlled code we will not use unsafe code
 // for the foreseeable future
 #![deny(unsafe_code)]
@@ -8,6 +8,7 @@
 // TODO all places where we have an internal .get_..().unwrap() need to have
 // .get_inx_unwrap() (removes both the return and generation input wastage) do
 // this after OrdArena is settled
+// check all `get_inx_mut_unwrap` to see if we can replace with the _t variant
 
 mod chain;
 mod entry;
