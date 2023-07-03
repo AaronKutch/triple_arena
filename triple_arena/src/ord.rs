@@ -372,6 +372,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let n0 = self.a.get_inx_unwrap(p0);
             let n1 = self.a.get_inx_unwrap(p1);
             let n2 = self.a.get_inx_unwrap(p2);
+            let p3 = n2.p_back;
 
             let rank1 = n1.rank;
             let rank2 = n2.rank;
@@ -380,7 +381,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 // or a previous loop, it did not introduce another rank violation
                 break
             } else {
-                let p3 = self.a.get_inx_unwrap(p2).p_back;
 
                 // Check the sibling of n1 to see if we can promote n2 and avoid a restructure.
                 // This isn't just an optimization, a general case restructure requires the
@@ -707,12 +707,12 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     self.first = prev;
                     self.last = prev;
                 }
-                return Some((link.t.k, link.t.v));
+                return Some((link.t.k, link.t.v))
             }
             (link.p_back, link.p_tree0, link.p_tree1, link.rank, p)
         };
 
-        let p0 = if old_rank == 1 {
+        let mut p0 = if old_rank == 1 {
             // if the old removed tree position was rank 1, there is one rank 0 child that needs to be reconnected
             let child = if let Some(p_tree0) = old_tree0 {
                 self.a.get_inx_mut_unwrap_t(p_tree0).p_back = old_back;
@@ -740,15 +740,47 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             } else {
                 x.p_tree1 = None;
             }
+            if x.p_tree0.is_none() && x.p_tree1.is_none() {
+                x.rank = 0;
+            } else if x.p_tree0.is_none() != x.p_tree1.is_none() {
+                // make sure the rank is 1 and not 2
+                x.rank = 1;
+            }
             p_back
         };
 
         // rebalance starting from `p0`
         let n0 = self.a.get_inx_unwrap(p0);
-        if n0.p_tree0.is_none() && n0.p_tree1.is_none() {
-            self.a.get_inx_mut_unwrap_t(p0).rank = 0;
-        }
+        let (n1, mut p1) = if let Some(p1) = n0.p_back {
+            //
+            (self.a.get_inx_unwrap(p1), p1)
+        } else {
+            return Some((link.t.k, link.t.v))
+        };
+        let mut d01 = n1.p_tree1 == Some(p0);
+        loop {
+            let n0 = self.a.get_inx_unwrap(p0);
+            let n1 = self.a.get_inx_unwrap(p1);
+            let p2 = n1.p_back;
 
+            let rank0 = n0.rank;
+            let rank1 = n1.rank;
+            if rank0.wrapping_add(2) < rank1 {
+                // check sibling to see if we can demote n1
+                let p_sibling0 = if d01 { n1.p_tree0 } else { n1.p_tree1 };
+                if let Some(p_sibling0) = p_sibling0 {
+                    if self.a.get_inx_unwrap(p_sibling0).rank.wrapping_add(2) == rank1 {
+                        self.a.get_inx_mut_unwrap_t(p1).rank = rank0.wrapping_add(2);
+                        // convey up the tree
+                        p0 = p1;
+                        d01 = self.a.get_inx_unwrap(p1).p_tree1 == Some(p0);
+                        continue
+                    }
+                }
+            } else {
+                break
+            }
+        }
         Some((link.t.k, link.t.v))
     }
 
