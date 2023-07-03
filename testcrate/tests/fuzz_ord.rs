@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
@@ -80,7 +80,7 @@ fn fuzz_ord() {
             let debug0 = a.debug_arena();
             let mut debug1 = triple_arena::Arena::new();
             debug1.clone_from_with(&debug0, |p, t| triple_arena_render::DebugNode {
-                sources: if let Some(tmp) = t.3 {
+                sources: if let Some(tmp) = t.4 {
                     vec![(tmp, String::new())]
                 } else {
                     vec![]

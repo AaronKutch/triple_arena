@@ -133,7 +133,23 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             }
 
             let node = &this.a.get(p).unwrap().t;
+            if let Some(p_back) = node.p_back {
+                if let Some((_, parent)) = this.a.get_ignore_gen(p_back) {
+                    if (parent.p_tree0 != Some(p.inx())) && (parent.p_tree1 != Some(p.inx())) {
+                        return Err("broken tree")
+                    }
+                }
+            } else {
+                // should be root, if this passes it implies there is only one common root
+                if p.inx() != this.root {
+                    return Err("more than one root node")
+                }
+            }
             if let Some(p_tree0) = node.p_tree0 {
+                // prevent some unbalanced cases that the rank checks would not catch
+                if Some(p_tree0) == node.p_tree1 {
+                    return Err("`p_tree0` and `p_tree1` are the same")
+                }
                 if let Some((_, child0)) = this.a.get_ignore_gen(p_tree0) {
                     if child0.p_back != Some(p.inx()) {
                         return Err("broken tree")
@@ -147,6 +163,17 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     }
                 }
             }
+
+            this.a.next_ptr(&mut p, &mut b);
+        }
+        // check the ranks
+        let (mut p, mut b) = this.a.first_ptr();
+        loop {
+            if b {
+                break
+            }
+
+            let node = &this.a.get(p).unwrap().t;
             if node.p_tree0.is_none() && node.p_tree1.is_none() {
                 if node.rank != 0 {
                     return Err("leaf is not rank 0")
@@ -169,24 +196,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 if rank_diff > 2 {
                     return Err("rank difference is greater than 2")
                 }
-            }
-
-            this.a.next_ptr(&mut p, &mut b);
-        }
-        // make sure all nodes have common root
-        let (mut p, mut b) = this.a.first_ptr();
-        loop {
-            if b {
-                break
-            }
-
-            // we can't encounter infinite loops because of the rank nonzero positive check
-            let mut tmp = p.inx();
-            while let Some(parent) = this.a.get_ignore_gen(tmp).unwrap().1.p_back {
-                tmp = parent;
-            }
-            if tmp != this.root {
-                return Err("unexpected root")
             }
 
             this.a.next_ptr(&mut p, &mut b);
@@ -246,6 +255,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let p_new = self.a.insert_new(Node::new(k, v));
             self.first = p_new.inx();
             self.last = p_new.inx();
+            self.root = p_new.inx();
             return Ok(p_new)
         }
         let mut p = self.root;
@@ -330,6 +340,10 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         let mut p0 = p;
         let n0 = self.a.get_inx_unwrap(p0);
         let (n1, mut p1) = if let Some(p1) = n0.p_back {
+            // Must promote so we maintain a loop invariant that n0 and n1 do not violate
+            // rank invariants. If there is a sibling then it must have rank 0 and thus we
+            // can unconditionally do this
+            self.a.get_inx_mut_unwrap_t(p1).rank = 1;
             (self.a.get_inx_unwrap(p1), p1)
         } else {
             // single node tree, inserted node was inserted as rank 0 which is immediately
@@ -340,8 +354,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         let (n2, mut p2) = if let Some(p2) = n1.p_back {
             (self.a.get_inx_unwrap(p2), p2)
         } else {
-            // height 2 tree, just need to make sure that the root node has rank 1
-            self.a.get_inx_mut_unwrap_t(p1).rank = 1;
+            // height 2 tree, rank has already been set to 1
             return
         };
         let mut d12 = n2.p_tree1 == Some(p1);
@@ -349,135 +362,127 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let n0 = self.a.get_inx_unwrap(p0);
             let n1 = self.a.get_inx_unwrap(p1);
             let n2 = self.a.get_inx_unwrap(p2);
-            let p3 = self.a.get_inx_unwrap(p2).p_back;
 
-            let rank0 = n0.rank;
             let rank1 = n1.rank;
             let rank2 = n2.rank;
-            if (rank0 == rank1) || (rank1 == rank2) {
-                let rank2 = n2.rank;
-                if (rank0.wrapping_add(1) == rank2) || (rank1 == rank2) {
-                    // TODO promoting n2 always introduces the need to slide up and check, perhaps
-                    // by two nodes
+            if rank1 != rank2 {
+                // n2 was previously two ranks over n1, so when n1 was promoted in the prelude
+                // or a previous loop, it did not introduce another rank violation
+                break
+            } else {
+                let p3 = self.a.get_inx_unwrap(p2).p_back;
 
-                    // check cousin rank if we can promote n1 and n2 and avoid the restructure
-                    /*if p3.is_none() {
-                        let other = if d12 {n2.p_tree0} else {n2.p_tree1};
-                        if let Some(p_cousin) = other {
-                            if self.a.get_inx_unwrap(p_cousin).rank.wrapping_add(1) == rank2 {
-                                self.a.get_inx_mut_unwrap_t(p1).rank = rank0.wrapping_add(1);
-                                self.a.get_inx_mut_unwrap_t(p2).rank = rank0.wrapping_add(2);
-                                return
-                            }
-                        }
-                    }*/
-
-                    //dbg!("\n\n\n\n");
-                    //dbg!(p0, n0.p_back, p1, n1.p_back, p2, n2.p_back);
-
-                    // Need a trinode restructure. There are 4 combinations of `d01` and `d12` that
-                    // we need to handle, which deal with 7 nodes
-
-                    // some pointer resets could be avoided with higher level branching, but I think
-                    // that having a single code path with as few conditionals as possible is better
-                    let t: (
-                        Option<P::Inx>,
-                        P::Inx,
-                        Option<P::Inx>,
-                        P::Inx,
-                        Option<P::Inx>,
-                        P::Inx,
-                        Option<P::Inx>,
-                    ) = match (d12, d01) {
-                        (false, false) => {
-                            (n0.p_tree0, p0, n0.p_tree1, p1, n1.p_tree1, p2, n2.p_tree1)
-                        }
-                        (false, true) => {
-                            (n1.p_tree0, p1, n0.p_tree0, p0, n0.p_tree1, p2, n2.p_tree1)
-                        }
-                        (true, false) => {
-                            (n2.p_tree0, p2, n0.p_tree0, p0, n0.p_tree1, p1, n1.p_tree1)
-                        }
-                        (true, true) => {
-                            (n2.p_tree0, p2, n1.p_tree0, p1, n0.p_tree0, p0, n0.p_tree1)
-                        }
-                    };
-                    // calculate ranks and fix external pointers
-                    if let Some(p) = p3 {
-                        let ext = self.a.get_inx_mut_unwrap_t(p);
-                        if ext.p_tree1 == Some(p2) {
-                            ext.p_tree1 = Some(t.3);
-                        } else {
-                            ext.p_tree0 = Some(t.3);
-                        }
-                    }
-                    let mut rank_x0 = 0;
-                    if let Some(p) = t.0 {
-                        let ext = self.a.get_inx_mut_unwrap_t(p);
-                        rank_x0 = ext.rank.wrapping_add(1);
-                        ext.p_back = Some(t.1);
-                    }
-                    if let Some(p) = t.2 {
-                        let ext = self.a.get_inx_mut_unwrap_t(p);
-                        rank_x0 = max(rank_x0, ext.rank.wrapping_add(1));
-                        ext.p_back = Some(t.1);
-                    }
-                    let mut rank_x1 = 0;
-                    if let Some(p) = t.4 {
-                        let ext = self.a.get_inx_mut_unwrap_t(p);
-                        rank_x1 = ext.rank.wrapping_add(1);
-                        ext.p_back = Some(t.5);
-                    }
-                    if let Some(p) = t.6 {
-                        let ext = self.a.get_inx_mut_unwrap_t(p);
-                        rank_x1 = max(rank_x1, ext.rank.wrapping_add(1));
-                        ext.p_back = Some(t.5);
-                    }
-                    // restructure
-                    let x0 = self.a.get_inx_mut_unwrap_t(t.1);
-                    x0.p_tree0 = t.0;
-                    x0.p_back = Some(t.3);
-                    x0.p_tree1 = t.2;
-                    x0.rank = rank_x0;
-                    let x1 = self.a.get_inx_mut_unwrap_t(t.3);
-                    x1.p_tree0 = Some(t.1);
-                    x1.p_back = p3;
-                    x1.p_tree1 = Some(t.5);
-                    x1.rank = max(rank_x0, rank_x1).wrapping_add(1);
-                    let x2 = self.a.get_inx_mut_unwrap_t(t.5);
-                    x2.p_tree0 = t.4;
-                    x2.p_back = Some(t.3);
-                    x2.p_tree1 = t.6;
-                    x2.rank = rank_x1;
-
-                    if let Some(p3) = p3 {
-                        // orient around minimum rank side
-                        if rank_x0 <= rank_x1 {
-                            p0 = t.1;
-                            p1 = t.3;
+                // Check the sibling of n1 to see if we can promote n2 and avoid a restructure.
+                // This isn't just an optimization, a general case restructure requires the
+                // sibling of n1 to be 2 ranks below n2 or else the restructure may introduce
+                // lower height violations.
+                let p_sibling1 = if d12 { n2.p_tree0 } else { n2.p_tree1 };
+                if let Some(p_sibling1) = p_sibling1 {
+                    if self.a.get_inx_unwrap(p_sibling1).rank.wrapping_add(1) == rank2 {
+                        self.a.get_inx_mut_unwrap_t(p2).rank = rank1.wrapping_add(1);
+                        if let Some(p3) = p3 {
+                            // convey up the tree
+                            p0 = p1;
+                            p1 = p2;
                             p2 = p3;
-                            d01 = false;
+                            d01 = d12;
                             d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                            continue
                         } else {
-                            p0 = t.5;
-                            p1 = t.3;
-                            p2 = p3;
-                            d01 = true;
-                            d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                            // n2 was the root
+                            break
                         }
+                    }
+                }
+
+                // Need a trinode restructure, and the sibling of n1 is two ranks below n2 so
+                // there is space. There are 4 combinations of `d01` and `d12` that
+                // we need to handle, which deal with 7 nodes
+
+                // some pointer resets could be avoided with higher level branching, but I think
+                // that having a single code path with as few conditionals as possible is better
+                let t: (
+                    Option<P::Inx>,
+                    P::Inx,
+                    Option<P::Inx>,
+                    P::Inx,
+                    Option<P::Inx>,
+                    P::Inx,
+                    Option<P::Inx>,
+                ) = match (d12, d01) {
+                    (false, false) => (n0.p_tree0, p0, n0.p_tree1, p1, n1.p_tree1, p2, n2.p_tree1),
+                    (false, true) => (n1.p_tree0, p1, n0.p_tree0, p0, n0.p_tree1, p2, n2.p_tree1),
+                    (true, false) => (n2.p_tree0, p2, n0.p_tree0, p0, n0.p_tree1, p1, n1.p_tree1),
+                    (true, true) => (n2.p_tree0, p2, n1.p_tree0, p1, n0.p_tree0, p0, n0.p_tree1),
+                };
+                // calculate ranks and fix external pointers
+                if let Some(p) = p3 {
+                    let ext = self.a.get_inx_mut_unwrap_t(p);
+                    if ext.p_tree1 == Some(p2) {
+                        ext.p_tree1 = Some(t.3);
                     } else {
-                        // we have reached the root
-                        self.root = t.3;
-                        return
+                        ext.p_tree0 = Some(t.3);
+                    }
+                }
+                let mut rank_x0 = 0;
+                if let Some(p) = t.0 {
+                    let ext = self.a.get_inx_mut_unwrap_t(p);
+                    rank_x0 = ext.rank.wrapping_add(1);
+                    ext.p_back = Some(t.1);
+                }
+                if let Some(p) = t.2 {
+                    let ext = self.a.get_inx_mut_unwrap_t(p);
+                    rank_x0 = max(rank_x0, ext.rank.wrapping_add(1));
+                    ext.p_back = Some(t.1);
+                }
+                let mut rank_x1 = 0;
+                if let Some(p) = t.4 {
+                    let ext = self.a.get_inx_mut_unwrap_t(p);
+                    rank_x1 = ext.rank.wrapping_add(1);
+                    ext.p_back = Some(t.5);
+                }
+                if let Some(p) = t.6 {
+                    let ext = self.a.get_inx_mut_unwrap_t(p);
+                    rank_x1 = max(rank_x1, ext.rank.wrapping_add(1));
+                    ext.p_back = Some(t.5);
+                }
+                // restructure
+                let x0 = self.a.get_inx_mut_unwrap_t(t.1);
+                x0.p_tree0 = t.0;
+                x0.p_back = Some(t.3);
+                x0.p_tree1 = t.2;
+                x0.rank = rank_x0;
+                let x1 = self.a.get_inx_mut_unwrap_t(t.3);
+                x1.p_tree0 = Some(t.1);
+                x1.p_back = p3;
+                x1.p_tree1 = Some(t.5);
+                x1.rank = max(rank_x0, rank_x1).wrapping_add(1);
+                let x2 = self.a.get_inx_mut_unwrap_t(t.5);
+                x2.p_tree0 = t.4;
+                x2.p_back = Some(t.3);
+                x2.p_tree1 = t.6;
+                x2.rank = rank_x1;
+
+                if let Some(p3) = p3 {
+                    // orient around minimum rank side
+                    if rank_x0 <= rank_x1 {
+                        p0 = t.1;
+                        p1 = t.3;
+                        p2 = p3;
+                        d01 = false;
+                        d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                    } else {
+                        p0 = t.5;
+                        p1 = t.3;
+                        p2 = p3;
+                        d01 = true;
+                        d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
                     }
                 } else {
-                    // just need to promote middle node and we can avoid going further
-                    self.a.get_inx_mut_unwrap_t(p1).rank = rank0.wrapping_add(1);
-                    return
+                    // we have reached the root
+                    self.root = t.3;
+                    break
                 }
-            } else {
-                // no need to do anything
-                return
             }
         }
     }
@@ -609,6 +614,10 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
         Some(p_new)
     }
+
+    // when removing a node in the middle of the tree, its place in the tree is
+    // replaced by the immediately prev node which will either be a rank 1 or 0
+    // node, and we can do the bottom-up inverse of insertion pub fn remove
 
     /// Replaces the `V` pointed to by `p` with `new`, returns the
     /// old `V`, and keeps the internal generation counter as-is so that
@@ -776,15 +785,15 @@ impl<P: Ptr, K: Ord + Clone + fmt::Debug, V: Clone + fmt::Debug> OrdArena<P, K, 
             let n = self.a.get(p).unwrap();
             writeln!(
                 s,
-                "(inx: {:?}, k: {:?}, v: {:?}, p_tree0: {:?}, p_back: {:?}, p_tree1: {:?}, rank: \
-                 {:?})",
+                "(inx: {:2?}, k: {:3?}, v: {:3?}, rank: {:2?}, p_back: {:2?}, p_tree0: {:2?}, \
+                 p_tree1: {:2?})",
                 p.inx(),
                 n.k,
                 n.v,
-                n.p_tree0,
+                n.rank,
                 n.p_back,
+                n.p_tree0,
                 n.p_tree1,
-                n.rank
             )
             .unwrap();
 
