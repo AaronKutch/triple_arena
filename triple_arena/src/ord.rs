@@ -1,5 +1,5 @@
 use core::{
-    cmp::{max, Ordering},
+    cmp::{max, min, Ordering},
     fmt, mem,
 };
 
@@ -381,7 +381,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 // or a previous loop, it did not introduce another rank violation
                 break
             } else {
-
                 // Check the sibling of n1 to see if we can promote n2 and avoid a restructure.
                 // This isn't just an optimization, a general case restructure requires the
                 // sibling of n1 to be 2 ranks below n2 or else the restructure may introduce
@@ -497,7 +496,11 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
     }
 
-    /// Inserts key `k` and an associated value `v` into `self` and returns a `Ptr` to it. If the inserted key is equal to one or more keys already contained in `self`, the inserted key is inserted in a `Link::prev` position to all the equal keys. Future calls to `self.find_key` with an equal `k` could find any of the equal keys.
+    /// Inserts key `k` and an associated value `v` into `self` and returns a
+    /// `Ptr` to it. If the inserted key is equal to one or more keys already
+    /// contained in `self`, the inserted key is inserted in a `Link::prev`
+    /// position to all the equal keys. Future calls to `self.find_key` with an
+    /// equal `k` could find any of the equal keys.
     pub fn insert_nonhereditary(&mut self, k: K, v: V) -> P {
         let p = match self.raw_insert(k, v, true) {
             Ok(p) => p,
@@ -639,9 +642,10 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             self.last = Link::prev(&link).unwrap().inx();
         }
         let (old_back, old_tree0, old_tree1, old_rank, p_replace) = if link.rank > 1 {
-            // when removing a node in the middle of the tree, its place in the tree is
+            // when removing an interior node of the tree, its place in the tree is
             // replaced by a similar node which must be either be a rank 1 or 0
-            // node
+            // node, we later have to handle the rebalancing from the shifted removal point
+            // on the leaves
             let p_replace = if let Some(prev) = Link::prev(&link) {
                 prev.inx()
             } else {
@@ -673,7 +677,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             old
         } else {
             if link.p_back.is_none() {
-                // must have been a two or three node tree, go ahead and special case restructure
+                // must have been a two or three node tree, go ahead and special case
+                // restructure
                 if let Some(next) = Link::next(&link) {
                     let next = next.inx();
                     let x = self.a.get_inx_mut_unwrap_t(next);
@@ -713,7 +718,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         };
 
         let mut p0 = if old_rank == 1 {
-            // if the old removed tree position was rank 1, there is one rank 0 child that needs to be reconnected
+            // if the old removed tree position was rank 1, there is one rank 0 child that
+            // needs to be reconnected
             let child = if let Some(p_tree0) = old_tree0 {
                 self.a.get_inx_mut_unwrap_t(p_tree0).p_back = old_back;
                 p_tree0
@@ -752,7 +758,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         // rebalance starting from `p0`
         let n0 = self.a.get_inx_unwrap(p0);
         let (n1, mut p1) = if let Some(p1) = n0.p_back {
-            //
+            // the first case in the loop handles rank differences being too large
             (self.a.get_inx_unwrap(p1), p1)
         } else {
             return Some((link.t.k, link.t.v))
@@ -763,20 +769,137 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let n1 = self.a.get_inx_unwrap(p1);
             let p2 = n1.p_back;
 
+            // For removal rebalancing, we want to either demote `n1` by a single rank (we
+            // do not want to demote more than we have to, otherwise more than 2
+            // restructures may be needed), or we do a restructure that can preserve the
+            // rank of `n1`.
+
+            // We may have to look at the sibling of `n0` which we will denote `s0`, the
+            // children of `s0` which are `a` and `b` (of which `a` is in the middle), and
+            // the children of `a` which are `c` and `d`
             let rank0 = n0.rank;
             let rank1 = n1.rank;
             if rank0.wrapping_add(2) < rank1 {
                 // check sibling to see if we can demote n1
-                let p_sibling0 = if d01 { n1.p_tree0 } else { n1.p_tree1 };
-                if let Some(p_sibling0) = p_sibling0 {
-                    if self.a.get_inx_unwrap(p_sibling0).rank.wrapping_add(2) == rank1 {
-                        self.a.get_inx_mut_unwrap_t(p1).rank = rank0.wrapping_add(2);
+                let p_s0 = if d01 { n1.p_tree0 } else { n1.p_tree1 };
+                let p_s0 = p_s0.unwrap();
+                let s0 = self.a.get_inx_unwrap(p_s0);
+                let rank_s0 = s0.rank;
+                if rank_s0.wrapping_add(2) == rank1 {
+                    // demote `n1`
+                    self.a.get_inx_mut_unwrap_t(p1).rank = rank0.wrapping_add(2);
+                    if let Some(p2) = p2 {
                         // convey up the tree
                         p0 = p1;
+                        p1 = p2;
                         d01 = self.a.get_inx_unwrap(p1).p_tree1 == Some(p0);
                         continue
+                    } else {
+                        break
                     }
                 }
+                // Check children of `s0` to see if we can demote `n1` and `s0` at the same time
+                // and prevent a rebalance.
+                let (p_a, p_b) = if d01 {
+                    (s0.p_tree1, s0.p_tree0)
+                } else {
+                    (s0.p_tree0, s0.p_tree1)
+                };
+                let rank_a = if let Some(p_a) = p_a {
+                    self.a.get_inx_unwrap(p_a).rank
+                } else {
+                    0
+                };
+                let rank_b = if let Some(p_b) = p_b {
+                    self.a.get_inx_unwrap(p_b).rank
+                } else {
+                    0
+                };
+                if max(rank_a, rank_b).wrapping_add(1) < rank_s0 {
+                    // demote `n1` and `s0`
+                    self.a.get_inx_mut_unwrap_t(p_s0).rank = rank0.wrapping_add(1);
+                    self.a.get_inx_mut_unwrap_t(p1).rank = rank0.wrapping_add(2);
+                    if let Some(p2) = p2 {
+                        // convey up the tree
+                        p0 = p1;
+                        p1 = p2;
+                        d01 = self.a.get_inx_unwrap(p1).p_tree1 == Some(p0);
+                        continue
+                    } else {
+                        break
+                    }
+                }
+                // If `b` has a high enough rank we can do a 6 edge restructure
+                if rank_b.wrapping_add(1) == rank_s0 {
+                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    n1.rank = rank0.wrapping_add(2);
+                    n1.p_back = Some(p_s0);
+                    if d01 {
+                        n1.p_tree0 = p_a;
+                    } else {
+                        n1.p_tree1 = p_a;
+                    }
+                    if let Some(p_a) = p_a {
+                        let a = self.a.get_inx_mut_unwrap_t(p_a);
+                        a.p_back = Some(p1);
+                    }
+                    let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                    s0.rank = rank0.wrapping_add(3);
+                    s0.p_back = p2;
+                    if d01 {
+                        s0.p_tree0 = p_b;
+                        s0.p_tree1 = Some(p1);
+                    } else {
+                        s0.p_tree0 = Some(p1);
+                        s0.p_tree1 = p_b;
+                    }
+                    // we can break since the rank of `a` is equal to the replaced `n1`
+                    break
+                }
+                // else we need a 8 edge restructure, using the children of a0 which we will
+                // call `b0` and `b1`
+                let p_a = p_a.unwrap();
+                let a = self.a.get_inx_unwrap(p_a);
+                let p_c = a.p_tree0;
+                let p_d = a.p_tree1;
+                let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                n1.rank = rank0.wrapping_add(1);
+                n1.p_back = Some(p_s0);
+                if d01 {
+                    n1.p_tree0 = p_c;
+                } else {
+                    n1.p_tree1 = p_c;
+                }
+                if let Some(p_c) = p_c {
+                    self.a.get_inx_mut_unwrap_t(p_c).p_back = Some(p1);
+                }
+                let a = self.a.get_inx_mut_unwrap_t(p_a);
+                a.rank = rank0.wrapping_add(3);
+                a.p_back = p2;
+                if d01 {
+                    a.p_tree0 = Some(p_s0);
+                    a.p_tree1 = Some(p1);
+                } else {
+                    a.p_tree0 = Some(p1);
+                    a.p_tree1 = Some(p_s0);
+                }
+                if let Some(p_d) = p_d {
+                    self.a.get_inx_mut_unwrap_t(p_d).p_back = Some(p1);
+                }
+                let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                s0.rank = rank0.wrapping_add(1);
+                s0.p_back = Some(p_a);
+                if d01 {
+                    s0.p_tree0 = p_b;
+                    s0.p_tree1 = p_d;
+                } else {
+                    s0.p_tree0 = p_d;
+                    s0.p_tree1 = p_b;
+                }
+                if let Some(p_b) = p_b {
+                    self.a.get_inx_mut_unwrap_t(p_b).p_back = Some(p_s0);
+                }
+                break
             } else {
                 break
             }
@@ -915,15 +1038,27 @@ impl<P: Ptr, K: Ord + Clone + fmt::Debug, V: Clone + fmt::Debug> OrdArena<P, K, 
             }
 
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().3 {
-                let gen = self.a.get_ignore_gen(tmp.inx()).map(|x| x.0).unwrap_or(P::Gen::one());
+                let gen = self
+                    .a
+                    .get_ignore_gen(tmp.inx())
+                    .map(|x| x.0)
+                    .unwrap_or(P::Gen::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), gen);
             }
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().4 {
-                let gen = self.a.get_ignore_gen(tmp.inx()).map(|x| x.0).unwrap_or(P::Gen::one());
+                let gen = self
+                    .a
+                    .get_ignore_gen(tmp.inx())
+                    .map(|x| x.0)
+                    .unwrap_or(P::Gen::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), gen);
             }
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().5 {
-                let gen = self.a.get_ignore_gen(tmp.inx()).map(|x| x.0).unwrap_or(P::Gen::one());
+                let gen = self
+                    .a
+                    .get_ignore_gen(tmp.inx())
+                    .map(|x| x.0)
+                    .unwrap_or(P::Gen::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), gen);
             }
 
@@ -938,7 +1073,13 @@ impl<P: Ptr, K: Ord + Clone + fmt::Debug, V: Clone + fmt::Debug> OrdArena<P, K, 
         writeln!(s, "root: {:?}", self.root).unwrap();
         writeln!(s, "first: {:?}", self.first).unwrap();
         writeln!(s, "last: {:?}", self.last).unwrap();
-        let init = Ptr::_from_raw(self.first, self.a.get_ignore_gen(self.first).map(|x| x.0).unwrap_or(P::Gen::one()));
+        let init = Ptr::_from_raw(
+            self.first,
+            self.a
+                .get_ignore_gen(self.first)
+                .map(|x| x.0)
+                .unwrap_or(P::Gen::one()),
+        );
         let mut p = init;
         let mut switch = false;
         let mut stop = !self.a.contains(init);
