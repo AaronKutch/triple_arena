@@ -138,6 +138,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     if (parent.p_tree0 != Some(p.inx())) && (parent.p_tree1 != Some(p.inx())) {
                         return Err("broken tree")
                     }
+                } else {
+                    return Err("broken tree")
                 }
             } else {
                 // should be root, if this passes it implies there is only one common root
@@ -641,6 +643,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         } else if Link::next(&link).is_none() {
             self.last = Link::prev(&link).unwrap().inx();
         }
+
+        // handle interior nodes
         let (old_back, old_tree0, old_tree1, old_rank, p_replace) = if link.rank > 1 {
             // when removing an interior node of the tree, its place in the tree is
             // replaced by a similar node which must be either be a rank 1 or 0
@@ -717,7 +721,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             (link.p_back, link.p_tree0, link.p_tree1, link.rank, p)
         };
 
-        let mut p0 = if old_rank == 1 {
+        // handle the links around the removed or displaced exterior node
+        let (mut p0, mut p1) = if old_rank == 1 {
             // if the old removed tree position was rank 1, there is one rank 0 child that
             // needs to be reconnected
             let child = if let Some(p_tree0) = old_tree0 {
@@ -736,34 +741,96 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     x.p_tree1 = Some(child);
                 }
             }
-            child
+            (child, old_back.unwrap())
         } else {
-            // fix that there is no more child
-            let p_back = old_back.unwrap();
-            let x = self.a.get_inx_mut_unwrap_t(p_back);
-            if x.p_tree0 == Some(p_replace) {
-                x.p_tree0 = None;
+            // removed a rank 0, check if an interior node has been exposed
+            let p1 = old_back.unwrap();
+            let n1 = self.a.get_inx_mut_unwrap_t(p1);
+            let p2 = n1.p_back;
+
+            let d01 = n1.p_tree1 == Some(p_replace);
+            if d01 {
+                n1.p_tree1 = None;
             } else {
-                x.p_tree1 = None;
+                n1.p_tree0 = None;
             }
-            if x.p_tree0.is_none() && x.p_tree1.is_none() {
-                x.rank = 0;
-            } else if x.p_tree0.is_none() != x.p_tree1.is_none() {
-                // make sure the rank is 1 and not 2
-                x.rank = 1;
+            let p_s0 = if d01 { n1.p_tree0 } else { n1.p_tree1 };
+            if n1.rank == 1 {
+                if p_s0.is_none() {
+                    // need to demote a rank 1 to rank 0
+                    n1.rank = 0;
+                }
+                if let Some(p2) = p2 {
+                    (p1, p2)
+                } else {
+                    return Some((link.t.k, link.t.v))
+                }
+            } else {
+                // If a rank 2 node is exposed to the exterior then we must perform a special
+                // case restructure since the loop is expecting rank differences of 3.
+
+                // Because it is rank 2, there must be a sibling of rank 1.
+                let p_s0 = p_s0.unwrap();
+                let s0 = self.a.get_inx_unwrap(p_s0);
+                let p_a = if d01 { s0.p_tree1 } else { s0.p_tree0 };
+                if let Some(p_a) = p_a {
+                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    n1.rank = 0;
+                    n1.p_back = Some(p_a);
+                    if d01 {
+                        n1.p_tree0 = None;
+                    } else {
+                        n1.p_tree1 = None;
+                    }
+                    let a = self.a.get_inx_mut_unwrap_t(p_a);
+                    a.rank = 2;
+                    a.p_back = p2;
+                    if p2.is_none() {
+                        self.root = p_a;
+                    }
+                    if d01 {
+                        a.p_tree0 = Some(p_s0);
+                        a.p_tree1 = Some(p1);
+                    } else {
+                        a.p_tree0 = Some(p1);
+                        a.p_tree1 = Some(p_s0);
+                    }
+                    let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                    s0.p_back = Some(p_a);
+                    if d01 {
+                        s0.p_tree1 = None;
+                    } else {
+                        s0.p_tree0 = None;
+                    }
+                } else {
+                    // must be at least one rank 0 node in the subtree
+                    let p_b = s0.p_tree1.unwrap();
+                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    n1.rank = 0;
+                    n1.p_back = Some(p_s0);
+                    if d01 {
+                        n1.p_tree0 = None;
+                    } else {
+                        n1.p_tree1 = None;
+                    }
+                    let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                    s0.p_back = p2;
+                    if p2.is_none() {
+                        self.root = p_s0;
+                    }
+                    if d01 {
+                        s0.p_tree0 = Some(p1);
+                    } else {
+                        s0.p_tree1 = Some(p_b);
+                    }
+                    let b = self.a.get_inx_mut_unwrap_t(p_b);
+                    b.p_back = Some(p_s0);
+                }
+                return Some((link.t.k, link.t.v))
             }
-            p_back
         };
 
-        // rebalance starting from `p0`
-        let n0 = self.a.get_inx_unwrap(p0);
-        let (n1, mut p1) = if let Some(p1) = n0.p_back {
-            // the first case in the loop handles rank differences being too large
-            (self.a.get_inx_unwrap(p1), p1)
-        } else {
-            return Some((link.t.k, link.t.v))
-        };
-        let mut d01 = n1.p_tree1 == Some(p0);
+        let mut d01 = self.a.get_inx_unwrap(p1).p_tree1 == Some(p0);
         loop {
             let n0 = self.a.get_inx_unwrap(p0);
             let n1 = self.a.get_inx_unwrap(p1);
