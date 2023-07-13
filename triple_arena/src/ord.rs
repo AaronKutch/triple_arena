@@ -22,13 +22,14 @@ use crate::{Arena, ChainArena, Link, Ptr, PtrGen, PtrInx};
 pub(crate) struct Node<P: Ptr, K: Ord, V> {
     k: K,
     v: V,
-    // Pointer back to parent. Is invalid if this is the root node as determined by the `root` of
-    // the arena
+    // Pointer back to parent
     p_back: Option<P::Inx>,
+    // Pointer to left subtree
     p_tree0: Option<P::Inx>,
+    // Pointer to right subtree
     p_tree1: Option<P::Inx>,
-    // Allows up to a depth of 256, we do not have to worry about overflow.
-    // `rank == 0` is a leaf node.
+    // we do not have to worry about overflow because the worst case is that the root rank is
+    // 2*lb(len), meaning that even i128::MAX could not overflow this.
     rank: u8,
 }
 
@@ -654,8 +655,16 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let old = (x.p_back, x.p_tree0, x.p_tree1, x.rank, p_replace);
             let (p_back, p_tree0, p_tree1) = (link.p_back, link.p_tree0, link.p_tree1);
             x.p_back = p_back;
-            x.p_tree0 = p_tree0;
-            x.p_tree1 = p_tree1;
+            x.p_tree0 = if p_tree0 != Some(p_replace) {
+                p_tree0
+            } else {
+                old.1
+            };
+            x.p_tree1 = if p_tree1 != Some(p_replace) {
+                p_tree1
+            } else {
+                old.2
+            };
             x.rank = link.rank;
             if let Some(p_back) = p_back {
                 let n = self.a.get_inx_mut_unwrap_t(p_back);
@@ -668,10 +677,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 self.root = p_replace;
             }
             if let Some(p_tree0) = p_tree0 {
-                self.a.get_inx_mut_unwrap_t(p_tree0).p_back = Some(p_replace);
+                if p_tree0 != p_replace {
+                    self.a.get_inx_mut_unwrap_t(p_tree0).p_back = Some(p_replace);
+                }
             }
             if let Some(p_tree1) = p_tree1 {
-                self.a.get_inx_mut_unwrap_t(p_tree1).p_back = Some(p_replace);
+                if p_tree1 != p_replace {
+                    self.a.get_inx_mut_unwrap_t(p_tree1).p_back = Some(p_replace);
+                }
             }
             old
         } else {
@@ -706,28 +719,33 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let p2 = d_back;
             let (p0, p1) = if let Some(p_b) = d_tree1 {
                 if let Some(p0) = d_tree0 {
-                    self.a.get_inx_mut_unwrap_t(p0).p_back = Some(p_b);
+                    self.a.get_inx_mut_unwrap_t(p0).p_back =
+                        if p2 != Some(p) { Some(p_b) } else { Some(d_p) };
                 }
                 let b = self.a.get_inx_mut_unwrap_t(p_b);
                 b.rank = rank;
-                b.p_back = p2;
+                b.p_back = if p2 != Some(p) { p2 } else { Some(d_p) };
                 b.p_tree0 = d_tree0;
                 (d_tree0, p_b)
             } else {
                 let p_a = d_tree0.unwrap();
                 let a = self.a.get_inx_mut_unwrap_t(p_a);
                 a.rank = rank;
-                a.p_back = p2;
+                a.p_back = if p2 != Some(p) { p2 } else { Some(d_p) };
                 a.p_tree1 = d_tree1;
                 (None, p_a)
             };
             if let Some(p2) = p2 {
-                let n2 = self.a.get_inx_mut_unwrap_t(p2);
-                if n2.p_tree0 == Some(d_p) {
-                    n2.p_tree0 = Some(p1);
-                } else {
-                    n2.p_tree1 = Some(p1);
+                if p2 != p {
+                    let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                    if n2.p_tree0 == Some(d_p) {
+                        n2.p_tree0 = Some(p1);
+                    } else {
+                        n2.p_tree1 = Some(p1);
+                    }
                 }
+            } else {
+                self.root = p1;
             }
             (p0, p1)
         };
