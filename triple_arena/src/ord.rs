@@ -821,15 +821,22 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     let a = self.a.get_inx_mut_unwrap_t(p_a);
                     a.rank = rank1;
                     a.p_back = p2;
-                    if p2.is_none() {
-                        self.root = p_a;
-                    }
                     if d01 {
                         a.p_tree0 = Some(p_s0);
                         a.p_tree1 = Some(p1);
                     } else {
                         a.p_tree0 = Some(p1);
                         a.p_tree1 = Some(p_s0);
+                    }
+                    if let Some(p2) = p2 {
+                        let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                        if n2.p_tree1 == Some(p1) {
+                            n2.p_tree1 = Some(p_a);
+                        } else {
+                            n2.p_tree0 = Some(p_a);
+                        }
+                    } else {
+                        self.root = p_a;
                     }
                     let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
                     s0.rank = 0;
