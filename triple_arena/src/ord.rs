@@ -398,17 +398,37 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             //     /   \
             //    /     \
             // n0 (1)  s0 (0,1)
-            //
-            //      ==>
-            //
-            //   ? (2,3) or (3,4)
-            //         /
-            //        /
-            //     n1 (2)
-            //     /   \
-            //    /     \
-            // n0 (1)  s0 (0,1)
-            self.a.get_inx_mut_unwrap_t(p1).rank = 2;
+
+            let n1 = self.a.get_inx_mut_unwrap_t(p1);
+            if n1.rank == 2 {
+                //       ? (3,4)
+                //         /
+                //        /
+                //     n1 (2)
+                //     /   \
+                //    /     \
+                // n0 (1)  s0 (0,1)
+
+                // this isn't just an optimization, later branches need to make sure that the
+                // rank of `s0` has a rank difference of 2 below `n1`
+                return
+            } else {
+                //      ? (2,3)
+                //        /
+                //       /
+                //     n1 (1)
+                //     /   \
+                //    /     \
+                // n0 (1)  s0 (0)
+                n1.rank = 2;
+                //      ? (2,3)
+                //        /
+                //       /
+                //     n1 (2)
+                //     /   \
+                //    /     \
+                // n0 (1)  s0 (0)
+            }
             (self.a.get_inx_unwrap(p1), p1)
         } else {
             // single node tree, inserted node was inserted as rank 1 which is immediately
@@ -419,15 +439,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         };
         let mut d01 = n1.p_tree1 == Some(p0);
         let (n2, mut p2) = if let Some(p2) = n1.p_back {
-            // the loop will handle `rank1 == rank2 == 2` rank violations
-
-            //  n2 (2,3) or (3,4)
+            //      n2 (2,3)
             //        /
             //       /
             //     n1 (2)
             //    /    \
             //   /      \
-            // n0 (1)  s0 (0,1)
+            // n0 (1)  s0 (0)
+            if d01 {}
             (self.a.get_inx_unwrap(p2), p2)
         } else {
             // height 2 tree, ranks are guaranteed correct because the root is at rank 2
@@ -435,28 +454,24 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             //     n1 (2)
             //    /    \
             //   /      \
-            // n0 (1)  s0 (0,1)
+            // n0 (1)  s0 (0)
             return
         };
         let mut d12 = n2.p_tree1 == Some(p1);
         loop {
-            // the prelude and any previous iterations of this loop must bring us to the
-            // situation where `n0` has rank `r` and
+            // the prelude and any previous iterations of this loop must lead the state to
+            // match with
 
-            // n2 (r+1,r+2) or (r+2,r+3)
+            //    n2 (r+1,r+2)
             //        /
             //       /
             //    n1 (r+1)
             //    /     \
             //   /       \
-            // n0 (r)   s0 (0,r)
+            // n0 (r)   s0 (r-1)
             //
-            // (also the versions with `d01` and `d12` alternating, but that only becomes
+            // (also `d01` and `d12` can alternate, but that only becomes
             // important during restructuring)
-            //
-            // (also note that `s0` can be `r-1 == 0` iff we came from the prelude with `s0`
-            // as a `None` child and `n1` is rank 2, hence why `0` is included
-            // in possible ranks)
             let n0 = self.a.get_inx_unwrap(p0);
             let n1 = self.a.get_inx_unwrap(p1);
             let n2 = self.a.get_inx_unwrap(p2);
@@ -465,22 +480,25 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let rank1 = n1.rank;
             let rank2 = n2.rank;
             if rank1 < rank2 {
-                //   n2 (r+2,r+3)
+                //      n2 (r+2)
                 //        /
                 //       /
                 //    n1 (r+1)
                 //    /     \
                 //   /       \
-                // n0 (r)   s0 (0,r)
+                // n0 (r)   s0 (r-1)
                 break
             } else {
+                //           ? (r+2,r+3)
+                //             /
+                //            /
                 //         n2 (r+1)
                 //        /       \
                 //       /         \
                 //    n1 (r+1)   s1 (r-1,r)
-                //     /    \
-                //    /      \
-                // n0 (r)   s0 (0,r)
+                //    /     \
+                //   /       \
+                // n0 (r)   s0 (r-1)
 
                 // Check the sibling of n1 to see if we can promote n2 and avoid a restructure.
                 // This isn't just an optimization, a general case restructure requires the
@@ -496,20 +514,58 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     // if there is a rank difference of 1, we can promote the shared `n2` and avoid
                     // a violation with the sibling
 
-                    //      n2 (r+1)
-                    //     /      \
-                    //    /        \
-                    // n1 (r+1)   s1 (r)
+                    //           ? (r+2,r+3)
+                    //             /
+                    //            /
+                    //         n2 (r+1)
+                    //        /       \
+                    //       /         \
+                    //    n1 (r+1)   s1 (r)
+                    //    /     \
+                    //   /       \
+                    // n0 (r)   s0 (r-1)
                     //
-                    //       <=>
-                    //
-                    //      n2 (r+2)
-                    //     /      \
-                    //    /        \
-                    // n1 (r+1)   s1 (r)
                     self.a.get_inx_mut_unwrap_t(p2).rank = rank1.wrapping_add(1);
+                    //
+                    //           ? (r+2,r+3)
+                    //             /
+                    //            /
+                    //         n2 (r+2)
+                    //        /       \
+                    //       /         \
+                    //    n1 (r+1)   s1 (r)
+                    //    /     \
+                    //   /       \
+                    // n0 (r)   s0 (r-1)
                     if let Some(p3) = p3 {
                         // convey up the tree
+
+                        //           n3 (r+2,r+3)
+                        //             /
+                        //            /
+                        //         n2 (r+2)
+                        //        /       \
+                        //       /         \
+                        //    n1 (r+1)   s1 (r)
+                        //    /     \
+                        //   /       \
+                        // n0 (r)   s0 (r-1)
+                        //
+                        //   ==> (recode for next iteration)
+                        //
+                        //           n2 (r+1,r+2)
+                        //             /
+                        //            /
+                        //         n1 (r+1)
+                        //        /       \
+                        //       /         \
+                        //    n0 (r)     s0 (r-1)
+                        //    /     \
+                        //   /       \
+                        //  * *
+                        //
+                        // which matches with loop entry assumption
+
                         p0 = p1;
                         p1 = p2;
                         p2 = p3;
@@ -517,18 +573,29 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
                         continue
                     } else {
-                        // n2 was the root
+                        // n2 was the root, the rest of the tree is ok
+
+                        //         n2 (r+2)
+                        //        /       \
+                        //       /         \
+                        //    n1 (r+1)   s1 (r)
+                        //    /     \
+                        //   /       \
+                        // n0 (r)   s0 (r-1)
                         break
                     }
                 }
 
+                //           ? (r+2,r+3)
+                //             /
+                //            /
                 //         n2 (r+1)
-                //        /     \
-                //       /       \
+                //        /       \
+                //       /         \
                 //    n1 (r+1)   s1 (r-1)
-                //   /    \
-                //  /      \
-                // n0 (r)  s0 (0,r)
+                //    /     \
+                //   /       \
+                // n0 (r)   s0 (r-1)
 
                 // now the directions `d10` and `d12` and the order of subtrees will matter for
                 // restructuring
