@@ -424,7 +424,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         };
         let mut d12 = n2.p_tree1 == Some(p1);
         loop {
-            // the prelude and any previous iterations of this loop must bring us to the situation where `n0` has rank `r` and
+            // the prelude and any previous iterations of this loop must bring us to the
+            // situation where `n0` has rank `r` and
 
             //          -----n2 (r+1) or (r+2)
             //         /       \
@@ -464,9 +465,12 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 let p_s1 = if d12 { n2.p_tree0 } else { n2.p_tree1 };
                 let rank_s1 = if let Some(p_s1) = p_s1 {
                     self.a.get_inx_unwrap(p_s1).rank
-                } else {0};
+                } else {
+                    0
+                };
                 if rank_s1.wrapping_add(1) == rank2 {
-                    // if there is a rank difference of 1, we can promote the shared `n2` and avoid a violation with the sibling
+                    // if there is a rank difference of 1, we can promote the shared `n2` and avoid
+                    // a violation with the sibling
 
                     //      n2 (r+1)
                     //     /    \
