@@ -477,6 +477,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let n2 = self.a.get_inx_unwrap(p2);
             let p3 = n2.p_back;
 
+            let rank0 = n0.rank;
             let rank1 = n1.rank;
             let rank2 = n2.rank;
             if rank1 < rank2 {
@@ -622,116 +623,155 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     //             /    \
                     //            /      \
                     //          s0 (r-1) s1 (r-1)
-                }
 
-                // alternating case
-                //
-                // s0 n1 a  n0 b n2 s1
-                //
-                //        -------n2 (r+1)
-                //       /         \
-                //    n1 (r+1)      s1 (r-1)
-                //     /  \
-                //    /    \
-                //   /      \
-                // s0 (r-1) n0 (r)
-                //         / \
-                //        /   \
-                //       a     b
-                //
-                // s0 n1 a  n0 b n2 s1
-                //
-                //       ---n0 (r+1)
-                //      /      \
-                //     /        \
-                //    n1 (r)     n2 (r)
-                //   / \         / \
-                //  /   \       /   \
-                // s0    a     b    s1 (r-2,r-1)
-
-                // some pointer resets could be avoided with higher level branching, but I think
-                // that having a single code path with as few conditionals as possible is better
-                let t: (
-                    Option<P::Inx>,
-                    P::Inx,
-                    Option<P::Inx>,
-                    P::Inx,
-                    Option<P::Inx>,
-                    P::Inx,
-                    Option<P::Inx>,
-                ) = match (d12, d01) {
-                    (false, false) => (n0.p_tree0, p0, n0.p_tree1, p1, n1.p_tree1, p2, n2.p_tree1),
-                    (false, true) => (n1.p_tree0, p1, n0.p_tree0, p0, n0.p_tree1, p2, n2.p_tree1),
-                    (true, false) => (n2.p_tree0, p2, n0.p_tree0, p0, n0.p_tree1, p1, n1.p_tree1),
-                    (true, true) => (n2.p_tree0, p2, n1.p_tree0, p1, n0.p_tree0, p0, n0.p_tree1),
-                };
-                // calculate ranks and fix external pointers
-                if let Some(p) = p3 {
-                    let ext = self.a.get_inx_mut_unwrap_t(p);
-                    if ext.p_tree1 == Some(p2) {
-                        ext.p_tree1 = Some(t.3);
+                    if d01 {
+                        // reversed version
+                        let p_s0 = n2.p_tree0;
+                        let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                        n1.p_tree0 = Some(p2);
+                        n1.p_back = p3;
+                        if let Some(p_s0) = p_s0 {
+                            let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                            s0.p_back = Some(p2);
+                        }
+                        let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                        n2.p_tree0 = p_s1;
+                        n2.p_back = Some(p1);
+                        n2.p_tree1 = p_s0;
+                        n2.rank = rank0;
+                        if let Some(p3) = p3 {
+                            p0 = p2;
+                            p2 = p3;
+                            d01 = false;
+                            d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                            continue
+                        } else {
+                            // we have reached the root
+                            self.root = p1;
+                            break
+                        }
                     } else {
-                        ext.p_tree0 = Some(t.3);
-                    }
-                }
-                let mut rank_x0 = 0;
-                if let Some(p) = t.0 {
-                    let ext = self.a.get_inx_mut_unwrap_t(p);
-                    rank_x0 = ext.rank.wrapping_add(1);
-                    ext.p_back = Some(t.1);
-                }
-                if let Some(p) = t.2 {
-                    let ext = self.a.get_inx_mut_unwrap_t(p);
-                    rank_x0 = max(rank_x0, ext.rank.wrapping_add(1));
-                    ext.p_back = Some(t.1);
-                }
-                let mut rank_x1 = 0;
-                if let Some(p) = t.4 {
-                    let ext = self.a.get_inx_mut_unwrap_t(p);
-                    rank_x1 = ext.rank.wrapping_add(1);
-                    ext.p_back = Some(t.5);
-                }
-                if let Some(p) = t.6 {
-                    let ext = self.a.get_inx_mut_unwrap_t(p);
-                    rank_x1 = max(rank_x1, ext.rank.wrapping_add(1));
-                    ext.p_back = Some(t.5);
-                }
-                // restructure
-                let x0 = self.a.get_inx_mut_unwrap_t(t.1);
-                x0.p_tree0 = t.0;
-                x0.p_back = Some(t.3);
-                x0.p_tree1 = t.2;
-                x0.rank = rank_x0;
-                let x1 = self.a.get_inx_mut_unwrap_t(t.3);
-                x1.p_tree0 = Some(t.1);
-                x1.p_back = p3;
-                x1.p_tree1 = Some(t.5);
-                x1.rank = max(rank_x0, rank_x1).wrapping_add(1);
-                let x2 = self.a.get_inx_mut_unwrap_t(t.5);
-                x2.p_tree0 = t.4;
-                x2.p_back = Some(t.3);
-                x2.p_tree1 = t.6;
-                x2.rank = rank_x1;
-
-                if let Some(p3) = p3 {
-                    // orient around minimum rank side
-                    if rank_x0 <= rank_x1 {
-                        p0 = t.1;
-                        p1 = t.3;
-                        p2 = p3;
-                        d01 = false;
-                        d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
-                    } else {
-                        p0 = t.5;
-                        p1 = t.3;
-                        p2 = p3;
-                        d01 = true;
-                        d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                        let p_s0 = n2.p_tree0;
+                        let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                        n1.p_back = p3;
+                        n1.p_tree1 = Some(p2);
+                        if let Some(p_s0) = p_s0 {
+                            let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                            s0.p_back = Some(p2);
+                        }
+                        let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                        n2.p_tree0 = p_s0;
+                        n2.p_back = Some(p1);
+                        n2.p_tree1 = p_s1;
+                        n2.rank = rank0;
+                        if let Some(p3) = p3 {
+                            p0 = p2;
+                            p2 = p3;
+                            d01 = true;
+                            d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                            continue
+                        } else {
+                            // we have reached the root
+                            self.root = p1;
+                            break
+                        }
                     }
                 } else {
-                    // we have reached the root
-                    self.root = t.3;
-                    break
+                    // alternating case
+                    //
+                    // s0 n1  a  n0 b n2 s1
+                    //
+                    //         -------n2 (r+1)
+                    //        /         \
+                    //       /           \
+                    //    n1 (r+1)       s1 (r-1)
+                    //    /     \
+                    //   /       \
+                    // s0 (r-1)  n0 (r)
+                    //          / \
+                    //         /   \
+                    //        a     b
+                    //
+                    // s0 n1  a  n0 b n2 s1
+                    //
+                    //       ----n0 (r+1)
+                    //      /         \
+                    //     /           \
+                    //    n1 (r)      n2 (r)
+                    //   /  \         / \
+                    //  /    \       /   \
+                    // s0     a     b    s1 (r-1)
+
+                    if d01 {
+                        // reverse version
+                        let p_a = n0.p_tree0;
+                        let p_b = n0.p_tree1;
+                        let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                        n1.p_tree0 = p_b;
+                        n1.p_back = Some(p0);
+                        n1.rank = rank0;
+                        if let Some(p_a) = p_a {
+                            self.a.get_inx_mut_unwrap_t(p_a).p_back = Some(p2);
+                        }
+                        let n0 = self.a.get_inx_mut_unwrap_t(p0);
+                        n0.p_tree0 = Some(p2);
+                        n0.p_back = p3;
+                        n0.p_tree1 = Some(p1);
+                        n0.rank = rank1;
+                        if let Some(p_b) = p_b {
+                            self.a.get_inx_mut_unwrap_t(p_b).p_back = Some(p1);
+                        }
+                        let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                        n2.p_back = Some(p0);
+                        n2.p_tree1 = p_a;
+                        n2.rank = rank0;
+                        if let Some(p3) = p3 {
+                            p0 = p1;
+                            p1 = p2;
+                            p2 = p3;
+                            d01 = true;
+                            d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                            continue
+                        } else {
+                            // we have reached the root
+                            self.root = p0;
+                            break
+                        }
+                    } else {
+                        let p_a = n0.p_tree0;
+                        let p_b = n0.p_tree1;
+                        let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                        n1.p_back = Some(p0);
+                        n1.p_tree1 = p_a;
+                        n1.rank = rank0;
+                        if let Some(p_a) = p_a {
+                            self.a.get_inx_mut_unwrap_t(p_a).p_back = Some(p1);
+                        }
+                        let n0 = self.a.get_inx_mut_unwrap_t(p0);
+                        n0.p_tree0 = Some(p1);
+                        n0.p_back = p3;
+                        n0.p_tree1 = Some(p2);
+                        n0.rank = rank1;
+                        if let Some(p_b) = p_b {
+                            self.a.get_inx_mut_unwrap_t(p_b).p_back = Some(p2);
+                        }
+                        let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                        n2.p_back = Some(p0);
+                        n2.p_tree0 = p_b;
+                        n2.rank = rank0;
+                        if let Some(p3) = p3 {
+                            p0 = p1;
+                            p1 = p2;
+                            p2 = p3;
+                            d01 = false;
+                            d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                            continue
+                        } else {
+                            // we have reached the root
+                            self.root = p0;
+                            break
+                        }
+                    }
                 }
             }
         }
