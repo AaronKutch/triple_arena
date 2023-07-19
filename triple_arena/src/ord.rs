@@ -2,21 +2,34 @@ use core::{
     cmp::{max, Ordering},
     fmt, mem,
 };
+use std::cmp::min;
 
 use crate::{Arena, ChainArena, Link, Ptr, PtrGen, PtrInx};
 
 // The reason why the standard `BTreeMap` uses B-trees has to do with the
-// decision of allocating individual nodes. If we have the nodes on a single
-// arena, this problem goes away. I settled on implementing a WAVL tree on a
-// ChainArena, based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
+// decision of allocating individual nodes. If we use the right variation of
+// rank balanced tree implemented on a ChainArena, this problem goes away. This
+// is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
 // Sen, Siddhartha; Tarjan, Robert E. (2015).
-// The main difference I have made is that keys and values are stored on all
-// nodes of the tree. We keep the balancing property by keeping the invariants:
+//
+// Each key-value pair is one-to-one with a tree node pointer and rank group (in
+// contrast to some balanced trees which only store keys in the leaves or
+// effectively need extra indirection like B-Trees do), which means they can be
+// stored as one unit in an entry of an arena (we will call this unit just the
+// "node" from now on). We use a ChainArena with all the nodes ordered on a
+// single chain, which allows simple pointer following for fast iteration or for
+// skipping traversal when finding a neighbor for the displacement step in
+// removal. We keep the balancing property by keeping the invariants:
 //
 // 0. If a node has zero children, its rank is 0
 // 1. If a node has one child, its rank is 1
 // 2. If a node has two children, its rank difference from each child can only
 //    be 1 or 2.
+
+// TODO maybe we treat a `None` child as being rank 0, and relaxing the rules
+// around height 1 and 2 nodes to only have the rank 1 or 2 difference rule.
+// This would make common rebalancing conditions in the first few nodes to be
+// inserted avoidable, and allow for more cheap insert-remove loops
 
 #[derive(Clone)]
 pub(crate) struct Node<P: Ptr, K: Ord, V> {
@@ -31,19 +44,6 @@ pub(crate) struct Node<P: Ptr, K: Ord, V> {
     // we do not have to worry about overflow because the worst case is that the root rank is
     // 2*lb(len), meaning that even i128::MAX could not overflow this.
     rank: u8,
-}
-
-impl<P: Ptr, K: Ord, V> Node<P, K, V> {
-    fn new(k: K, v: V) -> Self {
-        Self {
-            k,
-            v,
-            p_back: None,
-            p_tree0: None,
-            p_tree1: None,
-            rank: 0,
-        }
-    }
 }
 
 /// An Ordered Arena with three parameters: a `P: Ptr` type that gives single
@@ -187,28 +187,25 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             }
 
             let node = &this.a.get(p).unwrap().t;
-            if node.p_tree0.is_none() && node.p_tree1.is_none() {
-                if node.rank != 0 {
-                    return Err("leaf is not rank 0")
-                }
-            } else if node.p_tree0.is_none() || node.p_tree1.is_none() {
-                // this along with the rank difference limit enforces that the tree must be
-                // balanced
-                if node.rank != 1 {
-                    return Err("node before external edge has rank not equal to 1")
-                }
+
+            let rank0 = if let Some(p_tree0) = node.p_tree0 {
+                this.a.get_inx_unwrap(p_tree0).rank
+            } else {
+                0
+            };
+            if node.rank <= rank0 {
+                return Err("rank difference is zero or negative")
             }
-            if let Some(p_back) = node.p_back {
-                let rank0 = node.rank;
-                let parent = this.a.get_ignore_gen(p_back).unwrap().1;
-                let rank1 = parent.rank;
-                if rank0 >= rank1 {
-                    return Err("rank difference is zero or negative")
-                }
-                let rank_diff = rank1.wrapping_sub(rank0);
-                if rank_diff > 2 {
-                    return Err("rank difference is greater than 2")
-                }
+            let rank1 = if let Some(p_tree1) = node.p_tree1 {
+                this.a.get_inx_unwrap(p_tree1).rank
+            } else {
+                0
+            };
+            if node.rank <= rank1 {
+                return Err("rank difference is zero or negative")
+            }
+            if node.rank > min(rank0, rank1).wrapping_add(2) {
+                return Err("rank difference is greater than 2")
             }
 
             this.a.next_ptr(&mut p, &mut b);
@@ -265,7 +262,16 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// nonhereditary case).
     pub fn raw_insert(&mut self, k: K, v: V, nonhereditary: bool) -> Result<P, (K, V)> {
         if self.a.is_empty() {
-            let p_new = self.a.insert_new(Node::new(k, v));
+            // we could choose to insert as rank 2 here, but the rebalancer ends up
+            // unconditionally promoting to rank 2 any leaf node
+            let p_new = self.a.insert_new(Node {
+                k,
+                v,
+                p_back: None,
+                p_tree0: None,
+                p_tree1: None,
+                rank: 1,
+            });
             self.first = p_new.inx();
             self.last = p_new.inx();
             self.root = p_new.inx();
@@ -282,8 +288,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         p = p_tree0
                     } else {
                         // insert new leaf
-                        let mut new_node = Node::new(k, v);
-                        new_node.p_back = Some(p);
+                        let new_node = Node {
+                            k,
+                            v,
+                            p_back: Some(p),
+                            p_tree0: None,
+                            p_tree1: None,
+                            rank: 1,
+                        };
                         if let Ok(p_new) = self.a.insert((None, Some(p_with_gen)), new_node) {
                             // fix tree pointer in leaf direction
                             self.a.get_ignore_gen_mut(p).unwrap().1.p_tree0 = Some(p_new.inx());
@@ -307,8 +319,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                             p = p_tree1
                         } else {
                             // go the Ordering::Less route
-                            let mut new_node = Node::new(k, v);
-                            new_node.p_back = Some(p);
+                            let new_node = Node {
+                                k,
+                                v,
+                                p_back: Some(p),
+                                p_tree0: None,
+                                p_tree1: None,
+                                rank: 1,
+                            };
                             if let Ok(p_new) = self.a.insert((None, Some(p_with_gen)), new_node) {
                                 self.a.get_ignore_gen_mut(p).unwrap().1.p_tree0 = Some(p_new.inx());
                                 if self.first == p {
@@ -328,8 +346,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     if let Some(p_tree1) = node.p_tree1 {
                         p = p_tree1
                     } else {
-                        let mut new_node = Node::new(k, v);
-                        new_node.p_back = Some(p);
+                        let new_node = Node {
+                            k,
+                            v,
+                            p_back: Some(p),
+                            p_tree0: None,
+                            p_tree1: None,
+                            rank: 1,
+                        };
                         if let Ok(p_new) = self.a.insert((Some(p_with_gen), None), new_node) {
                             self.a.get_ignore_gen_mut(p).unwrap().1.p_tree1 = Some(p_new.inx());
                             if self.last == p {
@@ -353,25 +377,63 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         let mut p0 = p;
         let n0 = self.a.get_inx_unwrap(p0);
         let (n1, mut p1) = if let Some(p1) = n0.p_back {
-            // Must promote so we maintain a loop invariant that n0 and n1 do not violate
-            // rank invariants. If there is a sibling then it must have rank 0 and thus we
-            // can unconditionally do this
-            self.a.get_inx_mut_unwrap_t(p1).rank = 1;
+            // in case `n1` was rank 1 we must promote it, the loop expects no rank
+            // violations at p1 and below (also, if it is rank 2 then it is within rank
+            // difference 2 of the `None` sibling to `n0`)
+
+            //     n1 (1)
+            //    /   \
+            //   /     \
+            // n0 (1)  s0 (0,1)
+            //
+            //     <=>
+            //
+            //     n1 (2)
+            //    /   \
+            //   /     \
+            // n0 (1)  s0 (0,1)
+            self.a.get_inx_mut_unwrap_t(p1).rank = 2;
             (self.a.get_inx_unwrap(p1), p1)
         } else {
-            // single node tree, inserted node was inserted as rank 0 which is immediately
+            // single node tree, inserted node was inserted as rank 1 which is immediately
             // correct
+
+            // n0 (1)
             return
         };
         let mut d01 = n1.p_tree1 == Some(p0);
         let (n2, mut p2) = if let Some(p2) = n1.p_back {
+            // the loop will handle `rank1 == rank2 == 2` rank violations
+
+            //         n2 (2,3)
+            //        /
+            //       /
+            //     n1 (2)
+            //    /   \
+            //   /     \
+            // n0 (1)  s0 (0,1)
             (self.a.get_inx_unwrap(p2), p2)
         } else {
-            // height 2 tree, rank has already been set to 1
+            // height 2 tree, ranks are guaranteed correct because the root is at rank 2
+
+            //     n1 (2)
+            //    /   \
+            //   /     \
+            // n0 (1)  s0 (0,1)
             return
         };
         let mut d12 = n2.p_tree1 == Some(p1);
         loop {
+            // the prelude and any previous iterations of this loop must bring us to the situation where `n0` has rank `r` and
+
+            //          -----n2 (r+1) or (r+2)
+            //         /       \
+            //        n1 (r+1)  s1 (r-1,r) or (r,r+1)
+            //       /\
+            //      /  \
+            //     /    \
+            //    /      \
+            //   n0 (r)   s0 (r-1,r)
             let n0 = self.a.get_inx_unwrap(p0);
             let n1 = self.a.get_inx_unwrap(p1);
             let n2 = self.a.get_inx_unwrap(p2);
@@ -380,36 +442,110 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let rank1 = n1.rank;
             let rank2 = n2.rank;
             if rank1 != rank2 {
-                // n2 was previously two ranks over n1, so when n1 was promoted in the prelude
-                // or a previous loop, it did not introduce another rank violation
+                // the loop prelude and previous loop iterations can only promote what becomes
+                // `n2` in this iteration by at most 1, and if rank differences were previously
+                // one it means that there is a rank difference violation iff the ranks are
+                // equal.
+
+                //          -----n2 (r+2)
+                //         /       \
+                //        n1 (r+1)  s1 (r,r+1)
+                //       /\
+                //      /  \
+                //     /    \
+                //    /      \
+                //   n0 (r)   s0 (r-1,r)
                 break
             } else {
                 // Check the sibling of n1 to see if we can promote n2 and avoid a restructure.
                 // This isn't just an optimization, a general case restructure requires the
                 // sibling of n1 to be 2 ranks below n2 or else the restructure may introduce
                 // lower height violations.
-                let p_sibling1 = if d12 { n2.p_tree0 } else { n2.p_tree1 };
-                if let Some(p_sibling1) = p_sibling1 {
-                    if self.a.get_inx_unwrap(p_sibling1).rank.wrapping_add(1) == rank2 {
-                        self.a.get_inx_mut_unwrap_t(p2).rank = rank1.wrapping_add(1);
-                        if let Some(p3) = p3 {
-                            // convey up the tree
-                            p0 = p1;
-                            p1 = p2;
-                            p2 = p3;
-                            d01 = d12;
-                            d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
-                            continue
-                        } else {
-                            // n2 was the root
-                            break
-                        }
+                let p_s1 = if d12 { n2.p_tree0 } else { n2.p_tree1 };
+                let rank_s1 = if let Some(p_s1) = p_s1 {
+                    self.a.get_inx_unwrap(p_s1).rank
+                } else {0};
+                if rank_s1.wrapping_add(1) == rank2 {
+                    // if there is a rank difference of 1, we can promote the shared `n2` and avoid a violation with the sibling
+
+                    //      n2 (r+1)
+                    //     /    \
+                    //    /      \
+                    //   n1 (r+1) s1 (r+1)
+                    //
+                    //       <=>
+                    //
+                    //      n2 (r+2)
+                    //     /    \
+                    //    /      \
+                    //   n1 (r+1) s1 (r+1)
+                    self.a.get_inx_mut_unwrap_t(p2).rank = rank1.wrapping_add(1);
+                    if let Some(p3) = p3 {
+                        // convey up the tree
+                        p0 = p1;
+                        p1 = p2;
+                        p2 = p3;
+                        d01 = d12;
+                        d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                        continue
+                    } else {
+                        // n2 was the root
+                        break
                     }
                 }
 
                 // Need a trinode restructure, and the sibling of n1 is two ranks below n2 so
                 // there is space. There are 4 combinations of `d01` and `d12` that
                 // we need to handle, which deal with 7 nodes
+
+                // a n0 b n1  s0 n2 s1
+                //
+                //          -----n2 (r+1)
+                //         /       \
+                //        n1 (r+1)  s1 (r-1)
+                //       /\
+                //      /  \
+                //     /    \
+                //    /      \
+                //   n0 (r)   s0 (r-1)
+                //   /\
+                //  /  \
+                // a    b
+                //
+                // a n0 b n1  s0 n2 s1
+                //
+                //        n1 (r+1)
+                //       /    \
+                //      /      \
+                //     /        \
+                //   n0 (r)      n2 (r)
+                //  /  \        /  \
+                // a    b     s0    s1 (r-2,r-1)
+                //
+                // alternating case
+                //
+                // s0 n1 a  n0 b n2 s1
+                //
+                //        -------n2 (r+1)
+                //       /         \
+                //    n1 (r+1)      s1 (r-1)
+                //     /  \
+                //    /    \
+                //   /      \
+                // s0 (r-1) n0 (r)
+                //         / \
+                //        /   \
+                //       a     b
+                //
+                // s0 n1 a  n0 b n2 s1
+                //
+                //       ---n0 (r+1)
+                //      /      \
+                //     /        \
+                //    n1 (r)     n2 (r)
+                //   / \         / \
+                //  /   \       /   \
+                // s0    a     b    s1 (r-2,r-1)
 
                 // some pointer resets could be avoided with higher level branching, but I think
                 // that having a single code path with as few conditionals as possible is better
@@ -750,6 +886,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             (p0, p1)
         };
 
+        dbg!(p, p0, p1);
         let mut d01 = if p0.is_none() {
             self.a.get_inx_unwrap(p1).p_tree1.is_none()
         } else {
