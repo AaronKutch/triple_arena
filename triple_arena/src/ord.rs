@@ -434,7 +434,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             //      /  \
             //     /    \
             //    /      \
-            //   n0 (r)   s0 (r-1,r)
+            //   n0 (r)   s0 (0,r)
+            //
+            // (also the versions with `d01` and `d12` alternating, but that only becomes
+            // important during restructuring)
+            //
+            // (also note that `s0` can be `r-1 == 0` iff we came from the prelude with `s0`
+            // as a `None` child and `n1` is rank 2, hence why `0` is included
+            // in possible ranks)
             let n0 = self.a.get_inx_unwrap(p0);
             let n1 = self.a.get_inx_unwrap(p1);
             let n2 = self.a.get_inx_unwrap(p2);
@@ -455,9 +462,18 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 //      /  \
                 //     /    \
                 //    /      \
-                //   n0 (r)   s0 (r-1,r)
+                //   n0 (r)   s0 (0,r)
                 break
             } else {
+                //          -----n2 (r+1)
+                //         /       \
+                //        n1 (r+1)  s1 (r-1,r)
+                //       /\
+                //      /  \
+                //     /    \
+                //    /      \
+                //   n0 (r)   s0 (0,r)
+
                 // Check the sibling of n1 to see if we can promote n2 and avoid a restructure.
                 // This isn't just an optimization, a general case restructure requires the
                 // sibling of n1 to be 2 ranks below n2 or else the restructure may introduce
@@ -475,14 +491,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     //      n2 (r+1)
                     //     /    \
                     //    /      \
-                    //   n1 (r+1) s1 (r+1)
+                    //   n1 (r+1) s1 (r)
                     //
                     //       <=>
                     //
                     //      n2 (r+2)
                     //     /    \
                     //    /      \
-                    //   n1 (r+1) s1 (r+1)
+                    //   n1 (r+1) s1 (r)
                     self.a.get_inx_mut_unwrap_t(p2).rank = rank1.wrapping_add(1);
                     if let Some(p3) = p3 {
                         // convey up the tree
@@ -497,6 +513,15 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         break
                     }
                 }
+
+                //          -----n2 (r+1)
+                //         /       \
+                //        n1 (r+1)  s1 (r-1)
+                //       /\
+                //      /  \
+                //     /    \
+                //    /      \
+                //   n0 (r)   s0 (0,r)
 
                 // Need a trinode restructure, and the sibling of n1 is two ranks below n2 so
                 // there is space. There are 4 combinations of `d01` and `d12` that
