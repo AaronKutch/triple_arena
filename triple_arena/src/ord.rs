@@ -1051,11 +1051,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         let mut p1 = p1.unwrap();
         let n1 = self.a.get_inx_unwrap(p1);
         let mut d01 = n1.p_tree0.is_some();
-        let mut p_s0 = if d01 {
-            n1.p_tree0
-        } else {
-            n1.p_tree1
-        };
+        let mut p_s0 = if d01 { n1.p_tree0 } else { n1.p_tree1 };
 
         // In order to maintain rank invariant 1, we must handle a few special cases.
 
@@ -1066,7 +1062,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             //    /
             //   /
             // * (0)
-            
+
             self.a.get_inx_mut_unwrap_t(p1).rank = 1;
 
             //    n1 (1)
