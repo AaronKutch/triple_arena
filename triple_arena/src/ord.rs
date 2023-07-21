@@ -446,7 +446,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             //    /    \
             //   /      \
             // n0 (1)  s0 (0)
-            if d01 {}
             (self.a.get_inx_unwrap(p2), p2)
         } else {
             // height 2 tree, ranks are guaranteed correct because the root is at rank 2
@@ -626,7 +625,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 
                 if d01 {
                     // reversed version
-                    let p_s0 = n2.p_tree0;
+                    let p_s0 = n1.p_tree0;
                     let n1 = self.a.get_inx_mut_unwrap_t(p1);
                     n1.p_tree0 = Some(p2);
                     n1.p_back = p3;
@@ -640,10 +639,16 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     n2.p_tree1 = p_s0;
                     n2.rank = rank0;
                     if let Some(p3) = p3 {
+                        let n3 = self.a.get_inx_mut_unwrap_t(p3);
+                        d01 = false;
+                        d12 = n3.p_tree1 == Some(p2);
+                        if d12 {
+                            n3.p_tree1 = Some(p1);
+                        } else {
+                            n3.p_tree0 = Some(p1);
+                        }
                         p0 = p2;
                         p2 = p3;
-                        d01 = false;
-                        d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
                         continue
                     } else {
                         // we have reached the root
@@ -651,7 +656,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         break
                     }
                 } else {
-                    let p_s0 = n2.p_tree0;
+                    let p_s0 = n1.p_tree0;
                     let n1 = self.a.get_inx_mut_unwrap_t(p1);
                     n1.p_back = p3;
                     n1.p_tree1 = Some(p2);
@@ -665,10 +670,16 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     n2.p_tree1 = p_s1;
                     n2.rank = rank0;
                     if let Some(p3) = p3 {
+                        let n3 = self.a.get_inx_mut_unwrap_t(p3);
+                        d01 = true;
+                        d12 = n3.p_tree1 == Some(p2);
+                        if d12 {
+                            n3.p_tree1 = Some(p1);
+                        } else {
+                            n3.p_tree0 = Some(p1);
+                        }
                         p0 = p2;
                         p2 = p3;
-                        d01 = true;
-                        d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
                         continue
                     } else {
                         // we have reached the root
@@ -726,11 +737,17 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     n2.p_tree1 = p_a;
                     n2.rank = rank0;
                     if let Some(p3) = p3 {
+                        let n3 = self.a.get_inx_mut_unwrap_t(p3);
+                        d01 = true;
+                        d12 = n3.p_tree1 == Some(p2);
+                        if d12 {
+                            n3.p_tree1 = Some(p0);
+                        } else {
+                            n3.p_tree0 = Some(p0);
+                        }
                         p0 = p1;
                         p1 = p2;
                         p2 = p3;
-                        d01 = true;
-                        d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
                         continue
                     } else {
                         // we have reached the root
@@ -760,11 +777,17 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     n2.p_tree0 = p_b;
                     n2.rank = rank0;
                     if let Some(p3) = p3 {
+                        let n3 = self.a.get_inx_mut_unwrap_t(p3);
+                        d01 = false;
+                        d12 = n3.p_tree1 == Some(p2);
+                        if d12 {
+                            n3.p_tree1 = Some(p0);
+                        } else {
+                            n3.p_tree0 = Some(p0);
+                        }
                         p0 = p1;
                         p1 = p2;
                         p2 = p3;
-                        d01 = false;
-                        d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
                         continue
                     } else {
                         // we have reached the root
