@@ -489,46 +489,59 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 //   /       \
                 // n0 (r)   s0 (r-1)
                 break
+            }
+            //           ? (r+2,r+3)
+            //             /
+            //            /
+            //         n2 (r+1)
+            //        /       \
+            //       /         \
+            //    n1 (r+1)   s1 (r-1,r)
+            //    /     \
+            //   /       \
+            // n0 (r)   s0 (r-1)
+
+            // Check the sibling of n1 to see if we can promote n2 and avoid a restructure.
+            // This isn't just an optimization, a general case restructure requires the
+            // sibling of n1 to be 2 ranks below n2 or else the restructure may introduce
+            // lower height violations.
+            let p_s1 = if d12 { n2.p_tree0 } else { n2.p_tree1 };
+            let rank_s1 = if let Some(p_s1) = p_s1 {
+                self.a.get_inx_unwrap(p_s1).rank
             } else {
+                0
+            };
+            if rank_s1.wrapping_add(1) == rank2 {
+                // if there is a rank difference of 1, we can promote the shared `n2` and avoid
+                // a violation with the sibling
+
                 //           ? (r+2,r+3)
                 //             /
                 //            /
                 //         n2 (r+1)
                 //        /       \
                 //       /         \
-                //    n1 (r+1)   s1 (r-1,r)
+                //    n1 (r+1)   s1 (r)
                 //    /     \
                 //   /       \
                 // n0 (r)   s0 (r-1)
+                //
+                self.a.get_inx_mut_unwrap_t(p2).rank = rank1.wrapping_add(1);
+                //
+                //           ? (r+2,r+3)
+                //             /
+                //            /
+                //         n2 (r+2)
+                //        /       \
+                //       /         \
+                //    n1 (r+1)   s1 (r)
+                //    /     \
+                //   /       \
+                // n0 (r)   s0 (r-1)
+                if let Some(p3) = p3 {
+                    // convey up the tree
 
-                // Check the sibling of n1 to see if we can promote n2 and avoid a restructure.
-                // This isn't just an optimization, a general case restructure requires the
-                // sibling of n1 to be 2 ranks below n2 or else the restructure may introduce
-                // lower height violations.
-                let p_s1 = if d12 { n2.p_tree0 } else { n2.p_tree1 };
-                let rank_s1 = if let Some(p_s1) = p_s1 {
-                    self.a.get_inx_unwrap(p_s1).rank
-                } else {
-                    0
-                };
-                if rank_s1.wrapping_add(1) == rank2 {
-                    // if there is a rank difference of 1, we can promote the shared `n2` and avoid
-                    // a violation with the sibling
-
-                    //           ? (r+2,r+3)
-                    //             /
-                    //            /
-                    //         n2 (r+1)
-                    //        /       \
-                    //       /         \
-                    //    n1 (r+1)   s1 (r)
-                    //    /     \
-                    //   /       \
-                    // n0 (r)   s0 (r-1)
-                    //
-                    self.a.get_inx_mut_unwrap_t(p2).rank = rank1.wrapping_add(1);
-                    //
-                    //           ? (r+2,r+3)
+                    //           n3 (r+2,r+3)
                     //             /
                     //            /
                     //         n2 (r+2)
@@ -538,239 +551,225 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     //    /     \
                     //   /       \
                     // n0 (r)   s0 (r-1)
+                    //
+                    //   ==> (recode for next iteration)
+                    //
+                    //           n2 (r+1,r+2)
+                    //             /
+                    //            /
+                    //         n1 (r+1)
+                    //        /       \
+                    //       /         \
+                    //    n0 (r)     s0 (r-1)
+                    //    /     \
+                    //   /       \
+                    //  * *
+                    //
+                    // which matches with loop entry assumption
+
+                    p0 = p1;
+                    p1 = p2;
+                    p2 = p3;
+                    d01 = d12;
+                    d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                    continue
+                } else {
+                    // n2 was the root, the rest of the tree is ok
+
+                    //         n2 (r+2)
+                    //        /       \
+                    //       /         \
+                    //    n1 (r+1)   s1 (r)
+                    //    /     \
+                    //   /       \
+                    // n0 (r)   s0 (r-1)
+                    break
+                }
+            }
+
+            //           ? (r+2,r+3)
+            //             /
+            //            /
+            //         n2 (r+1)
+            //        /       \
+            //       /         \
+            //    n1 (r+1)   s1 (r-1)
+            //    /     \
+            //   /       \
+            // n0 (r)   s0 (r-1)
+
+            // now the directions `d10` and `d12` and the order of subtrees will matter for
+            // restructuring
+
+            if d01 == d12 {
+                // nonalternating case
+                //
+                // n0  n1   s0 n2    s1
+                //
+                //         ----n2 (r+1)
+                //        /           \
+                //       /             \
+                //     n1 (r+1)      s1 (r-1)
+                //     /     \
+                //    /       \
+                // n0 (r)   s0 (r-1)
+                //
+                // n0  n1   s0 n2    s1
+                //
+                //     n1 (r+1)
+                //     /     \
+                //    /       \
+                // n0 (r)      n2 (r)
+                //             /    \
+                //            /      \
+                //          s0 (r-1) s1 (r-1)
+
+                if d01 {
+                    // reversed version
+                    let p_s0 = n2.p_tree0;
+                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    n1.p_tree0 = Some(p2);
+                    n1.p_back = p3;
+                    if let Some(p_s0) = p_s0 {
+                        let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                        s0.p_back = Some(p2);
+                    }
+                    let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                    n2.p_tree0 = p_s1;
+                    n2.p_back = Some(p1);
+                    n2.p_tree1 = p_s0;
+                    n2.rank = rank0;
                     if let Some(p3) = p3 {
-                        // convey up the tree
-
-                        //           n3 (r+2,r+3)
-                        //             /
-                        //            /
-                        //         n2 (r+2)
-                        //        /       \
-                        //       /         \
-                        //    n1 (r+1)   s1 (r)
-                        //    /     \
-                        //   /       \
-                        // n0 (r)   s0 (r-1)
-                        //
-                        //   ==> (recode for next iteration)
-                        //
-                        //           n2 (r+1,r+2)
-                        //             /
-                        //            /
-                        //         n1 (r+1)
-                        //        /       \
-                        //       /         \
-                        //    n0 (r)     s0 (r-1)
-                        //    /     \
-                        //   /       \
-                        //  * *
-                        //
-                        // which matches with loop entry assumption
-
-                        p0 = p1;
-                        p1 = p2;
+                        p0 = p2;
                         p2 = p3;
-                        d01 = d12;
+                        d01 = false;
                         d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
                         continue
                     } else {
-                        // n2 was the root, the rest of the tree is ok
-
-                        //         n2 (r+2)
-                        //        /       \
-                        //       /         \
-                        //    n1 (r+1)   s1 (r)
-                        //    /     \
-                        //   /       \
-                        // n0 (r)   s0 (r-1)
+                        // we have reached the root
+                        self.root = p1;
+                        break
+                    }
+                } else {
+                    let p_s0 = n2.p_tree0;
+                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    n1.p_back = p3;
+                    n1.p_tree1 = Some(p2);
+                    if let Some(p_s0) = p_s0 {
+                        let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                        s0.p_back = Some(p2);
+                    }
+                    let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                    n2.p_tree0 = p_s0;
+                    n2.p_back = Some(p1);
+                    n2.p_tree1 = p_s1;
+                    n2.rank = rank0;
+                    if let Some(p3) = p3 {
+                        p0 = p2;
+                        p2 = p3;
+                        d01 = true;
+                        d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                        continue
+                    } else {
+                        // we have reached the root
+                        self.root = p1;
                         break
                     }
                 }
-
-                //           ? (r+2,r+3)
-                //             /
-                //            /
-                //         n2 (r+1)
-                //        /       \
-                //       /         \
-                //    n1 (r+1)   s1 (r-1)
+            } else {
+                // alternating case
+                //
+                // s0 n1  a  n0 b n2 s1
+                //
+                //         -------n2 (r+1)
+                //        /         \
+                //       /           \
+                //    n1 (r+1)       s1 (r-1)
                 //    /     \
                 //   /       \
-                // n0 (r)   s0 (r-1)
+                // s0 (r-1)  n0 (r)
+                //          / \
+                //         /   \
+                //        a     b
+                //
+                // s0 n1  a  n0 b n2 s1
+                //
+                //       ----n0 (r+1)
+                //      /         \
+                //     /           \
+                //    n1 (r)      n2 (r)
+                //   /  \         / \
+                //  /    \       /   \
+                // s0     a     b    s1 (r-1)
 
-                // now the directions `d10` and `d12` and the order of subtrees will matter for
-                // restructuring
-
-                if d01 == d12 {
-                    // nonalternating case
-                    //
-                    // n0  n1   s0 n2    s1
-                    //
-                    //         ----n2 (r+1)
-                    //        /           \
-                    //       /             \
-                    //     n1 (r+1)      s1 (r-1)
-                    //     /     \
-                    //    /       \
-                    // n0 (r)   s0 (r-1)
-                    //
-                    // n0  n1   s0 n2    s1
-                    //
-                    //     n1 (r+1)
-                    //     /     \
-                    //    /       \
-                    // n0 (r)      n2 (r)
-                    //             /    \
-                    //            /      \
-                    //          s0 (r-1) s1 (r-1)
-
-                    if d01 {
-                        // reversed version
-                        let p_s0 = n2.p_tree0;
-                        let n1 = self.a.get_inx_mut_unwrap_t(p1);
-                        n1.p_tree0 = Some(p2);
-                        n1.p_back = p3;
-                        if let Some(p_s0) = p_s0 {
-                            let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
-                            s0.p_back = Some(p2);
-                        }
-                        let n2 = self.a.get_inx_mut_unwrap_t(p2);
-                        n2.p_tree0 = p_s1;
-                        n2.p_back = Some(p1);
-                        n2.p_tree1 = p_s0;
-                        n2.rank = rank0;
-                        if let Some(p3) = p3 {
-                            p0 = p2;
-                            p2 = p3;
-                            d01 = false;
-                            d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
-                            continue
-                        } else {
-                            // we have reached the root
-                            self.root = p1;
-                            break
-                        }
+                if d01 {
+                    // reverse version
+                    let p_a = n0.p_tree0;
+                    let p_b = n0.p_tree1;
+                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    n1.p_tree0 = p_b;
+                    n1.p_back = Some(p0);
+                    n1.rank = rank0;
+                    if let Some(p_a) = p_a {
+                        self.a.get_inx_mut_unwrap_t(p_a).p_back = Some(p2);
+                    }
+                    let n0 = self.a.get_inx_mut_unwrap_t(p0);
+                    n0.p_tree0 = Some(p2);
+                    n0.p_back = p3;
+                    n0.p_tree1 = Some(p1);
+                    n0.rank = rank1;
+                    if let Some(p_b) = p_b {
+                        self.a.get_inx_mut_unwrap_t(p_b).p_back = Some(p1);
+                    }
+                    let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                    n2.p_back = Some(p0);
+                    n2.p_tree1 = p_a;
+                    n2.rank = rank0;
+                    if let Some(p3) = p3 {
+                        p0 = p1;
+                        p1 = p2;
+                        p2 = p3;
+                        d01 = true;
+                        d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                        continue
                     } else {
-                        let p_s0 = n2.p_tree0;
-                        let n1 = self.a.get_inx_mut_unwrap_t(p1);
-                        n1.p_back = p3;
-                        n1.p_tree1 = Some(p2);
-                        if let Some(p_s0) = p_s0 {
-                            let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
-                            s0.p_back = Some(p2);
-                        }
-                        let n2 = self.a.get_inx_mut_unwrap_t(p2);
-                        n2.p_tree0 = p_s0;
-                        n2.p_back = Some(p1);
-                        n2.p_tree1 = p_s1;
-                        n2.rank = rank0;
-                        if let Some(p3) = p3 {
-                            p0 = p2;
-                            p2 = p3;
-                            d01 = true;
-                            d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
-                            continue
-                        } else {
-                            // we have reached the root
-                            self.root = p1;
-                            break
-                        }
+                        // we have reached the root
+                        self.root = p0;
+                        break
                     }
                 } else {
-                    // alternating case
-                    //
-                    // s0 n1  a  n0 b n2 s1
-                    //
-                    //         -------n2 (r+1)
-                    //        /         \
-                    //       /           \
-                    //    n1 (r+1)       s1 (r-1)
-                    //    /     \
-                    //   /       \
-                    // s0 (r-1)  n0 (r)
-                    //          / \
-                    //         /   \
-                    //        a     b
-                    //
-                    // s0 n1  a  n0 b n2 s1
-                    //
-                    //       ----n0 (r+1)
-                    //      /         \
-                    //     /           \
-                    //    n1 (r)      n2 (r)
-                    //   /  \         / \
-                    //  /    \       /   \
-                    // s0     a     b    s1 (r-1)
-
-                    if d01 {
-                        // reverse version
-                        let p_a = n0.p_tree0;
-                        let p_b = n0.p_tree1;
-                        let n1 = self.a.get_inx_mut_unwrap_t(p1);
-                        n1.p_tree0 = p_b;
-                        n1.p_back = Some(p0);
-                        n1.rank = rank0;
-                        if let Some(p_a) = p_a {
-                            self.a.get_inx_mut_unwrap_t(p_a).p_back = Some(p2);
-                        }
-                        let n0 = self.a.get_inx_mut_unwrap_t(p0);
-                        n0.p_tree0 = Some(p2);
-                        n0.p_back = p3;
-                        n0.p_tree1 = Some(p1);
-                        n0.rank = rank1;
-                        if let Some(p_b) = p_b {
-                            self.a.get_inx_mut_unwrap_t(p_b).p_back = Some(p1);
-                        }
-                        let n2 = self.a.get_inx_mut_unwrap_t(p2);
-                        n2.p_back = Some(p0);
-                        n2.p_tree1 = p_a;
-                        n2.rank = rank0;
-                        if let Some(p3) = p3 {
-                            p0 = p1;
-                            p1 = p2;
-                            p2 = p3;
-                            d01 = true;
-                            d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
-                            continue
-                        } else {
-                            // we have reached the root
-                            self.root = p0;
-                            break
-                        }
+                    let p_a = n0.p_tree0;
+                    let p_b = n0.p_tree1;
+                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    n1.p_back = Some(p0);
+                    n1.p_tree1 = p_a;
+                    n1.rank = rank0;
+                    if let Some(p_a) = p_a {
+                        self.a.get_inx_mut_unwrap_t(p_a).p_back = Some(p1);
+                    }
+                    let n0 = self.a.get_inx_mut_unwrap_t(p0);
+                    n0.p_tree0 = Some(p1);
+                    n0.p_back = p3;
+                    n0.p_tree1 = Some(p2);
+                    n0.rank = rank1;
+                    if let Some(p_b) = p_b {
+                        self.a.get_inx_mut_unwrap_t(p_b).p_back = Some(p2);
+                    }
+                    let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                    n2.p_back = Some(p0);
+                    n2.p_tree0 = p_b;
+                    n2.rank = rank0;
+                    if let Some(p3) = p3 {
+                        p0 = p1;
+                        p1 = p2;
+                        p2 = p3;
+                        d01 = false;
+                        d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                        continue
                     } else {
-                        let p_a = n0.p_tree0;
-                        let p_b = n0.p_tree1;
-                        let n1 = self.a.get_inx_mut_unwrap_t(p1);
-                        n1.p_back = Some(p0);
-                        n1.p_tree1 = p_a;
-                        n1.rank = rank0;
-                        if let Some(p_a) = p_a {
-                            self.a.get_inx_mut_unwrap_t(p_a).p_back = Some(p1);
-                        }
-                        let n0 = self.a.get_inx_mut_unwrap_t(p0);
-                        n0.p_tree0 = Some(p1);
-                        n0.p_back = p3;
-                        n0.p_tree1 = Some(p2);
-                        n0.rank = rank1;
-                        if let Some(p_b) = p_b {
-                            self.a.get_inx_mut_unwrap_t(p_b).p_back = Some(p2);
-                        }
-                        let n2 = self.a.get_inx_mut_unwrap_t(p2);
-                        n2.p_back = Some(p0);
-                        n2.p_tree0 = p_b;
-                        n2.rank = rank0;
-                        if let Some(p3) = p3 {
-                            p0 = p1;
-                            p1 = p2;
-                            p2 = p3;
-                            d01 = false;
-                            d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
-                            continue
-                        } else {
-                            // we have reached the root
-                            self.root = p0;
-                            break
-                        }
+                        // we have reached the root
+                        self.root = p0;
+                        break
                     }
                 }
             }
