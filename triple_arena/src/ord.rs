@@ -977,8 +977,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         // if on the first `Link::prev` acquire we get a `None` (because we are on the
         // start), go only `Link::next`
         let mut use_next = false;
-        // if we removed a leaf node, this will fall through the loop
-        let mut p0 = d_back;
+        let mut p1 = d_back;
         loop {
             if d_tree0.is_some() || d_tree1.is_some() {
                 // pointer to replacement node
@@ -993,7 +992,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     }
                 }
                 .inx();
-                p0 = Some(p_r);
+                p1 = Some(p_r);
                 if let Some(d_back) = d_back {
                     let n = self.a.get_inx_mut_unwrap_t(d_back);
                     if n.p_tree1 == Some(p_d) {
@@ -1049,7 +1048,106 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             }
         }
 
-        let mut p0 = p0.unwrap();
+        let mut p1 = p1.unwrap();
+        let n1 = self.a.get_inx_unwrap(p1);
+        let mut d01 = n1.p_tree0.is_some();
+        let mut p_s0 = if d01 {
+            n1.p_tree0
+        } else {
+            n1.p_tree1
+        };
+
+        // In order to maintain rank invariant 1, we must handle a few special cases.
+
+        if let Some(p_s0) = p_s0 {
+            //
+        } else {
+            //    n1 (2)
+            //    /
+            //   /
+            // * (0)
+            
+            self.a.get_inx_mut_unwrap_t(p1).rank = 1;
+
+            //    n1 (1)
+        }
+
+        //    n1 (2)
+        //    /     \
+        //   /       \
+        // * (0)   s0 (1)
+
+        //    n1 (3)
+        //    /     \
+        //   /       \
+        // * (0)   s0 (1)
+        //
+        //      -->
+        //
+        //    n1 (2)
+        //    /     \
+        //   /       \
+        // * (0)   s0 (1)
+
+        //    n1 (3)
+        //    /     \
+        //   /       \
+        // * (0)     s0 (2)
+        //           /   \
+        //          /     \
+        //        a (1)  b (1)
+        //
+        //    n1  a  s0  b
+        //
+        //        a (3)
+        //         / \
+        //        /   \
+        //       /   s0 (2)
+        //      /       \
+        //     /         \
+        //    n1 (1)     b (1)
+
+        //    n1 (3)
+        //    /     \
+        //   /       \
+        // * (0)   s0 (2)
+        //             \
+        //              \
+        //             b (1)
+        //
+        //    n1   s0  b
+        //
+        //         s0 (3)
+        //        /    \
+        //       /      \
+        //    n1 (1)   b (1)
+
+        //    n1 (3)
+        //    /     \
+        //   /       \
+        // * (0)     s0 (2)
+        //           /
+        //          /
+        //        a (1)
+        //
+        //    n1  a  s0
+        //
+        //        a (3)
+        //         / \
+        //        /   \
+        //    n1 (1) s0 (1)
+
+        //    n1 (r+3)
+        //    /     \
+        //   /       \
+        // n0 (r)   s0 (r,r+1)
+        //
+        //      -->
+        //
+        //    n1 (r+2)
+        //    /     \
+        //   /       \
+        // n0 (r)   s0 (r,r+1)
 
         /*
         let mut d01 = if p0.is_none() {
