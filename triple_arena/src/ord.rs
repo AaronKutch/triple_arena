@@ -6,10 +6,7 @@ use std::cmp::min;
 
 use crate::{Arena, ChainArena, Link, Ptr, PtrGen, PtrInx};
 
-// The reason why the standard `BTreeMap` uses B-trees has to do with the
-// decision of allocating individual nodes. If we use the right variation of
-// rank balanced tree implemented on a ChainArena, this problem goes away. This
-// is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
+// This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
 // Sen, Siddhartha; Tarjan, Robert E. (2015).
 //
 // Each key-value pair is one-to-one with a tree node pointer and rank group (in
@@ -21,15 +18,13 @@ use crate::{Arena, ChainArena, Link, Ptr, PtrGen, PtrInx};
 // skipping traversal when finding a neighbor for the displacement step in
 // removal. We keep the balancing property by keeping the invariants:
 //
-// 0. If a node has zero children, its rank is 0
-// 1. If a node has one child, its rank is 1
-// 2. If a node has two children, its rank difference from each child can only
-//    be 1 or 2.
-
-// TODO maybe we treat a `None` child as being rank 0, and relaxing the rules
-// around height 1 and 2 nodes to only have the rank 1 or 2 difference rule.
-// This would make common rebalancing conditions in the first few nodes to be
-// inserted avoidable, and allow for more cheap insert-remove loops
+// 0. Rank difference calculations count the rank of a `None` child as 0.
+// 1. If a node's children are both `None`, its rank can only be 1.
+// 2. Rank differences can only be 1 or 2.
+//
+// We can almost omit rule 1 (and the tree would still be balanced because nodes
+// with any `None` child could not have a rank higher than 2), but it leads to
+// really bad worst case removal scenarios.
 
 #[derive(Clone)]
 pub(crate) struct Node<P: Ptr, K: Ord, V> {
@@ -934,8 +929,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 
     #[must_use]
     pub fn remove(&mut self, p: P) -> Option<(K, V)> {
-        let mut link = self.a.remove(p)?;
-        let mut p_a = p.inx();
+        let link = self.a.remove(p)?;
         if self.a.is_empty() {
             // last node to be removed, our invariants require that `self.a.is_empty` be
             // checked to determine whether or not `self.first`, etc are valid.
@@ -944,13 +938,12 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 
         // when removing a nonleaf node of the tree, its place in the tree is
         // replaced by a similar node, and if that node is nonleaf then it is
-        // replaced again. We reach a leaf node in 5 replacements in the worst case
-        // (which should be rare):
+        // replaced again. We reach a leaf node in 2 replacements in the worst case:
         //
         //                      -----...
         //                     /
         //                    /
-        //                   p
+        //                   d
         //                  / \
         //       -----------   \
         //      /               \
@@ -960,40 +953,50 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         // ...   ...
         //        \
         //         \
-        //          c (4)
+        //          y (4)
         //         / \
         //        /   \
-        //  x (3)-     --a (2)
-        //     \        /
-        //      d (2)  /
-        //     /      b (1)
-        //    e (1)
+        //      ...    --r (2)
+        //              /
+        //             /
+        //            z (1)
         //
-        // `p` is replaced by `a`, `a` replaced by `b`, etc until `d` is replaced by `e`
-        // and we are left with the much simpler task of rebalancing from the exterior
-        // of the tree.
+        // `d` is replaced by `r`, then `r` is replaced by `z`, and we are left with the
+        // much simpler task of rebalancing from the exterior of the tree.
 
-        let mut link_a = &link;
-        let mut p_r = p_a;
-        // if on the first `Link::prev` acquire we get a `None`, go only `Link::next`
+        // previous configuration of displaced node
+        let (mut p_d, mut d_tree0, mut d_tree1, mut d_back, mut d_rank, mut d_prev, mut d_next) = (
+            p.inx(),
+            link.p_tree0,
+            link.p_tree1,
+            link.p_back,
+            link.rank,
+            Link::prev(&link),
+            Link::next(&link),
+        );
+        // if on the first `Link::prev` acquire we get a `None` (because we are on the
+        // start), go only `Link::next`
         let mut use_next = false;
+        // if we removed a leaf node, this will fall through the loop
+        let mut p0 = d_back;
         loop {
-            if link_a.p_tree0.is_some() && link_a.p_tree1.is_some() {
-                let p_a = if use_next {
-                    Link::next(link_a).unwrap()
+            if d_tree0.is_some() || d_tree1.is_some() {
+                // pointer to replacement node
+                let p_r = if use_next {
+                    d_next.unwrap()
                 } else {
-                    if let Some(p_a) = Link::prev(link_a) {
-                        p_a
+                    if let Some(p_r) = d_prev {
+                        p_r
                     } else {
                         use_next = true;
-                        Link::next(link_a).unwrap()
+                        d_next.unwrap()
                     }
-                };
-                let p_a = p_a.inx();
-                let a = self.a.get_inx_mut_unwrap_t(p_a);
-                if let Some(p_back) = link.p_back {
-                    let n = self.a.get_inx_mut_unwrap_t(p_back);
-                    if n.p_tree1 == Some(p_a) {
+                }
+                .inx();
+                p0 = Some(p_r);
+                if let Some(d_back) = d_back {
+                    let n = self.a.get_inx_mut_unwrap_t(d_back);
+                    if n.p_tree1 == Some(p_d) {
                         n.p_tree1 = Some(p_r);
                     } else {
                         n.p_tree0 = Some(p_r);
@@ -1001,37 +1004,54 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 } else {
                     self.root = p_r;
                 }
-                a.p_back = link.p_back;
-                if let Some(p_tree0) = link_a.p_tree0 {
-                    if p_tree0 != p_r {
-                        a.p_tree0 = link_a.p_tree0;
-                    } else {
-                        self.a.get_inx_mut_unwrap_t(p_tree0).p_back = Some(p_r);
+                let r = self.a.get_inx_mut_unwrap(p_r);
+                // keep the old configuration of the replacement node
+                let buf = (
+                    r.p_tree0,
+                    r.p_tree1,
+                    r.p_back,
+                    r.rank,
+                    Link::prev(&r),
+                    Link::next(&r),
+                );
+                r.t.rank = d_rank;
+                if let Some(d_tree0) = d_tree0 {
+                    if d_tree0 != p_r {
+                        r.t.p_tree0 = Some(d_tree0);
+                        self.a.get_inx_mut_unwrap_t(d_tree0).p_back = Some(p_r);
+                    }
+                    // else, in the special case where the replacement node is a
+                    // child of the displaced node, we need to leave `p_tree0`
+                    // as-is
+                }
+                if let Some(d_tree1) = d_tree1 {
+                    if d_tree1 != p_r {
+                        self.a.get_inx_mut_unwrap_t(p_r).p_tree1 = Some(d_tree1);
+                        self.a.get_inx_mut_unwrap_t(d_tree1).p_back = Some(p_r);
                     }
                 }
-                if let Some(p_tree1) = link_a.p_tree1 {
-                    if p_tree1 != p_r {
-                        a.p_tree1 = link_a.p_tree1;
-                    } else {
-                        self.a.get_inx_mut_unwrap_t(p_tree1).p_back = Some(p_r);
-                    }
+                // the replacement node becomes the displacement node for the next round
+                p_d = p_r;
+                d_tree0 = buf.0;
+                d_tree1 = buf.1;
+                d_back = buf.2;
+                d_rank = buf.3;
+                d_prev = buf.4;
+                d_next = buf.5;
+            } else {
+                // check if we are on the end of the chain to fix the first and last pointers
+                if d_prev.is_none() {
+                    self.first = d_next.unwrap().inx();
+                } else if d_next.is_none() {
+                    self.last = d_prev.unwrap().inx();
                 }
-                a.rank = link.rank;
-                link_a = self.a.get_inx_unwrap(p_a);
-                p_r = p_a;
-            } else {break}
+                break
+            }
         }
 
-        // get pointers to the nodes immedately before and after `p`
-        let p_prev = Link::prev(&link);
-        let p_next = Link::next(&link);
-        // check if we are on the end of the chain to fix the first and last pointers
-        if p_prev.is_none() {
-            self.first = p_next.unwrap().inx();
-        } else if p_next.is_none() {
-            self.last = p_prev.unwrap().inx();
-        }
+        let mut p0 = p0.unwrap();
 
+        /*
         let mut d01 = if p0.is_none() {
             self.a.get_inx_unwrap(p1).p_tree1.is_none()
         } else {
@@ -1247,7 +1267,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             } else {
                 break
             }
-        }
+        }*/
         Some((link.t.k, link.t.v))
     }
 
