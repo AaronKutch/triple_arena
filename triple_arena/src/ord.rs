@@ -633,20 +633,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     n2.rank = rank0;
                     if let Some(p3) = p3 {
                         let n3 = self.a.get_inx_mut_unwrap_t(p3);
-                        d01 = false;
-                        d12 = n3.p_tree1 == Some(p2);
-                        if d12 {
+                        if n3.p_tree1 == Some(p2) {
                             n3.p_tree1 = Some(p1);
                         } else {
                             n3.p_tree0 = Some(p1);
                         }
-                        p0 = p2;
-                        p2 = p3;
-                        continue
                     } else {
                         // we have reached the root
                         self.root = p1;
-                        break
                     }
                 } else {
                     let p_s0 = n1.p_tree1;
@@ -664,20 +658,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     n2.rank = rank0;
                     if let Some(p3) = p3 {
                         let n3 = self.a.get_inx_mut_unwrap_t(p3);
-                        d01 = true;
-                        d12 = n3.p_tree1 == Some(p2);
-                        if d12 {
+                        if n3.p_tree1 == Some(p2) {
                             n3.p_tree1 = Some(p1);
                         } else {
                             n3.p_tree0 = Some(p1);
                         }
-                        p0 = p2;
-                        p2 = p3;
-                        continue
                     } else {
                         // we have reached the root
                         self.root = p1;
-                        break
                     }
                 }
             } else {
@@ -772,10 +760,11 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         self.root = p0;
                     }
                 }
-                // the previous branches all result in the next higher rank difference not being
-                // violated, so we can just return
-                break
             }
+            // The previous branches all result in the next higher rank difference not being
+            // violated, so we can just return. This also implies that we only need at most
+            // one restructure.
+            break
         }
     }
 
