@@ -1021,9 +1021,16 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 break
             }
         }
-
         let mut p0 = None;
         let mut p1 = p1.unwrap();
+        let n1 = self.a.get_inx_mut_unwrap_t(p1);
+        if n1.p_tree1 == Some(p_d) {
+            n1.p_tree1 = None;
+        } else {
+            n1.p_tree0 = None;
+        }
+
+        // all pointers should be fixed, now to fix rank violations
 
         loop {
             let n1 = self.a.get_inx_unwrap(p1);
@@ -1315,9 +1322,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 self.a.get_inx_mut_unwrap_t(p1).rank = 1;
                 //    n1 (1)
 
-                // convey
-                p0 = Some(p1);
-                continue
+                if let Some(p2) = p2 {
+                    // convey
+                    p0 = Some(p1);
+                    p1 = p2;
+                    continue
+                } else {
+                    break
+                }
             }
         }
         Some((link.t.k, link.t.v))
