@@ -1148,10 +1148,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         n1.p_tree0 = p_a;
                         n1.p_back = Some(p_s0);
                         n1.rank = rank_a.wrapping_add(1);
-                        if let Some(p_a) = p_a {
-                            let a = self.a.get_inx_mut_unwrap_t(p_a);
-                            a.p_back = Some(p1);
-                        }
                         let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
                         s0.p_back = p2;
                         s0.p_tree1 = Some(p1);
@@ -1161,14 +1157,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         n1.p_back = Some(p_s0);
                         n1.p_tree1 = p_a;
                         n1.rank = rank_a.wrapping_add(1);
-                        if let Some(p_a) = p_a {
-                            let a = self.a.get_inx_mut_unwrap_t(p_a);
-                            a.p_back = Some(p1);
-                        }
                         let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
                         s0.p_tree0 = Some(p1);
                         s0.p_back = p2;
                         s0.rank = rank1;
+                    }
+                    if let Some(p_a) = p_a {
+                        let a = self.a.get_inx_mut_unwrap_t(p_a);
+                        a.p_back = Some(p1);
                     }
                     if let Some(p2) = p2 {
                         let n2 = self.a.get_inx_mut_unwrap_t(p2);
