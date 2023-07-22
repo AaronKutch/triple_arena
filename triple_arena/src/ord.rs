@@ -964,6 +964,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     Link::next(&r),
                 );
                 r.t.rank = d_rank;
+                r.t.p_back = d_back;
                 if let Some(d_tree0) = d_tree0 {
                     if d_tree0 != p_r {
                         r.t.p_tree0 = Some(d_tree0);
@@ -988,22 +989,22 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 d_prev = buf.4;
                 d_next = buf.5;
             } else {
-                // check if we are on the end of the chain to fix the first and last pointers
-                if d_prev.is_none() {
-                    self.first = d_next.unwrap().inx();
-                } else if d_next.is_none() {
-                    self.last = d_prev.unwrap().inx();
-                }
                 break
             }
         }
         let mut p0 = None;
         let mut p1 = p1.unwrap();
-        let n1 = self.a.get_inx_mut_unwrap_t(p1);
+        let n1 = self.a.get_inx_mut_unwrap(p1);
         if n1.p_tree1 == Some(p_d) {
-            n1.p_tree1 = None;
+            n1.t.p_tree1 = None;
         } else {
-            n1.p_tree0 = None;
+            n1.t.p_tree0 = None;
+        }
+        // check if we are on the end of the chain to fix the first and last pointers
+        if Link::prev(&n1).is_none() {
+            self.first = p1;
+        } else if Link::next(&n1).is_none() {
+            self.last = p1;
         }
 
         // all pointers should be fixed, now to fix rank violations
