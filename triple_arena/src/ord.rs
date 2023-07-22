@@ -631,17 +631,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     n2.p_back = Some(p1);
                     n2.p_tree1 = p_s0;
                     n2.rank = rank0;
-                    if let Some(p3) = p3 {
-                        let n3 = self.a.get_inx_mut_unwrap_t(p3);
-                        if n3.p_tree1 == Some(p2) {
-                            n3.p_tree1 = Some(p1);
-                        } else {
-                            n3.p_tree0 = Some(p1);
-                        }
-                    } else {
-                        // we have reached the root
-                        self.root = p1;
-                    }
                 } else {
                     let p_s0 = n1.p_tree1;
                     let n1 = self.a.get_inx_mut_unwrap_t(p1);
@@ -656,17 +645,17 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     n2.p_back = Some(p1);
                     n2.p_tree1 = p_s1;
                     n2.rank = rank0;
-                    if let Some(p3) = p3 {
-                        let n3 = self.a.get_inx_mut_unwrap_t(p3);
-                        if n3.p_tree1 == Some(p2) {
-                            n3.p_tree1 = Some(p1);
-                        } else {
-                            n3.p_tree0 = Some(p1);
-                        }
+                }
+                if let Some(p3) = p3 {
+                    let n3 = self.a.get_inx_mut_unwrap_t(p3);
+                    if n3.p_tree1 == Some(p2) {
+                        n3.p_tree1 = Some(p1);
                     } else {
-                        // we have reached the root
-                        self.root = p1;
+                        n3.p_tree0 = Some(p1);
                     }
+                } else {
+                    // we have reached the root
+                    self.root = p1;
                 }
             } else {
                 // alternating case
@@ -714,17 +703,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     n2.p_back = Some(p0);
                     n2.p_tree0 = p_b;
                     n2.rank = rank0;
-                    if let Some(p3) = p3 {
-                        let n3 = self.a.get_inx_mut_unwrap_t(p3);
-                        if n3.p_tree1 == Some(p2) {
-                            n3.p_tree1 = Some(p0);
-                        } else {
-                            n3.p_tree0 = Some(p0);
-                        }
-                    } else {
-                        // we have reached the root
-                        self.root = p0;
-                    }
                 } else {
                     // reverse version
                     let p_a = n0.p_tree0;
@@ -748,17 +726,17 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     n2.p_back = Some(p0);
                     n2.p_tree1 = p_a;
                     n2.rank = rank0;
-                    if let Some(p3) = p3 {
-                        let n3 = self.a.get_inx_mut_unwrap_t(p3);
-                        if n3.p_tree1 == Some(p2) {
-                            n3.p_tree1 = Some(p0);
-                        } else {
-                            n3.p_tree0 = Some(p0);
-                        }
+                }
+                if let Some(p3) = p3 {
+                    let n3 = self.a.get_inx_mut_unwrap_t(p3);
+                    if n3.p_tree1 == Some(p2) {
+                        n3.p_tree1 = Some(p0);
                     } else {
-                        // we have reached the root
-                        self.root = p0;
+                        n3.p_tree0 = Some(p0);
                     }
+                } else {
+                    // we have reached the root
+                    self.root = p0;
                 }
             }
             // The previous branches all result in the next higher rank difference not being
