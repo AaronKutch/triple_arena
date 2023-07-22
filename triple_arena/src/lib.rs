@@ -798,7 +798,7 @@ impl<P: Ptr, T> Arena<P, T> {
     pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
         match self.m_get(p) {
             Some(Allocated(_, t)) => t,
-            _ => panic!("get_inx_unwrap out of bounds"),
+            _ => panic!("get_inx_unwrap of unallocated entry"),
         }
     }
 
@@ -809,7 +809,7 @@ impl<P: Ptr, T> Arena<P, T> {
     pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
         match self.m_get_mut(p) {
             Some(Allocated(_, t)) => t,
-            _ => panic!("get_inx_mut_unwrap out of bounds"),
+            _ => panic!("get_inx_mut_unwrap of unallocated entry"),
         }
     }
 }

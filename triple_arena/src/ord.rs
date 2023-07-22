@@ -942,17 +942,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     }
                 }
                 .inx();
-                p1 = Some(p_r);
-                if let Some(d_back) = d_back {
-                    let n = self.a.get_inx_mut_unwrap_t(d_back);
-                    if n.p_tree1 == Some(p_d) {
-                        n.p_tree1 = Some(p_r);
-                    } else {
-                        n.p_tree0 = Some(p_r);
-                    }
-                } else {
-                    self.root = p_r;
-                }
                 let r = self.a.get_inx_mut_unwrap(p_r);
                 // keep the old configuration of the replacement node
                 let buf = (
@@ -964,21 +953,42 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     Link::next(&r),
                 );
                 r.t.rank = d_rank;
-                r.t.p_back = d_back;
+                if let Some(d_back) = d_back {
+                    if d_back != p.inx() {
+                        let n = self.a.get_inx_mut_unwrap_t(d_back);
+                        if n.p_tree1 == Some(p_d) {
+                            n.p_tree1 = Some(p_r);
+                        } else {
+                            n.p_tree0 = Some(p_r);
+                        }
+                        self.a.get_inx_mut_unwrap_t(p_r).p_back = Some(d_back);
+                    }
+                } else {
+                    self.root = p_r;
+                    self.a.get_inx_mut_unwrap_t(p_r).p_back = None;
+                }
+                let mut use_p_d = false;
                 if let Some(d_tree0) = d_tree0 {
                     if d_tree0 != p_r {
-                        r.t.p_tree0 = Some(d_tree0);
+                        self.a.get_inx_mut_unwrap_t(p_r).p_tree0 = Some(d_tree0);
                         self.a.get_inx_mut_unwrap_t(d_tree0).p_back = Some(p_r);
+                    } else {
+                        // in the case where the replacement node is a child of the displaced node,
+                        // we need to leave `p_tree0` as-is
+                        use_p_d = true;
                     }
-                    // else, in the special case where the replacement node is a
-                    // child of the displaced node, we need to leave `p_tree0`
-                    // as-is
+                } else {
+                    self.a.get_inx_mut_unwrap_t(p_r).p_tree0 = None;
                 }
                 if let Some(d_tree1) = d_tree1 {
                     if d_tree1 != p_r {
                         self.a.get_inx_mut_unwrap_t(p_r).p_tree1 = Some(d_tree1);
                         self.a.get_inx_mut_unwrap_t(d_tree1).p_back = Some(p_r);
+                    } else {
+                        use_p_d = true;
                     }
+                } else {
+                    self.a.get_inx_mut_unwrap_t(p_r).p_tree1 = None;
                 }
                 // the replacement node becomes the displacement node for the next round
                 p_d = p_r;
@@ -988,6 +998,11 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 d_rank = buf.3;
                 d_prev = buf.4;
                 d_next = buf.5;
+                if use_p_d {
+                    p1 = Some(p_d);
+                } else {
+                    p1 = d_back;
+                }
             } else {
                 break
             }
