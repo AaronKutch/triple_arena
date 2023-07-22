@@ -954,22 +954,23 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 r.t.rank = d_rank;
                 if let Some(d_back) = d_back {
                     if d_back != p.inx() {
+                        r.t.p_back = Some(d_back);
                         let n = self.a.get_inx_mut_unwrap_t(d_back);
                         if n.p_tree1 == Some(p_d) {
                             n.p_tree1 = Some(p_r);
                         } else {
                             n.p_tree0 = Some(p_r);
                         }
-                        self.a.get_inx_mut_unwrap_t(p_r).p_back = Some(d_back);
                     }
                 } else {
+                    r.t.p_back = None;
                     self.root = p_r;
-                    self.a.get_inx_mut_unwrap_t(p_r).p_back = None;
                 }
                 let mut use_p_d = false;
+                let r = self.a.get_inx_mut_unwrap_t(p_r);
                 if let Some(d_tree0) = d_tree0 {
                     if d_tree0 != p_r {
-                        self.a.get_inx_mut_unwrap_t(p_r).p_tree0 = Some(d_tree0);
+                        r.p_tree0 = Some(d_tree0);
                         self.a.get_inx_mut_unwrap_t(d_tree0).p_back = Some(p_r);
                     } else {
                         // in the case where the replacement node is a child of the displaced node,
@@ -977,17 +978,18 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         use_p_d = true;
                     }
                 } else {
-                    self.a.get_inx_mut_unwrap_t(p_r).p_tree0 = None;
+                    r.p_tree0 = None;
                 }
+                let r = self.a.get_inx_mut_unwrap_t(p_r);
                 if let Some(d_tree1) = d_tree1 {
                     if d_tree1 != p_r {
-                        self.a.get_inx_mut_unwrap_t(p_r).p_tree1 = Some(d_tree1);
+                        r.p_tree1 = Some(d_tree1);
                         self.a.get_inx_mut_unwrap_t(d_tree1).p_back = Some(p_r);
                     } else {
                         use_p_d = true;
                     }
                 } else {
-                    self.a.get_inx_mut_unwrap_t(p_r).p_tree1 = None;
+                    r.p_tree1 = None;
                 }
                 // the replacement node becomes the displacement node for the next round
                 p_d = p_r;
