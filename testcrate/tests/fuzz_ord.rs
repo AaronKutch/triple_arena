@@ -1,11 +1,11 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::{OrdArena, Ptr};
+use triple_arena::OrdArena;
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
@@ -28,8 +28,9 @@ fn fuzz_ord() {
         pub v: u64,
     }
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    struct Pair {
+    struct Triple {
         pub p: P0,
+        pub k: Key,
         pub v: Val,
     }
 
@@ -47,17 +48,16 @@ fn fuzz_ord() {
         Val { v: counter_v }
     };
 
-    let mut list: Vec<Pair> = vec![];
+    let mut list: Vec<Triple> = vec![];
 
     let mut a: OrdArena<P0, Key, Val> = OrdArena::new();
     let mut gen = 2;
     // the tricky part is that we need to handle nonhereditary cases
-    let mut b: BTreeMap<Key, HashSet<Pair>> = BTreeMap::new();
+    let mut b: BTreeMap<Key, BTreeMap<Val, Triple>> = BTreeMap::new();
 
-    // TODO
-    let invalid = P0::invalid(); //a.insert(u64::MAX);
-                                 //a.remove(invalid).unwrap();
-                                 //gen += 1;
+    let invalid = a.insert_nonhereditary(Key { k: 0 }, Val { v: 0 });
+    a.remove(invalid).unwrap();
+    gen += 1;
     a.clear_and_shrink();
     gen += 1;
     let mut op_inx;
@@ -77,7 +77,8 @@ fn fuzz_ord() {
         assert_eq!(a.is_empty(), list.is_empty());
         let len = list.len();
         if let Err(e) = OrdArena::_check_invariants(&a) {
-            let debug0 = a.debug_arena();
+            //if i == 9 {
+            /*let debug0 = a.debug_arena();
             let mut debug1 = triple_arena::Arena::new();
             debug1.clone_from_with(&debug0, |p, t| triple_arena_render::DebugNode {
                 sources: if let Some(tmp) = t.4 {
@@ -109,8 +110,12 @@ fn fuzz_ord() {
             )
             .unwrap();
             println!("{}", a.debug());
+            dbg!(last_i);
+            panic!();*/
             panic!("{e}");
         }
+        //println!("i: {i}");
+
         op_inx = rng.next_u32() % 1000;
         match op_inx {
             // note: we give slightly more single inserts than single removes to encourage larger
@@ -120,18 +125,31 @@ fn fuzz_ord() {
                 let k = new_k();
                 let v = new_v();
                 let p = a.insert_nonhereditary(k, v);
-                let pair = Pair { p, v };
-                list.push(pair);
+                let triple = Triple { p, k, v };
+                list.push(triple);
                 if let Some(set) = b.get_mut(&k) {
-                    set.insert(pair);
+                    set.insert(v, triple);
                 } else {
-                    let mut set = HashSet::new();
-                    set.insert(pair);
+                    let mut set = BTreeMap::new();
+                    set.insert(v, triple);
                     b.insert(k, set);
                 }
             }
             105..=199 => {
                 // remove
+                if len != 0 {
+                    let t = list.swap_remove(next_inx!(rng, len));
+                    //dbg!(t.p);
+                    assert_eq!(a.remove(t.p).unwrap(), (t.k, t.v));
+                    let set = b.get_mut(&t.k).unwrap();
+                    assert_eq!(set.remove(&t.v).unwrap(), t);
+                    if set.is_empty() {
+                        b.remove(&t.k);
+                    }
+                    gen += 1;
+                } else {
+                    assert!(a.remove(invalid).is_none());
+                }
             }
             200..=997 => {
                 // find_key with get_val
@@ -139,7 +157,7 @@ fn fuzz_ord() {
                 if let Some(set) = b.get(&new_k) {
                     let p = a.find_key(&new_k).unwrap();
                     let v = *a.get_val(p).unwrap();
-                    assert!(set.contains(&Pair { p, v }));
+                    assert!(set.contains_key(&v));
                 } else {
                     assert!(a.find_key(&new_k).is_none())
                 }
@@ -163,5 +181,5 @@ fn fuzz_ord() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (0, 0, 0));
+    assert_eq!((max_len, iters999, a.gen().get()), (85, 1047, 87961));
 }

@@ -1,4 +1,4 @@
-use crate::{iterators::Ptrs, OrdArena, Ptr};
+use crate::{OrdArena, Ptr};
 
 /// All the iterators here can return values in arbitrary order
 impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {

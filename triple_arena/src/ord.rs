@@ -1,7 +1,9 @@
-use core::{cmp::Ordering, fmt, mem};
-use std::cmp::min;
+use core::{
+    cmp::{min, Ordering},
+    mem,
+};
 
-use crate::{Arena, ChainArena, Link, Ptr, PtrGen, PtrInx};
+use crate::{Arena, ChainArena, Link, Ptr, PtrInx};
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
 // Sen, Siddhartha; Tarjan, Robert E. (2015).
@@ -923,22 +925,20 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 // pointer to replacement node
                 let p_r = if use_next {
                     d_next.unwrap()
-                } else {
-                    if let Some(p_r) = d_prev {
-                        if (d_rank == 2) && (d_tree0.is_none()) {
-                            // if we are on a displaced rank 2 node that has a `None` `p_tree0`,
-                            // look at `p_tree1` to avoid going up the tree
-                            use_next = true;
-                            d_next.unwrap()
-                        } else {
-                            p_r
-                        }
-                    } else {
-                        // if on the first `Link::prev` acquire we get a `None` (because we are on
-                        // the start), go only `Link::next`
+                } else if let Some(p_r) = d_prev {
+                    if (d_rank == 2) && (d_tree0.is_none()) {
+                        // if we are on a displaced rank 2 node that has a `None` `p_tree0`,
+                        // look at `p_tree1` to avoid going up the tree
                         use_next = true;
                         d_next.unwrap()
+                    } else {
+                        p_r
                     }
+                } else {
+                    // if on the first `Link::prev` acquire we get a `None` (because we are on
+                    // the start), go only `Link::next`
+                    use_next = true;
+                    d_next.unwrap()
                 }
                 .inx();
                 let r = self.a.get_inx_mut_unwrap(p_r);
@@ -1388,7 +1388,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         mut map: F,
     ) {
         arena.clone_from_with(&self.a.a, |p, link| {
-            map(p, Link::new(Link::prev_next(&link), (&link.k, &link.v)))
+            map(p, Link::new(Link::prev_next(link), (&link.k, &link.v)))
         });
     }
 }
@@ -1424,6 +1424,7 @@ impl<P: Ptr, K: Ord + Clone, V: Clone> Default for OrdArena<P, K, V> {
     }
 }*/
 
+/*
 impl<P: Ptr, K: Ord + Clone + fmt::Debug, V: Clone + fmt::Debug> OrdArena<P, K, V> {
     pub fn debug_arena(&self) -> Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>)> {
         let mut res: Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>)> = Arena::new();
@@ -1515,3 +1516,4 @@ impl<P: Ptr, K: Ord + Clone + fmt::Debug, V: Clone + fmt::Debug> OrdArena<P, K, 
         s
     }
 }
+*/
