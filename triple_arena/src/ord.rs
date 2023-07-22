@@ -681,9 +681,9 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 //  /    \       /   \
                 // s0     a     b    s1 (r-1)
 
+                let p_a = n0.p_tree0;
+                let p_b = n0.p_tree1;
                 if d01 {
-                    let p_a = n0.p_tree0;
-                    let p_b = n0.p_tree1;
                     let n1 = self.a.get_inx_mut_unwrap_t(p1);
                     n1.p_back = Some(p0);
                     n1.p_tree1 = p_a;
@@ -705,8 +705,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     n2.rank = rank0;
                 } else {
                     // reverse version
-                    let p_a = n0.p_tree0;
-                    let p_b = n0.p_tree1;
                     let n1 = self.a.get_inx_mut_unwrap_t(p1);
                     n1.p_tree0 = p_b;
                     n1.p_back = Some(p0);
