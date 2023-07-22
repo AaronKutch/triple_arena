@@ -318,8 +318,8 @@ fn fuzz_chain() {
                         }
                     }
                 } else {
-                    assert!(a.insert_start(invalid, u64::MAX).is_none());
-                    assert!(a.insert_end(invalid, u64::MAX).is_none());
+                    assert_eq!(a.insert_start(invalid, u64::MAX), Err(u64::MAX));
+                    assert_eq!(a.insert_end(invalid, u64::MAX), Err(u64::MAX));
                 }
             }
             200..=399 => {

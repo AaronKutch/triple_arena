@@ -7,6 +7,8 @@
 
 ### Changes
 - Changed order of returned parameters of the `replace_and_update_gen` functions
+- Fixed `ChainArena::insert_start` and `ChainArena::insert_end` to return `Result` and actually
+  return ownership on failure like the documentation says
 - Some iterator structs have more parameters
 - Slightly optimized `SurjectArena`
 - Refactored iterator struct organization

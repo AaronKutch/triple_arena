@@ -77,6 +77,8 @@ impl<'a, P: Ptr, T> IntoIterator for &'a mut ChainArena<P, T> {
     }
 }
 
+/// All the iterators here can return values in arbitrary order, except for
+/// [ChainArena::next_chain_ptr].
 impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Iteration over all valid `PLink`s in the arena
     pub fn ptrs(&self) -> Ptrs<PLink, Link<PLink, T>> {
@@ -101,7 +103,11 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     }
 
     /// Iteration over `(PLink, &Link<PLink, T>)` tuples corresponding to all
-    /// links in the chain that `p` is connected to. If `p` was invalid, this
+    /// links in the chain that `p` is connected to. This starts at the link
+    /// pointed to by `p` and iterates along the `next` direction until it
+    /// reaches the end of the chain (or reaches `p` again if the chain is
+    /// cyclical), then it iterates in the reverse direction starting from the
+    /// link before `p` if it exists. If `p` was invalid, this
     /// iterator returns `None`.
     pub fn iter_chain(&self, p: PLink) -> IterChain<PLink, T> {
         IterChain {
@@ -120,31 +126,31 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         }
     }
 
-    /// Same as [Arena::drain]
+    /// Same as [crate::Arena::drain]
     pub fn drain(&mut self) -> Drain<PLink, Link<PLink, T>> {
         self.a.drain()
     }
 
-    /// Same as [Arena::capacity_drain]
+    /// Same as [crate::Arena::capacity_drain]
     pub fn capacity_drain(self) -> CapacityDrain<PLink, Link<PLink, T>> {
         self.a.capacity_drain()
     }
 
-    /// Same as [Arena::first_ptr]
+    /// Same as [crate::Arena::first_ptr]
     #[must_use]
     pub fn first_ptr(&self) -> (PLink, bool) {
         self.a.first_ptr()
     }
 
-    /// Same as [Arena::next_ptr]
+    /// Same as [crate::Arena::next_ptr]
     pub fn next_ptr(&self, p: &mut PLink, b: &mut bool) {
         self.a.next_ptr(p, b);
     }
 
-    /// Same as [Arena::next_ptr] except that this only iterates over elements
-    /// of the chain that `p` is connected to. This does _not_ have a
-    /// corresponding `first_chain_ptr` function, see the below recommended
-    /// structure for calling this.
+    /// Same as [crate::Arena::next_ptr] except that this only iterates over
+    /// elements of the chain that `p` is connected to. This does _not_ have
+    /// a corresponding `first_chain_ptr` function, see the below
+    /// recommended structure for calling this.
     ///
     /// ```text
     /// let init = ...;

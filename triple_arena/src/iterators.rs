@@ -351,6 +351,7 @@ impl<P: Ptr, T> Arena<P, T> {
     ///     // proper format is used
     ///     if ... { arena.clear_and_shrink() }
     ///
+    ///     // This must be at the end of the loop
     ///     arena.next_ptr(&mut p, &mut b);
     /// }
     /// ```

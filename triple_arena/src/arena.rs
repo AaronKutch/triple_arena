@@ -31,20 +31,24 @@ use crate::{entry::InternalEntry, Ptr, PtrGen, PtrInx};
 ///
 /// // In implementations that always use valid indexes and only want the
 /// // generation counter in debug mode, we can use `cfg`s like this:
-/// //#[cfg(Debug)]
+/// /* // commented out because of doc tests
+/// #[cfg(Debug)]
 /// ptr_struct!(P0);
-/// //#[cfg(Debug)]
+/// #[cfg(Debug)]
 /// ptr_struct!(Q2);
-/// //#[cfg(not(Debug))]
-/// //ptr_struct!(P0());
-/// //#[cfg(not(Debug))]
-/// //ptr_struct!(Q2());
+/// #[cfg(not(Debug))]
+/// ptr_struct!(P0());
+/// #[cfg(not(Debug))]
+/// ptr_struct!(Q2());
+/// */
+/// ptr_struct!(P0);
+/// ptr_struct!(Q2);
 ///
 /// // By convention we use short names for `Ptr` structs beginning with `P`,
 /// // `Q`, or `R`. In simple contexts we add a single digit to differentiate
 /// // the generic `P: Ptr` from a instantiated `P0`. If the number of arenas
-/// // exceeds a small number you should use more descriptive names like
-/// // `PEntry` or `PComponent`.
+/// // exceeds a small number or the types will be public, you should use more
+/// // descriptive names like `PNode`, `PComponent`, `PNameOfEntryKind`, etc.
 ///
 /// let mut arena: Arena<P0, String> = Arena::new();
 ///
@@ -67,7 +71,7 @@ use crate::{entry::InternalEntry, Ptr, PtrGen, PtrInx};
 /// assert_eq!(removed, "test");
 ///
 /// // When using generation counters, invalidated pointers are guaranteed to
-/// // never work again
+/// // never work again.
 /// assert!(arena.get(test_ptr).is_none());
 ///
 /// // Using different `Ptr` generics is extremely useful in complicated
