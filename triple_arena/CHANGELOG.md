@@ -10,6 +10,7 @@
 - Some iterator structs have more parameters
 - Slightly optimized `SurjectArena`
 - Refactored iterator struct organization
+- Added `Unpin + RefUnwindSafe + UnwindSafe` to the pointer traits
 
 ### Additions
 - Added `OrdArena`

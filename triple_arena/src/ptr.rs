@@ -2,6 +2,7 @@ use core::{
     fmt::Debug,
     hash::Hash,
     num::{NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8},
+    panic::{RefUnwindSafe, UnwindSafe},
 };
 
 /// This should only be implemented on Rust's `NonZeroU...` types, because of
@@ -9,7 +10,19 @@ use core::{
 /// generationless case.
 #[doc(hidden)]
 pub trait PtrGen:
-    Debug + Hash + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Send + Sync
+    Debug
+    + Hash
+    + Clone
+    + Copy
+    + PartialEq
+    + Eq
+    + PartialOrd
+    + Ord
+    + Send
+    + Sync
+    + Unpin
+    + RefUnwindSafe
+    + UnwindSafe
 {
     /// Returns the first element after 0, which is special because Arenas with
     /// generation counters always start at generation 2, which means invalid
@@ -69,7 +82,19 @@ impl PtrGen for () {
 /// This should only be implemented for Rust's unsigned integers.
 #[doc(hidden)]
 pub trait PtrInx:
-    Default + Debug + Hash + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Send + Sync
+    Debug
+    + Hash
+    + Clone
+    + Copy
+    + PartialEq
+    + Eq
+    + PartialOrd
+    + Ord
+    + Send
+    + Sync
+    + Unpin
+    + RefUnwindSafe
+    + UnwindSafe
 {
     /// Note: this should be truncating or zero extending cast, higher level
     /// functions should handle fallible cases
@@ -116,7 +141,19 @@ impl_ptr_inx!(usize u8 u16 u32 u64 u128);
 /// Notes: This trait also has many bounds on it, so that users do not regularly
 /// encounter friction with using `Ptr`s in data structures.
 pub trait Ptr:
-    Default + Debug + Hash + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Send + Sync
+    Debug
+    + Hash
+    + Clone
+    + Copy
+    + PartialEq
+    + Eq
+    + PartialOrd
+    + Ord
+    + Send
+    + Sync
+    + Unpin
+    + RefUnwindSafe
+    + UnwindSafe
 {
     /// The recommended general purpose type for this is `usize`
     type Inx: PtrInx;
