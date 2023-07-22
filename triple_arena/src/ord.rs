@@ -616,35 +616,30 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 //            /      \
                 //          s0 (r-1) s1 (r-1)
 
+                let p_s0 = if d01 { n1.p_tree0 } else { n1.p_tree1 };
                 if d01 {
                     // reversed version
-                    let p_s0 = n1.p_tree0;
                     let n1 = self.a.get_inx_mut_unwrap_t(p1);
                     n1.p_tree0 = Some(p2);
                     n1.p_back = p3;
-                    if let Some(p_s0) = p_s0 {
-                        let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
-                        s0.p_back = Some(p2);
-                    }
                     let n2 = self.a.get_inx_mut_unwrap_t(p2);
                     n2.p_tree0 = p_s1;
                     n2.p_back = Some(p1);
                     n2.p_tree1 = p_s0;
                     n2.rank = rank0;
                 } else {
-                    let p_s0 = n1.p_tree1;
                     let n1 = self.a.get_inx_mut_unwrap_t(p1);
                     n1.p_back = p3;
                     n1.p_tree1 = Some(p2);
-                    if let Some(p_s0) = p_s0 {
-                        let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
-                        s0.p_back = Some(p2);
-                    }
                     let n2 = self.a.get_inx_mut_unwrap_t(p2);
                     n2.p_tree0 = p_s0;
                     n2.p_back = Some(p1);
                     n2.p_tree1 = p_s1;
                     n2.rank = rank0;
+                }
+                if let Some(p_s0) = p_s0 {
+                    let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                    s0.p_back = Some(p2);
                 }
                 if let Some(p3) = p3 {
                     let n3 = self.a.get_inx_mut_unwrap_t(p3);
@@ -1052,7 +1047,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let p_s0 = if d01 { n1.p_tree0 } else { n1.p_tree1 };
             if let Some(p_s0) = p_s0 {
                 if rank0.wrapping_add(2) >= rank1 {
-                    // TODO illustrate
+                    // no violation
                     break
                 }
                 let s0 = self.a.get_inx_unwrap(p_s0);
