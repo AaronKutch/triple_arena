@@ -933,13 +933,13 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     d_next.unwrap()
                 } else {
                     if let Some(p_r) = d_prev {
-                        if d_back != Some(p_r.inx()) {
-                            p_r
-                        } else {
-                            // if we are going up the tree (which can happen if we started on a
-                            // removed rank 2 node that has a `None` `p_tree0`)
+                        if (d_rank == 2) && (d_tree0.is_none()) {
+                            // if we are on a displaced rank 2 node that has a `None` `p_tree0`,
+                            // look at `p_tree1` to avoid going up the tree
                             use_next = true;
                             d_next.unwrap()
+                        } else {
+                            p_r
                         }
                     } else {
                         // if on the first `Link::prev` acquire we get a `None` (because we are on
