@@ -1,7 +1,4 @@
-use core::{
-    cmp::{max, Ordering},
-    fmt, mem,
-};
+use core::{cmp::Ordering, fmt, mem};
 use std::cmp::min;
 
 use crate::{Arena, ChainArena, Link, Ptr, PtrGen, PtrInx};
@@ -731,21 +728,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     n2.rank = rank0;
                     if let Some(p3) = p3 {
                         let n3 = self.a.get_inx_mut_unwrap_t(p3);
-                        d01 = false;
-                        d12 = n3.p_tree1 == Some(p2);
-                        if d12 {
+                        if n3.p_tree1 == Some(p2) {
                             n3.p_tree1 = Some(p0);
                         } else {
                             n3.p_tree0 = Some(p0);
                         }
-                        p0 = p1;
-                        p1 = p2;
-                        p2 = p3;
-                        continue
                     } else {
                         // we have reached the root
                         self.root = p0;
-                        break
                     }
                 } else {
                     // reverse version
@@ -772,23 +762,19 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     n2.rank = rank0;
                     if let Some(p3) = p3 {
                         let n3 = self.a.get_inx_mut_unwrap_t(p3);
-                        d01 = true;
-                        d12 = n3.p_tree1 == Some(p2);
-                        if d12 {
+                        if n3.p_tree1 == Some(p2) {
                             n3.p_tree1 = Some(p0);
                         } else {
                             n3.p_tree0 = Some(p0);
                         }
-                        p0 = p1;
-                        p1 = p2;
-                        p2 = p3;
-                        continue
                     } else {
                         // we have reached the root
                         self.root = p0;
-                        break
                     }
                 }
+                // the previous branches all result in the next higher rank difference not being
+                // violated, so we can just return
+                break
             }
         }
     }
@@ -1174,7 +1160,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 let rank_s0 = s0.rank;
 
                 if rank_s0.wrapping_add(2) == rank1 {
-                    // this is not just an optimization, the other branch would require `s0` to have a rank difference of 1 with `n1`
+                    // this is not just an optimization, the other branch would require `s0` to have
+                    // a rank difference of 1 with `n1`
 
                     //    n1 (r+3)
                     //    /     \
@@ -1197,14 +1184,22 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 //   /         \
                 // n0 (r)     s0 (r+2)
 
-                let (p_a, p_b) = if d01 { (s0.p_tree1, s0.p_tree0)} else {(s0.p_tree0, s0.p_tree1)};
+                let (p_a, p_b) = if d01 {
+                    (s0.p_tree1, s0.p_tree0)
+                } else {
+                    (s0.p_tree0, s0.p_tree1)
+                };
 
                 let rank_a = if let Some(p_a) = p_a {
                     self.a.get_inx_unwrap(p_a).rank
-                } else {0};
+                } else {
+                    0
+                };
                 let rank_b = if let Some(p_b) = p_b {
                     self.a.get_inx_unwrap(p_b).rank
-                } else {0};
+                } else {
+                    0
+                };
 
                 if rank_b.wrapping_add(1) == rank_s0 {
                     // we get to use a simpler restructure
@@ -1227,7 +1222,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     //   /        \
                     // n0 (r)  a (r,r+1)
 
-                    // note that this handles the special case where rank invariant 1 comes into play
+                    // note that this handles the special case where rank invariant 1 comes into
+                    // play
 
                     //     n1 (3)
                     //    /      \
@@ -1243,7 +1239,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     //           /     \
                     //          /       \
                     //     n1 (1)        b (1)
-                    
+
                     if d01 {
                         // reverse version
                     } else {
@@ -1270,7 +1266,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     }
                     break
                 }
-
             } else {
                 // only possible at exterior of the tree with this case
 
