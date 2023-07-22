@@ -1173,11 +1173,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 //   /         \
                 // n0 (r)     s0 (r+2)
 
-                let (p_a, p_b) = if d01 {
-                    (s0.p_tree1, s0.p_tree0)
-                } else {
-                    (s0.p_tree0, s0.p_tree1)
-                };
+                let p_a = s0.p_tree0;
+                let p_b = s0.p_tree1;
 
                 let rank_a = if let Some(p_a) = p_a {
                     self.a.get_inx_unwrap(p_a).rank
@@ -1231,6 +1228,26 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 
                     if d01 {
                         // reverse version
+                        let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                        n1.p_tree0 = p_b;
+                        n1.p_back = Some(p_s0);
+                        n1.rank = rank_a.wrapping_add(1);
+                        if let Some(p_b) = p_b {
+                            let a = self.a.get_inx_mut_unwrap_t(p_b);
+                            a.p_back = Some(p1);
+                        }
+                        let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                        s0.p_back = p2;
+                        s0.p_tree1 = Some(p1);
+                        s0.rank = rank1;
+                        if let Some(p2) = p2 {
+                            let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                            if n2.p_tree1 == Some(p1) {
+                                n2.p_tree1 = Some(p_s0);
+                            } else {
+                                n2.p_tree0 = Some(p_s0);
+                            }
+                        }
                     } else {
                         let n1 = self.a.get_inx_mut_unwrap_t(p1);
                         n1.p_back = Some(p_s0);
@@ -1253,6 +1270,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                             }
                         }
                     }
+                    // all invariants resolved
                     break
                 }
             } else {
