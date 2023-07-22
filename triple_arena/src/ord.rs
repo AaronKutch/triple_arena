@@ -1061,9 +1061,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     // n0 (r)   s0 (r+1)
                     //
 
-                    // convey
-                    p0 = Some(p1);
-                    continue
+                    if let Some(p2) = p2 {
+                        // convey
+                        p0 = Some(p1);
+                        p1 = p2;
+                        continue
+                    } else {
+                        break
+                    }
                 }
 
                 //     n1 (r+3)
@@ -1200,9 +1205,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 
                     // also handles invariant 1
 
-                    // convey
-                    p0 = Some(p1);
-                    continue
+                    if let Some(p2) = p2 {
+                        // convey
+                        p0 = Some(p1);
+                        p1 = p2;
+                        continue
+                    } else {
+                        break
+                    }
                 }
 
                 //    n1 (r+3)
