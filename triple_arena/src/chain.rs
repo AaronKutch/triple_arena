@@ -596,8 +596,8 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     pub fn exchange_next(&mut self, p0: PLink, p1: PLink) -> Option<()> {
         if self.contains(p0) && self.contains(p1) {
             // get downstream links
-            let d0 = Link::next(&self.get(p0).unwrap())?;
-            let d1 = Link::next(&self.get(p1).unwrap())?;
+            let d0 = Link::next(self.get(p0).unwrap())?;
+            let d1 = Link::next(self.get(p1).unwrap())?;
             self.a.get_mut(p0).unwrap().prev_next.1 = Some(d1);
             self.a.get_mut(p1).unwrap().prev_next.1 = Some(d0);
             self.a.get_mut(d0).unwrap().prev_next.0 = Some(p1);
@@ -665,6 +665,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Like [ChainArena::get], except generation counters are ignored and the
     /// result is unwrapped internally
     #[doc(hidden)]
+    //#[track_caller]
     pub fn get_inx_unwrap(&self, p: PLink::Inx) -> &Link<PLink, T> {
         self.a.get_inx_unwrap(p)
     }
@@ -672,6 +673,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// Like [ChainArena::get_mut], except generation counters are ignored and
     /// the result is unwrapped internally
     #[doc(hidden)]
+    //#[track_caller]
     pub fn get_inx_mut_unwrap(&mut self, p: PLink::Inx) -> Link<PLink, &mut T> {
         let link = self.a.get_inx_mut_unwrap(p);
         Link::new(Link::prev_next(link), &mut link.t)
@@ -681,6 +683,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     /// the result is unwrapped internally, and only the `&mut T` is
     /// returned
     #[doc(hidden)]
+    //#[track_caller]
     pub fn get_inx_mut_unwrap_t(&mut self, p: PLink::Inx) -> &mut T {
         let link = self.a.get_inx_mut_unwrap(p);
         &mut link.t

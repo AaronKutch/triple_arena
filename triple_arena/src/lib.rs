@@ -1,6 +1,6 @@
 #![no_std]
-// because `Ptr` is based on user-controlled code we will not use unsafe code for the foreseeable
-// future
+// because `Ptr` is based on user-controlled code we will not use unsafe code
+// for the foreseeable future
 #![deny(unsafe_code)]
 // false positives
 #![allow(clippy::while_let_on_iterator)]
@@ -8,6 +8,7 @@
 // TODO all places where we have an internal .get_..().unwrap() need to have
 // .get_inx_unwrap() (removes both the return and generation input wastage) do
 // this after OrdArena is settled
+// check all `get_inx_mut_unwrap` to see if we can replace with the _t variant
 
 mod chain;
 mod entry;
@@ -22,6 +23,7 @@ mod surject;
 pub use surject::SurjectArena;
 pub mod surject_iterators;
 pub use ord::OrdArena;
+mod ord_iterators;
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -792,22 +794,22 @@ impl<P: Ptr, T> Arena<P, T> {
     /// Like [Arena::get], except generation counters are ignored and the
     /// result is unwrapped internally
     #[doc(hidden)]
-    #[track_caller] // TODO comment out
+    //#[track_caller]
     pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
         match self.m_get(p) {
             Some(Allocated(_, t)) => t,
-            _ => panic!("get_inx_unwrap out of bounds"),
+            _ => panic!("get_inx_unwrap of unallocated entry"),
         }
     }
 
     /// Like [Arena::get_mut], except generation counters are ignored and the
     /// result is unwrapped internally
     #[doc(hidden)]
-    #[track_caller] // TODO comment out
+    //#[track_caller]
     pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
         match self.m_get_mut(p) {
             Some(Allocated(_, t)) => t,
-            _ => panic!("get_inx_mut_unwrap out of bounds"),
+            _ => panic!("get_inx_mut_unwrap of unallocated entry"),
         }
     }
 }
