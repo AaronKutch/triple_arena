@@ -1025,7 +1025,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         // check if we are on the end of the chain to fix the first and last pointers
         if Link::prev(&n1).is_none() {
             self.first = p1;
-        } else if Link::next(&n1).is_none() {
+        }
+        if Link::next(&n1).is_none() {
             self.last = p1;
         }
 
