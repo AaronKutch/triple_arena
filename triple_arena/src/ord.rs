@@ -1024,6 +1024,11 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 
         // all pointers should be fixed, now to fix rank violations
 
+        if n1.t.p_tree0.is_none() && n1.t.p_tree1.is_none() {
+            // special casing for invariant 1
+            n1.t.rank = 1;
+        }
+
         loop {
             let n1 = self.a.get_inx_unwrap(p1);
             let rank1 = n1.rank;
