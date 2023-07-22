@@ -21,9 +21,10 @@ pub(crate) use entry::InternalEntry;
 pub use ptr::{Ptr, PtrGen, PtrInx, PtrNoGen};
 mod surject;
 pub use surject::SurjectArena;
+pub mod chain_iterators;
 pub mod surject_iterators;
 pub use ord::OrdArena;
-mod ord_iterators;
+pub mod ord_iterators;
 pub use arena::Arena;
 
 extern crate alloc;

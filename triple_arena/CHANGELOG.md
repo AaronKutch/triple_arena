@@ -9,6 +9,7 @@
 - Changed order of returned parameters of the `replace_and_update_gen` functions
 - Some iterator structs have more parameters
 - Slightly optimized `SurjectArena`
+- Refactored iterator struct organization
 
 ### Additions
 - Added `OrdArena`

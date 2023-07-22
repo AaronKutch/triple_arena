@@ -1,9 +1,143 @@
+//! Iterators for `SurjectArena`
+
 use crate::{
+    chain_iterators,
     iterators::{self},
     ptr::PtrNoGen,
     surject::{Key, Val},
     Arena, Link, Ptr, SurjectArena,
 };
+
+// we need custom iterators like this because the `T` is required in the
+// generics, and if we used the underlying `ChainArena` it would bring in the
+// wrong things
+
+/// An iterator over the valid `P`s of a `SurjectArena`
+pub struct Ptrs<'a, P: Ptr, K> {
+    iter: iterators::Ptrs<'a, P, Link<P, Key<P, K>>>,
+}
+
+impl<'a, P: Ptr, K> Iterator for Ptrs<'a, P, K> {
+    type Item = P;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+/// An iterator over `&K` in a `SurjectArena`
+pub struct Keys<'a, P: Ptr, K> {
+    iter: iterators::Vals<'a, P, Link<P, Key<P, K>>>,
+}
+
+impl<'a, P: Ptr, K> Iterator for Keys<'a, P, K> {
+    type Item = &'a K;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|k| &k.k)
+    }
+}
+
+/// An iterator over `&V` in a `SurjectArena`
+pub struct Vals<'a, P: Ptr, V> {
+    iter: iterators::Vals<'a, PtrNoGen<P>, Val<V>>,
+}
+
+impl<'a, P: Ptr, V> Iterator for Vals<'a, P, V> {
+    type Item = &'a V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|v| &v.v)
+    }
+}
+
+/// A mutable iterator over `&mut K` in a `SurjectArena`
+pub struct KeysMut<'a, P: Ptr, K> {
+    iter_mut: chain_iterators::ValsLinkMut<'a, P, Key<P, K>>,
+}
+
+impl<'a, P: Ptr, K> Iterator for KeysMut<'a, P, K> {
+    type Item = &'a mut K;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter_mut.next().map(|link| &mut link.t.k)
+    }
+}
+
+/// A mutable iterator over `&mut V` in a `SurjectArena`
+pub struct ValsMut<'a, P: Ptr, V> {
+    iter_mut: iterators::ValsMut<'a, PtrNoGen<P>, Val<V>>,
+}
+
+impl<'a, P: Ptr, V> Iterator for ValsMut<'a, P, V> {
+    type Item = &'a mut V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter_mut.next().map(|v| &mut v.v)
+    }
+}
+
+/// An iterator over `(P, &K, &V)` in a `SurjectArena`
+pub struct Iter<'a, P: Ptr, K, V> {
+    iter: iterators::Iter<'a, P, Link<P, Key<P, K>>>,
+    vals: &'a Arena<PtrNoGen<P>, Val<V>>,
+}
+
+impl<'a, P: Ptr, K, V> Iterator for Iter<'a, P, K, V> {
+    type Item = (P, &'a K, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (p, link) = self.iter.next()?;
+        Some((p, &link.t.k, &self.vals.get(link.t.p_val).unwrap().v))
+    }
+}
+
+/// An iterator over `(P, &K, &V)` in a `SurjectArena` surject
+pub struct IterSurject<'a, P: Ptr, K, V> {
+    arena: &'a SurjectArena<P, K, V>,
+    surject_val: Option<&'a V>,
+    init: P,
+    p: P,
+    stop: bool,
+}
+
+impl<'a, P: Ptr, K, V> Iterator for IterSurject<'a, P, K, V> {
+    type Item = (P, &'a K, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.stop {
+            None
+        } else {
+            let p_res = self.p;
+            self.arena
+                .next_surject_ptr(self.init, &mut self.p, &mut self.stop);
+            Some((
+                p_res,
+                self.arena.get_key(p_res).unwrap(),
+                self.surject_val.unwrap(),
+            ))
+        }
+    }
+}
+
+// TODO we are running into the `IterMut` problem
+/*
+/// An iterator over `(P, &mut T)` in a `SurjectArena`
+pub struct IterMut<'a, P: Ptr, T> {
+    iter: iterators::Iter<'a, P, Link<P, PVal>>,
+    vals_mut: &'a mut Arena<PVal, Val<T>>,
+}
+
+impl<'a, P: Ptr, T> Iterator for IterMut<'a, P, T> {
+    type Item = (P, &'a mut T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (p, p_val) = self.iter.next()?;
+        let tmp = &mut self.vals_mut.get_mut(p_val.t).unwrap().t;
+        Some((p, tmp))
+    }
+}
+*/
 
 /// All the iterators here can return values in arbitrary order
 impl<P: Ptr, K, V> SurjectArena<P, K, V> {
@@ -108,134 +242,3 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         *p = next;
     }
 }
-
-// we need custom iterators like this because the `T` is required in the
-// generics, and if we used the underlying `ChainArena` it would bring in the
-// wrong things
-
-/// An iterator over the valid `P`s of a `SurjectArena`
-pub struct Ptrs<'a, P: Ptr, K> {
-    iter: iterators::Ptrs<'a, P, Link<P, Key<P, K>>>,
-}
-
-impl<'a, P: Ptr, K> Iterator for Ptrs<'a, P, K> {
-    type Item = P;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-/// An iterator over `&K` in a `SurjectArena`
-pub struct Keys<'a, P: Ptr, K> {
-    iter: iterators::Vals<'a, P, Link<P, Key<P, K>>>,
-}
-
-impl<'a, P: Ptr, K> Iterator for Keys<'a, P, K> {
-    type Item = &'a K;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|k| &k.k)
-    }
-}
-
-/// An iterator over `&V` in a `SurjectArena`
-pub struct Vals<'a, P: Ptr, V> {
-    iter: iterators::Vals<'a, PtrNoGen<P>, Val<V>>,
-}
-
-impl<'a, P: Ptr, V> Iterator for Vals<'a, P, V> {
-    type Item = &'a V;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|v| &v.v)
-    }
-}
-
-/// A mutable iterator over `&mut K` in a `SurjectArena`
-pub struct KeysMut<'a, P: Ptr, K> {
-    iter_mut: iterators::ValsLinkMut<'a, P, Key<P, K>>,
-}
-
-impl<'a, P: Ptr, K> Iterator for KeysMut<'a, P, K> {
-    type Item = &'a mut K;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter_mut.next().map(|link| &mut link.t.k)
-    }
-}
-
-/// A mutable iterator over `&mut V` in a `SurjectArena`
-pub struct ValsMut<'a, P: Ptr, V> {
-    iter_mut: iterators::ValsMut<'a, PtrNoGen<P>, Val<V>>,
-}
-
-impl<'a, P: Ptr, V> Iterator for ValsMut<'a, P, V> {
-    type Item = &'a mut V;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter_mut.next().map(|v| &mut v.v)
-    }
-}
-
-/// An iterator over `(P, &K, &V)` in a `SurjectArena`
-pub struct Iter<'a, P: Ptr, K, V> {
-    iter: iterators::Iter<'a, P, Link<P, Key<P, K>>>,
-    vals: &'a Arena<PtrNoGen<P>, Val<V>>,
-}
-
-impl<'a, P: Ptr, K, V> Iterator for Iter<'a, P, K, V> {
-    type Item = (P, &'a K, &'a V);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let (p, link) = self.iter.next()?;
-        Some((p, &link.t.k, &self.vals.get(link.t.p_val).unwrap().v))
-    }
-}
-
-/// An iterator over `(P, &K, &V)` in a `SurjectArena` surject
-pub struct IterSurject<'a, P: Ptr, K, V> {
-    arena: &'a SurjectArena<P, K, V>,
-    surject_val: Option<&'a V>,
-    init: P,
-    p: P,
-    stop: bool,
-}
-
-impl<'a, P: Ptr, K, V> Iterator for IterSurject<'a, P, K, V> {
-    type Item = (P, &'a K, &'a V);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.stop {
-            None
-        } else {
-            let p_res = self.p;
-            self.arena
-                .next_surject_ptr(self.init, &mut self.p, &mut self.stop);
-            Some((
-                p_res,
-                self.arena.get_key(p_res).unwrap(),
-                self.surject_val.unwrap(),
-            ))
-        }
-    }
-}
-
-// TODO we are running into the `IterMut` problem
-/*
-/// An iterator over `(P, &mut T)` in a `SurjectArena`
-pub struct IterMut<'a, P: Ptr, T> {
-    iter: iterators::Iter<'a, P, Link<P, PVal>>,
-    vals_mut: &'a mut Arena<PVal, Val<T>>,
-}
-
-impl<'a, P: Ptr, T> Iterator for IterMut<'a, P, T> {
-    type Item = (P, &'a mut T);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let (p, p_val) = self.iter.next()?;
-        let tmp = &mut self.vals_mut.get_mut(p_val.t).unwrap().t;
-        Some((p, tmp))
-    }
-}
-*/

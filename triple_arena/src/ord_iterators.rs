@@ -1,3 +1,5 @@
+//! Iterators for `OrdArena`
+
 use crate::{OrdArena, Ptr};
 
 /// All the iterators here can return values in arbitrary order
