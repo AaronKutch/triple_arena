@@ -924,8 +924,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             Link::prev(&link),
             Link::next(&link),
         );
-        // if on the first `Link::prev` acquire we get a `None` (because we are on the
-        // start), go only `Link::next`
         let mut use_next = false;
         let mut p1 = d_back;
         loop {
@@ -935,8 +933,17 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     d_next.unwrap()
                 } else {
                     if let Some(p_r) = d_prev {
-                        p_r
+                        if d_back != Some(p_r.inx()) {
+                            p_r
+                        } else {
+                            // if we are going up the tree (which can happen if we started on a
+                            // removed rank 2 node that has a `None` `p_tree0`)
+                            use_next = true;
+                            d_next.unwrap()
+                        }
                     } else {
+                        // if on the first `Link::prev` acquire we get a `None` (because we are on
+                        // the start), go only `Link::next`
                         use_next = true;
                         d_next.unwrap()
                     }
