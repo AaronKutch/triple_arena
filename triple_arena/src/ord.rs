@@ -1024,108 +1024,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 
         let mut p0 = None;
         let mut p1 = p1.unwrap();
-        //let n1 = self.a.get_inx_unwrap(p1);
-        //let mut d01 = n1.p_tree0.is_some();
-        /*let mut p_s0 = if d01 { n1.p_tree0 } else { n1.p_tree1 };
-
-        // In order to maintain rank invariant 1, we must handle a few special cases.
-
-        if let Some(p_s0) = p_s0 {
-            let s0 = self.a.get_inx_unwrap(p_s0);
-            let (p_a, p_b) = if d01 { (s0.p_tree1, s0.p_tree0)} else {(s0.p_tree0, s0.p_tree1)};
-            /*match (p_a, p_b) {
-                (None, None) => unreachable!(),
-                (None, Some(p_b)) => {},
-                (Some(p_a), None) => todo!(),
-                (Some(p_a), Some(p_b)) => todo!(),
-            }*/
-        } else {
-            //    n1 (2)
-            //    /
-            //   /
-            // d (0)
-
-            self.a.get_inx_mut_unwrap_t(p1).rank = 1;
-
-            //    n1 (1)
-        }*/
-
-        //    n1 (2)
-        //    /     \
-        //   /       \
-        // d (0)   s0 (1)
-
-        //    n1 (3)
-        //    /     \
-        //   /       \
-        // d (0)   s0 (1)
-        //
-        //      -->
-        //
-        //    n1 (2)
-        //    /     \
-        //   /       \
-        // d (0)   s0 (1)
-
-        //    n1 (3)
-        //    /     \
-        //   /       \
-        // d (0)     s0 (2)
-        //           /   \
-        //          /     \
-        //        a (1)  b (1)
-        //
-        //    n1  a  s0  b
-        //
-        //        a (3)
-        //         / \
-        //        /   \
-        //       /   s0 (2)
-        //      /       \
-        //     /         \
-        //    n1 (1)     b (1)
-
-        //    n1 (3)
-        //    /     \
-        //   /       \
-        // d (0)   s0 (2)
-        //             \
-        //              \
-        //             b (1)
-        //
-        //    n1   s0  b
-        //
-        //         s0 (3)
-        //        /    \
-        //       /      \
-        //    n1 (1)   b (1)
-
-        //    n1 (3)
-        //    /     \
-        //   /       \
-        // d (0)     s0 (2)
-        //           /
-        //          /
-        //        a (1)
-        //
-        //    n1  a  s0
-        //
-        //        a (3)
-        //         / \
-        //        /   \
-        //    n1 (1) s0 (1)
-
-        //    n1 (r+3)
-        //    /     \
-        //   /       \
-        // n0 (r)   s0 (r,r+1)
-        //
-        //      -->
-        //
-        //    n1 (r+2)
-        //    /     \
-        //   /       \
-        // n0 (r)   s0 (r,r+1)
 
         loop {
             let n1 = self.a.get_inx_unwrap(p1);
@@ -1188,8 +1086,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 };
 
                 if rank_b.wrapping_add(1) == rank_s0 {
-                    // we get to use a simpler restructure
-
                     //     n1 (r+3)
                     //    /      \
                     //   /        \
@@ -1273,6 +1169,132 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     // all invariants resolved
                     break
                 }
+
+                //     n1 (r+3)
+                //    /      \
+                //   /        \
+                // n0 (r)     s0 (r+2)
+                //           /     \
+                //          /       \
+                //         a (r,r+1) b (r)
+
+                if rank_a.wrapping_add(2) == rank_s0 {
+                    // double demotion
+
+                    //     n1 (r+3)
+                    //    /      \
+                    //   /        \
+                    // n0 (r)     s0 (r+2)
+                    //           /     \
+                    //          /       \
+                    //         a (r)   b (r)
+                    self.a.get_inx_mut_unwrap_t(p_s0).rank = rank0.wrapping_add(1);
+                    self.a.get_inx_mut_unwrap_t(p1).rank = rank0.wrapping_add(2);
+                    //     n1 (r+2)
+                    //    /      \
+                    //   /        \
+                    // n0 (r)     s0 (r+1)
+                    //           /     \
+                    //          /       \
+                    //         a (r)   b (r)
+
+                    // also handles invariant 1
+
+                    // convey
+                    p0 = Some(p1);
+                    continue
+                }
+
+                //    n1 (r+3)
+                //    /      \
+                //   /        \
+                // n0 (r)      -------s0 (r+2)
+                //                   /   \
+                //                  /     \
+                //            a (r+1)     b (r)
+                //           /    \
+                //          /      \
+                //        c (r-1,r) d(r-1,r)
+                //
+                // n0 n1  c   a     d s0  b
+                //
+                //            a (r+3)
+                //           /      \
+                //          /        \
+                //    n1 (r+1)       s0 (r+1)
+                //     /    \         /   \
+                //    /      \       /     \
+                // n0 (r) c (r-1,r) d     b (r-1,r)
+
+                // also handles invariant 1
+
+                let p_a = p_a.unwrap();
+                let a = self.a.get_inx_unwrap(p_a);
+                let p_c = a.p_tree0;
+                let p_d = a.p_tree1;
+                if d01 {
+                    // reverse version
+                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    n1.p_tree0 = p_d;
+                    n1.p_back = Some(p_a);
+                    n1.rank = rank_a;
+                    if let Some(p_d) = p_d {
+                        let d = self.a.get_inx_mut_unwrap_t(p_d);
+                        d.p_back = Some(p1);
+                    }
+                    let a = self.a.get_inx_mut_unwrap_t(p_a);
+                    a.p_tree0 = Some(p_s0);
+                    a.p_back = p2;
+                    a.p_tree1 = Some(p1);
+                    a.rank = rank1;
+                    if let Some(p_c) = p_c {
+                        let c = self.a.get_inx_mut_unwrap_t(p_c);
+                        c.p_back = Some(p_s0);
+                    }
+                    let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                    s0.p_back = Some(p_a);
+                    s0.p_tree1 = p_c;
+                    s0.rank = rank_a;
+                    if let Some(p2) = p2 {
+                        let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                        if n2.p_tree1 == Some(p1) {
+                            n2.p_tree1 = Some(p_a);
+                        } else {
+                            n2.p_tree0 = Some(p_a);
+                        }
+                    }
+                } else {
+                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    n1.p_back = Some(p_a);
+                    n1.p_tree1 = p_c;
+                    n1.rank = rank_a;
+                    if let Some(p_c) = p_c {
+                        let c = self.a.get_inx_mut_unwrap_t(p_c);
+                        c.p_back = Some(p1);
+                    }
+                    let a = self.a.get_inx_mut_unwrap_t(p_a);
+                    a.p_tree0 = Some(p1);
+                    a.p_back = p2;
+                    a.p_tree1 = Some(p_s0);
+                    a.rank = rank1;
+                    if let Some(p_d) = p_d {
+                        let d = self.a.get_inx_mut_unwrap_t(p_d);
+                        d.p_back = Some(p_s0);
+                    }
+                    let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                    s0.p_tree0 = p_d;
+                    s0.p_back = Some(p_a);
+                    s0.rank = rank_a;
+                    if let Some(p2) = p2 {
+                        let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                        if n2.p_tree1 == Some(p1) {
+                            n2.p_tree1 = Some(p_a);
+                        } else {
+                            n2.p_tree0 = Some(p_a);
+                        }
+                    }
+                }
+                break
             } else {
                 // only possible at exterior of the tree with this case
 
