@@ -1,8 +1,10 @@
 #![allow(clippy::type_complexity)]
 
 use core::{
+    borrow::Borrow,
     cmp::{min, Ordering},
     mem,
+    ops::{Index, IndexMut},
 };
 
 use crate::{Arena, ChainArena, Link, Ptr, PtrInx};
@@ -60,7 +62,8 @@ pub(crate) struct Node<P: Ptr, K: Ord, V> {
 /// worst case is `2 * log_2(arena.len())`.
 ///
 /// Note that multiple equal keys are allowed through the `insert_nonhereditary`
-/// function.
+/// function, and this violates the hereditary property and `find_*` uniqueness
+/// only for those keys.
 ///
 /// Note: it is a logic error for a key's ordering to change relative to other
 /// keys. The functions are constructed such that _no_ panics, aborts, memory
@@ -69,6 +72,8 @@ pub(crate) struct Node<P: Ptr, K: Ord, V> {
 /// arena.
 ///
 /// ```
+/// use core::cmp::Ordering;
+///
 /// use triple_arena::{ptr_struct, OrdArena};
 ///
 /// ptr_struct!(P0);
@@ -82,6 +87,22 @@ pub(crate) struct Node<P: Ptr, K: Ord, V> {
 ///
 /// assert_eq!(a.min().unwrap(), p10);
 /// assert_eq!(a.max().unwrap(), p70);
+///
+/// // note that this is `O(1)` because we are using a `Ptr` to directly
+/// // index
+/// assert_eq!(*a.get_key(p50).unwrap(), 50);
+///
+/// // the `insert_*`, `find_*`, and `remove` operations are the only
+/// // `O(log n)` per-element operations
+/// assert_eq!(a.find_key(&50).unwrap(), p50);
+///
+/// // this could find either `(p50, Ordering::Greater)` or
+/// // `(p60, Ordering::Less)`
+/// assert_eq!(a.find_similar_key(&53).unwrap(), (p60, Ordering::Less));
+///
+/// // `remove` does have to do `O(log n)` tree rebalancing, but it avoids
+/// // needing to redo the lookup if the `Ptr` is kept around
+/// assert_eq!(a.remove(p50).unwrap(), (50, ()));
 /// ```
 pub struct OrdArena<P: Ptr, K: Ord, V> {
     pub(crate) root: P::Inx,
@@ -1822,9 +1843,27 @@ impl<P: Ptr, K: Ord + Clone, V: Clone> Clone for OrdArena<P, K, V> {
     }
 }
 
-impl<P: Ptr, K: Ord + Clone, V: Clone> Default for OrdArena<P, K, V> {
+impl<P: Ptr, K: Ord, V> Default for OrdArena<P, K, V> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<P: Ptr, K: Ord, V, B: Borrow<P>> Index<B> for OrdArena<P, K, V> {
+    type Output = V;
+
+    fn index(&self, inx: B) -> &V {
+        let p: P = *inx.borrow();
+        self.get_val(p)
+            .expect("indexed `OrdArena` with invalidated `Ptr`")
+    }
+}
+
+impl<P: Ptr, K: Ord, V, B: Borrow<P>> IndexMut<B> for OrdArena<P, K, V> {
+    fn index_mut(&mut self, inx: B) -> &mut V {
+        let p: P = *inx.borrow();
+        self.get_val_mut(p)
+            .expect("indexed `OrdArena` with invalidated `Ptr`")
     }
 }
 
