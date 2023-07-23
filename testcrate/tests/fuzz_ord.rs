@@ -238,7 +238,33 @@ fn fuzz_ord() {
                     assert!(a.find_similar_key_linear(invalid, &new_k).is_none());
                 }
             }
-            250..=995 => {
+            250..=299 => {
+                // find_key, find_key_linear
+                let new_k = new_k();
+                if let Some(set) = b.get(&new_k) {
+                    let p = if (rng.next_u32() % 100) < 90 {
+                        a.find_key(&new_k).unwrap()
+                    } else {
+                        a.find_key_linear(list[next_inx!(rng, len)].p, &new_k)
+                            .unwrap()
+                    };
+                    let v = *a.get_val(p).unwrap();
+                    assert!(set.contains_key(&v));
+                } else {
+                    if (rng.next_u32() % 100) < 90 {
+                        assert!(a.find_key(&new_k).is_none());
+                    } else {
+                        if len == 0 {
+                            assert!(a.find_key_linear(invalid, &new_k).is_none());
+                        } else {
+                            assert!(a
+                                .find_key_linear(list[next_inx!(rng, len)].p, &new_k)
+                                .is_none());
+                        }
+                    }
+                }
+            }
+            300..=995 => {
                 // find_key with get_val
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {

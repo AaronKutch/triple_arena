@@ -1018,6 +1018,50 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
     }
 
+    /// The same as [OrdArena::find_key], except it uses linear
+    /// comparisons starting at `p_init`. If `p` is not within a small constant
+    /// number of elements away from where `k` should be ordered, this
+    /// function may operate in `O(n)` time instead of the `O(1)` this is
+    /// intended for. Returns `None` if `p_init` is invalid or the key was not
+    /// found.
+    #[must_use]
+    pub fn find_key_linear(&self, p_init: P, k: &K) -> Option<P> {
+        if !self.a.contains(p_init) {
+            return None
+        }
+        let mut p = p_init.inx();
+        let mut direction = None;
+        loop {
+            let (gen, link) = self.a.get_ignore_gen(p).unwrap();
+            let node = &link.t;
+            match Ord::cmp(k, &node.k) {
+                Ordering::Less => {
+                    if direction == Some(true) {
+                        break None
+                    }
+                    direction = Some(false);
+                    if let Some(prev) = Link::prev(link) {
+                        p = prev.inx();
+                    } else {
+                        break None
+                    }
+                }
+                Ordering::Equal => break Some(Ptr::_from_raw(p, gen)),
+                Ordering::Greater => {
+                    if direction == Some(false) {
+                        break None
+                    }
+                    direction = Some(true);
+                    if let Some(next) = Link::next(link) {
+                        p = next.inx();
+                    } else {
+                        break None
+                    }
+                }
+            }
+        }
+    }
+
     /// Finds a `Ptr` with an associated key that is equal key to `k`. If such a
     /// key is not in the arena, this will instead return a `Ptr` to a similar
     /// key, such that if `k` were to be inserted into the arena, it would be
@@ -1026,6 +1070,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// exact match was found, `Ordering::Less` indicating that `k` is less than
     /// the similar entry, and `Ordering::Greater` indicating that `k` is
     /// greater than the similar entry. `None` is returned if `self.is_empty()`.
+    #[must_use]
     pub fn find_similar_key(&self, k: &K) -> Option<(P, Ordering)> {
         if self.a.is_empty() {
             return None
@@ -1054,11 +1099,9 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
     }
 
-    /// The same as [OrdArena::find_similar_key], except it uses linear
-    /// comparisons starting at `p_init`. If `p` is not within a small constant
-    /// number of elements away from where `k` should be ordered, this
-    /// function may operate in `O(n)` time instead of the `O(1)` this is
-    /// intended for. Returns `None` if `p_init` is invalid.
+    /// Combines the behaviors of [OrdArena::find_similar_key] and
+    /// [OrdArena::find_key_linear]
+    #[must_use]
     pub fn find_similar_key_linear(&self, p_init: P, k: &K) -> Option<(P, Ordering)> {
         if !self.a.contains(p_init) {
             return None
