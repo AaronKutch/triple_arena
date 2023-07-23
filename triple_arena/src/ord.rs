@@ -1174,6 +1174,56 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         self.a.get(p).map(|link| &link.v)
     }
 
+    /// Returns the full `Link<P, (&K, &mut V)>`. Using [Link::prev] on the
+    /// result gives the `Ptr` to the next lesser key, and using
+    /// [Link::next] gives the `Ptr` to the next greater key.
+    #[must_use]
+    pub fn get_link_mut(&mut self, p: P) -> Option<Link<P, (&K, &mut V)>> {
+        self.a.get_mut(p).map(|link| {
+            let tmp = Link::prev_next(&link);
+            Link::new(tmp, (&link.t.k, &mut link.t.v))
+        })
+    }
+
+    /// Returns a mutable reference to the key-value pair pointed to by `p`
+    #[must_use]
+    pub fn get_mut(&mut self, p: P) -> Option<(&K, &mut V)> {
+        self.a.get_mut(p).map(|link| (&link.t.k, &mut link.t.v))
+    }
+
+    /// Returns a mutable reference to the value pointed to by `p`
+    #[must_use]
+    pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
+        self.a.get_mut(p).map(|link| &mut link.t.v)
+    }
+
+    /// Gets two references pointed to by `p0` and `p1`.
+    /// If `p0 == p1` or a pointer is invalid, `None` is returned.
+    #[allow(clippy::type_complexity)]
+    #[must_use]
+    pub fn get2_link_mut(
+        &mut self,
+        p0: P,
+        p1: P,
+    ) -> Option<(Link<P, (&K, &mut V)>, Link<P, (&K, &mut V)>)> {
+        self.a.get2_mut(p0, p1).map(|(link0, link1)| {
+            (
+                Link::new(Link::prev_next(&link0), (&link0.t.k, &mut link0.t.v)),
+                Link::new(Link::prev_next(&link1), (&link1.t.k, &mut link1.t.v)),
+            )
+        })
+    }
+
+    /// Gets two references pointed to by `p0` and `p1`.
+    /// If `p0 == p1` or a pointer is invalid, `None` is returned.
+    #[allow(clippy::type_complexity)]
+    #[must_use]
+    pub fn get2_val_mut(&mut self, p0: P, p1: P) -> Option<(&mut V, &mut V)> {
+        self.a
+            .get2_mut(p0, p1)
+            .map(|(link0, link1)| (&mut link0.t.v, &mut link1.t.v))
+    }
+
     /// Invalidates all references to the entry pointed to by `p`, and returns a
     /// new valid reference. Does no invalidation and returns `None` if `p` is
     /// invalid.
@@ -1672,6 +1722,26 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             Ok((old, p_new))
         } else {
             Err(new)
+        }
+    }
+
+    /// Swaps the `V` values pointed to by `Ptr`s `p0` and `p1` and keeps the
+    /// generation counters as-is. If `p0 == p1`, then nothing occurs. Returns
+    /// `None` if `p0` or `p1` are invalid.
+    #[must_use]
+    pub fn swap_vals(&mut self, p0: P, p1: P) -> Option<()> {
+        if p0 == p1 {
+            // still need to check for containment
+            if self.contains(p0) {
+                Some(())
+            } else {
+                None
+            }
+        } else {
+            let (lhs, rhs) = self.a.get2_mut(p0, p1)?;
+            // be careful to swap only the inner `V` values
+            mem::swap(&mut lhs.t.v, &mut rhs.t.v);
+            Some(())
         }
     }
 

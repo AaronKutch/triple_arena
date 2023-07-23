@@ -250,20 +250,17 @@ fn fuzz_ord() {
                     };
                     let v = *a.get_val(p).unwrap();
                     assert!(set.contains_key(&v));
+                } else if (rng.next_u32() % 100) < 90 {
+                    assert!(a.find_key(&new_k).is_none());
+                } else if len == 0 {
+                    assert!(a.find_key_linear(invalid, &new_k).is_none());
                 } else {
-                    if (rng.next_u32() % 100) < 90 {
-                        assert!(a.find_key(&new_k).is_none());
-                    } else {
-                        if len == 0 {
-                            assert!(a.find_key_linear(invalid, &new_k).is_none());
-                        } else {
-                            assert!(a
-                                .find_key_linear(list[next_inx!(rng, len)].p, &new_k)
-                                .is_none());
-                        }
-                    }
+                    assert!(a
+                        .find_key_linear(list[next_inx!(rng, len)].p, &new_k)
+                        .is_none());
                 }
             }
+            // TODO test everything
             300..=995 => {
                 // find_key with get_val
                 let new_k = new_k();
