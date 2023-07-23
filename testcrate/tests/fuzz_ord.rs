@@ -109,9 +109,7 @@ fn fuzz_ord() {
                 std::path::PathBuf::from("./debug.svg"),
             )
             .unwrap();
-            println!("{}", a.debug());
-            dbg!(last_i);
-            panic!();*/
+            println!("{}", a.debug());*/
             panic!("{e}");
         }
         //println!("i: {i}");
@@ -121,10 +119,20 @@ fn fuzz_ord() {
             // note: we give slightly more single inserts than single removes to encourage larger
             // trees
             0..=49 => {
-                // insert
+                // insert, insert_similar
                 let k = new_k();
                 let v = new_v();
-                let (p, k_v) = a.insert(k, v);
+                let (p, k_v) = if (rng.next_u32() % 100) < 90 {
+                    a.insert(k, v)
+                } else {
+                    let p_init = if a.is_empty() {
+                        None
+                    } else {
+                        // start from anywhere
+                        Some(list[next_inx!(rng, len)].p)
+                    };
+                    a.insert_similar(p_init, k, v).unwrap()
+                };
                 let triple = Triple { p, k, v };
                 list.push(triple);
                 if let Some(set) = b.get_mut(&k) {
@@ -148,10 +156,20 @@ fn fuzz_ord() {
                 }
             }
             50..=104 => {
-                // insert_nonhereditary
+                // insert_nonhereditary, insert_similar_nonhereditary
                 let k = new_k();
                 let v = new_v();
-                let p = a.insert_nonhereditary(k, v);
+                let p = if (rng.next_u32() % 100) < 90 {
+                    a.insert_nonhereditary(k, v)
+                } else {
+                    let p_init = if a.is_empty() {
+                        None
+                    } else {
+                        // start from anywhere
+                        Some(list[next_inx!(rng, len)].p)
+                    };
+                    a.insert_similar_nonhereditary(p_init, k, v).unwrap()
+                };
                 let triple = Triple { p, k, v };
                 list.push(triple);
                 if let Some(set) = b.get_mut(&k) {
