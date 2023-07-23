@@ -120,7 +120,34 @@ fn fuzz_ord() {
         match op_inx {
             // note: we give slightly more single inserts than single removes to encourage larger
             // trees
-            0..=104 => {
+            0..=49 => {
+                // insert
+                let k = new_k();
+                let v = new_v();
+                let (p, k_v) = a.insert(k, v);
+                let triple = Triple { p, k, v };
+                list.push(triple);
+                if let Some(set) = b.get_mut(&k) {
+                    let k_v = k_v.unwrap();
+                    assert_eq!(k_v.0, k);
+                    let triple_replaced = set.remove(&k_v.1).unwrap();
+                    // we have to find it in the list to remove
+                    let mut tmp = None;
+                    for (i, t) in list.iter().enumerate() {
+                        if t.v == triple_replaced.v {
+                            tmp = Some(i);
+                        }
+                    }
+                    list.remove(tmp.unwrap());
+                    set.insert(v, triple);
+                } else {
+                    assert!(k_v.is_none());
+                    let mut set = BTreeMap::new();
+                    set.insert(v, triple);
+                    b.insert(k, set);
+                }
+            }
+            50..=104 => {
                 // insert_nonhereditary
                 let k = new_k();
                 let v = new_v();
@@ -139,7 +166,6 @@ fn fuzz_ord() {
                 // remove
                 if len != 0 {
                     let t = list.swap_remove(next_inx!(rng, len));
-                    //dbg!(t.p);
                     assert_eq!(a.remove(t.p).unwrap(), (t.k, t.v));
                     let set = b.get_mut(&t.k).unwrap();
                     assert_eq!(set.remove(&t.v).unwrap(), t);

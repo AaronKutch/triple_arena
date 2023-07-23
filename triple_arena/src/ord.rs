@@ -46,13 +46,35 @@ pub(crate) struct Node<P: Ptr, K: Ord, V> {
 /// but is associated with each `K`. `O(log n)` insertions and deletions are
 /// guaranteed.
 ///
-/// This is similar to the standard `BTreeMap` but slightly more powerful and
-/// more performant because of the arena strategy (the B-tree is stored on an
-/// arena and not on individual allocated nodes, and the elements are stored in
-/// a chain arena for quick redirections and iteration).
+/// This is similar to the standard `BTreeMap`, but is more powerful and
+/// performant because of the arena strategy. It internally uses a specialized
+/// WAVL tree on a `ChainArena` with one-to-one tree node and key-value pair
+/// storage, which enables all the properties of arenas including stable `Ptr`
+/// references (as long as the `Ptr` returned from initial insertion is kept
+/// around, `O(1)` single indirection lookups and no more `O(log n)` key finds
+/// are needed to access the key-value pair afterwards). The tree is balanced
+/// such that the number of internal lookups needed to find a key is at most
+/// about `1.44 * log_2(arena.len())` if only insertions are used, otherwise the
+/// worst case is `2 * log_2(arena.len())`.
 ///
 /// Note that multiple equal keys are allowed through the `insert_nonhereditary`
 /// function.
+///
+/// ```
+/// use triple_arena::{ptr_struct, OrdArena};
+///
+/// ptr_struct!(P0);
+/// let mut a: OrdArena<P0, u64, ()> = OrdArena::new();
+///
+/// let p50 = a.insert(50, ()).0;
+/// let p30 = a.insert(30, ()).0;
+/// let p70 = a.insert(70, ()).0;
+/// let p60 = a.insert(60, ()).0;
+/// let p10 = a.insert(10, ()).0;
+///
+/// assert_eq!(a.min().unwrap(), p10);
+/// assert_eq!(a.max().unwrap(), p70);
+/// ```
 pub struct OrdArena<P: Ptr, K: Ord, V> {
     pub(crate) root: P::Inx,
     pub(crate) first: P::Inx,
@@ -220,7 +242,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     }
 
     /// Returns the total number of valid `Ptr`s, or equivalently the number of
-    /// key-value elements in the arena.
+    /// key-value entries in the arena.
     pub fn len(&self) -> usize {
         self.a.len()
     }
@@ -230,7 +252,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         self.a.is_empty()
     }
 
-    /// Returns the element capacity of the arena
+    /// Returns the key-value capacity of the arena
     pub fn capacity(&self) -> usize {
         self.a.capacity()
     }
@@ -245,19 +267,11 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         self.a.reserve(additional);
     }
 
-    pub fn clear(&mut self) {
-        self.a.clear();
-    }
-
-    pub fn clear_and_shrink(&mut self) {
-        self.a.clear_and_shrink();
-    }
-
     /// Inserts at a leaf and manages ordering and replacement. Returns `Ok` if
-    /// there is a new insertion, which may need to be rebalanced. Returns
+    /// there is a new insertion, which will need to be rebalanced. Returns
     /// `Err` if there was a replacement (which does not happen with the
     /// nonhereditary case).
-    pub fn raw_insert(&mut self, k: K, v: V, nonhereditary: bool) -> Result<P, (K, V)> {
+    fn raw_insert(&mut self, k: K, v: V, nonhereditary: bool) -> (P, Option<(K, V)>) {
         if self.a.is_empty() {
             // we could choose to insert as rank 2 here, but the rebalancer ends up
             // unconditionally promoting to rank 2 any leaf node
@@ -272,7 +286,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             self.first = p_new.inx();
             self.last = p_new.inx();
             self.root = p_new.inx();
-            return Ok(p_new)
+            return (p_new, None)
         }
         let mut p = self.root;
         loop {
@@ -299,17 +313,16 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                             if self.first == p {
                                 self.first = p_new.inx()
                             }
-                            break Ok(p_new)
+                            break (p_new, None)
                         } else {
                             unreachable!()
                         }
                     }
                 }
-                // supporting multiple equal keys
-                // TODO conditional, we would want to keep old key but replace and return old value
                 Ordering::Equal => {
                     if nonhereditary {
-                        // need to get to leaves, use `p_tree0` bias
+                        // supporting multiple equal keys
+                        // need to get to leaves, use `p_tree0` bias to get to first spot
                         if let Some(p_tree0) = node.p_tree0 {
                             p = p_tree0
                         } else if let Some(p_tree1) = node.p_tree1 {
@@ -329,14 +342,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                                 if self.first == p {
                                     self.first = p_new.inx()
                                 }
-                                break Ok(p_new)
+                                break (p_new, None)
                             } else {
                                 unreachable!()
                             }
                         }
                     } else {
                         let old_v = mem::replace(&mut self.a.get_mut(p_with_gen).unwrap().v, v);
-                        return Err((k, old_v))
+                        return (p_with_gen, Some((k, old_v)))
                     }
                 }
                 Ordering::Greater => {
@@ -356,7 +369,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                             if self.last == p {
                                 self.last = p_new.inx()
                             }
-                            break Ok(p_new)
+                            break (p_new, None)
                         } else {
                             unreachable!()
                         }
@@ -366,7 +379,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
     }
 
-    // Rebalances starting from newly inserted node `p`
+    /// Rebalances starting from newly inserted node `p`
     fn rebalance_inserted(&mut self, p: P::Inx) {
         // We keep record of the last three nodes for trinode restructuring.
         // We also keep the direction of the two edges between the nodes in
@@ -739,15 +752,25 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     }
 
     /// Inserts key `k` and an associated value `v` into `self` and returns a
+    /// `Ptr` to it. If the inserted key is equal to a key already contained in
+    /// `self`, the new value replaces the old value, and `k` and the old value
+    /// are returned. The existing key is not replaced, which should not make a
+    /// difference unless special `Ord` definitions are being used.
+    pub fn insert(&mut self, k: K, v: V) -> (P, Option<(K, V)>) {
+        let (p, k_v) = self.raw_insert(k, v, false);
+        if k_v.is_none() {
+            self.rebalance_inserted(p.inx());
+        }
+        (p, k_v)
+    }
+
+    /// Inserts key `k` and an associated value `v` into `self` and returns a
     /// `Ptr` to it. If the inserted key is equal to one or more keys already
     /// contained in `self`, the inserted key is inserted in a `Link::prev`
     /// position to all the equal keys. Future calls to `self.find_key` with an
     /// equal `k` could find any of the equal keys.
     pub fn insert_nonhereditary(&mut self, k: K, v: V) -> P {
-        let p = match self.raw_insert(k, v, true) {
-            Ok(p) => p,
-            Err(_) => unreachable!(),
-        };
+        let (p, _) = self.raw_insert(k, v, true);
         self.rebalance_inserted(p.inx());
         p
     }
@@ -1346,6 +1369,18 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         } else {
             Err(new)
         }
+    }
+
+    /// Drops all keys and values from the arena and invalidates all pointers
+    /// previously created from it. This has no effect on the allocated
+    /// capacity.
+    pub fn clear(&mut self) {
+        self.a.clear();
+    }
+
+    /// Performs an [OrdArena::clear] and resets capacity to 0
+    pub fn clear_and_shrink(&mut self) {
+        self.a.clear_and_shrink();
     }
 
     /// Has the same properties of [Arena::clone_from_with]
