@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
+use std::{cmp::Ordering, collections::BTreeMap};
 
 use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::OrdArena;
+use triple_arena::{Link, OrdArena};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
@@ -56,16 +56,16 @@ fn fuzz_ord() {
     let mut b: BTreeMap<Key, BTreeMap<Val, Triple>> = BTreeMap::new();
 
     let invalid = a.insert_nonhereditary(Key { k: 0 }, Val { v: 0 });
-    assert!(a.insert_similar(None, Key { k: 0 }, Val { v: 0 }).is_err());
+    assert!(a.insert_linear(None, Key { k: 0 }, Val { v: 0 }).is_err());
     assert!(a
-        .insert_similar_nonhereditary(None, Key { k: 0 }, Val { v: 0 })
+        .insert_nonhereditary_linear(None, Key { k: 0 }, Val { v: 0 })
         .is_err());
     a.remove(invalid).unwrap();
     assert!(a
-        .insert_similar(Some(invalid), Key { k: 0 }, Val { v: 0 })
+        .insert_linear(Some(invalid), Key { k: 0 }, Val { v: 0 })
         .is_err());
     assert!(a
-        .insert_similar_nonhereditary(Some(invalid), Key { k: 0 }, Val { v: 0 })
+        .insert_nonhereditary_linear(Some(invalid), Key { k: 0 }, Val { v: 0 })
         .is_err());
     gen += 1;
     a.clear_and_shrink();
@@ -141,7 +141,7 @@ fn fuzz_ord() {
                         // start from anywhere
                         Some(list[next_inx!(rng, len)].p)
                     };
-                    a.insert_similar(p_init, k, v).unwrap()
+                    a.insert_linear(p_init, k, v).unwrap()
                 };
                 let triple = Triple { p, k, v };
                 list.push(triple);
@@ -166,7 +166,7 @@ fn fuzz_ord() {
                 }
             }
             50..=104 => {
-                // insert_nonhereditary, insert_similar_nonhereditary
+                // insert_nonhereditary, insert_nonhereditary_linear
                 let k = new_k();
                 let v = new_v();
                 let p = if (rng.next_u32() % 100) < 90 {
@@ -178,7 +178,7 @@ fn fuzz_ord() {
                         // start from anywhere
                         Some(list[next_inx!(rng, len)].p)
                     };
-                    a.insert_similar_nonhereditary(p_init, k, v).unwrap()
+                    a.insert_nonhereditary_linear(p_init, k, v).unwrap()
                 };
                 let triple = Triple { p, k, v };
                 list.push(triple);
@@ -205,7 +205,40 @@ fn fuzz_ord() {
                     assert!(a.remove(invalid).is_none());
                 }
             }
-            200..=995 => {
+            200..=249 => {
+                // find_similar_key, find_similar_key_linear
+                let new_k = new_k();
+                if len != 0 {
+                    let (p, ord) = if (rng.next_u32() % 100) < 90 {
+                        a.find_similar_key(&new_k).unwrap()
+                    } else {
+                        a.find_similar_key_linear(list[next_inx!(rng, len)].p, &new_k)
+                            .unwrap()
+                    };
+                    let link = a.get_link(p).unwrap();
+                    match ord {
+                        Ordering::Less => {
+                            if let Some(prev) = Link::prev(&link) {
+                                assert!(a.get_key(prev).unwrap().lt(&new_k));
+                            }
+                            assert!(new_k.lt(link.t.0));
+                        }
+                        Ordering::Equal => {
+                            assert_eq!(*link.t.0, new_k);
+                        }
+                        Ordering::Greater => {
+                            assert!(link.t.0.lt(&new_k));
+                            if let Some(next) = Link::next(&link) {
+                                assert!(new_k.lt(a.get_key(next).unwrap()));
+                            }
+                        }
+                    }
+                } else {
+                    assert!(a.find_similar_key(&new_k).is_none());
+                    assert!(a.find_similar_key_linear(invalid, &new_k).is_none());
+                }
+            }
+            250..=995 => {
                 // find_key with get_val
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {

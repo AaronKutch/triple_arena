@@ -400,7 +400,9 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 return Err((k, v))
             }
             let mut p = p_init.inx();
-            // detects if we would switch probing directions
+            // detects if we would switch probing directions, note that even if `Ord` is
+            // rigged to do nontransitive things it will still not result in an infinite
+            // loop
             let mut direction = None;
             let direction = loop {
                 let link = self.a.get_inx_unwrap(p);
@@ -930,16 +932,16 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         p
     }
 
-    /// Uses linear comparisons starting at `p` in order to insert `k` and `v`.
-    /// If `p` is not a small constant number of elements away from where
-    /// `k` should be ordered, this function may operate in `O(n)` time
-    /// instead of the `O(1)` this is intended for. If the inserted key is
-    /// equal to a key already contained in `self`, the new value replaces
-    /// the old value, and `k` and the old value are returned. If
-    /// `self.is_empty()`, `p_init` should be `None`, otherwise there
-    /// will be an error. Returns an `Err` if `p_init` is invalid or if it is
-    /// `None` and `!self.is_empty()`.
-    pub fn insert_similar(
+    /// Uses linear comparisons starting at `p_init` in order to insert `k` and
+    /// `v`. If `p_init` is not within a small constant number of elements
+    /// away from where `k` should be ordered, this function may operate in
+    /// `O(n)` time instead of the `O(1)` this is intended for. If the
+    /// inserted key is equal to a key already contained in `self`, the new
+    /// value replaces the old value, and `k` and the old value are
+    /// returned. If `self.is_empty()`, `p_init` should be `None`, otherwise
+    /// there will be an error. Returns an `Err` if `p_init` is invalid or
+    /// if it is `None` and `!self.is_empty()`.
+    pub fn insert_linear(
         &mut self,
         p_init: Option<P>,
         k: K,
@@ -956,9 +958,9 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
     }
 
-    /// Combines the behavior of [OrdArena::insert_nonhereditary] and
-    /// [OrdArena::insert_similar]
-    pub fn insert_similar_nonhereditary(
+    /// Combines the behaviors of [OrdArena::insert_nonhereditary] and
+    /// [OrdArena::insert_linear]
+    pub fn insert_nonhereditary_linear(
         &mut self,
         p_init: Option<P>,
         k: K,
@@ -997,7 +999,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
     }
 
-    /// Finds a `Ptr` given `k`. Returns `None` if `k` is not in the arena.
+    /// Finds a `Ptr` with an associated key that is equal to `k`. Returns
+    /// `None` if such a key is not in the arena.
     #[must_use]
     pub fn find_key(&self, k: &K) -> Option<P> {
         if self.a.is_empty() {
@@ -1015,20 +1018,85 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
     }
 
-    // Finds an equal key to `k`, or if there is none then it attempts to find the
-    // least key that is greater than `k`. Only one binary search is used internally
-    // (but if you already have a `Ptr` to the key, use `get_link` to find it
-    // instead). Returns `None` if there are no keys greater than `k`.
-    // pub fn find_key_or_supremum(&self, k: &K) -> Option<P>
-    // Finds an equal key to `k`, or if there is none then it attempts to find the
-    // greatest key that is less than `k`. Only one binary search is used internally
-    // (but if you already have a `Ptr` to the key, use `get_link` to find it
-    // instead). Returns `None` if there are no keys lesser than `k`.
-    // pub fn find_key_or_infinum(&self, k: &K) -> Option<P>
-    // Attempts to find `k`, or if it cannot find `k` then it finds a "similar" key
-    // which could be the supremum or infinum to `k`.  Only one binary search is
-    // used internally. Only returns `None` if `self.is_empty()`.
-    // pub fn find_key_or_similar(&self, k: &K) -> Option<P>
+    /// Finds a `Ptr` with an associated key that is equal key to `k`. If such a
+    /// key is not in the arena, this will instead return a `Ptr` to a similar
+    /// key, such that if `k` were to be inserted into the arena, it would be
+    /// inserted immediately previous or next to the entry of the returned
+    /// `Ptr`. An `Ordering` is returned, with `Ordering::Equal` indicating an
+    /// exact match was found, `Ordering::Less` indicating that `k` is less than
+    /// the similar entry, and `Ordering::Greater` indicating that `k` is
+    /// greater than the similar entry. `None` is returned if `self.is_empty()`.
+    pub fn find_similar_key(&self, k: &K) -> Option<(P, Ordering)> {
+        if self.a.is_empty() {
+            return None
+        }
+        let mut p = self.root;
+        loop {
+            let (gen, link) = self.a.get_ignore_gen(p).unwrap();
+            let node = &link.t;
+            match Ord::cmp(k, &node.k) {
+                Ordering::Less => {
+                    if let Some(p_tree0) = node.p_tree0 {
+                        p = p_tree0;
+                    } else {
+                        break Some((Ptr::_from_raw(p, gen), Ordering::Less))
+                    }
+                }
+                Ordering::Equal => break Some((Ptr::_from_raw(p, gen), Ordering::Equal)),
+                Ordering::Greater => {
+                    if let Some(p_tree1) = node.p_tree1 {
+                        p = p_tree1;
+                    } else {
+                        break Some((Ptr::_from_raw(p, gen), Ordering::Greater))
+                    }
+                }
+            }
+        }
+    }
+
+    /// The same as [OrdArena::find_similar_key], except it uses linear
+    /// comparisons starting at `p_init`. If `p` is not within a small constant
+    /// number of elements away from where `k` should be ordered, this
+    /// function may operate in `O(n)` time instead of the `O(1)` this is
+    /// intended for. Returns `None` if `p_init` is invalid.
+    pub fn find_similar_key_linear(&self, p_init: P, k: &K) -> Option<(P, Ordering)> {
+        if !self.a.contains(p_init) {
+            return None
+        }
+        let mut p = p_init.inx();
+        let mut direction = None;
+        let ordering = loop {
+            let link = self.a.get_inx_unwrap(p);
+            let node = &link.t;
+            match Ord::cmp(k, &node.k) {
+                Ordering::Less => {
+                    if direction == Some(true) {
+                        break Ordering::Less
+                    }
+                    direction = Some(false);
+                    if let Some(prev) = Link::prev(link) {
+                        p = prev.inx();
+                    } else {
+                        break Ordering::Less
+                    }
+                }
+                Ordering::Equal => break Ordering::Equal,
+                Ordering::Greater => {
+                    if direction == Some(false) {
+                        break Ordering::Greater
+                    }
+                    direction = Some(true);
+                    if let Some(next) = Link::next(link) {
+                        p = next.inx();
+                    } else {
+                        break Ordering::Greater
+                    }
+                }
+            }
+        };
+        let (gen, _) = self.a.get_ignore_gen(p).unwrap();
+        Some((Ptr::_from_raw(p, gen), ordering))
+    }
 
     /// Returns if `p` is a valid `Ptr`
     pub fn contains(&self, p: P) -> bool {
