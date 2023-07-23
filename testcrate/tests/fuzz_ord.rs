@@ -56,7 +56,17 @@ fn fuzz_ord() {
     let mut b: BTreeMap<Key, BTreeMap<Val, Triple>> = BTreeMap::new();
 
     let invalid = a.insert_nonhereditary(Key { k: 0 }, Val { v: 0 });
+    assert!(a.insert_similar(None, Key { k: 0 }, Val { v: 0 }).is_err());
+    assert!(a
+        .insert_similar_nonhereditary(None, Key { k: 0 }, Val { v: 0 })
+        .is_err());
     a.remove(invalid).unwrap();
+    assert!(a
+        .insert_similar(Some(invalid), Key { k: 0 }, Val { v: 0 })
+        .is_err());
+    assert!(a
+        .insert_similar_nonhereditary(Some(invalid), Key { k: 0 }, Val { v: 0 })
+        .is_err());
     gen += 1;
     a.clear_and_shrink();
     gen += 1;
@@ -195,7 +205,7 @@ fn fuzz_ord() {
                     assert!(a.remove(invalid).is_none());
                 }
             }
-            200..=997 => {
+            200..=995 => {
                 // find_key with get_val
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {
@@ -204,6 +214,26 @@ fn fuzz_ord() {
                     assert!(set.contains_key(&v));
                 } else {
                     assert!(a.find_key(&new_k).is_none())
+                }
+            }
+            996 => {
+                // min
+                if len != 0 {
+                    let set = b.first_entry().unwrap();
+                    let v = a.get_val(a.min().unwrap()).unwrap();
+                    assert!(set.get().contains_key(v));
+                } else {
+                    assert!(a.min().is_none());
+                }
+            }
+            997 => {
+                // max
+                if len != 0 {
+                    let set = b.last_entry().unwrap();
+                    let v = a.get_val(a.max().unwrap()).unwrap();
+                    assert!(set.get().contains_key(v));
+                } else {
+                    assert!(a.max().is_none());
                 }
             }
             998 => {

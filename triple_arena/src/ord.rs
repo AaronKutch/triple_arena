@@ -62,6 +62,12 @@ pub(crate) struct Node<P: Ptr, K: Ord, V> {
 /// Note that multiple equal keys are allowed through the `insert_nonhereditary`
 /// function.
 ///
+/// Note: it is a logic error for a key's ordering to change relative to other
+/// keys. The functions are constructed such that _no_ panics, aborts, memory
+/// leaks, or non-termination occurs. However, the well ordered property,
+/// `find_key`, and hereditary properties may be broken for any entry in the
+/// arena.
+///
 /// ```
 /// use triple_arena::{ptr_struct, OrdArena};
 ///
@@ -967,8 +973,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
     }
 
-    //pub fn replace_val(&mut self, p: P, v: V)
-
     /// Returns the `Ptr` to the minimum key. Runs in `O(1)` time. Returns
     /// `None` if `self.is_empty()`.
     #[must_use]
@@ -993,7 +997,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
     }
 
-    /// Finds a `Ptr`
+    /// Finds a `Ptr` given `k`. Returns `None` if `k` is not in the arena.
     #[must_use]
     pub fn find_key(&self, k: &K) -> Option<P> {
         if self.a.is_empty() {
@@ -1033,7 +1037,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 
     /// Returns the full `Link<P, (&K, &V)>`. Using [Link::prev] on the result
     /// gives the `Ptr` to the next lesser key, and using [Link::next] gives the
-    /// `Ptr` to the next greater element.
+    /// `Ptr` to the next greater key.
     #[must_use]
     pub fn get_link(&self, p: P) -> Option<Link<P, (&K, &V)>> {
         self.a
@@ -1041,16 +1045,19 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             .map(|link| Link::new(Link::prev_next(link), (&link.k, &link.v)))
     }
 
+    /// Returns a reference to the key-value pair pointed to by `p`
     #[must_use]
     pub fn get(&self, p: P) -> Option<(&K, &V)> {
         self.a.get(p).map(|link| (&link.k, &link.v))
     }
 
+    /// Returns a reference to the key pointed to by `p`
     #[must_use]
     pub fn get_key(&self, p: P) -> Option<&K> {
         self.a.get(p).map(|link| &link.k)
     }
 
+    /// Returns a reference to the value pointed to by `p`
     #[must_use]
     pub fn get_val(&self, p: P) -> Option<&V> {
         self.a.get(p).map(|link| &link.v)
@@ -1079,6 +1086,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         Some(p_new)
     }
 
+    /// Removes the key-value entry at `p`. Returns `None` if `p` is invalid.
     #[must_use]
     pub fn remove(&mut self, p: P) -> Option<(K, V)> {
         let link = self.a.remove(p)?;
@@ -1531,7 +1539,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// # Errors
     ///
     /// Returns ownership of `new` instead if `p` is invalid
-    pub fn replace_and_keep_gen(&mut self, p: P, new: V) -> Result<V, V> {
+    pub fn replace_val_and_keep_gen(&mut self, p: P, new: V) -> Result<V, V> {
         if let Some(link) = self.a.get_mut(p) {
             let old = mem::replace(&mut link.t.v, new);
             Ok(old)
@@ -1547,7 +1555,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// # Errors
     ///
     /// Does no invalidation and returns ownership of `new` if `p` is invalid
-    pub fn replace_and_update_gen(&mut self, p: P, new: V) -> Result<(V, P), V> {
+    pub fn replace_val_and_update_gen(&mut self, p: P, new: V) -> Result<(V, P), V> {
         if let Some(p_new) = self.invalidate(p) {
             let old = mem::replace(&mut self.a.get_mut(p_new).unwrap().t.v, new);
             Ok((old, p_new))
