@@ -1,6 +1,7 @@
 use std::{
     cmp::max,
     collections::{HashMap, HashSet},
+    hint::black_box,
 };
 
 use rand_xoshiro::{
@@ -461,7 +462,7 @@ fn fuzz_surject() {
                     assert!(a.swap_vals(invalid, invalid).is_none());
                 }
             }
-            600..=979 => {
+            600..=969 => {
                 // reserved
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
@@ -473,6 +474,25 @@ fn fuzz_surject() {
                 } else {
                     assert!(a.get(invalid).is_none());
                 }
+            }
+            970..=979 => {
+                // canonical first_ptr/next_ptr loop
+                let mut i = 0;
+                let (mut p, mut bo) = a.first_ptr();
+                loop {
+                    if bo {
+                        break
+                    }
+
+                    a.next_ptr(&mut p, &mut bo);
+                    i += 1;
+                }
+                // depends on the invalidated elements witnessed
+                assert!(
+                    (i == a.len_keys().saturating_sub(1))
+                        || (i == a.len_keys())
+                        || (i == (a.len_keys() + 1))
+                );
             }
             980..=989 => {
                 // next_surject_ptr
@@ -509,7 +529,7 @@ fn fuzz_surject() {
                     assert!(stop);
                 }
             }
-            990..=997 => {
+            990..=996 => {
                 // iter_surject
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
@@ -536,6 +556,27 @@ fn fuzz_surject() {
                 } else {
                     let mut iter = a.iter_surject(invalid);
                     assert!(iter.next().is_none());
+                }
+            }
+            997 => {
+                // iter, keys, keys_mut, ptrs, vals, vals_mut
+                for (_, _, v) in &a {
+                    assert!(b.contains_key(v));
+                }
+                for k in a.keys() {
+                    black_box(k);
+                }
+                for k in a.keys_mut() {
+                    black_box(k);
+                }
+                for p in a.ptrs() {
+                    black_box(p);
+                }
+                for v in a.vals() {
+                    assert!(b.contains_key(v));
+                }
+                for v in a.vals_mut() {
+                    assert!(b.contains_key(v));
                 }
             }
             998 => {
@@ -566,6 +607,6 @@ fn fuzz_surject() {
     }
     assert_eq!(
         (max_key_len, max_val_len, iters999, a.gen().get()),
-        (46, 12, 1004, 79192)
+        (43, 11, 1047, 78918)
     );
 }
