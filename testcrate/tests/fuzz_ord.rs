@@ -7,6 +7,16 @@ use rand_xoshiro::{
 use testcrate::P0;
 use triple_arena::{Link, OrdArena};
 
+#[cfg(debug_assertions)]
+const N: usize = 100_000;
+#[cfg(debug_assertions)]
+const STATS: (usize, u64, u128) = (188, 105, 9144);
+
+#[cfg(not(debug_assertions))]
+const N: usize = 5_000_000;
+#[cfg(not(debug_assertions))]
+const STATS: (usize, u64, u128) = (232, 5049, 451947);
+
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
         $rng.next_u32() as usize % $len
@@ -75,7 +85,7 @@ fn fuzz_ord() {
     // determinism
     let mut iters999 = 0;
     let mut max_len = 0;
-    for _ in 0..1_000_000 {
+    for _ in 0..N {
         assert_eq!(a.len(), list.len());
         let mut true_len = 0;
         for set in b.values() {
@@ -127,8 +137,8 @@ fn fuzz_ord() {
         op_inx = rng.next_u32() % 1000;
         match op_inx {
             // note: we give slightly more single inserts than single removes to encourage larger
-            // trees
-            0..=49 => {
+            // trees, also we have more of them vs whole clears to test large trees
+            0..=99 => {
                 // insert, insert_similar
                 let k = new_k();
                 let v = new_v();
@@ -165,7 +175,7 @@ fn fuzz_ord() {
                     b.insert(k, set);
                 }
             }
-            50..=104 => {
+            100..=209 => {
                 // insert_nonhereditary, insert_nonhereditary_linear
                 let k = new_k();
                 let v = new_v();
@@ -190,7 +200,7 @@ fn fuzz_ord() {
                     b.insert(k, set);
                 }
             }
-            105..=199 => {
+            210..=299 => {
                 // remove
                 if len != 0 {
                     let t = list.swap_remove(next_inx!(rng, len));
@@ -205,7 +215,7 @@ fn fuzz_ord() {
                     assert!(a.remove(invalid).is_none());
                 }
             }
-            200..=249 => {
+            300..=349 => {
                 // find_similar_key, find_similar_key_linear
                 let new_k = new_k();
                 if len != 0 {
@@ -238,7 +248,7 @@ fn fuzz_ord() {
                     assert!(a.find_similar_key_linear(invalid, &new_k).is_none());
                 }
             }
-            250..=299 => {
+            350..=399 => {
                 // find_key, find_key_linear
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {
@@ -261,7 +271,7 @@ fn fuzz_ord() {
                 }
             }
             // TODO test everything
-            300..=995 => {
+            400..=995 => {
                 // find_key with get_val
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {
@@ -314,5 +324,5 @@ fn fuzz_ord() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (85, 1047, 87961));
+    assert_eq!((max_len, iters999, a.gen().get()), STATS);
 }
