@@ -139,6 +139,15 @@ impl<'a, P: Ptr, T> Iterator for IterMut<'a, P, T> {
 }
 */
 
+impl<'a, P: Ptr, K, V> IntoIterator for &'a SurjectArena<P, K, V> {
+    type IntoIter = Iter<'a, P, K, V>;
+    type Item = (P, &'a K, &'a V);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 /// All the iterators here can return values in arbitrary order
 impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// Iteration over all valid `P` in the arena

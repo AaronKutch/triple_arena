@@ -405,6 +405,7 @@ fn fuzz_arena() {
             999 => {
                 // clear_and_shrink
                 a.clear_and_shrink();
+                assert_eq!(a.capacity(), 0);
                 gen += 1;
                 list.clear();
                 b.clear();
@@ -455,7 +456,9 @@ fn fuzz_multi_arena() {
             }
             998 => {
                 // clear
+                let prev_cap = a.capacity();
                 a.clear();
+                assert_eq!(a.capacity(), prev_cap);
                 *gen += 1;
                 list.clear();
                 b.clear();
@@ -463,6 +466,7 @@ fn fuzz_multi_arena() {
             999 => {
                 // clear_and_shrink
                 a.clear_and_shrink();
+                assert_eq!(a.capacity(), 0);
                 *gen += 1;
                 list.clear();
                 b.clear();

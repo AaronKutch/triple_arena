@@ -581,7 +581,7 @@ fn fuzz_chain() {
                     assert!(a.swap(invalid, invalid).is_none());
                 }
             }
-            900..=979 => {
+            900..=959 => {
                 // are_neighbors
                 if len != 0 {
                     let t0 = list[next_inx!(rng, len)];
@@ -596,6 +596,47 @@ fn fuzz_chain() {
                 } else {
                     assert!(!a.are_neighbors(invalid, invalid));
                 }
+            }
+            960..=969 => {
+                // get2_mut
+                if len == 0 {
+                    assert!(a.get2_mut(invalid, invalid).is_none());
+                } else {
+                    let p0 = b[&list[next_inx!(rng, len)]].0;
+                    let p1 = b[&list[next_inx!(rng, len)]].0;
+                    if p0 == p1 {
+                        assert!(a.get2_mut(p0, p1).is_none());
+                    } else {
+                        let tmp = a.get2_mut(p0, p1).unwrap();
+                        let tmp = (*tmp.0.t, *tmp.1.t);
+                        assert_eq!(tmp, (a.get(p0).unwrap().t, a.get(p1).unwrap().t));
+                    }
+                }
+            }
+            970..=979 => {
+                // canonical first_ptr/next_ptr loop
+                let mut i = 0;
+                let rand_insert_i = if len == 0 { 0 } else { next_inx!(rng, len) };
+                let (mut p, mut bo) = a.first_ptr();
+                loop {
+                    if bo {
+                        break
+                    }
+                    assert_eq!(p, b[&a[p]].0);
+
+                    // insert at random time
+                    if i == rand_insert_i {
+                        let t = new_t();
+                        let ptr = a.insert_new(t);
+                        b.insert(t, (ptr, (None, None)));
+                        list.push(t);
+                    }
+
+                    a.next_ptr(&mut p, &mut bo);
+                    i += 1;
+                }
+                // depends on the invalidated elements witnessed
+                assert!((i == len.saturating_sub(1)) || (i == len) || (i == (len + 1)));
             }
             980..=984 => {
                 // next_chain_ptr
@@ -666,7 +707,7 @@ fn fuzz_chain() {
                     assert!(iter.next().is_none());
                 }
             }
-            990..=997 => {
+            990..=994 => {
                 // remove_chain
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
@@ -708,9 +749,47 @@ fn fuzz_chain() {
                     assert!(a.remove_chain(invalid).is_none());
                 }
             }
+            995 => {
+                // iter, iter_mut, ptrs, vals, vals_mut
+                for (ptr, link) in &a {
+                    assert_eq!(b[&link.t].0, ptr);
+                }
+                for (ptr, link) in &mut a {
+                    assert_eq!(b[link.t].0, ptr);
+                }
+                for ptr in a.ptrs() {
+                    assert!(a.contains(ptr));
+                }
+                for link in a.vals() {
+                    assert!(b.contains_key(&link.t));
+                }
+                for link in a.vals_mut() {
+                    assert!(b.contains_key(link.t));
+                }
+            }
+            996 => {
+                // drain
+                let prev_cap = a.capacity();
+                for (ptr, link) in a.drain() {
+                    assert_eq!(b[&link.t].0, ptr);
+                }
+                assert_eq!(a.capacity(), prev_cap);
+                b.clear();
+                gen += 1;
+                list.clear();
+            }
+            997 => {
+                // capacity_drain via the `IntoIter` impl
+                let a_clone = a.clone();
+                for (ptr, link) in a_clone {
+                    assert_eq!(b[&link.t].0, ptr);
+                }
+            }
             998 => {
                 // clear
+                let prev_cap = a.capacity();
                 a.clear();
+                assert_eq!(a.capacity(), prev_cap);
                 b.clear();
                 gen += 1;
                 list.clear();
@@ -718,6 +797,7 @@ fn fuzz_chain() {
             999 => {
                 // clear_and_shrink
                 a.clear_and_shrink();
+                assert_eq!(a.capacity(), 0);
                 b.clear();
                 gen += 1;
                 list.clear();
@@ -727,5 +807,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (40, 1040, 206984));
+    assert_eq!((max_len, iters999, a.gen().get()), (44, 1070, 217040));
 }

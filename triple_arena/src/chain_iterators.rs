@@ -57,6 +57,15 @@ impl<'a, P: Ptr, T> Iterator for IterLinkMut<'a, P, T> {
     }
 }
 
+impl<P: Ptr, T> IntoIterator for ChainArena<P, T> {
+    type IntoIter = CapacityDrain<P, Link<P, T>>;
+    type Item = (P, Link<P, T>);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.capacity_drain()
+    }
+}
+
 impl<'a, P: Ptr, T> IntoIterator for &'a ChainArena<P, T> {
     type IntoIter = Iter<'a, P, Link<P, T>>;
     type Item = (P, &'a Link<P, T>);
@@ -74,6 +83,17 @@ impl<'a, P: Ptr, T> IntoIterator for &'a mut ChainArena<P, T> {
     /// consumption.
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
+    }
+}
+
+impl<P: Ptr, T> FromIterator<T> for ChainArena<P, T> {
+    /// Inserts as single link chains
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut a = ChainArena::new();
+        for t in iter {
+            a.insert_new(t);
+        }
+        a
     }
 }
 

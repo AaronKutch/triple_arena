@@ -294,7 +294,9 @@ fn fuzz_ord() {
             }
             998 => {
                 // clear
+                let prev_cap = a.capacity();
                 a.clear();
+                assert_eq!(a.capacity(), prev_cap);
                 b.clear();
                 gen += 1;
                 list.clear();
@@ -302,6 +304,7 @@ fn fuzz_ord() {
             999 => {
                 // clear_and_shrink
                 a.clear_and_shrink();
+                assert_eq!(a.capacity(), 0);
                 b.clear();
                 gen += 1;
                 list.clear();

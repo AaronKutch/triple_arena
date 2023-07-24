@@ -92,15 +92,6 @@ impl<'a, P: Ptr, T> Iterator for Iter<'a, P, T> {
     }
 }
 
-impl<'a, P: Ptr, T> IntoIterator for &'a Arena<P, T> {
-    type IntoIter = Iter<'a, P, T>;
-    type Item = (P, &'a T);
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
 /// A mutable iterator over `(P, &mut T)` in an `Arena`
 pub struct IterMut<'a, P: Ptr, T> {
     ptr: P::Inx,
@@ -119,16 +110,6 @@ impl<'a, P: Ptr, T> Iterator for IterMut<'a, P, T> {
             }
         }
         None
-    }
-}
-
-impl<'a, P: Ptr, T> IntoIterator for &'a mut Arena<P, T> {
-    type IntoIter = IterMut<'a, P, T>;
-    type Item = (P, &'a mut T);
-
-    /// This returns an `IterMut`. Use `Arena::drain` for by-value consumption.
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter_mut()
     }
 }
 
@@ -191,6 +172,25 @@ impl<P: Ptr, T> IntoIterator for Arena<P, T> {
 
     fn into_iter(self) -> Self::IntoIter {
         self.capacity_drain()
+    }
+}
+
+impl<'a, P: Ptr, T> IntoIterator for &'a Arena<P, T> {
+    type IntoIter = Iter<'a, P, T>;
+    type Item = (P, &'a T);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, P: Ptr, T> IntoIterator for &'a mut Arena<P, T> {
+    type IntoIter = IterMut<'a, P, T>;
+    type Item = (P, &'a mut T);
+
+    /// This returns an `IterMut`. Use `Arena::drain` for by-value consumption.
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
     }
 }
 

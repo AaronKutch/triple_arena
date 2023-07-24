@@ -540,7 +540,11 @@ fn fuzz_surject() {
             }
             998 => {
                 // clear
+                let prev_cap_keys = a.capacity_keys();
+                let prev_cap_vals = a.capacity_vals();
                 a.clear();
+                assert_eq!(a.capacity_keys(), prev_cap_keys);
+                assert_eq!(a.capacity_vals(), prev_cap_vals);
                 b.clear();
                 gen += 1;
                 list.clear();
@@ -548,6 +552,8 @@ fn fuzz_surject() {
             999 => {
                 // clear_and_shrink
                 a.clear_and_shrink();
+                assert_eq!(a.capacity_keys(), 0);
+                assert_eq!(a.capacity_vals(), 0);
                 b.clear();
                 gen += 1;
                 list.clear();

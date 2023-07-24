@@ -19,6 +19,7 @@
 - Added several Arena cloning functions
 - Added `PtrNoGen<P>`
 - Added `ChainArena::replace_and_keep_gen` and `ChainArena::replace_and_update_gen`
+- Added missing `IntoIterator` and `FromIterator` impls
 - Added several hidden functions for getting entries while ignoring generation counters
 
 ## [0.9.0] - 2023-06-04
