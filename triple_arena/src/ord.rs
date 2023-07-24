@@ -3,6 +3,8 @@
 use core::{
     borrow::Borrow,
     cmp::{min, Ordering},
+    fmt,
+    fmt::Debug,
     mem,
     ops::{Index, IndexMut},
 };
@@ -47,19 +49,19 @@ pub(crate) struct Node<P: Ptr, K: Ord, V> {
 /// An Ordered Arena with three parameters: a `P: Ptr` type that gives single
 /// indirection access to elements, a `K: Ord` key type that is used to define
 /// an ordering among elements, and a `V` value type that is not ordered over
-/// but is associated with each `K`. `O(log n)` insertions and deletions are
-/// guaranteed.
+/// but is associated with each `K`. `O(log n)` insertions, finds, and deletions
+/// are guaranteed.
 ///
 /// This is similar to the standard `BTreeMap`, but is more powerful and
 /// performant because of the arena strategy. It internally uses a specialized
 /// WAVL tree on a `ChainArena` with one-to-one tree node and key-value pair
 /// storage, which enables all the properties of arenas including stable `Ptr`
-/// references (as long as the `Ptr` returned from initial insertion is kept
-/// around, `O(1)` single indirection lookups and no more `O(log n)` key finds
-/// are needed to access the key-value pair afterwards). The tree is balanced
-/// such that the number of internal lookups needed to find a key is at most
-/// about `1.44 * log_2(arena.len())` if only insertions are used, otherwise the
-/// worst case is `2 * log_2(arena.len())`.
+/// references (meaning that accesses are `O(1)` instead of `O(log n)` as long
+/// as the `Ptr` is kept, and no cumbersome `Entry` handling is needed like for
+/// `BTreeMap` or for hashmaps). The tree is balanced such that the number of
+/// internal lookups needed to find a key is at most about `1.44 *
+/// log_2(arena.len())` if only insertions and no removals are used, otherwise
+/// the worst case is `2 * log_2(arena.len())`.
 ///
 /// Note that multiple equal keys are allowed through the `insert_nonhereditary`
 /// function, and this violates the hereditary property and `find_*` uniqueness
@@ -103,6 +105,12 @@ pub(crate) struct Node<P: Ptr, K: Ord, V> {
 /// // `remove` does have to do `O(log n)` tree rebalancing, but it avoids
 /// // needing to redo the lookup if the `Ptr` is kept around
 /// assert_eq!(a.remove(p50).unwrap(), (50, ()));
+///
+/// // The iterators are fully deterministic
+/// let expected = [(p10, 10), (p30, 30), (p60, 60), (p70, 70)];
+/// for (i, (p, key, _)) in a.iter().enumerate() {
+///     assert_eq!(expected[i], (p, *key));
+/// }
 /// ```
 pub struct OrdArena<P: Ptr, K: Ord, V> {
     pub(crate) root: P::Inx,
@@ -1867,12 +1875,13 @@ impl<P: Ptr, K: Ord, V, B: Borrow<P>> IndexMut<B> for OrdArena<P, K, V> {
     }
 }
 
-// TODO
-/*impl<P: Ptr, K: Ord + Debug, V: Debug> Debug for OrdArena<P, K, V> {
+impl<P: Ptr, K: Ord + Debug, V: Debug> Debug for OrdArena<P, K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_map().entries(self.iter()).finish()
+        f.debug_map()
+            .entries(self.iter().map(|tmp| (tmp.0, (tmp.1, tmp.2))))
+            .finish()
     }
-}*/
+}
 
 /*
 impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> OrdArena<P, K, V> {

@@ -152,6 +152,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             if let Some(link) = self.a.get(*inner) {
                 if let Some(next) = Link::next(link) {
                     *p = Some(next);
+                    return
                 }
             }
             *p = None;
