@@ -1,7 +1,4 @@
 #![no_std]
-// because `Ptr` is based on user-controlled code we will not use unsafe code
-// for the foreseeable future
-#![deny(unsafe_code)]
 // false positives
 #![allow(clippy::while_let_on_iterator)]
 
@@ -18,7 +15,7 @@ mod ord;
 mod ptr;
 pub use chain::{ChainArena, Link};
 pub(crate) use entry::InternalEntry;
-pub use ptr::{Ptr, PtrGen, PtrInx, PtrNoGen};
+pub use ptr::Ptr;
 mod surject;
 pub use surject::SurjectArena;
 pub mod chain_iterators;
@@ -26,5 +23,9 @@ pub mod surject_iterators;
 pub use ord::OrdArena;
 pub mod ord_iterators;
 pub use arena::Arena;
+/// Special utilities for advanced usage
+pub mod utils {
+    pub use crate::ptr::{PtrGen, PtrInx, PtrNoGen};
+}
 
 extern crate alloc;

@@ -7,7 +7,11 @@ use core::{
 
 use InternalEntry::*;
 
-use crate::{entry::InternalEntry, Ptr, PtrGen, PtrInx};
+use crate::{
+    entry::InternalEntry,
+    utils::{PtrGen, PtrInx},
+    Ptr,
+};
 
 /// An arena supporting non-Clone `T` (`T` has no requirements other than
 /// `Sized`, but some traits are only active if `T` implements them), deletion,

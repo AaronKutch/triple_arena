@@ -9,7 +9,7 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use crate::{Arena, ChainArena, Link, Ptr, PtrInx};
+use crate::{utils::PtrInx, Arena, ChainArena, Link, Ptr};
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
 // Sen, Siddhartha; Tarjan, Robert E. (2015).

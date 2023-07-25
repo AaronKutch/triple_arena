@@ -4,7 +4,7 @@ use core::{mem, slice};
 
 use InternalEntry::*;
 
-use crate::{Arena, InternalEntry, Ptr, PtrInx};
+use crate::{utils::PtrInx, Arena, InternalEntry, Ptr};
 
 // Note: we are wrapping around slice iterators because `IterMut` in particular
 // would otherwise be difficult to implement safely. There are redundant

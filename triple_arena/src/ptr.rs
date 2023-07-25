@@ -5,11 +5,12 @@ use core::{
     panic::{RefUnwindSafe, UnwindSafe},
 };
 
-/// This should only be implemented on Rust's `NonZeroU...` types, because of
-/// their memory saving properties. This is also implemented for `()` for the
-/// generationless case.
-#[doc(hidden)]
-pub trait PtrGen:
+/// Pointer generation information type
+///
+/// Users should never have to implement this, it is implemented only for the
+/// `NonZeroU...` types and for `()`.
+#[allow(clippy::missing_safety_doc)]
+pub unsafe trait PtrGen:
     Debug
     + Hash
     + Clone
@@ -41,7 +42,7 @@ pub trait PtrGen:
 macro_rules! impl_gen {
     ($($x: ident)*) => {
         $(
-            impl PtrGen for $x {
+            unsafe impl PtrGen for $x {
                 #[inline]
                 fn one() -> Self {
                     Self::new(1).unwrap()
@@ -66,7 +67,7 @@ macro_rules! impl_gen {
 
 impl_gen!(NonZeroU8 NonZeroU16 NonZeroU32 NonZeroU64 NonZeroU128);
 
-impl PtrGen for () {
+unsafe impl PtrGen for () {
     #[inline]
     fn one() -> Self {}
 
@@ -79,9 +80,10 @@ impl PtrGen for () {
 
 /// This is a trait for the index type used by the arena.
 ///
-/// This should only be implemented for Rust's unsigned integers.
-#[doc(hidden)]
-pub trait PtrInx:
+/// Users should never have to implement this, it is implemented only for Rust's
+/// unsigned integers.
+#[allow(clippy::missing_safety_doc)]
+pub unsafe trait PtrInx:
     Debug
     + Hash
     + Clone
@@ -110,7 +112,7 @@ pub trait PtrInx:
 macro_rules! impl_ptr_inx {
     ($($x: ident)*) => {
         $(
-            impl PtrInx for $x {
+            unsafe impl PtrInx for $x {
                 #[inline]
                 fn new(inx: usize) -> Self {
                     inx as $x
@@ -133,14 +135,20 @@ macro_rules! impl_ptr_inx {
 impl_ptr_inx!(usize u8 u16 u32 u64 u128);
 
 /// A trait containing index and generation information for the `Arena` type.
-/// This crate supplies the `ptr_struct` macro for automatically implementing
-/// types implementing this trait efficiently. The `PartialEq`/`Eq`
+///
+/// Users should never have to manually implement this, use the `ptr_trait`
+/// macro for automatically implementing types implementing this trait safely
+/// and efficiently.
+///
+/// This trait also has many bounds on it, so that users do not regularly
+/// encounter friction with using `Ptr`s in data structures.
+///
+/// The `Inx` and `Gen` types should only be the types implemented by this
+/// crate, the function descriptions should be followed. The `PartialEq`/`Eq`
 /// implementation should differentiate between pointers at the same index but
 /// different generation. `Default` should use the `invalid` function.
-///
-/// Notes: This trait also has many bounds on it, so that users do not regularly
-/// encounter friction with using `Ptr`s in data structures.
-pub trait Ptr:
+#[allow(clippy::missing_safety_doc)]
+pub unsafe trait Ptr:
     Debug
     + Hash
     + Clone
@@ -177,9 +185,7 @@ pub trait Ptr:
     /// Returns the generation of this `Ptr`.
     fn gen(self) -> Self::Gen;
 
-    /// Do not use this. This is only exposed because trait methods cannot be
-    /// made private.
-    #[doc(hidden)]
+    /// Do not use this unless you are manually managing internal details
     fn _from_raw(inx: Self::Inx, gen: Self::Gen) -> Self;
 }
 
@@ -246,15 +252,15 @@ macro_rules! ptr_struct {
                 _internal_gen: $gen_type,
             }
 
-            impl $crate::Ptr for $struct_name {
+            unsafe impl $crate::Ptr for $struct_name {
                 type Inx = $inx_type;
                 type Gen = $gen_type;
 
                 #[inline]
                 fn invalid() -> Self {
                     Self {
-                        _internal_inx: $crate::PtrInx::new(core::primitive::usize::MAX),
-                        _internal_gen: $crate::PtrGen::one()
+                        _internal_inx: $crate::utils::PtrInx::new(core::primitive::usize::MAX),
+                        _internal_gen: $crate::utils::PtrGen::one()
                     }
                 }
 
@@ -325,15 +331,15 @@ macro_rules! ptr_struct {
                 _internal_gen: (),
             }
 
-            impl $crate::Ptr for $struct_name {
+            unsafe impl $crate::Ptr for $struct_name {
                 type Inx = $inx_type;
                 type Gen = ();
 
                 #[inline]
                 fn invalid() -> Self {
                     Self {
-                        _internal_inx: $crate::PtrInx::new(core::primitive::usize::MAX),
-                        _internal_gen: $crate::PtrGen::one()
+                        _internal_inx: $crate::utils::PtrInx::new(core::primitive::usize::MAX),
+                        _internal_gen: $crate::utils::PtrGen::one()
                     }
                 }
 
@@ -435,7 +441,7 @@ pub struct PtrNoGen<P: Ptr> {
     _internal_gen: (),
 }
 
-impl<P: Ptr> Ptr for PtrNoGen<P> {
+unsafe impl<P: Ptr> Ptr for PtrNoGen<P> {
     type Gen = ();
     type Inx = P::Inx;
 
