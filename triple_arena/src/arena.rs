@@ -25,11 +25,6 @@ use crate::{
 /// to have the type system guard against confusion and mistakenly using
 /// pointers from one arena in another. The arena will use generation counters
 /// to check for invalidated pointers if `P` has a generation counter.
-///
-/// Panics or unexpected behaviour could result if `Ptr` is not implemented
-/// properly for `P`. The macros should be used for quickly making `Ptr`
-/// structs.
-///
 /// ```
 /// use triple_arena::{ptr_struct, Arena, Ptr};
 ///
@@ -118,7 +113,7 @@ pub struct Arena<P: Ptr, T> {
     /// In earlier versions of this crate, there was an invariant that
     /// `self.m.capacity() == self.m.len()`. However, the `clone_from_with`
     /// exposed a flaw with this that is absolutely catastrophic for some use
-    /// cases of this crate: `reserve` and `reserve_exact` can sometimes
+    /// cases of this crate: `reserve` and `reserve_exact` are allowed to
     /// allocate inconsistently, e.x. one arena gets 32 capacity from doubling
     /// and another arena gets 24 from taking a half step (this has been
     /// observed in practice even with `reserve_exact` and identical arenas). If
