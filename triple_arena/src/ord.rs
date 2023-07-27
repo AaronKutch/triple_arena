@@ -106,7 +106,8 @@ pub(crate) struct Node<P: Ptr, K: Ord, V> {
 /// // needing to redo the lookup if the `Ptr` is kept around
 /// assert_eq!(a.remove(p50).unwrap(), (50, ()));
 ///
-/// // The iterators are fully deterministic
+/// // The iterators are fully deterministic and iterate from the
+/// // least element to the greatest
 /// let expected = [(p10, 10), (p30, 30), (p60, 60), (p70, 70)];
 /// for (i, (p, key, _)) in a.iter().enumerate() {
 ///     assert_eq!(expected[i], (p, *key));
