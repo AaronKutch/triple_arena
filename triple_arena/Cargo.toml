@@ -11,3 +11,7 @@ documentation = "https://docs.rs/triple_arena"
 description = "Regular, Chain, Surjection, and Ordered Arenas supporting non-Clone types, deletion, and more"
 keywords = ["arena", "generation", "no_std"]
 categories = ["memory-management", "data-structures", "no-std"]
+
+[features]
+# this is only for testing purposes
+expose_internal_utils = []
