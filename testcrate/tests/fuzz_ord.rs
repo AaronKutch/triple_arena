@@ -7,15 +7,21 @@ use rand_xoshiro::{
 use testcrate::P0;
 use triple_arena::{Link, OrdArena};
 
-#[cfg(debug_assertions)]
-const N: usize = 100_000;
-#[cfg(debug_assertions)]
-const STATS: (usize, u64, u128) = (188, 105, 9144);
+const N: usize = if cfg!(miri) {
+    1000
+} else if cfg!(debug_assertions) {
+    100_000
+} else {
+    5_000_000
+};
 
-#[cfg(not(debug_assertions))]
-const N: usize = 5_000_000;
-#[cfg(not(debug_assertions))]
-const STATS: (usize, u64, u128) = (232, 5049, 451947);
+const STATS: (usize, u64, u128) = if cfg!(miri) {
+    (49, 1, 128)
+} else if cfg!(debug_assertions) {
+    (165, 112, 12947)
+} else {
+    (276, 5075, 648045)
+};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
@@ -96,41 +102,43 @@ fn fuzz_ord() {
         assert_eq!(a.gen().get(), gen);
         assert_eq!(a.is_empty(), list.is_empty());
         let len = list.len();
-        if let Err(e) = OrdArena::_check_invariants(&a) {
-            //if i == 9 {
-            /*let debug0 = a.debug_arena();
-            let mut debug1 = triple_arena::Arena::new();
-            debug1.clone_from_with(&debug0, |p, t| triple_arena_render::DebugNode {
-                sources: if let Some(tmp) = t.4 {
-                    vec![(tmp, String::new())]
-                } else {
-                    vec![]
-                },
-                center: vec![
-                    format!("p: {:?}", p),
-                    format!("rank: {:?}", t.0),
-                    format!("k: {:?}", t.1),
-                    format!("v: {:?}", t.2),
-                ],
-                sinks: {
-                    let mut v = vec![];
-                    if let Some(tmp) = t.3 {
-                        v.push((tmp, "0".to_owned()))
-                    }
-                    if let Some(tmp) = t.5 {
-                        v.push((tmp, "1".to_owned()))
-                    }
-                    v
-                },
-            });
-            triple_arena_render::render_to_svg_file(
-                &debug1,
-                false,
-                std::path::PathBuf::from("./debug.svg"),
-            )
-            .unwrap();
-            println!("{}", a.debug());*/
-            panic!("{e}");
+        if !cfg!(miri) {
+            if let Err(e) = OrdArena::_check_invariants(&a) {
+                //if i == 9 {
+                /*let debug0 = a.debug_arena();
+                let mut debug1 = triple_arena::Arena::new();
+                debug1.clone_from_with(&debug0, |p, t| triple_arena_render::DebugNode {
+                    sources: if let Some(tmp) = t.4 {
+                        vec![(tmp, String::new())]
+                    } else {
+                        vec![]
+                    },
+                    center: vec![
+                        format!("p: {:?}", p),
+                        format!("rank: {:?}", t.0),
+                        format!("k: {:?}", t.1),
+                        format!("v: {:?}", t.2),
+                    ],
+                    sinks: {
+                        let mut v = vec![];
+                        if let Some(tmp) = t.3 {
+                            v.push((tmp, "0".to_owned()))
+                        }
+                        if let Some(tmp) = t.5 {
+                            v.push((tmp, "1".to_owned()))
+                        }
+                        v
+                    },
+                });
+                triple_arena_render::render_to_svg_file(
+                    &debug1,
+                    false,
+                    std::path::PathBuf::from("./debug.svg"),
+                )
+                .unwrap();
+                println!("{}", a.debug());*/
+                panic!("{e}");
+            }
         }
         //println!("i: {i}");
 
@@ -270,8 +278,149 @@ fn fuzz_ord() {
                         .is_none());
                 }
             }
+            400..=419 => {
+                // contains, get_link, get, get_key, get_val, get_link_mut, get_mut, get_val_mut
+                if len != 0 {
+                    let t = &list[next_inx!(rng, len)];
+                    assert!(a.contains(t.p));
+                    assert_eq!(a.get_link(t.p).unwrap().t, (&t.k, &t.v));
+                    assert_eq!(a.get(t.p).unwrap(), (&t.k, &t.v));
+                    assert_eq!(a.get_key(t.p).unwrap(), &t.k);
+                    assert_eq!(a.get_val(t.p).unwrap(), &t.v);
+                    let mut tmp = t.v;
+                    assert_eq!(a.get_link_mut(t.p).unwrap().t, (&t.k, &mut tmp));
+                    assert_eq!(a.get_mut(t.p).unwrap(), (&t.k, &mut tmp));
+                    assert_eq!(a.get_val_mut(t.p).unwrap(), &mut tmp);
+                } else {
+                    assert!(!a.contains(invalid));
+                    assert!(a.get_link(invalid).is_none());
+                    assert!(a.get(invalid).is_none());
+                    assert!(a.get_key(invalid).is_none());
+                    assert!(a.get_val(invalid).is_none());
+                    assert!(a.get_link_mut(invalid).is_none());
+                    assert!(a.get_mut(invalid).is_none());
+                    assert!(a.get_val_mut(invalid).is_none());
+                }
+            }
+            420..=439 => {
+                // get2_link_mut, get2_val_mut
+                if len != 0 {
+                    let t0 = &list[next_inx!(rng, len)];
+                    let t1 = &list[next_inx!(rng, len)];
+                    if t0.p == t1.p {
+                        assert!(a.get2_link_mut(t0.p, t1.p).is_none())
+                    } else {
+                        let tmp = a.get2_link_mut(t0.p, t1.p).unwrap();
+                        let mut val0 = t0.v;
+                        assert_eq!(tmp.0.t, (&t0.k, &mut val0));
+                        let mut val1 = t1.v;
+                        assert_eq!(tmp.1.t, (&t1.k, &mut val1));
+                    }
+                } else {
+                    assert!(a.get2_link_mut(invalid, invalid).is_none())
+                }
+                if len != 0 {
+                    let t0 = &list[next_inx!(rng, len)];
+                    let t1 = &list[next_inx!(rng, len)];
+                    if t0.p == t1.p {
+                        assert!(a.get2_val_mut(t0.p, t1.p).is_none())
+                    } else {
+                        let tmp = a.get2_val_mut(t0.p, t1.p).unwrap();
+                        let mut val0 = t0.v;
+                        assert_eq!(tmp.0, &mut val0);
+                        let mut val1 = t1.v;
+                        assert_eq!(tmp.1, &mut val1);
+                    }
+                } else {
+                    assert!(a.get2_val_mut(invalid, invalid).is_none())
+                }
+            }
+            440..=459 => {
+                // replace_val_and_keep_gen
+                if len != 0 {
+                    let t = &mut list[next_inx!(rng, len)];
+                    let v = new_v();
+                    assert_eq!(a.replace_val_and_keep_gen(t.p, v), Ok(t.v));
+                    let set = b.get_mut(&t.k).unwrap();
+                    set.remove(&t.v).unwrap();
+                    set.insert(v, Triple { p: t.p, k: t.k, v });
+                    t.v = v;
+                } else {
+                    assert_eq!(
+                        a.replace_val_and_keep_gen(invalid, Val { v: 0 }),
+                        Err(Val { v: 0 })
+                    );
+                }
+            }
+            460..=479 => {
+                // replace_val_and_update_gen
+                if len != 0 {
+                    let t = &mut list[next_inx!(rng, len)];
+                    let v = new_v();
+                    let (old_v, new_p) = a.replace_val_and_update_gen(t.p, v).unwrap();
+                    assert_eq!(t.v, old_v);
+                    let set = b.get_mut(&t.k).unwrap();
+                    set.remove(&t.v).unwrap();
+                    set.insert(v, Triple {
+                        p: new_p,
+                        k: t.k,
+                        v,
+                    });
+                    t.p = new_p;
+                    t.v = v;
+                    gen += 1;
+                } else {
+                    assert_eq!(
+                        a.replace_val_and_update_gen(invalid, Val { v: 0 }),
+                        Err(Val { v: 0 })
+                    );
+                }
+            }
+            480..=499 => {
+                // invalidate
+                if len != 0 {
+                    let t = &mut list[next_inx!(rng, len)];
+                    let new_p = a.invalidate(t.p).unwrap();
+                    let set = b.get_mut(&t.k).unwrap();
+                    set.get_mut(&t.v).unwrap().p = new_p;
+                    t.p = new_p;
+                    gen += 1;
+                } else {
+                    assert!(a.invalidate(invalid).is_none());
+                }
+            }
+            500..=519 => {
+                // swap_vals
+                if len != 0 {
+                    let inx0 = next_inx!(rng, len);
+                    let inx1 = next_inx!(rng, len);
+                    let t0 = &list[inx0];
+                    let t1 = &list[inx1];
+                    a.swap_vals(t0.p, t1.p).unwrap();
+                    let val0 = t0.v;
+                    let val1 = t1.v;
+                    if t0.p != t1.p {
+                        b.get_mut(&t0.k).unwrap().remove(&t0.v).unwrap();
+                        b.get_mut(&t1.k).unwrap().remove(&t1.v).unwrap();
+                        b.get_mut(&t0.k).unwrap().insert(val1, Triple {
+                            p: t0.p,
+                            k: t0.k,
+                            v: val1,
+                        });
+                        b.get_mut(&t1.k).unwrap().insert(val0, Triple {
+                            p: t1.p,
+                            k: t1.k,
+                            v: val0,
+                        });
+                    }
+                    list[inx0].v = val1;
+                    list[inx1].v = val0;
+                } else {
+                    assert!(a.swap_vals(invalid, invalid).is_none())
+                }
+            }
             // TODO test everything
-            400..=995 => {
+            520..=995 => {
                 // find_key with get_val
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {

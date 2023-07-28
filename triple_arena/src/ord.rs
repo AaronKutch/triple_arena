@@ -1259,22 +1259,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// invalid.
     #[must_use]
     pub fn invalidate(&mut self, p: P) -> Option<P> {
-        let p_new = self.a.invalidate(p)?;
-        if let Some(p_tree0) = self.a.get(p).unwrap().p_tree0 {
-            self.a.get_ignore_gen_mut(p_tree0).unwrap().1.p_back = Some(p_new.inx());
-        }
-        if let Some(p_tree1) = self.a.get(p).unwrap().p_tree1 {
-            self.a.get_ignore_gen_mut(p_tree1).unwrap().1.p_back = Some(p_new.inx());
-        }
-        if let Some(p_back) = self.a.get(p).unwrap().p_back {
-            let parent = self.a.get_ignore_gen_mut(p_back).unwrap().1.t;
-            if parent.p_tree0 == Some(p.inx()) {
-                parent.p_tree0 = Some(p_new.inx());
-            } else {
-                parent.p_tree1 = Some(p_new.inx());
-            }
-        }
-        Some(p_new)
+        // the tree pointers do not have generation counters
+        self.a.invalidate(p)
     }
 
     /// Removes the key-value entry at `p`. Returns `None` if `p` is invalid.
@@ -1747,7 +1733,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     ///
     /// Does no invalidation and returns ownership of `new` if `p` is invalid
     pub fn replace_val_and_update_gen(&mut self, p: P, new: V) -> Result<(V, P), V> {
-        if let Some(p_new) = self.invalidate(p) {
+        // the tree pointers do not have generation counters
+        if let Some(p_new) = self.a.invalidate(p) {
             let old = mem::replace(&mut self.a.get_mut(p_new).unwrap().t.v, new);
             Ok((old, p_new))
         } else {

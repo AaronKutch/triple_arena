@@ -7,6 +7,14 @@ use rand_xoshiro::{
 use testcrate::P0;
 use triple_arena::{ChainArena, Link, Ptr};
 
+const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
+
+const STATS: (usize, usize, u128) = if cfg!(miri) {
+    (13, 1, 220)
+} else {
+    (44, 1070, 217040)
+};
+
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
         $rng.next_u32() as usize % $len
@@ -42,14 +50,16 @@ fn fuzz_chain() {
     let mut iters999 = 0;
     let mut max_len = 0;
 
-    for _ in 0..1_000_000 {
+    for _ in 0..N {
         assert_eq!(a.len(), list.len());
         assert_eq!(b.len(), a.len());
         assert_eq!(a.gen().get(), gen);
         assert_eq!(a.is_empty(), list.is_empty());
         let len = list.len();
-        if let Err(e) = ChainArena::_check_invariants(&a) {
-            panic!("{e}");
+        if !cfg!(miri) {
+            if let Err(e) = ChainArena::_check_invariants(&a) {
+                panic!("{e}");
+            }
         }
         op_inx = rng.next_u32() % 1000;
         match op_inx {
@@ -807,5 +817,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (44, 1070, 217040));
+    assert_eq!((max_len, iters999, a.gen().get()), STATS);
 }

@@ -7,6 +7,14 @@ use rand_xoshiro::{
 use testcrate::P0;
 use triple_arena::Arena;
 
+const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
+
+const STATS: (usize, usize, u128) = if cfg!(miri) {
+    (1, 11, 238)
+} else {
+    (1067, 72, 138831)
+};
+
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
         $rng.next_u32() as usize % $len
@@ -50,13 +58,15 @@ fn fuzz_arena() {
     a.clear_and_shrink();
     gen += 1;
 
-    for _ in 0..1_000_000 {
+    for _ in 0..N {
         assert_eq!(b.len(), list.len());
         assert_eq!(a.len(), b.len());
         assert_eq!(a.gen().get(), gen);
         let len = list.len();
         assert_eq!(a.is_empty(), b.is_empty());
-        Arena::_check_invariants(&a).unwrap();
+        if !cfg!(miri) {
+            Arena::_check_invariants(&a).unwrap();
+        }
         op_inx = rng.next_u32() % 1000;
         // I am only using inclusive ranges because exclusive ones are not stable as of
         // writing
@@ -417,7 +427,7 @@ fn fuzz_arena() {
     }
     // I may need a custom allocator, because some of the determinism is dependent
     // on the interactions between `reserve` and `try_insert`
-    assert_eq!((iters999, max_len, a.gen().get()), (1067, 72, 138831));
+    assert_eq!((iters999, max_len, a.gen().get()), STATS);
 }
 
 // for testing `clone` and `clone_from` which interact between multiple arenas

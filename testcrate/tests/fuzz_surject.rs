@@ -11,6 +11,14 @@ use rand_xoshiro::{
 use testcrate::P0;
 use triple_arena::{Ptr, SurjectArena};
 
+const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
+
+const STATS: (usize, usize, u64, u128) = if cfg!(miri) {
+    (8, 3, 0, 71)
+} else {
+    (43, 11, 1047, 78918)
+};
+
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
         $rng.next_u32() as usize % $len
@@ -69,30 +77,32 @@ fn fuzz_surject() {
     let mut max_key_len = 0;
     let mut max_val_len = 0;
 
-    for _ in 0..1_000_000 {
+    for _ in 0..N {
         assert_eq!(a.len_vals(), list.len());
         assert_eq!(a.len_vals(), b.len());
         let len = list.len();
-        let mut len_keys = 0;
-        for set in b.values() {
-            assert!(!set.is_empty());
-            let set_len = set.len();
-            assert_eq!(
-                set.len(),
-                a.len_key_set(set[next_inx!(rng, set_len)].p).unwrap().get()
-            );
-            len_keys += set_len;
-        }
-        assert_eq!(a.len_keys(), len_keys);
         if a.gen().get() != gen {
             dbg!(a.gen().get(), gen, op_inx);
             panic!();
         }
         assert_eq!(a.gen().get(), gen);
         assert_eq!(a.is_empty(), list.is_empty());
-        if let Err(e) = SurjectArena::_check_invariants(&a) {
-            dbg!(op_inx);
-            panic!("{e}");
+        if !cfg!(miri) {
+            let mut len_keys = 0;
+            for set in b.values() {
+                assert!(!set.is_empty());
+                let set_len = set.len();
+                assert_eq!(
+                    set.len(),
+                    a.len_key_set(set[next_inx!(rng, set_len)].p).unwrap().get()
+                );
+                len_keys += set_len;
+            }
+            assert_eq!(a.len_keys(), len_keys);
+            if let Err(e) = SurjectArena::_check_invariants(&a) {
+                dbg!(op_inx);
+                panic!("{e}");
+            }
         }
         op_inx = rng.next_u32() % 1000;
         match op_inx {
@@ -605,8 +615,5 @@ fn fuzz_surject() {
         max_key_len = max(max_key_len, a.len_keys());
         max_val_len = max(max_val_len, a.len_vals());
     }
-    assert_eq!(
-        (max_key_len, max_val_len, iters999, a.gen().get()),
-        (43, 11, 1047, 78918)
-    );
+    assert_eq!((max_key_len, max_val_len, iters999, a.gen().get()), STATS);
 }
