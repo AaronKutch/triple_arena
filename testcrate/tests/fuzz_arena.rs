@@ -430,6 +430,10 @@ fn fuzz_arena() {
     assert_eq!((iters999, max_len, a.gen().get()), STATS);
 }
 
+const M: usize = if cfg!(miri) { 1000 } else { 100_000 };
+
+const STATS_2: (usize, u128) = if cfg!(miri) { (23, 450) } else { (77, 46957) };
+
 // for testing `clone` and `clone_from` which interact between multiple arenas
 #[test]
 fn fuzz_multi_arena() {
@@ -445,7 +449,9 @@ fn fuzz_multi_arena() {
         assert_eq!(a.len(), b.len());
         assert_eq!(a.gen().get(), *gen);
         assert_eq!(a.is_empty(), b.is_empty());
-        Arena::_check_invariants(a).unwrap();
+        if !cfg!(miri) {
+            Arena::_check_invariants(a).unwrap();
+        }
         let len = a.len();
         match rng.next_u32() % 1000 {
             0..=499 => {
@@ -511,7 +517,7 @@ fn fuzz_multi_arena() {
     // determinism
     let mut max_len0 = 0;
 
-    for _ in 0..100_000 {
+    for _ in 0..M {
         inner(
             &mut rng, &mut a0, &mut gen0, &mut b0, &mut list0, &mut new_t,
         );
@@ -558,5 +564,5 @@ fn fuzz_multi_arena() {
             _ => unreachable!(),
         }
     }
-    assert_eq!((max_len0, a0.gen().get()), (77, 46957));
+    assert_eq!((max_len0, a0.gen().get()), STATS_2);
 }
