@@ -503,11 +503,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
     /// If `p0 == p1` or a pointer is invalid, `None` is returned.
     #[allow(clippy::type_complexity)]
     #[must_use]
-    pub fn get2_mut(
-        &mut self,
-        p0: P,
-        p1: P,
-    ) -> Option<(Link<P, &mut T>, Link<P, &mut T>)> {
+    pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<(Link<P, &mut T>, Link<P, &mut T>)> {
         self.a.get2_mut(p0, p1).map(|(link0, link1)| {
             (
                 Link::new(Link::prev_next(link0), &mut link0.t),
@@ -764,10 +760,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
     /// Like [ChainArena::get_mut], except generation counters are ignored and
     /// the existing generation is returned.
     #[doc(hidden)]
-    pub fn get_ignore_gen_mut(
-        &mut self,
-        p: P::Inx,
-    ) -> Option<(P::Gen, Link<P, &mut T>)> {
+    pub fn get_ignore_gen_mut(&mut self, p: P::Inx) -> Option<(P::Gen, Link<P, &mut T>)> {
         self.a
             .get_ignore_gen_mut(p)
             .map(|(gen, link)| (gen, Link::new(link.prev_next, &mut link.t)))
