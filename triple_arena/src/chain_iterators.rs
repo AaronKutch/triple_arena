@@ -99,37 +99,37 @@ impl<P: Ptr, T> FromIterator<T> for ChainArena<P, T> {
 
 /// All the iterators here can return values in arbitrary order, except for
 /// [ChainArena::next_chain_ptr].
-impl<PLink: Ptr, T> ChainArena<PLink, T> {
-    /// Iteration over all valid `PLink`s in the arena
-    pub fn ptrs(&self) -> Ptrs<PLink, Link<PLink, T>> {
+impl<P: Ptr, T> ChainArena<P, T> {
+    /// Iteration over all valid `P`s in the arena
+    pub fn ptrs(&self) -> Ptrs<P, Link<P, T>> {
         self.a.ptrs()
     }
 
-    /// Iteration over `&Link<PLink, T>`
-    pub fn vals(&self) -> Vals<PLink, Link<PLink, T>> {
+    /// Iteration over `&Link<P, T>`
+    pub fn vals(&self) -> Vals<P, Link<P, T>> {
         self.a.vals()
     }
 
-    /// Mutable iteration over `Link<PLink, &mut T>`
-    pub fn vals_mut(&mut self) -> ValsLinkMut<PLink, T> {
+    /// Mutable iteration over `Link<P, &mut T>`
+    pub fn vals_mut(&mut self) -> ValsLinkMut<P, T> {
         ValsLinkMut {
             iter_mut: self.a.vals_mut(),
         }
     }
 
-    /// Iteration over `(PLink, &Link<PLink, T>)` tuples
-    pub fn iter(&self) -> Iter<PLink, Link<PLink, T>> {
+    /// Iteration over `(P, &Link<P, T>)` tuples
+    pub fn iter(&self) -> Iter<P, Link<P, T>> {
         self.a.iter()
     }
 
-    /// Iteration over `(PLink, &Link<PLink, T>)` tuples corresponding to all
+    /// Iteration over `(P, &Link<P, T>)` tuples corresponding to all
     /// links in the chain that `p` is connected to. This starts at the link
     /// pointed to by `p` and iterates along the `next` direction until it
     /// reaches the end of the chain (or reaches `p` again if the chain is
     /// cyclical), then it iterates in the reverse direction starting from the
     /// link before `p` if it exists. If `p` was invalid, this
     /// iterator returns `None`.
-    pub fn iter_chain(&self, p: PLink) -> IterChain<PLink, T> {
+    pub fn iter_chain(&self, p: P) -> IterChain<P, T> {
         IterChain {
             init: p,
             p,
@@ -139,31 +139,31 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
         }
     }
 
-    /// Mutable iteration over `(PLink, Link<PLink, &mut T>)` tuples
-    pub fn iter_mut(&mut self) -> IterLinkMut<PLink, T> {
+    /// Mutable iteration over `(P, Link<P, &mut T>)` tuples
+    pub fn iter_mut(&mut self) -> IterLinkMut<P, T> {
         IterLinkMut {
             iter_mut: self.a.iter_mut(),
         }
     }
 
     /// Same as [crate::Arena::drain]
-    pub fn drain(&mut self) -> Drain<PLink, Link<PLink, T>> {
+    pub fn drain(&mut self) -> Drain<P, Link<P, T>> {
         self.a.drain()
     }
 
     /// Same as [crate::Arena::capacity_drain]
-    pub fn capacity_drain(self) -> CapacityDrain<PLink, Link<PLink, T>> {
+    pub fn capacity_drain(self) -> CapacityDrain<P, Link<P, T>> {
         self.a.capacity_drain()
     }
 
     /// Same as [crate::Arena::first_ptr]
     #[must_use]
-    pub fn first_ptr(&self) -> (PLink, bool) {
+    pub fn first_ptr(&self) -> (P, bool) {
         self.a.first_ptr()
     }
 
     /// Same as [crate::Arena::next_ptr]
-    pub fn next_ptr(&self, p: &mut PLink, b: &mut bool) {
+    pub fn next_ptr(&self, p: &mut P, b: &mut bool) {
         self.a.next_ptr(p, b);
     }
 
@@ -203,7 +203,7 @@ impl<PLink: Ptr, T> ChainArena<PLink, T> {
     ///
     /// If `p` is invalid, `stop` is set, but should only ever be the case if
     /// the initial `init` was invalid.
-    pub fn next_chain_ptr(&self, init: PLink, p: &mut PLink, switch: &mut bool, stop: &mut bool) {
+    pub fn next_chain_ptr(&self, init: P, p: &mut P, switch: &mut bool, stop: &mut bool) {
         if *switch {
             let prev = if let Some(link) = self.a.get(*p) {
                 if let Some(prev) = Link::prev(link) {

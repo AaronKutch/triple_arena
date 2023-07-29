@@ -680,7 +680,7 @@ impl<P: Ptr, K: Clone, V: Clone> Clone for SurjectArena<P, K, V> {
     }
 }
 
-impl<PLink: Ptr, K, V> Default for SurjectArena<PLink, K, V> {
+impl<P: Ptr, K, V> Default for SurjectArena<P, K, V> {
     fn default() -> Self {
         Self::new()
     }
