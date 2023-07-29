@@ -1263,8 +1263,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         self.a.invalidate(p)
     }
 
-    // TODO make `remove` return a link
-
     /// Removes the key-value entry at `p`. Returns `None` if `p` is invalid.
     #[must_use]
     pub fn remove(&mut self, p: P) -> Option<(K, V)> {

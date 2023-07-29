@@ -251,7 +251,8 @@ impl<P: Ptr, T> ChainArena<P, T> {
     ///
     /// # Errors
     ///
-    /// If a `Ptr` is invalid, or `!self.are_neighbors(prev, next)`, then
+    /// If a `Ptr` is invalid, or `prev_next.0.is_some() &&
+    /// prev_next.1.is_some() && !self.are_neighbors(prev, next)`, then
     /// ownership of `t` is returned.
     pub fn insert(&mut self, prev_next: (Option<P>, Option<P>), t: T) -> Result<P, T> {
         match prev_next {
@@ -442,7 +443,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
     }
 
     /// Returns if `p_prev` and `p_next` are neighbors on the same chain, such
-    /// that `self.get_link(p_prev).unwrap().next() == Some(p_next)` and
+    /// that `self.get_link(p_prev).unwrap().next() == Some(p_next)` or
     /// `self.get_link(p_next).unwrap().prev() == Some(p_prev)`. Note that
     /// `self.are_neighbors(p0, p1)` is not necessarily equal to
     /// `self.are_neighbors(p1, p0)` because of the directionality. This
