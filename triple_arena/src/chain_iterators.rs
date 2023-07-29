@@ -14,7 +14,7 @@ impl<'a, P: Ptr, T> Iterator for ValsLinkMut<'a, P, T> {
     fn next(&mut self) -> Option<Self::Item> {
         self.iter_mut
             .next()
-            .map(|link| Link::new(Link::prev_next(link), &mut link.t))
+            .map(|link| Link::new(link.prev_next(), &mut link.t))
     }
 }
 
@@ -37,7 +37,7 @@ impl<'a, P: Ptr, T> Iterator for IterChain<'a, P, T> {
             let p_res = self.p;
             self.arena
                 .next_chain_ptr(self.init, &mut self.p, &mut self.switch, &mut self.stop);
-            Some((p_res, self.arena.get(p_res).unwrap()))
+            Some((p_res, self.arena.get_link(p_res).unwrap()))
         }
     }
 }
@@ -53,7 +53,7 @@ impl<'a, P: Ptr, T> Iterator for IterLinkMut<'a, P, T> {
     fn next(&mut self) -> Option<Self::Item> {
         self.iter_mut
             .next()
-            .map(|(p, link)| (p, Link::new(Link::prev_next(link), &mut link.t)))
+            .map(|(p, link)| (p, Link::new(link.prev_next(), &mut link.t)))
     }
 }
 
@@ -206,7 +206,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
     pub fn next_chain_ptr(&self, init: P, p: &mut P, switch: &mut bool, stop: &mut bool) {
         if *switch {
             let prev = if let Some(link) = self.a.get(*p) {
-                if let Some(prev) = Link::prev(link) {
+                if let Some(prev) = link.prev() {
                     prev
                 } else {
                     *stop = true;
@@ -219,14 +219,14 @@ impl<P: Ptr, T> ChainArena<P, T> {
             *p = prev;
         } else {
             let next = if let Some(link) = self.a.get(*p) {
-                if let Some(next) = Link::next(link) {
+                if let Some(next) = link.next() {
                     next
                 } else {
                     *switch = true;
                     // `init` was done on first iteration, we need to immediately use the previous
                     // node to `init`
                     if let Some(link) = self.a.get(init) {
-                        if let Some(prev) = Link::prev(link) {
+                        if let Some(prev) = link.prev() {
                             *p = prev;
                         } else {
                             *stop = true;

@@ -5,7 +5,7 @@ use rand_xoshiro::{
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::{Link, OrdArena};
+use triple_arena::OrdArena;
 
 const N: usize = if cfg!(miri) {
     1000
@@ -236,7 +236,7 @@ fn fuzz_ord() {
                     let link = a.get_link(p).unwrap();
                     match ord {
                         Ordering::Less => {
-                            if let Some(prev) = Link::prev(&link) {
+                            if let Some(prev) = link.prev() {
                                 assert!(a.get_key(prev).unwrap().lt(&new_k));
                             }
                             assert!(new_k.lt(link.t.0));
@@ -246,7 +246,7 @@ fn fuzz_ord() {
                         }
                         Ordering::Greater => {
                             assert!(link.t.0.lt(&new_k));
-                            if let Some(next) = Link::next(&link) {
+                            if let Some(next) = link.next() {
                                 assert!(new_k.lt(a.get_key(next).unwrap()));
                             }
                         }

@@ -3,7 +3,7 @@ use core::{mem, num::NonZeroUsize};
 
 use fmt::Debug;
 
-use crate::{ptr::PtrNoGen, Arena, ChainArena, Link, Ptr};
+use crate::{ptr::PtrNoGen, Arena, ChainArena, Ptr};
 
 #[derive(Clone)]
 pub(crate) struct Key<P: Ptr, K> {
@@ -178,7 +178,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
             if b {
                 break
             }
-            let mut c = *count.get(this.keys.get(p).unwrap().t.p_val).unwrap();
+            let mut c = *count.get(this.keys.get(p).unwrap().p_val).unwrap();
             if c != 0 {
                 // upon encountering a nonzero count for the first time, we follow the chain and
                 // count down, and if we reach back to the beginning (verifying cyclic chain)
@@ -191,8 +191,8 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
                         return Err("did not reach end of key chain in expected time")
                     }
                     c -= 1;
-                    let link = this.keys.get(tmp).unwrap();
-                    if let Some(next) = Link::next(link) {
+                    let link = this.keys.get_link(tmp).unwrap();
+                    if let Some(next) = link.next() {
                         tmp = next;
                     } else {
                         return Err("key chain is not cyclic")
@@ -202,7 +202,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
                         if c != 0 {
                             return Err("key chain did not have all keys associated with value")
                         }
-                        *count.get_mut(this.keys.get(p).unwrap().t.p_val).unwrap() = 0;
+                        *count.get_mut(this.keys.get(p).unwrap().p_val).unwrap() = 0;
                         break
                     }
                 }
@@ -237,7 +237,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// invalid.
     #[must_use]
     pub fn len_key_set(&self, p: P) -> Option<NonZeroUsize> {
-        let p_val = self.keys.get(p)?.t.p_val;
+        let p_val = self.keys.get(p)?.p_val;
         Some(self.vals.get(p_val).unwrap().key_count)
     }
 
@@ -311,7 +311,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     pub fn insert_key(&mut self, p: P, k: K) -> Result<P, K> {
         let p_val = match self.keys.get(p) {
             None => return Err(k),
-            Some(p) => p.t.p_val,
+            Some(key) => key.p_val,
         };
         self.vals[p_val].key_count = NonZeroUsize::new(
             self.vals
@@ -337,7 +337,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     pub fn insert_key_with<F: FnOnce(P) -> K>(&mut self, p: P, create_k: F) -> Option<P> {
         let p_val = match self.keys.get(p) {
             None => return None,
-            Some(p) => p.t.p_val,
+            Some(key) => key.p_val,
         };
         self.vals[p_val].key_count = NonZeroUsize::new(
             self.vals
@@ -366,13 +366,13 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// Returns if `p0` and `p1` point to keys in the same key set
     #[must_use]
     pub fn in_same_set(&self, p0: P, p1: P) -> Option<bool> {
-        Some(self.keys.get(p0)?.t.p_val == self.keys.get(p1)?.t.p_val)
+        Some(self.keys.get(p0)?.p_val == self.keys.get(p1)?.p_val)
     }
 
     /// Returns a reference to the key pointed to by `p`
     #[must_use]
     pub fn get_key(&self, p: P) -> Option<&K> {
-        self.keys.get(p).as_ref().map(|link| &link.t.k)
+        self.keys.get(p).as_ref().map(|key| &key.k)
     }
 
     /// Returns a reference to the value associated with the key pointed to by
@@ -386,15 +386,15 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// Returns a reference to the key-value pair pointed to by `p`
     #[must_use]
     pub fn get(&self, p: P) -> Option<(&K, &V)> {
-        let link = self.keys.get(p)?;
-        Some((&link.t.k, &self.vals.get(link.t.p_val).unwrap().v))
+        let key = self.keys.get(p)?;
+        Some((&key.k, &self.vals.get(key.p_val).unwrap().v))
     }
 
     /// Returns a mutable reference to the value pointed to by `p`
     #[must_use]
     pub fn get_key_mut(&mut self, p: P) -> Option<&mut K> {
-        if let Some(link) = self.keys.get_mut(p) {
-            Some(&mut link.t.k)
+        if let Some(key) = self.keys.get_mut(p) {
+            Some(&mut key.k)
         } else {
             None
         }
@@ -404,14 +404,14 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// to by `p`
     #[must_use]
     pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
-        let p_val = self.keys.get(p)?.t.p_val;
+        let p_val = self.keys.get(p)?.p_val;
         Some(&mut self.vals.get_mut(p_val).unwrap().v)
     }
 
     /// Returns a mutable reference to the key-value pair pointed to by `p`
     #[must_use]
     pub fn get_mut(&mut self, p: P) -> Option<(&mut K, &mut V)> {
-        let key = self.keys.get_mut(p)?.t;
+        let key = self.keys.get_mut(p)?;
         Some((&mut key.k, &mut self.vals.get_mut(key.p_val).unwrap().v))
     }
 
@@ -420,7 +420,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     #[must_use]
     pub fn get2_key_mut(&mut self, p0: P, p1: P) -> Option<(&mut K, &mut K)> {
         match self.keys.get2_mut(p0, p1) {
-            Some((link0, link1)) => Some((&mut link0.t.k, &mut link1.t.k)),
+            Some((key0, key1)) => Some((&mut key0.k, &mut key1.k)),
             None => None,
         }
     }
@@ -430,8 +430,8 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// returned.
     #[must_use]
     pub fn get2_val_mut(&mut self, p0: P, p1: P) -> Option<(&mut V, &mut V)> {
-        let p_val0 = self.keys.get(p0)?.t.p_val;
-        let p_val1 = self.keys.get(p1)?.t.p_val;
+        let p_val0 = self.keys.get(p0)?.p_val;
+        let p_val1 = self.keys.get(p1)?.p_val;
         match self.vals.get2_mut(p_val0, p_val1) {
             Some((val0, val1)) => Some((&mut val0.v, &mut val1.v)),
             None => None,
@@ -445,16 +445,12 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     #[allow(clippy::type_complexity)]
     pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<((&mut K, &mut V), (&mut K, &mut V))> {
         match self.keys.get2_mut(p0, p1) {
-            Some((link0, link1)) => {
-                let key0 = link0.t;
-                let key1 = link1.t;
-                match self.vals.get2_mut(key0.p_val, key1.p_val) {
-                    Some((val0, val1)) => {
-                        Some(((&mut key0.k, &mut val0.v), (&mut key1.k, &mut val1.v)))
-                    }
-                    None => None,
+            Some((key0, key1)) => match self.vals.get2_mut(key0.p_val, key1.p_val) {
+                Some((val0, val1)) => {
+                    Some(((&mut key0.k, &mut val0.v), (&mut key1.k, &mut val1.v)))
                 }
-            }
+                None => None,
+            },
             None => None,
         }
     }
@@ -487,8 +483,8 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// other.
     #[must_use]
     pub fn union(&mut self, mut p0: P, mut p1: P) -> Option<(V, P)> {
-        let mut p_val0 = self.keys.get(p0)?.t.p_val;
-        let mut p_val1 = self.keys.get(p1)?.t.p_val;
+        let mut p_val0 = self.keys.get(p0)?.p_val;
+        let mut p_val1 = self.keys.get(p1)?.p_val;
         if p_val0 == p_val1 {
             // corresponds to same set
             return None
@@ -502,8 +498,8 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         // overwrite the `PVal`s in the smaller chain
         let mut tmp = p1;
         loop {
-            self.keys.get_mut(tmp).unwrap().t.p_val = p_val0;
-            tmp = Link::next(self.keys.get(tmp).unwrap()).unwrap();
+            self.keys.get_mut(tmp).unwrap().p_val = p_val0;
+            tmp = self.keys.get_link(tmp).unwrap().next().unwrap();
             if tmp == p1 {
                 break
             }
@@ -545,7 +541,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// can point to any key from the key set. Returns `None` if `p` is invalid.
     #[must_use]
     pub fn remove(&mut self, p: P) -> Option<V> {
-        let p_val = self.keys.get(p)?.t.p_val;
+        let p_val = self.keys.get(p)?.p_val;
         self.keys.remove_cyclic_chain_internal(p, true);
         Some(self.vals.remove(p_val).unwrap().v)
     }
@@ -578,7 +574,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         } else {
             let (lhs, rhs) = self.keys.get2_mut(p0, p1)?;
             // be careful to swap only the inner `K` values and not the `p_val`s
-            mem::swap(&mut lhs.t.k, &mut rhs.t.k);
+            mem::swap(&mut lhs.k, &mut rhs.k);
             Some(())
         }
     }
@@ -589,8 +585,8 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// invalid.
     #[must_use]
     pub fn swap_vals(&mut self, p0: P, p1: P) -> Option<()> {
-        let p_val0 = self.keys.get(p0)?.t.p_val;
-        let p_val1 = self.keys.get(p1)?.t.p_val;
+        let p_val0 = self.keys.get(p0)?.p_val;
+        let p_val1 = self.keys.get(p1)?.p_val;
         if p_val0 != p_val1 {
             // we only want to swap the `V` and not the ref counts
             let (lhs, rhs) = self.vals.get2_mut(p_val0, p_val1).unwrap();
@@ -627,7 +623,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         mut map_val: F1,
     ) {
         self.keys.clone_from_with(&source.keys, |p, link| {
-            let k = map_key(p, &link.k);
+            let k = map_key(p, &link.t.k);
             Key {
                 k,
                 p_val: Ptr::_from_raw(p.inx(), ()),
@@ -650,7 +646,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         chain_arena: &mut ChainArena<P, T>,
         mut map: F,
     ) {
-        chain_arena.clone_from_with(&self.keys, |p, link| map(p, &link.k))
+        chain_arena.clone_from_with(&self.keys, |p, link| map(p, &link.t.k))
     }
 }
 

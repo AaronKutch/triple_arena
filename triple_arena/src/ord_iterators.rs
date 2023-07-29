@@ -1,6 +1,6 @@
 //! Iterators for `OrdArena`
 
-use crate::{Link, OrdArena, Ptr};
+use crate::{OrdArena, Ptr};
 
 /// An iterator over the valid `P`s of an `OrdArena`
 pub struct Ptrs<'a, P: Ptr, K: Ord, V> {
@@ -149,8 +149,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     #[inline]
     pub fn next_ptr(&self, p: &mut Option<P>) {
         if let Some(inner) = p {
-            if let Some(link) = self.a.get(*inner) {
-                if let Some(next) = Link::next(link) {
+            if let Some(link) = self.a.get_link(*inner) {
+                if let Some(next) = link.next() {
                     *p = Some(next);
                     return
                 }

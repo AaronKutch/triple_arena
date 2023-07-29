@@ -34,7 +34,7 @@ impl<'a, P: Ptr, K> Iterator for Keys<'a, P, K> {
     type Item = &'a K;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|k| &k.k)
+        self.iter.next().map(|link| &link.t.k)
     }
 }
 
@@ -237,8 +237,8 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// }
     /// ```
     pub fn next_surject_ptr(&self, init: P, p: &mut P, stop: &mut bool) {
-        let next = if let Some(link) = self.keys.get(*p) {
-            Link::next(link).unwrap()
+        let next = if let Some(link) = self.keys.get_link(*p) {
+            link.next().unwrap()
         } else {
             *stop = true;
             return

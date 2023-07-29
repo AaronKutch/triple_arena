@@ -129,7 +129,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
         // check the root
         if let Some((_, root)) = this.a.get_ignore_gen(this.root) {
-            if root.p_back.is_some() {
+            if root.t.p_back.is_some() {
                 return Err("root node has a back pointer")
             }
         } else {
@@ -139,7 +139,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         let mut count = 0;
         let mut prev: Option<P> = None;
         let first_gen = if let Some((first_gen, link)) = this.a.get_ignore_gen(this.first) {
-            if Link::prev(link).is_some() {
+            if link.prev().is_some() {
                 return Err("this.first is broken")
             }
             first_gen
@@ -187,10 +187,10 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 break
             }
 
-            let node = &this.a.get(p).unwrap().t;
+            let node = &this.a.get(p).unwrap();
             if let Some(p_back) = node.p_back {
                 if let Some((_, parent)) = this.a.get_ignore_gen(p_back) {
-                    if (parent.p_tree0 != Some(p.inx())) && (parent.p_tree1 != Some(p.inx())) {
+                    if (parent.t.p_tree0 != Some(p.inx())) && (parent.t.p_tree1 != Some(p.inx())) {
                         return Err("broken tree")
                     }
                 } else {
@@ -208,10 +208,10 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     return Err("`p_tree0` and `p_tree1` are the same")
                 }
                 if let Some((_, child0)) = this.a.get_ignore_gen(p_tree0) {
-                    if child0.p_back != Some(p.inx()) {
+                    if child0.t.p_back != Some(p.inx()) {
                         return Err("broken tree")
                     }
-                    if child0.p_back == Some(p_tree0) {
+                    if child0.t.p_back == Some(p_tree0) {
                         return Err("cycle")
                     }
                 } else {
@@ -220,10 +220,10 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             }
             if let Some(p_tree1) = node.p_tree1 {
                 if let Some((_, child1)) = this.a.get_ignore_gen(p_tree1) {
-                    if child1.p_back != Some(p.inx()) {
+                    if child1.t.p_back != Some(p.inx()) {
                         return Err("broken tree")
                     }
-                    if child1.p_back == Some(p_tree1) {
+                    if child1.t.p_back == Some(p_tree1) {
                         return Err("cycle")
                     }
                 } else {
@@ -240,10 +240,10 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 break
             }
 
-            let node = &this.a.get(p).unwrap().t;
+            let node = &this.a.get(p).unwrap();
 
             let rank0 = if let Some(p_tree0) = node.p_tree0 {
-                this.a.get_inx_unwrap(p_tree0).rank
+                this.a.get_inx_unwrap(p_tree0).t.rank
             } else {
                 0
             };
@@ -251,7 +251,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 return Err("rank difference is zero or negative")
             }
             let rank1 = if let Some(p_tree1) = node.p_tree1 {
-                this.a.get_inx_unwrap(p_tree1).rank
+                this.a.get_inx_unwrap(p_tree1).t.rank
             } else {
                 0
             };
@@ -345,7 +345,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         };
                         if let Ok(p_new) = self.a.insert((None, Some(p_with_gen)), new_node) {
                             // fix tree pointer in leaf direction
-                            self.a.get_ignore_gen_mut(p).unwrap().1.p_tree0 = Some(p_new.inx());
+                            self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree0 = Some(p_new.inx());
                             if self.first == p {
                                 self.first = p_new.inx()
                             }
@@ -374,7 +374,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                                 rank: 1,
                             };
                             if let Ok(p_new) = self.a.insert((None, Some(p_with_gen)), new_node) {
-                                self.a.get_ignore_gen_mut(p).unwrap().1.p_tree0 = Some(p_new.inx());
+                                self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree0 =
+                                    Some(p_new.inx());
                                 if self.first == p {
                                     self.first = p_new.inx()
                                 }
@@ -401,7 +402,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                             rank: 1,
                         };
                         if let Ok(p_new) = self.a.insert((Some(p_with_gen), None), new_node) {
-                            self.a.get_ignore_gen_mut(p).unwrap().1.p_tree1 = Some(p_new.inx());
+                            self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree1 = Some(p_new.inx());
                             if self.last == p {
                                 self.last = p_new.inx()
                             }
@@ -442,7 +443,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                             break Ordering::Less
                         }
                         direction = Some(false);
-                        if let Some(prev) = Link::prev(link) {
+                        if let Some(prev) = link.prev() {
                             p = prev.inx();
                         } else {
                             break Ordering::Less
@@ -454,7 +455,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                             break Ordering::Greater
                         }
                         direction = Some(true);
-                        if let Some(next) = Link::next(link) {
+                        if let Some(next) = link.next() {
                             p = next.inx();
                         } else {
                             break Ordering::Greater
@@ -466,8 +467,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             // first, step to node with `None` subtree if we need to
             let direction = match direction {
                 Ordering::Less => {
-                    if link.p_tree0.is_some() {
-                        p = Link::prev(link).unwrap().inx();
+                    if link.t.p_tree0.is_some() {
+                        p = link.prev().unwrap().inx();
                         Ordering::Greater
                     } else {
                         Ordering::Less
@@ -475,8 +476,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 }
                 Ordering::Equal => {
                     if nonhereditary {
-                        if link.p_tree0.is_some() {
-                            p = Link::prev(link).unwrap().inx();
+                        if link.t.p_tree0.is_some() {
+                            p = link.prev().unwrap().inx();
                             // special case to account for rank 2 elbos
                             Ordering::Greater
                         } else {
@@ -487,8 +488,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     }
                 }
                 Ordering::Greater => {
-                    if link.p_tree1.is_some() {
-                        p = Link::next(link).unwrap().inx();
+                    if link.t.p_tree1.is_some() {
+                        p = link.next().unwrap().inx();
                         Ordering::Less
                     } else {
                         Ordering::Greater
@@ -510,7 +511,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     };
                     if let Ok(p_new) = self.a.insert((None, Some(p_with_gen)), new_node) {
                         // fix tree pointer in leaf direction
-                        self.a.get_ignore_gen_mut(p).unwrap().1.p_tree0 = Some(p_new.inx());
+                        self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree0 = Some(p_new.inx());
                         if self.first == p {
                             self.first = p_new.inx()
                         }
@@ -537,7 +538,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         rank: 1,
                     };
                     if let Ok(p_new) = self.a.insert((Some(p_with_gen), None), new_node) {
-                        self.a.get_ignore_gen_mut(p).unwrap().1.p_tree1 = Some(p_new.inx());
+                        self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree1 = Some(p_new.inx());
                         if self.last == p {
                             self.last = p_new.inx()
                         }
@@ -582,7 +583,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         // would be a rank 0 `None` child, and the rank difference between it and `n1`
         // would be 3, which would contradict invariants
 
-        let (n1, mut p1) = if let Some(p1) = n0.p_back {
+        let (n1, mut p1) = if let Some(p1) = n0.t.p_back {
             // in case `n1` was rank 1 we must promote it, the loop expects no rank
             // violations at p1 and below (also, if it is rank 2 then it is within rank
             // difference 2 of the `None` sibling to `n0`)
@@ -633,8 +634,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             // n0 (1)
             return
         };
-        let mut d01 = n1.p_tree1 == Some(p0);
-        let (n2, mut p2) = if let Some(p2) = n1.p_back {
+        let mut d01 = n1.t.p_tree1 == Some(p0);
+        let (n2, mut p2) = if let Some(p2) = n1.t.p_back {
             //      n2 (2,3)
             //        /
             //       /
@@ -652,7 +653,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             // n0 (1)  s0 (0)
             return
         };
-        let mut d12 = n2.p_tree1 == Some(p1);
+        let mut d12 = n2.t.p_tree1 == Some(p1);
         loop {
             // the prelude and any previous iterations of this loop must lead the state to
             // match with
@@ -670,11 +671,11 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let n0 = self.a.get_inx_unwrap(p0);
             let n1 = self.a.get_inx_unwrap(p1);
             let n2 = self.a.get_inx_unwrap(p2);
-            let p3 = n2.p_back;
+            let p3 = n2.t.p_back;
 
-            let rank0 = n0.rank;
-            let rank1 = n1.rank;
-            let rank2 = n2.rank;
+            let rank0 = n0.t.rank;
+            let rank1 = n1.t.rank;
+            let rank2 = n2.t.rank;
             if rank1 < rank2 {
                 //      n2 (r+2)
                 //        /
@@ -700,9 +701,9 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             // This isn't just an optimization, a general case restructure requires the
             // sibling of n1 to be 2 ranks below n2 or else the restructure may introduce
             // lower height violations.
-            let p_s1 = if d12 { n2.p_tree0 } else { n2.p_tree1 };
+            let p_s1 = if d12 { n2.t.p_tree0 } else { n2.t.p_tree1 };
             let rank_s1 = if let Some(p_s1) = p_s1 {
-                self.a.get_inx_unwrap(p_s1).rank
+                self.a.get_inx_unwrap(p_s1).t.rank
             } else {
                 0
             };
@@ -766,7 +767,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     p1 = p2;
                     p2 = p3;
                     d01 = d12;
-                    d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                    d12 = self.a.get_inx_unwrap(p2).t.p_tree1 == Some(p1);
                     continue
                 } else {
                     // n2 was the root, the rest of the tree is ok
@@ -817,7 +818,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 //            /      \
                 //          s0 (r-1) s1 (r-1)
 
-                let p_s0 = if d01 { n1.p_tree0 } else { n1.p_tree1 };
+                let p_s0 = if d01 { n1.t.p_tree0 } else { n1.t.p_tree1 };
                 if let Some(p_s0) = p_s0 {
                     let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
                     s0.p_back = Some(p2);
@@ -878,9 +879,9 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 // s0     a     b    s1 (r-1)
 
                 let (p_a, p_b) = if d01 {
-                    (n0.p_tree1, n0.p_tree0)
+                    (n0.t.p_tree1, n0.t.p_tree0)
                 } else {
-                    (n0.p_tree0, n0.p_tree1)
+                    (n0.t.p_tree0, n0.t.p_tree1)
                 };
                 if let Some(p_a) = p_a {
                     self.a.get_inx_mut_unwrap_t(p_a).p_back = Some(p2);
@@ -953,7 +954,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 
     /// Inserts key `k` and an associated value `v` into `self` and returns a
     /// `Ptr` to it. If the inserted key is equal to a key already contained in
-    /// `self`, the inserted key is inserted in a `Link::prev` position to
+    /// `self`, the inserted key is inserted in a [Link::prev] position to
     /// all the equal keys. Future calls to `self.find_key` with an
     /// equal `k` could find any of the equal keys.
     pub fn insert_nonhereditary(&mut self, k: K, v: V) -> P {
@@ -1070,7 +1071,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         break None
                     }
                     direction = Some(false);
-                    if let Some(prev) = Link::prev(link) {
+                    if let Some(prev) = link.prev() {
                         p = prev.inx();
                     } else {
                         break None
@@ -1082,7 +1083,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         break None
                     }
                     direction = Some(true);
-                    if let Some(next) = Link::next(link) {
+                    if let Some(next) = link.next() {
                         p = next.inx();
                     } else {
                         break None
@@ -1147,7 +1148,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         break Ordering::Less
                     }
                     direction = Some(false);
-                    if let Some(prev) = Link::prev(link) {
+                    if let Some(prev) = link.prev() {
                         p = prev.inx();
                     } else {
                         break Ordering::Less
@@ -1159,7 +1160,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         break Ordering::Greater
                     }
                     direction = Some(true);
-                    if let Some(next) = Link::next(link) {
+                    if let Some(next) = link.next() {
                         p = next.inx();
                     } else {
                         break Ordering::Greater
@@ -1182,8 +1183,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     #[must_use]
     pub fn get_link(&self, p: P) -> Option<Link<P, (&K, &V)>> {
         self.a
-            .get(p)
-            .map(|link| Link::new(Link::prev_next(link), (&link.k, &link.v)))
+            .get_link(p)
+            .map(|link| Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
     }
 
     /// Returns a reference to the key-value pair pointed to by `p`
@@ -1209,22 +1210,21 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// [Link::next] gives the `Ptr` to the next greater key.
     #[must_use]
     pub fn get_link_mut(&mut self, p: P) -> Option<Link<P, (&K, &mut V)>> {
-        self.a.get_mut(p).map(|link| {
-            let tmp = Link::prev_next(&link);
-            Link::new(tmp, (&link.t.k, &mut link.t.v))
-        })
+        self.a
+            .get_link_mut(p)
+            .map(|link| Link::new(link.prev_next(), (&link.t.k, &mut link.t.v)))
     }
 
     /// Returns a mutable reference to the key-value pair pointed to by `p`
     #[must_use]
     pub fn get_mut(&mut self, p: P) -> Option<(&K, &mut V)> {
-        self.a.get_mut(p).map(|link| (&link.t.k, &mut link.t.v))
+        self.a.get_mut(p).map(|t| (&t.k, &mut t.v))
     }
 
     /// Returns a mutable reference to the value pointed to by `p`
     #[must_use]
     pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
-        self.a.get_mut(p).map(|link| &mut link.t.v)
+        self.a.get_mut(p).map(|t: &mut Node<P, K, V>| &mut t.v)
     }
 
     /// Gets two references pointed to by `p0` and `p1`.
@@ -1236,10 +1236,10 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         p0: P,
         p1: P,
     ) -> Option<(Link<P, (&K, &mut V)>, Link<P, (&K, &mut V)>)> {
-        self.a.get2_mut(p0, p1).map(|(link0, link1)| {
+        self.a.get2_link_mut(p0, p1).map(|(link0, link1)| {
             (
-                Link::new(Link::prev_next(&link0), (&link0.t.k, &mut link0.t.v)),
-                Link::new(Link::prev_next(&link1), (&link1.t.k, &mut link1.t.v)),
+                Link::new(link0.prev_next(), (&link0.t.k, &mut link0.t.v)),
+                Link::new(link1.prev_next(), (&link1.t.k, &mut link1.t.v)),
             )
         })
     }
@@ -1251,7 +1251,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     pub fn get2_val_mut(&mut self, p0: P, p1: P) -> Option<(&mut V, &mut V)> {
         self.a
             .get2_mut(p0, p1)
-            .map(|(link0, link1)| (&mut link0.t.v, &mut link1.t.v))
+            .map(|(t0, t1)| (&mut t0.v, &mut t1.v))
     }
 
     /// Invalidates all references to the entry pointed to by `p`, and returns a
@@ -1262,6 +1262,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         // the tree pointers do not have generation counters
         self.a.invalidate(p)
     }
+
+    // TODO make `remove` return a link
 
     /// Removes the key-value entry at `p`. Returns `None` if `p` is invalid.
     #[must_use]
@@ -1304,12 +1306,12 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         // previous configuration of displaced node
         let (mut p_d, mut d_tree0, mut d_tree1, mut d_back, mut d_rank, mut d_prev, mut d_next) = (
             p.inx(),
-            link.p_tree0,
-            link.p_tree1,
-            link.p_back,
-            link.rank,
-            Link::prev(&link),
-            Link::next(&link),
+            link.t.p_tree0,
+            link.t.p_tree1,
+            link.t.p_back,
+            link.t.rank,
+            link.prev(),
+            link.next(),
         );
         let mut use_next = false;
         let mut p1 = d_back;
@@ -1337,12 +1339,12 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 let r = self.a.get_inx_mut_unwrap(p_r);
                 // keep the old configuration of the replacement node
                 let buf = (
-                    r.p_tree0,
-                    r.p_tree1,
-                    r.p_back,
-                    r.rank,
-                    Link::prev(&r),
-                    Link::next(&r),
+                    r.t.p_tree0,
+                    r.t.p_tree1,
+                    r.t.p_back,
+                    r.t.rank,
+                    r.prev(),
+                    r.next(),
                 );
                 r.t.rank = d_rank;
                 if let Some(d_back) = d_back {
@@ -1404,16 +1406,16 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         let mut p0 = None;
         let mut p1 = p1.unwrap();
         let n1 = self.a.get_inx_mut_unwrap(p1);
-        if n1.p_tree1 == Some(p_d) {
+        if n1.t.p_tree1 == Some(p_d) {
             n1.t.p_tree1 = None;
         } else {
             n1.t.p_tree0 = None;
         }
         // check if we are on the end of the chain to fix the first and last pointers
-        if Link::prev(&n1).is_none() {
+        if n1.prev().is_none() {
             self.first = p1;
         }
-        if Link::next(&n1).is_none() {
+        if n1.next().is_none() {
             self.last = p1;
         }
 
@@ -1426,24 +1428,24 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 
         loop {
             let n1 = self.a.get_inx_unwrap(p1);
-            let rank1 = n1.rank;
-            let d01 = n1.p_tree1 == p0;
-            let p2 = n1.p_back;
+            let rank1 = n1.t.rank;
+            let d01 = n1.t.p_tree1 == p0;
+            let p2 = n1.t.p_back;
 
             let rank0 = if let Some(p0) = p0 {
-                self.a.get_inx_unwrap(p0).rank
+                self.a.get_inx_unwrap(p0).t.rank
             } else {
                 0
             };
 
-            let p_s0 = if d01 { n1.p_tree0 } else { n1.p_tree1 };
+            let p_s0 = if d01 { n1.t.p_tree0 } else { n1.t.p_tree1 };
             if let Some(p_s0) = p_s0 {
                 if rank0.wrapping_add(2) >= rank1 {
                     // no violation
                     break
                 }
                 let s0 = self.a.get_inx_unwrap(p_s0);
-                let rank_s0 = s0.rank;
+                let rank_s0 = s0.t.rank;
 
                 if rank_s0.wrapping_add(2) == rank1 {
                     // this is not just an optimization, the other branch would require `s0` to have
@@ -1476,18 +1478,18 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 // n0 (r)     s0 (r+2)
 
                 let (p_a, p_b) = if d01 {
-                    (s0.p_tree1, s0.p_tree0)
+                    (s0.t.p_tree1, s0.t.p_tree0)
                 } else {
-                    (s0.p_tree0, s0.p_tree1)
+                    (s0.t.p_tree0, s0.t.p_tree1)
                 };
 
                 let rank_a = if let Some(p_a) = p_a {
-                    self.a.get_inx_unwrap(p_a).rank
+                    self.a.get_inx_unwrap(p_a).t.rank
                 } else {
                     0
                 };
                 let rank_b = if let Some(p_b) = p_b {
-                    self.a.get_inx_unwrap(p_b).rank
+                    self.a.get_inx_unwrap(p_b).t.rank
                 } else {
                     0
                 };
@@ -1633,9 +1635,9 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 let p_a = p_a.unwrap();
                 let a = self.a.get_inx_unwrap(p_a);
                 let (p_c, p_d) = if d01 {
-                    (a.p_tree1, a.p_tree0)
+                    (a.t.p_tree1, a.t.p_tree0)
                 } else {
-                    (a.p_tree0, a.p_tree1)
+                    (a.t.p_tree0, a.t.p_tree1)
                 };
                 if let Some(p_c) = p_c {
                     let c = self.a.get_inx_mut_unwrap_t(p_c);
@@ -1717,8 +1719,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     ///
     /// Returns ownership of `new` instead if `p` is invalid
     pub fn replace_val_and_keep_gen(&mut self, p: P, new: V) -> Result<V, V> {
-        if let Some(link) = self.a.get_mut(p) {
-            let old = mem::replace(&mut link.t.v, new);
+        if let Some(t) = self.a.get_mut(p) {
+            let old = mem::replace(&mut t.v, new);
             Ok(old)
         } else {
             Err(new)
@@ -1735,7 +1737,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     pub fn replace_val_and_update_gen(&mut self, p: P, new: V) -> Result<(V, P), V> {
         // the tree pointers do not have generation counters
         if let Some(p_new) = self.a.invalidate(p) {
-            let old = mem::replace(&mut self.a.get_mut(p_new).unwrap().t.v, new);
+            let old = mem::replace(&mut self.a.get_mut(p_new).unwrap().v, new);
             Ok((old, p_new))
         } else {
             Err(new)
@@ -1757,7 +1759,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         } else {
             let (lhs, rhs) = self.a.get2_mut(p0, p1)?;
             // be careful to swap only the inner `V` values
-            mem::swap(&mut lhs.t.v, &mut rhs.t.v);
+            mem::swap(&mut lhs.v, &mut rhs.v);
             Some(())
         }
     }
@@ -1781,21 +1783,21 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         mut map: F,
     ) {
         self.a.clone_from_with(&source.a, |p, link| {
-            let (k, v) = map(p, Link::new(Link::prev_next(link), (&link.k, &link.v)));
+            let (k, v) = map(p, Link::new(link.prev_next(), (&link.t.k, &link.t.v)));
             Node {
                 k,
                 v,
-                p_back: link.p_back,
-                p_tree0: link.p_tree0,
-                p_tree1: link.p_tree1,
-                rank: link.rank,
+                p_back: link.t.p_back,
+                p_tree0: link.t.p_tree0,
+                p_tree1: link.t.p_tree1,
+                rank: link.t.rank,
             }
         })
     }
 
     /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
-    /// `self`, with the ordering preserved in a single chain (`Link::next`
+    /// `self`, with the ordering preserved in a single chain ([Link::next]
     /// points to the next greater entry)
     pub fn clone_to_chain_arena<U, F: FnMut(P, Link<P, (&K, &V)>) -> U>(
         &self,
@@ -1803,7 +1805,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         mut map: F,
     ) {
         chain_arena.clone_from_with(&self.a, |p, link| {
-            map(p, Link::new(Link::prev_next(link), (&link.k, &link.v)))
+            map(p, Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
         })
     }
 
@@ -1816,7 +1818,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         mut map: F,
     ) {
         arena.clone_from_with(&self.a.a, |p, link| {
-            map(p, Link::new(Link::prev_next(link), (&link.k, &link.v)))
+            map(p, Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
         });
     }
 }

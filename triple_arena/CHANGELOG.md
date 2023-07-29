@@ -6,6 +6,8 @@
   this removes an unintentional place where chains could be broken.
 
 ### Changes
+- Changed `Link::prev` and others to take `&self`, moved `ChainArena::get` and mutable versions to
+  `ChainArena::get_link`, made `ChainArena::get` return just the `&T`.
 - Changed order of returned parameters of the `replace_and_update_gen` functions
 - Fixed `ChainArena::insert_start` and `ChainArena::insert_end` to return `Result` and actually
   return ownership on failure like the documentation says

@@ -5,7 +5,7 @@ use rand_xoshiro::{
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::{ChainArena, Link, Ptr};
+use triple_arena::{ChainArena, Ptr};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
@@ -433,18 +433,21 @@ fn fuzz_chain() {
                 }
             }
             700..=709 => {
-                // get, get_mut, Index, IndexMut
+                // get_link, get_link_mut, get, get_mut, Index, IndexMut
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
                     let (ptr, interlink) = b[&t];
-                    let link = a.get(ptr).unwrap();
-                    assert_eq!(Link::prev(link), interlink.0.map(|t| b[&t].0));
-                    assert_eq!(Link::next(link), interlink.1.map(|t| b[&t].0));
+                    let link = a.get_link(ptr).unwrap();
+                    assert_eq!(link.prev(), interlink.0.map(|t| b[&t].0));
+                    assert_eq!(link.next(), interlink.1.map(|t| b[&t].0));
                     assert_eq!(link.t, t);
-                    let link = a.get_mut(ptr).unwrap();
-                    assert_eq!(Link::prev(&link), interlink.0.map(|t| b[&t].0));
-                    assert_eq!(Link::next(&link), interlink.1.map(|t| b[&t].0));
+                    let link = a.get_link_mut(ptr).unwrap();
+                    assert_eq!(link.prev(), interlink.0.map(|t| b[&t].0));
+                    assert_eq!(link.next(), interlink.1.map(|t| b[&t].0));
                     assert_eq!(*link.t, t);
+                    assert_eq!(&a[ptr], &t);
+                    assert_eq!(*a.get(ptr).unwrap(), t);
+                    assert_eq!(*a.get_mut(ptr).unwrap(), t);
                     assert_eq!(&a[ptr], &t);
                     let tmp = &mut a[ptr];
                     assert_eq!(*tmp, t);
@@ -464,7 +467,7 @@ fn fuzz_chain() {
                     // do not need to be updated because we are looking up based on the `t` value
                     // which is unchanged. This includes single link cyclic chains
                     b.insert(t, (new_ptr, interlink));
-                    assert_eq!(t, a.get(new_ptr).unwrap().t);
+                    assert_eq!(t, *a.get(new_ptr).unwrap());
                 } else {
                     assert!(a.invalidate(invalid).is_none());
                 }
@@ -618,8 +621,7 @@ fn fuzz_chain() {
                         assert!(a.get2_mut(p0, p1).is_none());
                     } else {
                         let tmp = a.get2_mut(p0, p1).unwrap();
-                        let tmp = (*tmp.0.t, *tmp.1.t);
-                        assert_eq!(tmp, (a.get(p0).unwrap().t, a.get(p1).unwrap().t));
+                        assert_eq!((*tmp.0, *tmp.1), (*a.get(p0).unwrap(), *a.get(p1).unwrap()));
                     }
                 }
             }
@@ -663,7 +665,7 @@ fn fuzz_chain() {
                         if stop {
                             break
                         }
-                        t_to_explore.insert(a.get(p).unwrap().t);
+                        t_to_explore.insert(a.get(p).unwrap());
                         // make sure we aren't double counting and the hash set is just dropping
                         iters += 1;
                         a.next_chain_ptr(init, &mut p, &mut switch, &mut stop);
@@ -709,7 +711,7 @@ fn fuzz_chain() {
                         if stop {
                             break
                         }
-                        assert_eq!(iter.next().unwrap(), (p, a.get(p).unwrap()));
+                        assert_eq!(iter.next().unwrap(), (p, a.get_link(p).unwrap()));
                         a.next_chain_ptr(init, &mut p, &mut switch, &mut stop);
                     }
                 } else {
