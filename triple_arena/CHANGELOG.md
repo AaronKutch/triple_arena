@@ -19,6 +19,7 @@
 
 ### Additions
 - Added `OrdArena`
+- Added `ArenaTrait`
 - Added several Arena cloning functions
 - Added `PtrNoGen<P>`
 - Added `ChainArena::replace_and_keep_gen` and `ChainArena::replace_and_update_gen`

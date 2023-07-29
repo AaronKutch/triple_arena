@@ -8,12 +8,14 @@
 // check all `get_inx_mut_unwrap` to see if we can replace with the _t variant
 
 mod arena;
+mod arena_trait;
 mod chain;
 mod entry;
 pub mod iterators;
 mod nonzero_inx_vec;
 mod ord;
 mod ptr;
+pub use arena_trait::ArenaTrait;
 pub use chain::{ChainArena, Link};
 pub(crate) use entry::InternalEntry;
 pub use ptr::Ptr;
