@@ -75,15 +75,12 @@ pub struct Iter<'a, P: Ptr, K: Ord, V> {
 }
 
 impl<'a, P: Ptr, K: Ord, V> Iterator for Iter<'a, P, K, V> {
-    type Item = (P, &'a K, &'a V);
+    type Item = (P, &'a (K, V));
 
     fn next(&mut self) -> Option<Self::Item> {
         let p_res = self.p;
         self.arena.next_ptr(&mut self.p);
-        p_res.map(|p| {
-            let tmp = self.arena.get(p).unwrap();
-            (p, tmp.0, tmp.1)
-        })
+        p_res.map(|p| (p, self.arena.get(p).unwrap()))
     }
 }
 

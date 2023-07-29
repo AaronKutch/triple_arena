@@ -33,8 +33,7 @@ use crate::{utils::PtrInx, Arena, ChainArena, Link, Ptr};
 
 #[derive(Clone)]
 pub(crate) struct Node<P: Ptr, K: Ord, V> {
-    k: K,
-    v: V,
+    k_v: (K, V),
     // Pointer back to parent
     p_back: Option<P::Inx>,
     // Pointer to left subtree
@@ -81,11 +80,13 @@ pub(crate) struct Node<P: Ptr, K: Ord, V> {
 /// ptr_struct!(P0);
 /// let mut a: OrdArena<P0, u64, ()> = OrdArena::new();
 ///
-/// let p50 = a.insert(50, ()).0;
-/// let p30 = a.insert(30, ()).0;
-/// let p70 = a.insert(70, ()).0;
-/// let p60 = a.insert(60, ()).0;
-/// let p10 = a.insert(10, ()).0;
+/// // we purposely group the key-value pairs in tuples for technical
+/// // performance reasons, and often they are returned as tuples
+/// let p50 = a.insert((50, ())).0;
+/// let p30 = a.insert((30, ())).0;
+/// let p70 = a.insert((70, ())).0;
+/// let p60 = a.insert((60, ())).0;
+/// let p10 = a.insert((10, ())).0;
 ///
 /// assert_eq!(a.min().unwrap(), p10);
 /// assert_eq!(a.max().unwrap(), p70);
@@ -104,12 +105,14 @@ pub(crate) struct Node<P: Ptr, K: Ord, V> {
 ///
 /// // `remove` does have to do `O(log n)` tree rebalancing, but it avoids
 /// // needing to redo the lookup if the `Ptr` is kept around
-/// assert_eq!(a.remove(p50).unwrap(), (50, ()));
+/// let link = a.remove(p50).unwrap();
+/// assert_eq!(link.t, (50, ()));
+/// assert_eq!(link.prev_next(), (Some(p30), Some(p60)));
 ///
 /// // The iterators are fully deterministic and iterate from the
 /// // least element to the greatest
 /// let expected = [(p10, 10), (p30, 30), (p60, 60), (p70, 70)];
-/// for (i, (p, key, _)) in a.iter().enumerate() {
+/// for (i, (p, (key, _))) in a.iter().enumerate() {
 ///     assert_eq!(expected[i], (p, *key));
 /// }
 /// ```
@@ -161,8 +164,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             }
             if let Some(prev) = prev {
                 if Ord::cmp(
-                    &this.a.get_ignore_gen(prev.inx()).unwrap().1.t.k,
-                    &this.a.get_ignore_gen(p.inx()).unwrap().1.t.k,
+                    &this.a.get_ignore_gen(prev.inx()).unwrap().1.t.k_v.0,
+                    &this.a.get_ignore_gen(p.inx()).unwrap().1.t.k_v.0,
                 ) == Ordering::Greater
                 {
                     return Err("incorrect ordering")
@@ -309,11 +312,10 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// there is a new insertion, which will need to be rebalanced. Returns
     /// `Err` if there was a replacement (which does not happen with the
     /// nonhereditary case).
-    fn raw_insert(&mut self, k: K, v: V, nonhereditary: bool) -> (P, Option<(K, V)>) {
+    fn raw_insert(&mut self, k_v: (K, V), nonhereditary: bool) -> (P, Option<(K, V)>) {
         if self.a.is_empty() {
             let p_new = self.a.insert_new(Node {
-                k,
-                v,
+                k_v,
                 p_back: None,
                 p_tree0: None,
                 p_tree1: None,
@@ -329,15 +331,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
             let p_with_gen = Ptr::_from_raw(p, gen);
-            match Ord::cmp(&k, &node.k) {
+            match Ord::cmp(&k_v.0, &node.k_v.0) {
                 Ordering::Less => {
                     if let Some(p_tree0) = node.p_tree0 {
                         p = p_tree0
                     } else {
                         // insert new leaf
                         let new_node = Node {
-                            k,
-                            v,
+                            k_v,
                             p_back: Some(p),
                             p_tree0: None,
                             p_tree1: None,
@@ -366,8 +367,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         } else {
                             // go the Ordering::Less route
                             let new_node = Node {
-                                k,
-                                v,
+                                k_v,
                                 p_back: Some(p),
                                 p_tree0: None,
                                 p_tree1: None,
@@ -385,8 +385,9 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                             }
                         }
                     } else {
-                        let old_v = mem::replace(&mut self.a.get_mut(p_with_gen).unwrap().v, v);
-                        return (p_with_gen, Some((k, old_v)))
+                        let old_v =
+                            mem::replace(&mut self.a.get_mut(p_with_gen).unwrap().k_v.1, k_v.1);
+                        return (p_with_gen, Some((k_v.0, old_v)))
                     }
                 }
                 Ordering::Greater => {
@@ -394,8 +395,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         p = p_tree1
                     } else {
                         let new_node = Node {
-                            k,
-                            v,
+                            k_v,
                             p_back: Some(p),
                             p_tree0: None,
                             p_tree1: None,
@@ -422,13 +422,12 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     fn raw_insert_linear(
         &mut self,
         p_init: Option<P>,
-        k: K,
-        v: V,
+        k_v: (K, V),
         nonhereditary: bool,
     ) -> Result<(P, Option<(K, V)>), (K, V)> {
         if let Some(p_init) = p_init {
             if !self.a.contains(p_init) {
-                return Err((k, v))
+                return Err(k_v)
             }
             let mut p = p_init.inx();
             // detects if we would switch probing directions, note that even if `Ord` is
@@ -437,7 +436,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let mut direction = None;
             let direction = loop {
                 let link = self.a.get_inx_unwrap(p);
-                match Ord::cmp(&k, &link.t.k) {
+                match Ord::cmp(&k_v.0, &link.t.k_v.0) {
                     Ordering::Less => {
                         if direction == Some(true) {
                             break Ordering::Less
@@ -502,8 +501,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 Ordering::Less => {
                     // insert new leaf
                     let new_node = Node {
-                        k,
-                        v,
+                        k_v,
                         p_back: Some(p),
                         p_tree0: None,
                         p_tree1: None,
@@ -524,14 +522,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     if nonhereditary {
                         unreachable!()
                     } else {
-                        let old_v = mem::replace(&mut self.a.get_mut(p_with_gen).unwrap().v, v);
-                        Ok((p_with_gen, Some((k, old_v))))
+                        let old_v =
+                            mem::replace(&mut self.a.get_mut(p_with_gen).unwrap().k_v.1, k_v.1);
+                        Ok((p_with_gen, Some((k_v.0, old_v))))
                     }
                 }
                 Ordering::Greater => {
                     let new_node = Node {
-                        k,
-                        v,
+                        k_v,
                         p_back: Some(p),
                         p_tree0: None,
                         p_tree1: None,
@@ -550,8 +548,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             }
         } else if self.a.is_empty() {
             let p_new = self.a.insert_new(Node {
-                k,
-                v,
+                k_v,
                 p_back: None,
                 p_tree0: None,
                 p_tree1: None,
@@ -562,7 +559,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             self.root = p_new.inx();
             return Ok((p_new, None))
         } else {
-            return Err((k, v))
+            return Err(k_v)
         }
     }
 
@@ -938,47 +935,46 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
     }
 
-    /// Inserts key `k` and an associated value `v` into `self` and returns a
-    /// `Ptr` to it. If the inserted key is equal to a key already contained in
-    /// `self`, the new value replaces the old value, and `k` and the old value
+    /// Inserts key-value pair `k_v` into `self` and returns a `Ptr` to it. If
+    /// the inserted key is equal to a key already contained in `self`, the
+    /// new value replaces the old value, and `k_v.0` and the old value
     /// are returned. The existing key is not replaced, which should not make a
     /// difference unless special `Ord` definitions are being used.
     #[must_use]
-    pub fn insert(&mut self, k: K, v: V) -> (P, Option<(K, V)>) {
-        let (p, k_v) = self.raw_insert(k, v, false);
+    pub fn insert(&mut self, k_v: (K, V)) -> (P, Option<(K, V)>) {
+        let (p, k_v) = self.raw_insert(k_v, false);
         if k_v.is_none() {
             self.rebalance_inserted(p.inx());
         }
         (p, k_v)
     }
 
-    /// Inserts key `k` and an associated value `v` into `self` and returns a
+    /// Inserts key-value pair `k_v` into `self` and returns a
     /// `Ptr` to it. If the inserted key is equal to a key already contained in
     /// `self`, the inserted key is inserted in a [Link::prev] position to
     /// all the equal keys. Future calls to `self.find_key` with an
-    /// equal `k` could find any of the equal keys.
-    pub fn insert_nonhereditary(&mut self, k: K, v: V) -> P {
-        let (p, _) = self.raw_insert(k, v, true);
+    /// equal `k_v.0` could find any of the equal keys.
+    pub fn insert_nonhereditary(&mut self, k_v: (K, V)) -> P {
+        let (p, _) = self.raw_insert(k_v, true);
         self.rebalance_inserted(p.inx());
         p
     }
 
-    /// Uses linear comparisons starting at `p_init` in order to insert `k` and
-    /// `v`. If `p_init` is not within a small constant number of elements
-    /// away from where `k` should be ordered, this function may operate in
-    /// `O(n)` time instead of the `O(1)` this is intended for. If the
-    /// inserted key is equal to a key already contained in `self`, the new
-    /// value replaces the old value, and `k` and the old value are
-    /// returned. If `self.is_empty()`, `p_init` should be `None`, otherwise
-    /// there will be an error. Returns an `Err` if `p_init` is invalid or
-    /// if it is `None` and `!self.is_empty()`.
+    /// Uses linear comparisons starting at `p_init` in order to insert
+    /// key-value pair `k_v`. If `p_init` is not within a small constant number
+    /// of elements away from where the key should be ordered, this function
+    /// may operate in `O(n)` time instead of the `O(1)` this is intended
+    /// for. If the inserted key is equal to a key already contained in
+    /// `self`, the new value replaces the old value, and `k` and the old
+    /// value are returned. If `self.is_empty()`, `p_init` should be `None`,
+    /// otherwise there will be an error. Returns an `Err` if `p_init` is
+    /// invalid or if it is `None` and `!self.is_empty()`.
     pub fn insert_linear(
         &mut self,
         p_init: Option<P>,
-        k: K,
-        v: V,
+        k_v: (K, V),
     ) -> Result<(P, Option<(K, V)>), (K, V)> {
-        match self.raw_insert_linear(p_init, k, v, false) {
+        match self.raw_insert_linear(p_init, k_v, false) {
             Ok((p, k_v)) => {
                 if k_v.is_none() {
                     self.rebalance_inserted(p.inx());
@@ -994,10 +990,9 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     pub fn insert_nonhereditary_linear(
         &mut self,
         p_init: Option<P>,
-        k: K,
-        v: V,
+        k_v: (K, V),
     ) -> Result<P, (K, V)> {
-        match self.raw_insert_linear(p_init, k, v, true) {
+        match self.raw_insert_linear(p_init, k_v, true) {
             Ok((p, _)) => {
                 self.rebalance_inserted(p.inx());
                 Ok(p)
@@ -1041,7 +1036,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         loop {
             let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
-            match Ord::cmp(k, &node.k) {
+            match Ord::cmp(k, &node.k_v.0) {
                 Ordering::Less => p = node.p_tree0?,
                 Ordering::Equal => break Some(Ptr::_from_raw(p, gen)),
                 Ordering::Greater => p = node.p_tree1?,
@@ -1065,7 +1060,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         loop {
             let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
-            match Ord::cmp(k, &node.k) {
+            match Ord::cmp(k, &node.k_v.0) {
                 Ordering::Less => {
                     if direction == Some(true) {
                         break None
@@ -1110,7 +1105,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         loop {
             let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
-            match Ord::cmp(k, &node.k) {
+            match Ord::cmp(k, &node.k_v.0) {
                 Ordering::Less => {
                     if let Some(p_tree0) = node.p_tree0 {
                         p = p_tree0;
@@ -1142,7 +1137,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         let ordering = loop {
             let link = self.a.get_inx_unwrap(p);
             let node = &link.t;
-            match Ord::cmp(k, &node.k) {
+            match Ord::cmp(k, &node.k_v.0) {
                 Ordering::Less => {
                     if direction == Some(true) {
                         break Ordering::Less
@@ -1181,28 +1176,28 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// gives the `Ptr` to the next lesser key, and using [Link::next] gives the
     /// `Ptr` to the next greater key.
     #[must_use]
-    pub fn get_link(&self, p: P) -> Option<Link<P, (&K, &V)>> {
+    pub fn get_link(&self, p: P) -> Option<Link<P, &(K, V)>> {
         self.a
             .get_link(p)
-            .map(|link| Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
+            .map(|link| Link::new(link.prev_next(), &link.t.k_v))
     }
 
     /// Returns a reference to the key-value pair pointed to by `p`
     #[must_use]
-    pub fn get(&self, p: P) -> Option<(&K, &V)> {
-        self.a.get(p).map(|link| (&link.k, &link.v))
+    pub fn get(&self, p: P) -> Option<&(K, V)> {
+        self.a.get(p).map(|node| &node.k_v)
     }
 
     /// Returns a reference to the key pointed to by `p`
     #[must_use]
     pub fn get_key(&self, p: P) -> Option<&K> {
-        self.a.get(p).map(|link| &link.k)
+        self.a.get(p).map(|node: &Node<P, K, V>| &node.k_v.0)
     }
 
     /// Returns a reference to the value pointed to by `p`
     #[must_use]
     pub fn get_val(&self, p: P) -> Option<&V> {
-        self.a.get(p).map(|link| &link.v)
+        self.a.get(p).map(|node| &node.k_v.1)
     }
 
     /// Returns the full `Link<P, (&K, &mut V)>`. Using [Link::prev] on the
@@ -1212,19 +1207,19 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     pub fn get_link_mut(&mut self, p: P) -> Option<Link<P, (&K, &mut V)>> {
         self.a
             .get_link_mut(p)
-            .map(|link| Link::new(link.prev_next(), (&link.t.k, &mut link.t.v)))
+            .map(|link| Link::new(link.prev_next(), (&link.t.k_v.0, &mut link.t.k_v.1)))
     }
 
     /// Returns a mutable reference to the key-value pair pointed to by `p`
     #[must_use]
     pub fn get_mut(&mut self, p: P) -> Option<(&K, &mut V)> {
-        self.a.get_mut(p).map(|t| (&t.k, &mut t.v))
+        self.a.get_mut(p).map(|t| (&t.k_v.0, &mut t.k_v.1))
     }
 
     /// Returns a mutable reference to the value pointed to by `p`
     #[must_use]
     pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
-        self.a.get_mut(p).map(|t: &mut Node<P, K, V>| &mut t.v)
+        self.a.get_mut(p).map(|t| &mut t.k_v.1)
     }
 
     /// Gets two references pointed to by `p0` and `p1`.
@@ -1238,8 +1233,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     ) -> Option<(Link<P, (&K, &mut V)>, Link<P, (&K, &mut V)>)> {
         self.a.get2_link_mut(p0, p1).map(|(link0, link1)| {
             (
-                Link::new(link0.prev_next(), (&link0.t.k, &mut link0.t.v)),
-                Link::new(link1.prev_next(), (&link1.t.k, &mut link1.t.v)),
+                Link::new(link0.prev_next(), (&link0.t.k_v.0, &mut link0.t.k_v.1)),
+                Link::new(link1.prev_next(), (&link1.t.k_v.0, &mut link1.t.k_v.1)),
             )
         })
     }
@@ -1251,7 +1246,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     pub fn get2_val_mut(&mut self, p0: P, p1: P) -> Option<(&mut V, &mut V)> {
         self.a
             .get2_mut(p0, p1)
-            .map(|(t0, t1)| (&mut t0.v, &mut t1.v))
+            .map(|(t0, t1)| (&mut t0.k_v.1, &mut t1.k_v.1))
     }
 
     /// Invalidates all references to the entry pointed to by `p`, and returns a
@@ -1263,16 +1258,10 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         self.a.invalidate(p)
     }
 
-    /// Removes the key-value entry at `p`. Returns `None` if `p` is invalid.
+    /// Removes the key-value link at `p`. Returns `None` if `p` is invalid.
     #[must_use]
-    pub fn remove(&mut self, p: P) -> Option<(K, V)> {
+    pub fn remove(&mut self, p: P) -> Option<Link<P, (K, V)>> {
         let link = self.a.remove(p)?;
-        if self.a.is_empty() {
-            // last node to be removed, our invariants require that `self.a.is_empty` be
-            // checked to determine whether or not `self.first`, etc are valid.
-            return Some((link.t.k, link.t.v))
-        }
-
         // when removing a nonleaf node of the tree, its place in the tree is
         // replaced by a similar node, and if that node is nonleaf then it is
         // replaced again. We reach a leaf node in 2 replacements in the worst case:
@@ -1311,6 +1300,12 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             link.prev(),
             link.next(),
         );
+        let res = Some(Link::new(link.prev_next(), link.t.k_v));
+        if self.a.is_empty() {
+            // last node to be removed, our invariants require that `self.a.is_empty` be
+            // checked to determine whether or not `self.first`, etc are valid.
+            return res
+        }
         let mut use_next = false;
         let mut p1 = d_back;
         loop {
@@ -1706,7 +1701,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 }
             }
         }
-        Some((link.t.k, link.t.v))
+        res
     }
 
     /// Replaces the `V` pointed to by `p` with `new`, returns the
@@ -1718,7 +1713,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// Returns ownership of `new` instead if `p` is invalid
     pub fn replace_val_and_keep_gen(&mut self, p: P, new: V) -> Result<V, V> {
         if let Some(t) = self.a.get_mut(p) {
-            let old = mem::replace(&mut t.v, new);
+            let old = mem::replace(&mut t.k_v.1, new);
             Ok(old)
         } else {
             Err(new)
@@ -1735,7 +1730,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     pub fn replace_val_and_update_gen(&mut self, p: P, new: V) -> Result<(V, P), V> {
         // the tree pointers do not have generation counters
         if let Some(p_new) = self.a.invalidate(p) {
-            let old = mem::replace(&mut self.a.get_mut(p_new).unwrap().v, new);
+            let old = mem::replace(&mut self.a.get_mut(p_new).unwrap().k_v.1, new);
             Ok((old, p_new))
         } else {
             Err(new)
@@ -1757,7 +1752,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         } else {
             let (lhs, rhs) = self.a.get2_mut(p0, p1)?;
             // be careful to swap only the inner `V` values
-            mem::swap(&mut lhs.v, &mut rhs.v);
+            mem::swap(&mut lhs.k_v.1, &mut rhs.k_v.1);
             Some(())
         }
     }
@@ -1774,50 +1769,51 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         self.a.clear_and_shrink();
     }
 
-    /// Has the same properties of [Arena::clone_from_with]
-    pub fn clone_from_with<K1: Ord, V1, F: FnMut(P, Link<P, (&K1, &V1)>) -> (K, V)>(
-        &mut self,
-        source: &OrdArena<P, K1, V1>,
-        mut map: F,
-    ) {
-        self.a.clone_from_with(&source.a, |p, link| {
-            let (k, v) = map(p, Link::new(link.prev_next(), (&link.t.k, &link.t.v)));
-            Node {
-                k,
-                v,
-                p_back: link.t.p_back,
-                p_tree0: link.t.p_tree0,
-                p_tree1: link.t.p_tree1,
-                rank: link.t.rank,
-            }
-        })
-    }
-
     /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
     /// `self`, with the ordering preserved in a single chain ([Link::next]
     /// points to the next greater entry)
-    pub fn clone_to_chain_arena<U, F: FnMut(P, Link<P, (&K, &V)>) -> U>(
+    pub fn clone_to_chain_arena<U, F: FnMut(P, Link<P, &(K, V)>) -> U>(
         &self,
         chain_arena: &mut ChainArena<P, U>,
         mut map: F,
     ) {
         chain_arena.clone_from_with(&self.a, |p, link| {
-            map(p, Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
+            map(p, Link::new(link.prev_next(), &link.t.k_v))
         })
     }
 
     /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
     /// `self`
-    pub fn clone_to_arena<U, F: FnMut(P, Link<P, (&K, &V)>) -> U>(
+    pub fn clone_to_arena<U, F: FnMut(P, Link<P, &(K, V)>) -> U>(
         &self,
         arena: &mut Arena<P, U>,
         mut map: F,
     ) {
         arena.clone_from_with(&self.a.a, |p, link| {
-            map(p, Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
+            map(p, Link::new(link.prev_next(), &link.t.k_v))
         });
+    }
+}
+
+impl<P: Ptr, K: Ord + Clone, V0> OrdArena<P, K, V0> {
+    /// Has the same properties of [Arena::clone_from_with]. Clones the keys.
+    pub fn clone_from_with<V1, F: FnMut(P, Link<P, &V1>) -> V0>(
+        &mut self,
+        source: &OrdArena<P, K, V1>,
+        mut map: F,
+    ) {
+        self.a.clone_from_with(&source.a, |p, link| Node {
+            k_v: (
+                link.t.k_v.0.clone(),
+                map(p, Link::new(link.prev_next(), &link.t.k_v.1)),
+            ),
+            p_back: link.t.p_back,
+            p_tree0: link.t.p_tree0,
+            p_tree1: link.t.p_tree1,
+            rank: link.t.rank,
+        })
     }
 }
 
@@ -1865,9 +1861,7 @@ impl<P: Ptr, K: Ord, V, B: Borrow<P>> IndexMut<B> for OrdArena<P, K, V> {
 
 impl<P: Ptr, K: Ord + Debug, V: Debug> Debug for OrdArena<P, K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_map()
-            .entries(self.iter().map(|tmp| (tmp.0, (tmp.1, tmp.2))))
-            .finish()
+        f.debug_map().entries(self.iter()).finish()
     }
 }
 

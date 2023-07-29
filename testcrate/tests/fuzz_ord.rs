@@ -71,17 +71,17 @@ fn fuzz_ord() {
     // the tricky part is that we need to handle nonhereditary cases
     let mut b: BTreeMap<Key, BTreeMap<Val, Triple>> = BTreeMap::new();
 
-    let invalid = a.insert_nonhereditary(Key { k: 0 }, Val { v: 0 });
-    assert!(a.insert_linear(None, Key { k: 0 }, Val { v: 0 }).is_err());
+    let invalid = a.insert_nonhereditary((Key { k: 0 }, Val { v: 0 }));
+    assert!(a.insert_linear(None, (Key { k: 0 }, Val { v: 0 })).is_err());
     assert!(a
-        .insert_nonhereditary_linear(None, Key { k: 0 }, Val { v: 0 })
+        .insert_nonhereditary_linear(None, (Key { k: 0 }, Val { v: 0 }))
         .is_err());
     a.remove(invalid).unwrap();
     assert!(a
-        .insert_linear(Some(invalid), Key { k: 0 }, Val { v: 0 })
+        .insert_linear(Some(invalid), (Key { k: 0 }, Val { v: 0 }))
         .is_err());
     assert!(a
-        .insert_nonhereditary_linear(Some(invalid), Key { k: 0 }, Val { v: 0 })
+        .insert_nonhereditary_linear(Some(invalid), (Key { k: 0 }, Val { v: 0 }))
         .is_err());
     gen += 1;
     a.clear_and_shrink();
@@ -151,7 +151,7 @@ fn fuzz_ord() {
                 let k = new_k();
                 let v = new_v();
                 let (p, k_v) = if (rng.next_u32() % 100) < 90 {
-                    a.insert(k, v)
+                    a.insert((k, v))
                 } else {
                     let p_init = if a.is_empty() {
                         None
@@ -159,7 +159,7 @@ fn fuzz_ord() {
                         // start from anywhere
                         Some(list[next_inx!(rng, len)].p)
                     };
-                    a.insert_linear(p_init, k, v).unwrap()
+                    a.insert_linear(p_init, (k, v)).unwrap()
                 };
                 let triple = Triple { p, k, v };
                 list.push(triple);
@@ -188,7 +188,7 @@ fn fuzz_ord() {
                 let k = new_k();
                 let v = new_v();
                 let p = if (rng.next_u32() % 100) < 90 {
-                    a.insert_nonhereditary(k, v)
+                    a.insert_nonhereditary((k, v))
                 } else {
                     let p_init = if a.is_empty() {
                         None
@@ -196,7 +196,7 @@ fn fuzz_ord() {
                         // start from anywhere
                         Some(list[next_inx!(rng, len)].p)
                     };
-                    a.insert_nonhereditary_linear(p_init, k, v).unwrap()
+                    a.insert_nonhereditary_linear(p_init, (k, v)).unwrap()
                 };
                 let triple = Triple { p, k, v };
                 list.push(triple);
@@ -212,7 +212,7 @@ fn fuzz_ord() {
                 // remove
                 if len != 0 {
                     let t = list.swap_remove(next_inx!(rng, len));
-                    assert_eq!(a.remove(t.p).unwrap(), (t.k, t.v));
+                    assert_eq!(a.remove(t.p).unwrap().t, (t.k, t.v));
                     let set = b.get_mut(&t.k).unwrap();
                     assert_eq!(set.remove(&t.v).unwrap(), t);
                     if set.is_empty() {
@@ -239,10 +239,10 @@ fn fuzz_ord() {
                             if let Some(prev) = link.prev() {
                                 assert!(a.get_key(prev).unwrap().lt(&new_k));
                             }
-                            assert!(new_k.lt(link.t.0));
+                            assert!(new_k.lt(&link.t.0));
                         }
                         Ordering::Equal => {
-                            assert_eq!(*link.t.0, new_k);
+                            assert_eq!(link.t.0, new_k);
                         }
                         Ordering::Greater => {
                             assert!(link.t.0.lt(&new_k));
@@ -283,8 +283,8 @@ fn fuzz_ord() {
                 if len != 0 {
                     let t = &list[next_inx!(rng, len)];
                     assert!(a.contains(t.p));
-                    assert_eq!(a.get_link(t.p).unwrap().t, (&t.k, &t.v));
-                    assert_eq!(a.get(t.p).unwrap(), (&t.k, &t.v));
+                    assert_eq!(a.get_link(t.p).unwrap().t, &(t.k, t.v));
+                    assert_eq!(a.get(t.p).unwrap(), &(t.k, t.v));
                     assert_eq!(a.get_key(t.p).unwrap(), &t.k);
                     assert_eq!(a.get_val(t.p).unwrap(), &t.v);
                     let mut tmp = t.v;
