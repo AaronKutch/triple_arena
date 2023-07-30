@@ -1,16 +1,65 @@
 //! Iterators for `SurjectArena`
 
+use core::marker::PhantomData;
+
 use crate::{
     chain_iterators,
     iterators::{self},
     ptr::PtrNoGen,
     surject::{Key, Val},
-    Arena, Link, Ptr, SurjectArena,
+    Advancer, Arena, Link, Ptr, SurjectArena,
 };
 
-// we need custom iterators like this because the `T` is required in the
-// generics, and if we used the underlying `ChainArena` it would bring in the
-// wrong things
+/// An advancer over the valid `P`s of a `SurjectArena`
+pub struct PtrAdvancer<P: Ptr, K, V> {
+    adv: chain_iterators::PtrAdvancer<P, Key<P, K>>,
+    _boo: PhantomData<V>,
+}
+
+impl<P: Ptr, K, V> Advancer for PtrAdvancer<P, K, V> {
+    type Collection = SurjectArena<P, K, V>;
+    type Item = P;
+
+    fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
+        self.adv.advance(&collection.keys)
+    }
+}
+
+/// An advancer over the valid `P`s of one surject in a `SurjectArena`
+pub struct SurjectPtrAdvancer<P: Ptr, K, V> {
+    // same as for `ChainPtrAdvancer` except we get to assume the chain is cyclical
+    init: P,
+    ptr: Option<P>,
+    _boo: PhantomData<(K, V)>,
+}
+
+impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
+    type Collection = SurjectArena<P, K, V>;
+    type Item = P;
+
+    fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
+        if let Some(ptr) = self.ptr {
+            if let Some(link) = collection.keys.get_link(ptr) {
+                if let Some(next) = link.next() {
+                    if next == self.init {
+                        self.ptr = None;
+                    } else {
+                        self.ptr = Some(next);
+                    }
+                } else {
+                    // could be unreachable under invalidation
+                    self.ptr = None;
+                }
+                Some(ptr)
+            } else {
+                self.ptr = None;
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
 
 /// An iterator over the valid `P`s of a `SurjectArena`
 pub struct Ptrs<'a, P: Ptr, K> {
@@ -95,27 +144,18 @@ impl<'a, P: Ptr, K, V> Iterator for Iter<'a, P, K, V> {
 /// An iterator over `(P, &K, &V)` in a `SurjectArena` surject
 pub struct IterSurject<'a, P: Ptr, K, V> {
     arena: &'a SurjectArena<P, K, V>,
+    adv: SurjectPtrAdvancer<P, K, V>,
     surject_val: Option<&'a V>,
-    init: P,
-    p: P,
-    stop: bool,
 }
 
 impl<'a, P: Ptr, K, V> Iterator for IterSurject<'a, P, K, V> {
     type Item = (P, &'a K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.stop {
-            None
+        if let Some(p) = self.adv.advance(self.arena) {
+            Some((p, self.arena.get_key(p).unwrap(), self.surject_val.unwrap()))
         } else {
-            let p_res = self.p;
-            self.arena
-                .next_surject_ptr(self.init, &mut self.p, &mut self.stop);
-            Some((
-                p_res,
-                self.arena.get_key(p_res).unwrap(),
-                self.surject_val.unwrap(),
-            ))
+            None
         }
     }
 }
@@ -150,6 +190,32 @@ impl<'a, P: Ptr, K, V> IntoIterator for &'a SurjectArena<P, K, V> {
 
 /// All the iterators here can return values in arbitrary order
 impl<P: Ptr, K, V> SurjectArena<P, K, V> {
+    /// Advances over every valid `Ptr` in `self`.
+    ///
+    /// Has the same properties as [crate::Arena::advancer]
+    pub fn advancer(&self) -> PtrAdvancer<P, K, V> {
+        PtrAdvancer {
+            adv: self.keys.advancer(),
+            _boo: PhantomData,
+        }
+    }
+
+    /// Advances over every valid `Ptr` in the surject that contains `p_init`.
+    /// This does _not_ support invalidating `Ptr`s of the surject of `p_init`
+    /// during the loop.
+    ///
+    /// # Warning
+    ///
+    /// If links of the surject that contains `p_init` are invalidated during
+    /// the loop, it can lead to an infinite loop.
+    pub fn advancer_surject(&self, p_init: P) -> SurjectPtrAdvancer<P, K, V> {
+        SurjectPtrAdvancer {
+            init: p_init,
+            ptr: Some(p_init),
+            _boo: PhantomData,
+        }
+    }
+
     /// Iteration over all valid `P` in the arena
     pub fn ptrs(&self) -> Ptrs<P, K> {
         Ptrs {
@@ -195,59 +261,13 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         }
     }
 
-    /// Iteration over `(P, &K, &V)` tuples in the surject that contains `p`.
-    /// The same `&V` reference is used for all iterations.
-    pub fn iter_surject(&self, p: P) -> IterSurject<P, K, V> {
+    /// Iteration over `(P, &K, &V)` tuples in the surject that contains
+    /// `p_init`. The same `&V` reference is used for all iterations.
+    pub fn iter_surject(&self, p_init: P) -> IterSurject<P, K, V> {
         IterSurject {
             arena: self,
-            surject_val: self.get_val(p),
-            init: p,
-            p,
-            stop: !self.contains(p),
+            adv: self.advancer_surject(p_init),
+            surject_val: self.get_val(p_init),
         }
-    }
-
-    /// Same as [Arena::first_ptr]
-    #[must_use]
-    pub fn first_ptr(&self) -> (P, bool) {
-        self.keys.first_ptr()
-    }
-
-    /// Same as [Arena::next_ptr]
-    pub fn next_ptr(&self, p: &mut P, b: &mut bool) {
-        self.keys.next_ptr(p, b)
-    }
-
-    /// Same as [crate::ChainArena::next_chain_ptr] except it explores a
-    /// surject.
-    ///
-    /// ```text
-    /// let init = ...;
-    /// let mut p = init;
-    /// let mut stop = !arena.contains(init);
-    /// loop {
-    ///     if stop {
-    ///         break
-    ///     }
-    ///
-    ///     // use `p` here, but be aware that the removal or insertion of
-    ///     // keys within the surject of `init` is not supported
-    ///
-    ///     arena.next_surject_ptr(init, &mut p, &mut stop);
-    /// }
-    /// ```
-    pub fn next_surject_ptr(&self, init: P, p: &mut P, stop: &mut bool) {
-        let next = if let Some(link) = self.keys.get_link(*p) {
-            link.next().unwrap()
-        } else {
-            *stop = true;
-            return
-        };
-        if next == init {
-            // reached the end
-            *stop = true;
-            return
-        }
-        *p = next;
     }
 }

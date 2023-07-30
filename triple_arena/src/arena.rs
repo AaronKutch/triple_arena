@@ -802,7 +802,7 @@ impl<P: Ptr, T, B: Borrow<P>> Index<B> for Arena<P, T> {
 
     fn index(&self, inx: B) -> &T {
         let p: P = *inx.borrow();
-        self.get(p).expect("indexed arena with invalidated `Ptr`")
+        self.get(p).expect("indexed `Arena` with invalidated `Ptr`")
     }
 }
 
@@ -810,7 +810,7 @@ impl<P: Ptr, T, B: Borrow<P>> IndexMut<B> for Arena<P, T> {
     fn index_mut(&mut self, inx: B) -> &mut T {
         let p: P = *inx.borrow();
         self.get_mut(p)
-            .expect("indexed arena with invalidated `Ptr`")
+            .expect("indexed `Arena` with invalidated `Ptr`")
     }
 }
 

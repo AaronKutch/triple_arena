@@ -7,6 +7,7 @@
 // this after OrdArena is settled
 // check all `get_inx_mut_unwrap` to see if we can replace with the _t variant
 
+mod advancer;
 mod arena;
 mod arena_trait;
 mod chain;
@@ -15,6 +16,7 @@ pub mod iterators;
 mod nonzero_inx_vec;
 mod ord;
 mod ptr;
+pub use advancer::Advancer;
 pub use arena_trait::ArenaTrait;
 pub use chain::{ChainArena, Link};
 pub(crate) use entry::InternalEntry;

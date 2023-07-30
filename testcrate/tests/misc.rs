@@ -1,19 +1,14 @@
 use testcrate::P0;
-use triple_arena::Arena;
+use triple_arena::{Advancer, Arena};
 
 // this is a hard coded test, there is a section in the fuzz test and in the
 // overflow tests
 #[test]
-fn next_ptr() {
+fn advancer() {
     let mut a = Arena::<P0, u8>::new();
 
-    let (_, b) = a.first_ptr();
-    loop {
-        if b {
-            break
-        }
-        unreachable!()
-    }
+    let mut adv = a.advancer();
+    assert!(adv.advance(&a).is_none());
 
     let p0 = a.insert(0);
     let p1 = a.insert(1);
@@ -25,14 +20,10 @@ fn next_ptr() {
     a.remove(p3).unwrap();
     a.remove(p0).unwrap();
 
-    let (mut p, mut b) = a.first_ptr();
     let mut v = vec![];
-    loop {
-        if b {
-            break
-        }
+    let mut adv = a.advancer();
+    while let Some(p) = adv.advance(&a) {
         v.push(p);
-        a.next_ptr(&mut p, &mut b);
     }
     assert_ne!(v, vec![p1, p2, p4]);
     assert_eq!(v, vec![p5, p2, p4]);

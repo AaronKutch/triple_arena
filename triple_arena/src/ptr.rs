@@ -424,7 +424,8 @@ macro_rules! ptr_struct {
 }
 
 /// This wraps around any `P: Ptr` and acts like a `ptr_struct` implemented `P`
-/// but with the generation counter removed.
+/// but with the generation counter removed. Most cases should use `P::Inx`
+/// directly instead, this is used in case `Ptr` needs to be implemented.
 #[derive(
     core::hash::Hash,
     core::clone::Clone,

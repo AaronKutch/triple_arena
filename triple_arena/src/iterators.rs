@@ -1,10 +1,40 @@
 //! Iterators for `Arena`
 
-use core::{mem, slice};
+use core::{marker::PhantomData, mem, slice};
 
 use InternalEntry::*;
 
-use crate::{utils::PtrInx, Arena, InternalEntry, Ptr};
+use crate::{utils::PtrInx, Advancer, Arena, InternalEntry, Ptr};
+
+/// An advancer over the valid `P`s of an `Arena`
+pub struct PtrAdvancer<P: Ptr, T> {
+    // If we used `P::Inx`, we would be widening and truncating on every advance, and running into
+    // needing a boolean to tell if we advanced past the last entry where `P::Inx::max` is a valid
+    // entry
+    inx: usize,
+    // TODO is there a way to satisfy generic use without bringing in `PhantomData`'s other
+    // implications?
+    _boo: PhantomData<(P, T)>,
+}
+
+impl<P: Ptr, T> Advancer for PtrAdvancer<P, T> {
+    type Collection = Arena<P, T>;
+    type Item = P;
+
+    fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
+        loop {
+            let old_inx = self.inx;
+            if let Some(allocation) = collection.m.get(old_inx) {
+                self.inx = old_inx.wrapping_add(1);
+                if let Allocated(g, _) = allocation {
+                    return Some(P::_from_raw(P::Inx::new(old_inx), *g))
+                }
+            } else {
+                return None
+            }
+        }
+    }
+}
 
 // Note: we are wrapping around slice iterators because `IterMut` in particular
 // would otherwise be difficult to implement safely. There are redundant
@@ -206,6 +236,19 @@ impl<P: Ptr, T> FromIterator<T> for Arena<P, T> {
 
 /// All the iterators here can return values in arbitrary order
 impl<P: Ptr, T> Arena<P, T> {
+    /// Advances over every valid `Ptr` in `self`.
+    ///
+    /// When using the correct loop structure, every `Ptr` valid from before the
+    /// loop began will be witnessed as long as it is kept valid during the
+    /// loop. The `Ptr`s of insertions that occur during the loop can both be
+    /// witnessed or not witnessed before the loop terminates.
+    pub fn advancer(&self) -> PtrAdvancer<P, T> {
+        PtrAdvancer {
+            inx: 0,
+            _boo: PhantomData,
+        }
+    }
+
     /// Iteration over all valid `P` in the arena
     pub fn ptrs(&self) -> Ptrs<P, T> {
         Ptrs {
@@ -277,93 +320,5 @@ impl<P: Ptr, T> Arena<P, T> {
             ptr: P::Inx::new(0),
             arena: self,
         }
-    }
-
-    /// Returns a `P` intended for use with [Arena::next_ptr] in a loop. Note
-    /// that the `P` can be invalid and the boolean true if the arena is empty.
-    #[must_use]
-    pub fn first_ptr(&self) -> (P, bool) {
-        if self.is_empty() {
-            (P::invalid(), true)
-        } else {
-            for (i, e) in self.m.iter().enumerate() {
-                if let Allocated(g, _) = e {
-                    return (P::_from_raw(P::Inx::new(i), *g), false)
-                }
-            }
-            unreachable!()
-        }
-    }
-
-    /// Used to avoid borrowing conflicts in complicated iterative algorithms.
-    /// This function does exactly one of two things depending on if a next
-    /// valid `P` exists in the iteration sequence: updates `p` to the
-    /// next valid `P` if one exists, or updates `b` to `true` otherwise.
-    ///
-    /// The motivation of this function is that often in algorithms being
-    /// applied to the whole `Arena`, the user will need to call
-    /// `.ptrs().collect()` and allocate just to avoid borrowing conflicts
-    /// between the iteration and arbitrary mutations on the arena. In a
-    /// typical structure such as a `Vec`, you can do
-    ///
-    /// ```text
-    /// let mut i = 0;
-    /// loop {
-    ///     if i >= vec.len() {
-    ///         break
-    ///     }
-    ///     ... vec.get(i) ...
-    ///     ... vec.get_mut(i) ...
-    ///     ... vec.get(any_i) ...
-    ///     ... vec.get_mut(any_i) ...
-    ///
-    ///     i += 1;
-    /// }
-    /// ```
-    ///
-    /// This function allows an analogous loop strategy:
-    ///
-    /// ```text
-    /// // a boolean is used for the termination condition to account for
-    /// // non-generation-counter cases where all possible `Ptr`s would be valid
-    /// let (mut p, mut b) = arena.first_ptr();
-    /// loop {
-    ///     // This must be at the beginning of the loop, and the `next_ptr`
-    ///     // call must be at the end of the loop to be in proper format.
-    ///     if b {
-    ///         break
-    ///     }
-    ///
-    ///     ... arena.get(p) ...
-    ///     ... arena.get_mut(p) ...
-    ///     ... arena.get(any_ptr) ...
-    ///     ... arena.get_mut(any_ptr) ...
-    ///     // any kind of invalidation operation is ok (including the current `p`,
-    ///     // it will not break `next_ptr` or prevent the loop from witnessing a
-    ///     // continuously valid element inserted from before the loop began),
-    ///     ... arena.remove(p) ...
-    ///     // but note that new elements from insertions done during the loop, can
-    ///     // both be encountered or not encountered before the loop terminates.
-    ///     ... let p_inserted = arena.insert(node) ...
-    ///     // capacity shrinking operations or any manual invalidation of `p`
-    ///     // are also correctly handled to break the loop, so `p` is always
-    ///     // guaranteed to be valid after the prelude of the loop, as long as
-    ///     // proper format is used
-    ///     if ... { arena.clear_and_shrink() }
-    ///
-    ///     // This must be at the end of the loop
-    ///     arena.next_ptr(&mut p, &mut b);
-    /// }
-    /// ```
-    pub fn next_ptr(&self, p: &mut P, b: &mut bool) {
-        // use `saturating_add` in case `p` was custom set to something strange
-        for i in P::Inx::get(p.inx()).saturating_add(1)..self.m.len() {
-            // the unwrap is ok here because of the `self.m.len()` upper bound
-            if let Allocated(g, _) = self.m.get(i).unwrap() {
-                *p = P::_from_raw(P::Inx::new(i), *g);
-                return
-            }
-        }
-        *b = true;
     }
 }

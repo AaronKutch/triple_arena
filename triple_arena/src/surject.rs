@@ -3,7 +3,7 @@ use core::{mem, num::NonZeroUsize};
 
 use fmt::Debug;
 
-use crate::{ptr::PtrNoGen, Arena, ChainArena, Ptr};
+use crate::{ptr::PtrNoGen, Advancer, Arena, ChainArena, Ptr};
 
 #[derive(Clone)]
 pub(crate) struct Key<P: Ptr, K> {
@@ -173,11 +173,8 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
             }
         }
 
-        let (mut p, mut b) = this.keys.first_ptr();
-        loop {
-            if b {
-                break
-            }
+        let mut adv = this.keys.advancer();
+        while let Some(p) = adv.advance(&this.keys) {
             let mut c = *count.get(this.keys.get(p).unwrap().p_val).unwrap();
             if c != 0 {
                 // upon encountering a nonzero count for the first time, we follow the chain and
@@ -207,7 +204,6 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
                     }
                 }
             }
-            this.keys.next_ptr(&mut p, &mut b);
         }
         Ok(())
     }

@@ -5,7 +5,7 @@ use rand_xoshiro::{
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::{ChainArena, Ptr};
+use triple_arena::{Advancer, ChainArena, Ptr};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
@@ -626,16 +626,12 @@ fn fuzz_chain() {
                 }
             }
             970..=979 => {
-                // canonical first_ptr/next_ptr loop
+                // advancer
                 let mut i = 0;
                 let rand_insert_i = if len == 0 { 0 } else { next_inx!(rng, len) };
-                let (mut p, mut bo) = a.first_ptr();
-                loop {
-                    if bo {
-                        break
-                    }
+                let mut adv = a.advancer();
+                while let Some(p) = adv.advance(&a) {
                     assert_eq!(p, b[&a[p]].0);
-
                     // insert at random time
                     if i == rand_insert_i {
                         let t = new_t();
@@ -643,32 +639,23 @@ fn fuzz_chain() {
                         b.insert(t, (ptr, (None, None)));
                         list.push(t);
                     }
-
-                    a.next_ptr(&mut p, &mut bo);
                     i += 1;
                 }
                 // depends on the invalidated elements witnessed
                 assert!((i == len.saturating_sub(1)) || (i == len) || (i == (len + 1)));
             }
             980..=984 => {
-                // next_chain_ptr
+                // advancer_chain
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
                     let mut t_to_explore = HashSet::new();
                     let mut iters = 0;
 
-                    let init = b[&t].0;
-                    let mut p = init;
-                    let mut switch = false;
-                    let mut stop = !a.contains(init);
-                    loop {
-                        if stop {
-                            break
-                        }
+                    let mut adv = a.advancer_chain(b[&t].0);
+                    while let Some(p) = adv.advance(&a) {
                         t_to_explore.insert(a.get(p).unwrap());
                         // make sure we aren't double counting and the hash set is just dropping
                         iters += 1;
-                        a.next_chain_ptr(init, &mut p, &mut switch, &mut stop);
                     }
                     assert_eq!(t_to_explore.len(), iters);
 
@@ -693,9 +680,8 @@ fn fuzz_chain() {
                     }
                     assert!(t_to_explore.is_empty());
                 } else {
-                    let mut stop = false;
-                    a.next_chain_ptr(invalid, &mut P0::invalid(), &mut false, &mut stop);
-                    assert!(stop);
+                    let mut adv = a.advancer_chain(P0::invalid());
+                    assert!(adv.advance(&a).is_none());
                 }
             }
             985..=989 => {
@@ -704,15 +690,9 @@ fn fuzz_chain() {
                     let t = list[next_inx!(rng, len)];
                     let init = b[&t].0;
                     let mut iter = a.iter_chain(init);
-                    let mut p = init;
-                    let mut switch = false;
-                    let mut stop = !a.contains(init);
-                    loop {
-                        if stop {
-                            break
-                        }
+                    let mut adv = a.advancer_chain(init);
+                    while let Some(p) = adv.advance(&a) {
                         assert_eq!(iter.next().unwrap(), (p, a.get_link(p).unwrap()));
-                        a.next_chain_ptr(init, &mut p, &mut switch, &mut stop);
                     }
                 } else {
                     let mut iter = a.iter_chain(invalid);

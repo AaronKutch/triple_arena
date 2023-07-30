@@ -9,7 +9,7 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use crate::{utils::PtrInx, Arena, ChainArena, Link, Ptr};
+use crate::{utils::PtrInx, Advancer, Arena, ChainArena, Link, Ptr};
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
 // Sen, Siddhartha; Tarjan, Robert E. (2015).
@@ -149,15 +149,9 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         } else {
             return Err("this.first is broken")
         };
-        let init: P = Ptr::_from_raw(this.first, first_gen);
-        let mut p = init;
-        let mut switch = false;
-        let mut stop = this.a.is_empty();
-        loop {
-            if stop {
-                break
-            }
 
+        let mut adv = this.a.advancer_chain(Ptr::_from_raw(this.first, first_gen));
+        while let Some(p) = adv.advance(&this.a) {
             count += 1;
             if !this.a.contains(p) {
                 return Err("invalid Ptr")
@@ -171,9 +165,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     return Err("incorrect ordering")
                 }
             }
-
             prev = Some(p);
-            this.a.next_chain_ptr(init, &mut p, &mut switch, &mut stop);
         }
         if let Some(prev) = prev {
             if prev.inx() != this.last {
@@ -184,12 +176,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             return Err("multiple chains")
         }
         // after the linear checks, check the tree
-        let (mut p, mut b) = this.a.first_ptr();
-        loop {
-            if b {
-                break
-            }
-
+        let mut adv = this.a.advancer();
+        while let Some(p) = adv.advance(&this.a) {
             let node = &this.a.get(p).unwrap();
             if let Some(p_back) = node.p_back {
                 if let Some((_, parent)) = this.a.get_ignore_gen(p_back) {
@@ -233,16 +221,10 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     return Err("broken tree")
                 }
             }
-
-            this.a.next_ptr(&mut p, &mut b);
         }
         // check the ranks
-        let (mut p, mut b) = this.a.first_ptr();
-        loop {
-            if b {
-                break
-            }
-
+        let mut adv = this.a.advancer();
+        while let Some(p) = adv.advance(&this.a) {
             let node = &this.a.get(p).unwrap();
 
             let rank0 = if let Some(p_tree0) = node.p_tree0 {
@@ -267,8 +249,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             if node.p_tree0.is_none() && node.p_tree1.is_none() && (node.rank != 1) {
                 return Err("leaf node is not rank 1")
             }
-
-            this.a.next_ptr(&mut p, &mut b);
         }
         Ok(())
     }
@@ -1871,30 +1851,29 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
         let mut res: Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>)> = Arena::new();
         self.a.clone_to_arena(&mut res, |_, link| {
             (
-                link.rank,
-                link.k.clone(),
-                link.v.clone(),
-                link.p_tree0
-                    .map(|inx| Ptr::_from_raw(inx, crate::PtrGen::one())),
-                link.p_back
-                    .map(|inx| Ptr::_from_raw(inx, crate::PtrGen::one())),
-                link.p_tree1
-                    .map(|inx| Ptr::_from_raw(inx, crate::PtrGen::one())),
+                link.t.rank,
+                link.t.k_v.0.clone(),
+                link.t.k_v.1.clone(),
+                link.t
+                    .p_tree0
+                    .map(|inx| Ptr::_from_raw(inx, crate::utils::PtrGen::one())),
+                link.t
+                    .p_back
+                    .map(|inx| Ptr::_from_raw(inx, crate::utils::PtrGen::one())),
+                link.t
+                    .p_tree1
+                    .map(|inx| Ptr::_from_raw(inx, crate::utils::PtrGen::one())),
             )
         });
         // fix the generations
-        let (mut p, mut b) = res.first_ptr();
-        loop {
-            if b {
-                break
-            }
-
+        let mut adv = res.advancer();
+        while let Some(p) = adv.advance(&res) {
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().3 {
                 let gen = self
                     .a
                     .get_ignore_gen(tmp.inx())
                     .map(|x| x.0)
-                    .unwrap_or(<P::Gen as crate::PtrGen>::one());
+                    .unwrap_or(<P::Gen as crate::utils::PtrGen>::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), gen);
             }
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().4 {
@@ -1902,7 +1881,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
                     .a
                     .get_ignore_gen(tmp.inx())
                     .map(|x| x.0)
-                    .unwrap_or(<P::Gen as crate::PtrGen>::one());
+                    .unwrap_or(<P::Gen as crate::utils::PtrGen>::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), gen);
             }
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().5 {
@@ -1910,11 +1889,9 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
                     .a
                     .get_ignore_gen(tmp.inx())
                     .map(|x| x.0)
-                    .unwrap_or(<P::Gen as crate::PtrGen>::one());
+                    .unwrap_or(<P::Gen as crate::utils::PtrGen>::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), gen);
             }
-
-            res.next_ptr(&mut p, &mut b);
         }
         res
     }
@@ -1930,32 +1907,24 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
             self.a
                 .get_ignore_gen(self.first)
                 .map(|x| x.0)
-                .unwrap_or(<P::Gen as crate::PtrGen>::one()),
+                .unwrap_or(<P::Gen as crate::utils::PtrGen>::one()),
         );
-        let mut p = init;
-        let mut switch = false;
-        let mut stop = !self.a.contains(init);
-        loop {
-            if stop {
-                break
-            }
-
+        let mut adv = self.a.advancer_chain(init);
+        while let Some(p) = adv.advance(&self.a) {
             let n = self.a.get(p).unwrap();
             writeln!(
                 s,
                 "(inx: {:2?}, k: {:3?}, v: {:3?}, rank: {:2?}, p_back: {:2?}, p_tree0: {:2?}, \
                  p_tree1: {:2?})",
                 p.inx(),
-                n.k,
-                n.v,
+                n.k_v.0,
+                n.k_v.1,
                 n.rank,
                 n.p_back,
                 n.p_tree0,
                 n.p_tree1,
             )
             .unwrap();
-
-            self.a.next_chain_ptr(init, &mut p, &mut switch, &mut stop);
         }
         s
     }

@@ -1,6 +1,6 @@
 use std::num::NonZeroU8;
 
-use triple_arena::{ptr_struct, Arena};
+use triple_arena::{ptr_struct, Advancer, Arena};
 
 ptr_struct!(P0[u8]);
 ptr_struct!(P1(NonZeroU8));
@@ -56,33 +56,25 @@ fn overflow_cap_panic() {
 }
 
 #[test]
-fn next_ptr_cap() {
+fn advance_cap() {
     let mut a = Arena::<P2, ()>::new();
     let mut v = vec![];
     for _ in 0..256 {
         v.push(a.insert(()));
     }
-    let (mut p, mut b) = a.first_ptr();
     let mut i = 0;
-    loop {
-        if b {
-            break
-        }
+    let mut adv = a.advancer();
+    while let Some(p) = adv.advance(&a) {
         assert_eq!(p, v[i]);
-        a.next_ptr(&mut p, &mut b);
         i += 1;
     }
     assert_eq!(i, 256);
     a.remove(v[0]).unwrap();
     a.remove(v[255]).unwrap();
-    let (mut p, mut b) = a.first_ptr();
     let mut i = 1;
-    loop {
-        if b {
-            break
-        }
+    let mut adv = a.advancer();
+    while let Some(p) = adv.advance(&a) {
         assert_eq!(p, v[i]);
-        a.next_ptr(&mut p, &mut b);
         i += 1;
     }
     assert_eq!(i, 255);

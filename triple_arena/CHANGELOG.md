@@ -6,6 +6,7 @@
   this removes an unintentional place where chains could be broken.
 
 ### Changes
+- Replaced all `first_ptr`, `next_ptr`, and similar functions with the `Advance` paradigm
 - Changed `Link::prev` and others to take `&self`, moved `ChainArena::get` and mutable versions to
   `ChainArena::get_link`, made `ChainArena::get` return just the `&T`.
 - Changed order of returned parameters of the `replace_and_update_gen` functions
@@ -19,6 +20,7 @@
 
 ### Additions
 - Added `OrdArena`
+- Added `Advance`
 - Added `ArenaTrait`
 - Added several Arena cloning functions
 - Added `PtrNoGen<P>`

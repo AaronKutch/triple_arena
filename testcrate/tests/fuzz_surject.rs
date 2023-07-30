@@ -9,7 +9,7 @@ use rand_xoshiro::{
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::{Ptr, SurjectArena};
+use triple_arena::{Advancer, Ptr, SurjectArena};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
@@ -486,15 +486,11 @@ fn fuzz_surject() {
                 }
             }
             970..=979 => {
-                // canonical first_ptr/next_ptr loop
+                // advancer
                 let mut i = 0;
-                let (mut p, mut bo) = a.first_ptr();
-                loop {
-                    if bo {
-                        break
-                    }
-
-                    a.next_ptr(&mut p, &mut bo);
+                let mut adv = a.advancer();
+                while let Some(p) = adv.advance(&a) {
+                    assert!(a.contains(p));
                     i += 1;
                 }
                 // depends on the invalidated elements witnessed
@@ -505,7 +501,7 @@ fn fuzz_surject() {
                 );
             }
             980..=989 => {
-                // next_surject_ptr
+                // advancer_surject
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
                     let set = &b[&v];
@@ -514,18 +510,10 @@ fn fuzz_surject() {
                     let mut iters = 0;
                     let mut seen = HashSet::new();
 
-                    let init = pair.p;
-                    let mut p = init;
-                    let mut stop = !a.contains(init);
-                    loop {
-                        if stop {
-                            break
-                        }
-
+                    let mut adv = a.advancer_surject(pair.p);
+                    while let Some(p) = adv.advance(&a) {
                         seen.insert(p);
                         iters += 1;
-
-                        a.next_surject_ptr(init, &mut p, &mut stop);
                     }
                     assert_eq!(seen.len(), iters);
 
@@ -534,9 +522,8 @@ fn fuzz_surject() {
                     }
                     assert!(seen.is_empty());
                 } else {
-                    let mut stop = false;
-                    a.next_surject_ptr(invalid, &mut P0::invalid(), &mut stop);
-                    assert!(stop);
+                    let mut adv = a.advancer_surject(P0::invalid());
+                    assert!(adv.advance(&a).is_none());
                 }
             }
             990..=996 => {
@@ -546,22 +533,14 @@ fn fuzz_surject() {
                     let set = &b[&v];
                     let set_len = set.len();
                     let pair = set[next_inx!(rng, set_len)];
-                    let mut iter = a.iter_surject(pair.p);
-
                     let init = pair.p;
-                    let mut p = init;
-                    let mut stop = !a.contains(init);
-                    loop {
-                        if stop {
-                            break
-                        }
-
+                    let mut iter = a.iter_surject(init);
+                    let mut adv = a.advancer_surject(init);
+                    while let Some(p) = adv.advance(&a) {
                         assert_eq!(
                             iter.next().unwrap(),
                             (p, a.get_key(p).unwrap(), a.get_val(p).unwrap())
                         );
-
-                        a.next_surject_ptr(init, &mut p, &mut stop);
                     }
                 } else {
                     let mut iter = a.iter_surject(invalid);

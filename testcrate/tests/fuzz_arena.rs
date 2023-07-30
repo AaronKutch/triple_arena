@@ -5,7 +5,7 @@ use rand_xoshiro::{
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::Arena;
+use triple_arena::{Advancer, Arena};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
@@ -289,15 +289,12 @@ fn fuzz_arena() {
                 assert_eq!(n, list.len());
             }
             940..=949 => {
-                // canonical first_ptr/next_ptr loop
+                // advancer
                 let mut i = 0;
                 let rand_remove_i = if len == 0 { 0 } else { next_inx!(rng, len) };
                 let rand_insert_i = if len == 0 { 0 } else { next_inx!(rng, len) };
-                let (mut p, mut bo) = a.first_ptr();
-                loop {
-                    if bo {
-                        break
-                    }
+                let mut adv = a.advancer();
+                while let Some(p) = adv.advance(&a) {
                     assert_eq!(p, b[&a[p]]);
 
                     // remove and insert at random times
@@ -313,8 +310,6 @@ fn fuzz_arena() {
                         assert_eq!(t, a.remove(ptr).unwrap());
                         gen += 1;
                     }
-
-                    a.next_ptr(&mut p, &mut bo);
                     i += 1;
                 }
                 // depends on the invalidated elements witnessed
