@@ -30,6 +30,8 @@ pub struct SurjectPtrAdvancer<P: Ptr, K, V> {
     // same as for `ChainPtrAdvancer` except we get to assume the chain is cyclical
     init: P,
     ptr: Option<P>,
+    // prevent infinite loops
+    max_advances: usize,
     _boo: PhantomData<(K, V)>,
 }
 
@@ -38,6 +40,11 @@ impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
     type Item = P;
 
     fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
+        if self.max_advances == 0 {
+            return None
+        } else {
+            self.max_advances -= 1;
+        }
         if let Some(ptr) = self.ptr {
             if let Some(link) = collection.keys.get_link(ptr) {
                 if let Some(next) = link.next() {
@@ -204,14 +211,17 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// This does _not_ support invalidating `Ptr`s of the surject of `p_init`
     /// during the loop.
     ///
-    /// # Warning
+    /// # Note
     ///
     /// If links of the surject that contains `p_init` are invalidated during
-    /// the loop, it can lead to an infinite loop.
+    /// the loop, it can lead to loop where the same `Ptr` can be returned
+    /// multiple times. There is an internal fail safe that prevents
+    /// non-termination.
     pub fn advancer_surject(&self, p_init: P) -> SurjectPtrAdvancer<P, K, V> {
         SurjectPtrAdvancer {
             init: p_init,
             ptr: Some(p_init),
+            max_advances: self.len_keys(),
             _boo: PhantomData,
         }
     }

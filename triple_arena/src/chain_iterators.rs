@@ -28,6 +28,8 @@ pub struct ChainPtrAdvancer<P: Ptr, T> {
     ptr: Option<P>,
     // switch to going in the previous direction
     switch: bool,
+    // prevents infinite loops in case of various shenanigans
+    max_advances: usize,
     _boo: PhantomData<(P, T)>,
 }
 
@@ -36,6 +38,11 @@ impl<P: Ptr, T> Advancer for ChainPtrAdvancer<P, T> {
     type Item = P;
 
     fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
+        if self.max_advances == 0 {
+            return None
+        } else {
+            self.max_advances -= 1;
+        }
         if let Some(ptr) = self.ptr {
             if self.switch {
                 if let Some(link) = collection.a.get(ptr) {
@@ -184,17 +191,20 @@ impl<P: Ptr, T> ChainArena<P, T> {
     /// This does _not_ support invalidating `Ptr`s or changing the interlinks
     /// of the chain of `p_init` during the loop.
     ///
-    /// # Warning
+    /// # Note
     ///
     /// This handles cyclical chains, however if links or interlinks of the
     /// chain that contains `p_init` are invalidated during the loop, or if the
     /// chain starts as noncyclical and is reconnected to become cyclical during
-    /// the loop, it can lead to an infinite loop.
+    /// the loop, it can lead to a loop where the same `Ptr` can be returned
+    /// multiple times. There is a internal fail safe that prevents
+    /// non-termination.
     pub fn advancer_chain(&self, p_init: P) -> ChainPtrAdvancer<P, T> {
         ChainPtrAdvancer {
             init: p_init,
             ptr: Some(p_init),
             switch: false,
+            max_advances: self.len(),
             _boo: PhantomData,
         }
     }
