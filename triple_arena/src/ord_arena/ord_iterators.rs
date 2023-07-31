@@ -5,14 +5,14 @@ use core::marker::PhantomData;
 use crate::{Advancer, OrdArena, Ptr};
 
 /// An advancer over the valid `P`s of an `OrdArena`
-pub struct PtrAdvancer<P: Ptr, K: Ord, V> {
+pub struct PtrAdvancer<P: Ptr, K, V> {
     // same as for `ChainPtrAdvancer` except we get to assume the chain is acyclical and we start
     // from the beginning
     ptr: Option<P>,
     _boo: PhantomData<(K, V)>,
 }
 
-impl<P: Ptr, K: Ord, V> Advancer for PtrAdvancer<P, K, V> {
+impl<P: Ptr, K, V> Advancer for PtrAdvancer<P, K, V> {
     type Collection = OrdArena<P, K, V>;
     type Item = P;
 
@@ -37,12 +37,12 @@ impl<P: Ptr, K: Ord, V> Advancer for PtrAdvancer<P, K, V> {
 }
 
 /// An iterator over the valid `P`s of an `OrdArena`
-pub struct Ptrs<'a, P: Ptr, K: Ord, V> {
+pub struct Ptrs<'a, P: Ptr, K, V> {
     arena: &'a OrdArena<P, K, V>,
     adv: PtrAdvancer<P, K, V>,
 }
 
-impl<'a, P: Ptr, K: Ord, V> Iterator for Ptrs<'a, P, K, V> {
+impl<'a, P: Ptr, K, V> Iterator for Ptrs<'a, P, K, V> {
     type Item = P;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -51,12 +51,12 @@ impl<'a, P: Ptr, K: Ord, V> Iterator for Ptrs<'a, P, K, V> {
 }
 
 /// An iterator over `&K` in an `OrdArena`
-pub struct Keys<'a, P: Ptr, K: Ord, V> {
+pub struct Keys<'a, P: Ptr, K, V> {
     arena: &'a OrdArena<P, K, V>,
     adv: PtrAdvancer<P, K, V>,
 }
 
-impl<'a, P: Ptr, K: Ord, V> Iterator for Keys<'a, P, K, V> {
+impl<'a, P: Ptr, K, V> Iterator for Keys<'a, P, K, V> {
     type Item = &'a K;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -67,12 +67,12 @@ impl<'a, P: Ptr, K: Ord, V> Iterator for Keys<'a, P, K, V> {
 }
 
 /// An iterator over `&V` in an `OrdArena`
-pub struct Vals<'a, P: Ptr, K: Ord, V> {
+pub struct Vals<'a, P: Ptr, K, V> {
     arena: &'a OrdArena<P, K, V>,
     adv: PtrAdvancer<P, K, V>,
 }
 
-impl<'a, P: Ptr, K: Ord, V> Iterator for Vals<'a, P, K, V> {
+impl<'a, P: Ptr, K, V> Iterator for Vals<'a, P, K, V> {
     type Item = &'a V;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -84,12 +84,12 @@ impl<'a, P: Ptr, K: Ord, V> Iterator for Vals<'a, P, K, V> {
 
 /*
 /// A mutable iterator over `&mut V` in an `OrdArena`
-pub struct ValsMut<'a, P: Ptr, K: Ord, V> {
+pub struct ValsMut<'a, P: Ptr, K, V> {
     arena: &'a mut OrdArena<P, K, V>,
     adv: PtrAdvancer<P, K, V>,
 }
 
-impl<'a, P: Ptr, K: Ord, V> Iterator for ValsMut<'a, P, K, V> {
+impl<'a, P: Ptr, K, V> Iterator for ValsMut<'a, P, K, V> {
     type Item = &'a mut V;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -98,12 +98,12 @@ impl<'a, P: Ptr, K: Ord, V> Iterator for ValsMut<'a, P, K, V> {
 */
 
 /// An iterator over `(P, &K, &V)` in an `OrdArena`
-pub struct Iter<'a, P: Ptr, K: Ord, V> {
+pub struct Iter<'a, P: Ptr, K, V> {
     arena: &'a OrdArena<P, K, V>,
     adv: PtrAdvancer<P, K, V>,
 }
 
-impl<'a, P: Ptr, K: Ord, V> Iterator for Iter<'a, P, K, V> {
+impl<'a, P: Ptr, K, V> Iterator for Iter<'a, P, K, V> {
     type Item = (P, &'a (K, V));
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -115,7 +115,7 @@ impl<'a, P: Ptr, K: Ord, V> Iterator for Iter<'a, P, K, V> {
 
 /// All the iterators here iterate in order from the least key to the greatest
 /// key
-impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
+impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// Advances over every valid `Ptr` in `self`. Invalidating the next greater
     /// entry is _not_ supported during each advancement.
     pub fn advancer(&self) -> PtrAdvancer<P, K, V> {
