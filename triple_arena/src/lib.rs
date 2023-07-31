@@ -14,7 +14,7 @@ mod chain;
 mod entry;
 pub mod iterators;
 mod nonzero_inx_vec;
-mod ord;
+mod ord_arena;
 mod ptr;
 pub use advancer::Advancer;
 pub use arena_trait::ArenaTrait;
@@ -25,9 +25,8 @@ mod surject;
 pub use surject::SurjectArena;
 pub mod chain_iterators;
 pub mod surject_iterators;
-pub use ord::OrdArena;
-pub mod ord_iterators;
 pub use arena::Arena;
+pub use ord_arena::{ord_iterators, OrdArena};
 /// Special utilities for advanced usage
 pub mod utils {
     #[cfg(not(feature = "expose_internal_utils"))]
