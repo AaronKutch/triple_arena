@@ -269,11 +269,13 @@ impl<P: Ptr, T> Arena<P, T> {
         self.gen = PtrGen::increment(self.gen);
     }
 
-    /// Reserves capacity for at least `additional` more `T`, in accordance
-    /// with `Vec::reserve`, except if the capacity would be more than
-    /// `P::Inx::max() + 1` in which case capacity is capped at that value.
-    // note: it is not normally possible to allocate more than `isize::MAX`, so we
-    // do not need to mention it.
+    // TODO fix the implementation to follow this
+    /// Reserves capacity such that `self.capacity()` becomes at least
+    /// `self.len() + additional`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the new capacity exceeds `P::Inx::MAX`.
     pub fn reserve(&mut self, additional: usize) {
         let end = self.m.len();
         let cap = self.m.capacity();
