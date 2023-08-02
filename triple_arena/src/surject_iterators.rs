@@ -5,8 +5,8 @@ use core::marker::PhantomData;
 use crate::{
     chain_iterators,
     iterators::{self},
-    ptr::PtrNoGen,
     surject::{Key, Val},
+    utils::PtrNoGen,
     Advancer, Arena, Link, Ptr, SurjectArena,
 };
 

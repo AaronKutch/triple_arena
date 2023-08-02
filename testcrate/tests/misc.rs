@@ -1,5 +1,40 @@
+use std::num::{NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize};
+
 use testcrate::P0;
-use triple_arena::{Advancer, Arena};
+use triple_arena::{utils::PtrInx, Advancer, Arena};
+
+#[test]
+fn ptrs() {
+    let x: NonZeroUsize = <NonZeroUsize as PtrInx>::max();
+    assert_eq!(x.get(), usize::MAX);
+    let x: NonZeroUsize = <NonZeroU8 as PtrInx>::max();
+    assert_eq!(x.get(), u8::MAX as usize);
+    let x: NonZeroUsize = <NonZeroU16 as PtrInx>::max();
+    assert_eq!(x.get(), u16::MAX as usize);
+    let x: NonZeroUsize = <NonZeroU32 as PtrInx>::max();
+    assert_eq!(x.get(), u32::MAX as usize);
+    let x: NonZeroUsize = <NonZeroU64 as PtrInx>::max();
+    assert_eq!(x.get(), u64::MAX as usize);
+    let x: NonZeroUsize = <NonZeroU128 as PtrInx>::max();
+    assert_eq!(x.get(), u128::MAX as usize);
+
+    let max = NonZeroUsize::new(usize::MAX).unwrap();
+    let x: NonZeroUsize = PtrInx::new(max);
+    assert_eq!(x.get(), usize::MAX);
+    assert_eq!(PtrInx::get(x).get(), usize::MAX);
+    let x: NonZeroU8 = PtrInx::new(max);
+    assert_eq!(PtrInx::get(x).get(), u8::MAX as usize);
+    assert_eq!(x.get(), usize::MAX as u8);
+    let x: NonZeroU16 = PtrInx::new(max);
+    assert_eq!(x.get(), usize::MAX as u16);
+    let x: NonZeroU32 = PtrInx::new(max);
+    assert_eq!(x.get(), usize::MAX as u32);
+    let x: NonZeroU64 = PtrInx::new(max);
+    assert_eq!(x.get(), usize::MAX as u64);
+    let x: NonZeroU128 = PtrInx::new(max);
+    assert_eq!(x.get(), usize::MAX as u128);
+    assert_eq!(PtrInx::get(x).get(), usize::MAX);
+}
 
 // this is a hard coded test, there is a section in the fuzz test and in the
 // overflow tests

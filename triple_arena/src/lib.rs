@@ -29,11 +29,12 @@ pub use arena::Arena;
 pub use ord_arena::{ord_iterators, OrdArena};
 /// Special utilities for advanced usage
 pub mod utils {
+    pub(crate) use crate::entry::InternalEntry;
     #[cfg(not(feature = "expose_internal_utils"))]
-    pub(crate) use crate::nonzero_inx_vec::NonZeroInxVec;
+    pub(crate) use crate::nonzero_inx_vec::{nzusize_unchecked, NonZeroInxVec};
     #[cfg(feature = "expose_internal_utils")]
-    pub use crate::nonzero_inx_vec::NonZeroInxVec;
-    pub use crate::ptr::{PtrGen, PtrInx, PtrNoGen};
+    pub use crate::nonzero_inx_vec::{nzusize_unchecked, NonZeroInxVec};
+    pub use crate::ptr::{ptrinx_unchecked, PtrGen, PtrInx, PtrNoGen};
 }
 
 extern crate alloc;

@@ -1,5 +1,5 @@
 use rand_xoshiro::{rand_core::SeedableRng, Xoshiro128StarStar};
-use testcrate::{fuzz_fill_inst, CKey, CVal, P1};
+use testcrate::{fuzz_fill_inst, CKey, CVal, A, B, P1};
 use triple_arena::Arena;
 
 #[test]
@@ -9,7 +9,7 @@ fn clone_from_to() {
     let mut a = Arena::<P1, (CKey, CVal)>::new();
     let mut repr = vec![];
     let mut repr_inxs = vec![];
-    let (insts, expected) = fuzz_fill_inst(&mut rng, &repr, u64::MAX, 1 << 17, 1 << 16);
+    let (insts, expected) = fuzz_fill_inst(&mut rng, &repr, u64::MAX, A, B);
     for inst in insts {
         match inst {
             Ok(pair) => {

@@ -5,11 +5,8 @@ use std::collections::BTreeMap;
 
 use rand_xoshiro::{rand_core::SeedableRng, Xoshiro128StarStar};
 use test::Bencher;
-use testcrate::{fuzz_fill_inst_bench, P1};
+use testcrate::{fuzz_fill_inst_bench, A, B, P1};
 use triple_arena::{Arena, OrdArena};
-
-const A: u64 = B << 1;
-const B: u64 = 1 << 11;
 
 fn get_std_insts() -> Vec<Result<(u128, u128), usize>> {
     let mut rng = Xoshiro128StarStar::seed_from_u64(0);

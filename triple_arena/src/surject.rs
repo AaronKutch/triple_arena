@@ -3,7 +3,7 @@ use core::{mem, num::NonZeroUsize};
 
 use fmt::Debug;
 
-use crate::{ptr::PtrNoGen, Advancer, Arena, ChainArena, Ptr};
+use crate::{utils::PtrNoGen, Advancer, Arena, ChainArena, Ptr};
 
 #[derive(Clone)]
 pub(crate) struct Key<P: Ptr, K> {

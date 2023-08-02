@@ -5,6 +5,7 @@ use core::{
     fmt,
     fmt::Debug,
     mem,
+    num::NonZeroUsize,
     ops::{Index, IndexMut},
 };
 
@@ -125,9 +126,9 @@ pub struct OrdArena<P: Ptr, K, V> {
 impl<P: Ptr, K, V> OrdArena<P, K, V> {
     pub fn new() -> Self {
         Self {
-            root: PtrInx::new(0),
-            first: PtrInx::new(0),
-            last: PtrInx::new(0),
+            root: P::Inx::new(NonZeroUsize::new(1).unwrap()),
+            first: P::Inx::new(NonZeroUsize::new(1).unwrap()),
+            last: P::Inx::new(NonZeroUsize::new(1).unwrap()),
             a: ChainArena::new(),
         }
     }

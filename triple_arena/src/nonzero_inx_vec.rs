@@ -1,6 +1,19 @@
 use alloc::alloc;
 use core::{alloc::Layout, cmp::max, mem, num::NonZeroUsize, ptr};
 
+/// Shorthand for `NonZeroUsize::new_unchecked(x)`, and has a debug assertion
+/// that the input is not zero.
+///
+/// # Safety
+///
+/// `x` must not be 0
+pub const unsafe fn nzusize_unchecked(x: usize) -> NonZeroUsize {
+    debug_assert!(x != 0);
+    unsafe { NonZeroUsize::new_unchecked(x) }
+}
+
+pub const NZONE: NonZeroUsize = unsafe { nzusize_unchecked(1) };
+
 // The field accesses are especially unsafe such that we want only a minimal
 // subset accessing them
 mod guard {
@@ -125,6 +138,19 @@ impl<T> Drop for NonZeroInxVec<T> {
     }
 }
 
+impl<T: Clone> Clone for NonZeroInxVec<T> {
+    fn clone(&self) -> Self {
+        let mut res = Self::new();
+        if !self.is_empty() {
+            res.reserve(self.len());
+        }
+        for i in self.nziter() {
+            res.push(self.get(i).unwrap().clone());
+        }
+        res
+    }
+}
+
 impl<T> NonZeroInxVec<T> {
     #[inline]
     fn layout(&self) -> Layout {
@@ -212,20 +238,18 @@ impl<T> NonZeroInxVec<T> {
 
     /// Appends an element to the back of the collection and returns an index to
     /// it.
-    pub fn push(&mut self, t: T) -> NonZeroUsize {
+    pub fn push(&mut self, t: T) {
         if self.len() == self.capacity() {
             // does proper first initialization or next power of two expansion
             self.reserve(1);
         }
         // Safety: We use `nonzero_index_ptr_mut().wrapping_offset(new_len)` and
         // increment the length into the allocation. `self.len()` is not more than
-        // `isize::MAX - 1` so that `NonZeroUsize` can be constructed from the
-        // incremented `new_len`.
+        // `isize::MAX - 1`.
         unsafe {
             let new_len = self.len().wrapping_add(1);
             self.set_len(new_len);
             ptr::write(self.nonzero_index_ptr_mut().wrapping_add(new_len), t);
-            NonZeroUsize::new_unchecked(new_len)
         }
     }
 
@@ -297,6 +321,7 @@ impl<T> NonZeroInxVec<T> {
     /// `inx.get() <= self.len()` must be upheld
     #[inline]
     pub unsafe fn get_unchecked(&self, inx: NonZeroUsize) -> &T {
+        debug_assert!(inx.get() <= self.len());
         // Safety: The first element is 1 so that the `wrapping_offset(-1)` is undone,
         // the function's safety section presupposes `inx.get <= self.len()`
         unsafe { &*self.nonzero_index_ptr().wrapping_add(inx.get()) }
@@ -309,8 +334,70 @@ impl<T> NonZeroInxVec<T> {
     /// `inx.get() <= self.len()` must be upheld
     #[inline]
     pub unsafe fn get_unchecked_mut(&mut self, inx: NonZeroUsize) -> &mut T {
+        debug_assert!(inx.get() <= self.len());
         // Safety: The first element is 1 so that the `wrapping_offset(-1)` is undone,
         // the function's safety section presupposes `inx.get <= self.len()`
         unsafe { &mut *self.nonzero_index_ptr_mut().wrapping_add(inx.get()) }
     }
+
+    #[inline]
+    pub const fn nziter(&self) -> IntoNonZeroUsizeIterator {
+        nzusize_iter(NZONE, self.len())
+    }
+}
+
+pub struct NonZeroUsizeIterator {
+    // invariant: if `end_inclusive.is_some()`, `current <= end_inclusive.get()` must be true
+    current: NonZeroUsize,
+    end_inclusive: Option<NonZeroUsize>,
+}
+
+impl Iterator for NonZeroUsizeIterator {
+    type Item = NonZeroUsize;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(end_inclusive) = self.end_inclusive {
+            let res = self.current;
+            // safety: this is safe since `current < end_inclusive.get()` and
+            // `end_inclusive` cannot be more than the maximum, meaning it
+            // cannot overflow into zero. We maintain the invariant by checking
+            // for equality.
+            self.current = unsafe { NonZeroUsize::new_unchecked(res.get().wrapping_add(1)) };
+            if self.current > end_inclusive {
+                self.end_inclusive = None;
+            }
+            Some(res)
+        } else {
+            None
+        }
+    }
+}
+
+pub struct IntoNonZeroUsizeIterator(NonZeroUsizeIterator);
+
+impl IntoIterator for IntoNonZeroUsizeIterator {
+    type IntoIter = NonZeroUsizeIterator;
+    type Item = NonZeroUsize;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.0
+    }
+}
+
+#[inline]
+pub const fn nzusize_iter(start: NonZeroUsize, end_inclusive: usize) -> IntoNonZeroUsizeIterator {
+    // we do it this way for better branching
+    let end = if start.get() > end_inclusive {
+        None
+    } else {
+        // Safety: if `start` is `NonZeroUsize`, and `start <= end_inclusive`, then
+        // `end_inclusive` must be at least 1
+        Some(unsafe { NonZeroUsize::new_unchecked(end_inclusive) })
+    };
+    IntoNonZeroUsizeIterator(NonZeroUsizeIterator {
+        current: start,
+        end_inclusive: end,
+    })
 }

@@ -1,4 +1,3 @@
-use alloc::vec::Vec;
 use core::{
     borrow::Borrow,
     fmt, mem,
@@ -8,8 +7,7 @@ use core::{
 use InternalEntry::*;
 
 use crate::{
-    entry::InternalEntry,
-    utils::{PtrGen, PtrInx},
+    utils::{nzusize_unchecked, ptrinx_unchecked, InternalEntry, NonZeroInxVec, PtrGen, PtrInx},
     Ptr,
 };
 
@@ -58,7 +56,7 @@ use crate::{
 /// // trait-based rendering of graphs.
 /// assert_eq!(
 ///     &format!("{:?}", arena),
-///     "{P0[0](2): \"test\", P0[1](2): \"hello\"}"
+///     "{P0[1](2): \"test\", P0[2](2): \"hello\"}"
 /// );
 ///
 /// // use the `Ptr`s we got from insertion to reference the stored data
@@ -146,10 +144,7 @@ pub struct Arena<P: Ptr, T> {
     ///   the allocation in question is turned into a `Free` or has its
     ///   generation updated to equal the arena's `gen`. Newer allocations must
     ///   use the new `gen` value.
-    pub(crate) m: Vec<InternalEntry<P, T>>,
-    /// Number of `T` currently contained in the arena, must be a `usize`
-    /// because of the `P::Inx::max()` corner case where the index is
-    /// `P::Inx::max()` but the number of elements is `P::Inx::max() + 1`.
+    pub(crate) m: NonZeroInxVec<InternalEntry<P, T>>,
     pub(crate) len: usize,
     /// Points to the root of the chain of freelist nodes
     pub(crate) freelist_root: Option<P::Inx>,
@@ -178,7 +173,7 @@ pub struct Arena<P: Ptr, T> {
 /// When using the default `P::Inx = usize` and `P::Gen = NonZeroU64`, only
 /// memory exhaustion should be a concern on all platforms, but if smaller types
 /// are used then panics can realistically happen under these conditions: If
-/// `Arena::len() == (P::Inx::max() + 1)` and an insertion function is called, a
+/// `Arena::len() == P::Inx::max()` and an insertion function is called, a
 /// panic occurs. If `Arena::gen()` is the maximum value of its type and an
 /// invalidation occurs, a panic occurs.
 impl<P: Ptr, T> Arena<P, T> {
@@ -192,8 +187,8 @@ impl<P: Ptr, T> Arena<P, T> {
             return Err("virtual capacity != m_len")
         }
         let mut n_allocated = 0;
-        for entry in &this.m {
-            n_allocated += matches!(entry, Allocated(..)) as usize;
+        for i in this.m.nziter() {
+            n_allocated += matches!(this.m.get(i).unwrap(), Allocated(..)) as usize;
         }
         let n_free = this.m.len() - n_allocated;
         if this.len() != n_allocated {
@@ -229,8 +224,8 @@ impl<P: Ptr, T> Arena<P, T> {
     /// Creates a new arena of type `T`, which are pointed to by `P`s.
     pub fn new() -> Arena<P, T> {
         Arena {
-            len: PtrInx::new(0),
-            m: Vec::new(),
+            len: 0,
+            m: NonZeroInxVec::new(),
             freelist_root: None,
             gen: PtrGen::two(),
         }
@@ -243,7 +238,7 @@ impl<P: Ptr, T> Arena<P, T> {
 
     /// Returns if the arena is empty
     pub fn is_empty(&self) -> bool {
-        PtrInx::get(self.len) == 0
+        self.len == 0
     }
 
     /// Returns the capacity of the arena.
@@ -269,7 +264,6 @@ impl<P: Ptr, T> Arena<P, T> {
         self.gen = PtrGen::increment(self.gen);
     }
 
-    // TODO fix the implementation to follow this
     /// Reserves capacity such that `self.capacity()` becomes at least
     /// `self.len() + additional`.
     ///
@@ -277,60 +271,69 @@ impl<P: Ptr, T> Arena<P, T> {
     ///
     /// Panics if the new capacity exceeds `P::Inx::MAX`.
     pub fn reserve(&mut self, additional: usize) {
-        let end = self.m.len();
-        let cap = self.m.capacity();
-        // first determine target `m.len()`
-        let target = end.checked_add(additional).unwrap_or(usize::MAX).clamp(
-            0,
-            <P::Inx as PtrInx>::max()
-                .checked_add(1)
-                .unwrap_or(usize::MAX),
-        );
-        // then determine if we need to real reserve any real capacity
-        let reserve_amt = if target <= cap {
+        let old_virt_cap = self.m.len();
+        let old_real_cap = self.m.capacity();
+        let target = old_virt_cap
+            .checked_add(additional)
+            .expect(" wanted arena capacity exceeds `P::Inx::MAX`");
+        if target > <P::Inx as PtrInx>::max().get() {
+            panic!("wanted arena capacity exceeds `P::Inx::MAX`");
+        }
+        // then determine if we need to reserve any real capacity
+        let reserve_amt = if target <= old_real_cap {
             // this both handles the overflow case and prevents the exponential capacity
             // growth problem, because if the real capacity is greater than target virtual
             // capacity, then this is reached.
             0
         } else {
-            target.wrapping_sub(cap)
+            // nonoverflowing and nonzero since `target > old_real_cap`
+            target.wrapping_sub(old_real_cap)
         };
         // check for greater than zero, `reserve(0)` can trigger allocation and thus
         // exponential growth problems
         if reserve_amt > 0 {
             self.m.reserve(reserve_amt);
         }
-        // get to `target` virtual capacity and no more, do not go all way to
-        // `self.m.capacity()`
-        let remaining = target.wrapping_sub(end);
+        // Get to `target` virtual capacity and no more, do not go all way to
+        // `self.m.capacity()`. Nonoverflowing since `target` is a checked add on
+        // `old_virt_cap`.
+        let remaining = target.wrapping_sub(old_virt_cap);
         if remaining > 0 {
-            let old_root = self.freelist_root;
-            // we can choose the new root to go anywhere in the new capacity, but we choose
-            // here
-            self.freelist_root = Some(P::Inx::new(end));
-            // initialize the freelist with each entry pointing to the next
-            for i in 1..remaining {
-                self.m.push(Free(P::Inx::new(end.wrapping_add(i))));
-            }
-            match old_root {
-                Some(old_root) => {
-                    // The last `Free` points to the old root
-                    self.m.push(Free(old_root));
+            // Safety: `old_virt_cap` cannot be more than `isize::MAX`,
+            // `target > 0` because `remaining > 0`, `isize::MAX` guarantees
+            unsafe {
+                let old_root = self.freelist_root;
+                // we can choose the new root to go anywhere in the new capacity, but we choose
+                // to point at the previous virtual capacity.
+                self.freelist_root = Some(ptrinx_unchecked(old_virt_cap.wrapping_add(1)));
+                // initialize the freelist with each entry pointing to the next
+                for i in old_virt_cap.wrapping_add(2)
+                    ..old_virt_cap.wrapping_add(remaining).wrapping_add(1)
+                {
+                    self.m.push(Free(ptrinx_unchecked(i)));
                 }
-                None => {
-                    // the last `Free` points to itself
-                    self.m.push(Free(P::Inx::new(target.wrapping_sub(1))));
+                match old_root {
+                    Some(old_root) => {
+                        // The last `Free` points to the old root
+                        self.m.push(Free(old_root));
+                    }
+                    None => {
+                        // the last `Free` points to itself
+                        self.m.push(Free(ptrinx_unchecked(target)));
+                    }
                 }
             }
         }
     }
 
     #[must_use]
+    #[inline]
     fn m_get(&self, inx: P::Inx) -> Option<&InternalEntry<P, T>> {
         self.m.get(P::Inx::get(inx))
     }
 
     #[must_use]
+    #[inline]
     pub(crate) fn m_get_mut(&mut self, inx: P::Inx) -> Option<&mut InternalEntry<P, T>> {
         self.m.get_mut(P::Inx::get(inx))
     }
@@ -399,13 +402,18 @@ impl<P: Ptr, T> Arena<P, T> {
                     // need at least one
                     additional = 1;
                 }
+                // make sure to not make `reserve` panic
+                let new_len = self
+                    .len()
+                    .saturating_add(additional)
+                    .clamp(0, <P::Inx as PtrInx>::max().get());
+                additional = new_len.wrapping_sub(self.len());
                 self.reserve(additional);
                 // can't unwrap unless T: Debug
                 match self.try_insert(t) {
                     Ok(p) => p,
                     Err(_) => panic!(
-                        "called `insert` on an `Arena<P, T>` with maximum length `P::Inx::max() + \
-                         1`"
+                        "called `insert` on an `Arena<P, T>` with maximum length `P::Inx::max()`"
                     ),
                 }
             }
@@ -481,25 +489,18 @@ impl<P: Ptr, T> Arena<P, T> {
     /// or a pointer is invalid, `None` is returned.
     #[must_use]
     pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<(&mut T, &mut T)> {
-        if self.contains(p0) && self.contains(p1) && (p0.inx() != p1.inx()) {
-            if p0.inx() < p1.inx() {
-                let (lhs, rhs) = self.m.split_at_mut(PtrInx::get(p1.inx()));
-                if let (Allocated(_, t0), Allocated(_, t1)) =
-                    (&mut lhs[PtrInx::get(p0.inx())], &mut rhs[0])
-                {
+        if let Some((n0, n1)) = self
+            .m
+            .get2_mut(P::Inx::get(p0.inx()), P::Inx::get(p1.inx()))
+        {
+            if let (Allocated(gen0, t0), Allocated(gen1, t1)) = (n0, n1) {
+                if (*gen0 == p0.gen()) && (*gen1 == p1.gen()) {
                     Some((t0, t1))
                 } else {
-                    unreachable!()
+                    None
                 }
             } else {
-                let (lhs, rhs) = self.m.split_at_mut(PtrInx::get(p0.inx()));
-                if let (Allocated(_, t1), Allocated(_, t0)) =
-                    (&mut lhs[PtrInx::get(p1.inx())], &mut rhs[0])
-                {
-                    Some((t0, t1))
-                } else {
-                    unreachable!()
-                }
+                None
             }
         } else {
             None
@@ -554,7 +555,8 @@ impl<P: Ptr, T> Arena<P, T> {
     /// to that `T` and a mutable reference to the `T`. If `pred` returns `true`
     /// that `T` is dropped and pointers to it invalidated.
     pub fn remove_by<F: FnMut(P, &mut T) -> bool>(&mut self, mut pred: F) {
-        for (inx, entry) in self.m.iter_mut().enumerate() {
+        for inx in self.m.nziter() {
+            let entry = self.m.get_mut(inx).unwrap();
             let inx = P::Inx::new(inx);
             if let Allocated(gen, t) = entry {
                 if pred(P::_from_raw(inx, *gen), t) {
@@ -653,24 +655,26 @@ impl<P: Ptr, T> Arena<P, T> {
     /// are invalid.
     #[must_use]
     pub fn swap(&mut self, p0: P, p1: P) -> Option<()> {
-        if self.contains(p0) && self.contains(p1) {
-            if p0 != p1 {
-                let (p0, p1) = if p0.inx() < p1.inx() {
-                    (p0, p1)
-                } else {
-                    (p1, p0)
-                };
-                // don't need to reorder because of `swap`'s symmetry
-                let (lhs, rhs) = self.m.split_at_mut(PtrInx::get(p1.inx()));
-                if let (Allocated(_, t0), Allocated(_, t1)) =
-                    (&mut lhs[PtrInx::get(p0.inx())], &mut rhs[0])
-                {
-                    mem::swap(t0, t1);
-                } else {
-                    unreachable!()
-                }
+        if p0.inx() == p1.inx() {
+            if self.contains(p0) && self.contains(p1) {
+                Some(())
+            } else {
+                None
             }
-            Some(())
+        } else if let Some((n0, n1)) = self
+            .m
+            .get2_mut(P::Inx::get(p0.inx()), P::Inx::get(p1.inx()))
+        {
+            if let (Allocated(gen0, t0), Allocated(gen1, t1)) = (n0, n1) {
+                if (*gen0 == p0.gen()) && (*gen1 == p1.gen()) {
+                    mem::swap(t0, t1);
+                    Some(())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -680,14 +684,21 @@ impl<P: Ptr, T> Arena<P, T> {
     /// created from it. This has no effect on allocated capacity.
     pub fn clear(&mut self) {
         // drop all `T` and recreate the freelist
-        for i in 1..self.m.len() {
-            *self.m_get_mut(P::Inx::new(i.wrapping_sub(1))).unwrap() = Free(P::Inx::new(i));
+        for i in self.m.nziter() {
+            // Safety: `isize::MAX` guarantee
+            unsafe {
+                let next = ptrinx_unchecked(i.get().wrapping_add(1));
+                *self.m_get_mut(P::Inx::new(i)).unwrap() = Free(next);
+            }
         }
         if !self.m.is_empty() {
             // the last freelist node points to itself
-            let last = self.m.len().wrapping_sub(1);
-            *self.m.get_mut(last).unwrap() = Free(P::Inx::new(last));
-            self.freelist_root = Some(P::Inx::new(0));
+            // Safety: `isize::MAX` guarantee, and `!self.m.is_empty()`
+            unsafe {
+                let last = nzusize_unchecked(self.m.len());
+                *self.m.get_mut(last).unwrap() = Free(P::Inx::new(last));
+                self.freelist_root = Some(ptrinx_unchecked(1));
+            }
         } else {
             self.freelist_root = None;
         }
@@ -698,7 +709,7 @@ impl<P: Ptr, T> Arena<P, T> {
     /// Performs an [Arena::clear] and resets capacity to 0
     pub fn clear_and_shrink(&mut self) {
         self.m.clear();
-        self.m.shrink_to_fit();
+        self.m.clear_and_shrink();
         self.freelist_root = None;
         self.inc_gen();
         self.len = 0;
@@ -712,7 +723,7 @@ impl<P: Ptr, T> Arena<P, T> {
     pub fn clone_from_with<U, F: FnMut(P, &U) -> T>(&mut self, source: &Arena<P, U>, mut map: F) {
         // exponential growth mitigation factor, absolutely do not use `self.m.capacity`
         // in the extra freelist additions
-        let old_virtual_capacity = self.m.len();
+        let old_virt_cap = self.m.len();
         self.gen = source.gen;
         self.len = source.len;
         // Invariants are temporarily broken, use only methods on `m`.
@@ -722,7 +733,7 @@ impl<P: Ptr, T> Arena<P, T> {
             self.m
                 .reserve(source.m.len().wrapping_sub(self.m.capacity()));
         }
-        for i in 0..source.m.len() {
+        for i in source.m.nziter() {
             let new = match source.m.get(i).unwrap() {
                 // copy `source` freelist
                 Free(inx) => Free(*inx),
@@ -732,21 +743,24 @@ impl<P: Ptr, T> Arena<P, T> {
             self.m.push(new);
         }
 
-        for i in self.m.len().wrapping_add(1)..old_virtual_capacity {
-            // point to next
-            self.m.push(Free(P::Inx::new(i)));
-        }
-        if self.m.len() < old_virtual_capacity {
-            // new root starting at extension of `self.m` beyond `source.m`
-            self.freelist_root = Some(P::Inx::new(source.m.len()));
-            self.m.push(match source.freelist_root {
-                // points to old root
-                Some(inx) => Free(inx),
-                // points to itself
-                None => Free(P::Inx::new(self.m.len())),
-            });
-        } else {
-            self.freelist_root = source.freelist_root;
+        // Safety: `isize::MAX` guarantee
+        unsafe {
+            for i in self.m.len().wrapping_add(2)..old_virt_cap.wrapping_add(1) {
+                // point to next
+                self.m.push(Free(ptrinx_unchecked(i)));
+            }
+            if self.m.len() < old_virt_cap {
+                // new root starting at extension of `self.m` beyond `source.m`
+                self.freelist_root = Some(ptrinx_unchecked(source.m.len().wrapping_add(1)));
+                self.m.push(match source.freelist_root {
+                    // points to old root
+                    Some(inx) => Free(inx),
+                    // points to itself
+                    None => Free(ptrinx_unchecked(self.m.len().wrapping_add(1))),
+                });
+            } else {
+                self.freelist_root = source.freelist_root;
+            }
         }
     }
 
@@ -849,7 +863,7 @@ impl<P: Ptr, T: Clone> Clone for Arena<P, T> {
     fn clone_from(&mut self, source: &Self) {
         // exponential growth mitigation factor, absolutely do not use `self.m.capacity`
         // in the extra freelist additions
-        let old_virtual_capacity = self.m.len();
+        let old_virt_cap = self.m.len();
         self.gen = source.gen;
         self.len = source.len;
         // Invariants are temporarily broken, use only methods on `m`.
@@ -859,25 +873,28 @@ impl<P: Ptr, T: Clone> Clone for Arena<P, T> {
             self.m
                 .reserve(source.m.len().wrapping_sub(self.m.capacity()));
         }
-        for i in 0..source.m.len() {
+        for i in source.m.nziter() {
             self.m.push(source.m.get(i).unwrap().clone());
         }
 
-        for i in self.m.len().wrapping_add(1)..old_virtual_capacity {
-            // point to next
-            self.m.push(Free(P::Inx::new(i)));
-        }
-        if self.m.len() < old_virtual_capacity {
-            // new root starting at extension of `self.m` beyond `source.m`
-            self.freelist_root = Some(P::Inx::new(source.m.len()));
-            self.m.push(match source.freelist_root {
-                // points to old root
-                Some(inx) => Free(inx),
-                // points to itself
-                None => Free(P::Inx::new(self.m.len())),
-            });
-        } else {
-            self.freelist_root = source.freelist_root;
+        // Safety: `isize::MAX` guarantee
+        unsafe {
+            for i in self.m.len().wrapping_add(2)..old_virt_cap.wrapping_add(1) {
+                // point to next
+                self.m.push(Free(ptrinx_unchecked(i)));
+            }
+            if self.m.len() < old_virt_cap {
+                // new root starting at extension of `self.m` beyond `source.m`
+                self.freelist_root = Some(ptrinx_unchecked(source.m.len().wrapping_add(1)));
+                self.m.push(match source.freelist_root {
+                    // points to old root
+                    Some(inx) => Free(inx),
+                    // points to itself
+                    None => Free(ptrinx_unchecked(self.m.len().wrapping_add(1))),
+                });
+            } else {
+                self.freelist_root = source.freelist_root;
+            }
         }
     }
 }

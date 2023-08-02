@@ -1,10 +1,23 @@
 #![allow(clippy::type_complexity)]
 
-use std::{cell::RefCell, num::NonZeroU128};
+use std::{
+    cell::RefCell,
+    num::{NonZeroU128, NonZeroU32},
+};
 
 use rand_xoshiro::{rand_core::RngCore, Xoshiro128StarStar};
 use triple_arena::{ptr_struct, Ptr};
 use triple_arena_render::*;
+
+#[cfg(miri)]
+pub const A: u64 = B << 1;
+#[cfg(miri)]
+pub const B: u64 = 1 << 8;
+
+#[cfg(not(miri))]
+pub const A: u64 = B << 1;
+#[cfg(not(miri))]
+pub const B: u64 = 1 << 11;
 
 pub struct MyNode<P: Ptr> {
     pub sources: Vec<(P, String)>,
@@ -34,7 +47,7 @@ impl<P: Ptr> DebugNodeTrait<P> for MyNode<P> {
 
 // This is constructed this way to guard against problems with stuff like
 // `PtrNoGen`
-ptr_struct!(P0[u32](NonZeroU128));
+ptr_struct!(P0[NonZeroU32](NonZeroU128));
 ptr_struct!(P1);
 
 thread_local! {

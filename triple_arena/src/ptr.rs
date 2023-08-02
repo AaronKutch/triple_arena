@@ -1,9 +1,11 @@
 use core::{
     fmt::Debug,
     hash::Hash,
-    num::{NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8},
+    num::{NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize},
     panic::{RefUnwindSafe, UnwindSafe},
 };
+
+use crate::utils::nzusize_unchecked;
 
 /// Pointer generation information type
 ///
@@ -100,39 +102,55 @@ pub unsafe trait PtrInx:
 {
     /// Note: this should be truncating or zero extending cast, higher level
     /// functions should handle fallible cases
-    fn new(inx: usize) -> Self;
+    fn new(inx: NonZeroUsize) -> Self;
     /// Note: this should be truncating or zero extending cast, higher level
     /// functions should handle fallible cases
-    fn get(this: Self) -> usize;
+    fn get(this: Self) -> NonZeroUsize;
     /// The maximum representable value, which should be truncated down to
     /// `usize::MAX` if necessary
-    fn max() -> usize;
+    fn max() -> NonZeroUsize;
 }
 
 macro_rules! impl_ptr_inx {
-    ($($x: ident)*) => {
+    ($($nz:ident $x:ident);*;) => {
         $(
-            unsafe impl PtrInx for $x {
+            unsafe impl PtrInx for $nz {
                 #[inline]
-                fn new(inx: usize) -> Self {
-                    inx as $x
+                fn new(inx: NonZeroUsize) -> Self {
+                    $nz::new(inx.get() as $x).unwrap()
                 }
 
                 #[inline]
-                fn get(this: Self) -> usize {
-                    this as usize
+                fn get(this: Self) -> NonZeroUsize {
+                    NonZeroUsize::new(this.get() as usize).unwrap()
                 }
 
                 #[inline]
-                fn max() -> usize {
-                    $x::MAX as usize
+                fn max() -> NonZeroUsize {
+                    NonZeroUsize::new($x::MAX as usize).unwrap()
                 }
             }
         )*
     };
 }
 
-impl_ptr_inx!(usize u8 u16 u32 u64 u128);
+impl_ptr_inx!(
+    NonZeroUsize usize;
+    NonZeroU8 u8;
+    NonZeroU16 u16;
+    NonZeroU32 u32;
+    NonZeroU64 u64;
+    NonZeroU128 u128;
+);
+
+/// Shorthand for `PtrInx::new(nzusize_unchecked(x))`.
+///
+/// # Safety
+///
+/// `x` must not be 0 and must be within the `PtrInx` limits
+pub unsafe fn ptrinx_unchecked<P: PtrInx>(x: usize) -> P {
+    PtrInx::new(nzusize_unchecked(x))
+}
 
 /// A trait containing index and generation information for the `Arena` type.
 ///
@@ -200,6 +218,7 @@ pub unsafe trait Ptr:
 /// separated list of attributes.
 ///
 /// ```
+/// use core::num::{NonZeroU16, NonZeroU8};
 /// use triple_arena::{ptr_struct, Arena, Ptr};
 ///
 /// // Note that in most use cases the default types or default index with no
@@ -209,22 +228,21 @@ pub unsafe trait Ptr:
 /// ptr_struct!(P0 doc="An example struct `P0` that implements `Ptr`");
 /// let _: Arena<P0, String>;
 ///
-/// // `P1` will have a smaller `u16` index type
-/// ptr_struct!(P1[u16]);
 ///
-/// use core::num::NonZeroU16;
+/// // `P1` will have a smaller `u16` index type
+/// ptr_struct!(P1[NonZeroU16]);
 ///
 /// // `P2` will have a smaller `NonZeroU16` generation type
 /// ptr_struct!(P2(NonZeroU16));
 ///
 /// // both the index and generation type are custom
-/// ptr_struct!(P3[u16](NonZeroU16));
+/// ptr_struct!(P3[NonZeroU16](NonZeroU16));
 ///
 /// // no generation counter
 /// ptr_struct!(P4());
 ///
 /// // byte index with no generation counter
-/// ptr_struct!(P5[u8]());
+/// ptr_struct!(P5[NonZeroU8]());
 ///
 /// // a single macro can have multiple structs of the same matching kind with
 /// // semicolon separators
@@ -259,7 +277,9 @@ macro_rules! ptr_struct {
                 #[inline]
                 fn invalid() -> Self {
                     Self {
-                        _internal_inx: $crate::utils::PtrInx::new(core::primitive::usize::MAX),
+                        _internal_inx: $crate::utils::PtrInx::new(
+                            <Self::Inx as $crate::utils::PtrInx>::max()
+                        ),
                         _internal_gen: $crate::utils::PtrGen::one()
                     }
                 }
@@ -338,7 +358,9 @@ macro_rules! ptr_struct {
                 #[inline]
                 fn invalid() -> Self {
                     Self {
-                        _internal_inx: $crate::utils::PtrInx::new(core::primitive::usize::MAX),
+                        _internal_inx: $crate::utils::PtrInx::new(
+                            <Self::Inx as $crate::utils::PtrInx>::max()
+                        ),
                         _internal_gen: $crate::utils::PtrGen::one()
                     }
                 }
@@ -400,7 +422,7 @@ macro_rules! ptr_struct {
     ($($struct_name:ident($gen_type:path) $($attributes:meta),*);*) => {
         $(
             $crate::ptr_struct!(
-                $struct_name[core::primitive::usize]($gen_type)
+                $struct_name[core::num::NonZeroUsize]($gen_type)
                 $($attributes),*
             );
         )*
@@ -408,7 +430,7 @@ macro_rules! ptr_struct {
     ($($struct_name:ident() $($attributes:meta),*);*) => {
         $(
             $crate::ptr_struct!(
-                $struct_name[core::primitive::usize]()
+                $struct_name[core::num::NonZeroUsize]()
                 $($attributes),*
             );
         )*
@@ -416,7 +438,7 @@ macro_rules! ptr_struct {
     ($($struct_name:ident $($attributes:meta),*);*) => {
         $(
             $crate::ptr_struct!(
-                $struct_name[core::primitive::usize](core::num::NonZeroU64)
+                $struct_name[core::num::NonZeroUsize](core::num::NonZeroU64)
                 $($attributes),*
             );
         )*
@@ -449,7 +471,9 @@ unsafe impl<P: Ptr> Ptr for PtrNoGen<P> {
     #[inline]
     fn invalid() -> Self {
         Self {
-            _internal_inx: PtrInx::new(core::primitive::usize::MAX),
+            _internal_inx: PtrInx::new(
+                core::num::NonZeroUsize::new(core::primitive::usize::MAX).unwrap(),
+            ),
             _internal_gen: PtrGen::one(),
         }
     }

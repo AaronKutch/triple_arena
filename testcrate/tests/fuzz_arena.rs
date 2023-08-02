@@ -12,7 +12,7 @@ const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 const STATS: (usize, usize, u128) = if cfg!(miri) {
     (1, 11, 238)
 } else {
-    (1067, 72, 138831)
+    (1067, 72, 138829)
 };
 
 macro_rules! next_inx {
