@@ -9,7 +9,7 @@ fn clone_from_to() {
     let mut a = Arena::<P1, (CKey, CVal)>::new();
     let mut repr = vec![];
     let mut repr_inxs = vec![];
-    let (insts, expected) = fuzz_fill_inst(&mut rng, &repr, u64::MAX, A, B);
+    let (insts, expected) = fuzz_fill_inst(&mut rng, &repr, A, B);
     for inst in insts {
         match inst {
             Ok(pair) => {

@@ -138,13 +138,13 @@ impl Clone for CVal {
     }
 }
 
-pub fn next_key_val_pair(rng: &mut Xoshiro128StarStar, max_key: u64) -> (CKey, CVal) {
+pub fn next_key_val_pair(rng: &mut Xoshiro128StarStar) -> (CKey, CVal) {
     let v = VAL_NUM.with(|f| {
         let x: u64 = *f.borrow();
         *f.borrow_mut() = x.checked_add(1).unwrap();
         x
     });
-    let k = rng.next_u64() % max_key;
+    let k = rng.next_u64();
     (CKey { k }, CVal { v })
 }
 
@@ -155,7 +155,6 @@ pub fn fuzz_fill_inst(
     rng: &mut Xoshiro128StarStar,
     // representation of the arena
     repr: &[(CKey, CVal)],
-    max_key: u64,
     insertions: u64,
     removals: u64,
 ) -> (Vec<Result<(CKey, CVal), usize>>, Vec<(CKey, CVal)>) {
@@ -208,7 +207,7 @@ pub fn fuzz_fill_inst(
     let mut repr_sim = repr.to_owned();
     for inst in blank_insts {
         if inst {
-            let pair = next_key_val_pair(rng, max_key);
+            let pair = next_key_val_pair(rng);
             repr_sim.push((pair.0.clone_uncounting(), pair.1.clone_uncounting()));
             insts.push(Ok(pair));
         } else {

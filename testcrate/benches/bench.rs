@@ -8,7 +8,7 @@ use test::Bencher;
 use testcrate::{fuzz_fill_inst_bench, A, B, P1};
 use triple_arena::{Arena, OrdArena};
 
-fn get_std_insts() -> Vec<Result<(u128, u128), usize>> {
+fn get_std_bench_insts() -> Vec<Result<(u128, u128), usize>> {
     let mut rng = Xoshiro128StarStar::seed_from_u64(0);
     // we fill the arena up to `A` elements, then randomly insert and remove the
     // same number of `B` elements, then empty it in the same random way
@@ -29,7 +29,7 @@ fn baseline(bencher: &mut Bencher) {
     let mut repr_inxs = vec![];
 
     bencher.iter(|| {
-        let insts = get_std_insts();
+        let insts = get_std_bench_insts();
         for inst in insts {
             match inst {
                 Ok(pair) => {
@@ -51,7 +51,7 @@ fn arena(bencher: &mut Bencher) {
     let mut repr_inxs = vec![];
 
     bencher.iter(|| {
-        let insts = get_std_insts();
+        let insts = get_std_bench_insts();
         for inst in insts {
             match inst {
                 Ok(pair) => {
@@ -71,7 +71,7 @@ fn std_btree(bencher: &mut Bencher) {
     let mut repr_inxs = vec![];
 
     bencher.iter(|| {
-        let insts = get_std_insts();
+        let insts = get_std_bench_insts();
         for inst in insts {
             match inst {
                 Ok(pair) => {
@@ -90,18 +90,18 @@ fn std_btree(bencher: &mut Bencher) {
 #[bench]
 fn ord_arena_find_to_remove(bencher: &mut Bencher) {
     let mut a = OrdArena::<P1, u128, u128>::new();
-    let mut repr_inxs = vec![];
+    let mut repr_keys = vec![];
 
     bencher.iter(|| {
-        let insts = get_std_insts();
+        let insts = get_std_bench_insts();
         for inst in insts {
             match inst {
                 Ok(pair) => {
-                    repr_inxs.push(pair.0);
+                    repr_keys.push(pair.0);
                     let _ = a.insert(pair);
                 }
                 Err(inx) => {
-                    let key = repr_inxs.swap_remove(inx);
+                    let key = repr_keys.swap_remove(inx);
                     let p = a.find_key(&key).unwrap();
                     a.remove(p).unwrap();
                 }
@@ -116,7 +116,7 @@ fn ord_arena(bencher: &mut Bencher) {
     let mut repr_inxs = vec![];
 
     bencher.iter(|| {
-        let insts = get_std_insts();
+        let insts = get_std_bench_insts();
         for inst in insts {
             match inst {
                 Ok(pair) => {
