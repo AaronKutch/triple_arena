@@ -207,3 +207,81 @@ pub fn fuzz_fill_inst(
     assert_eq!(insts.len(), (insertions + removals) as usize);
     (insts, repr_sim)
 }
+
+/// For benchmarks, `CKey` and `CVal` are meant for tallying comparisons and
+/// clones
+pub fn fuzz_fill_inst_bench(
+    rng: &mut Xoshiro128StarStar,
+    // representation of the arena
+    repr: &[(u128, u128)],
+    insertions: u64,
+    removals: u64,
+) -> (Vec<Result<(u128, u128), usize>>, Vec<(u128, u128)>) {
+    // first, schedule what instructions will be insertions and what will be
+    // removals
+    let mut blank_insts: Vec<bool> = vec![];
+    for _ in 0..insertions {
+        blank_insts.push(true)
+    }
+    for _ in 0..removals {
+        blank_insts.push(false)
+    }
+    let len = blank_insts.len();
+    for i in 0..len {
+        // randomly sort
+        blank_insts.swap(i, (rng.next_u64() as usize) % len);
+    }
+    // play the blank instructions to make sure we never try remove from an empty
+    // arena
+    let mut sim_len = repr.len();
+    for i in 0..len {
+        if blank_insts[i] {
+            sim_len += 1;
+        } else if sim_len == 0 {
+            // need to bring forward an insertion to avoid removing or changing the sums
+            let mut found = false;
+            for j in i..len {
+                if blank_insts[j] {
+                    blank_insts.swap(i, j);
+                    found = true;
+                    break
+                }
+            }
+            if !found {
+                panic!("were there too many removals?");
+            }
+            sim_len += 1;
+        } else {
+            sim_len -= 1;
+        }
+    }
+    assert_eq!(
+        sim_len,
+        repr.len() + (insertions as usize) - (removals as usize)
+    );
+
+    let mut insts = vec![];
+    // now simulate so that we can remove from both old elements and newly inserted
+    // elements without running into problems
+    let mut repr_sim = repr.to_owned();
+    let mut key = (u128::from(rng.next_u64()) << 64) | u128::from(rng.next_u64());
+    for inst in blank_insts {
+        if inst {
+            // split up the key by alternating bits to make sure the whole thing is being
+            // compared against and branch prediction does not get lazy
+            let val = (
+                key,
+                (u128::from(rng.next_u64()) << 64) | u128::from(rng.next_u64()),
+            );
+            key = key.wrapping_add((1 << 120) + 7);
+            repr_sim.push(val);
+            insts.push(Ok(val));
+        } else {
+            let inx = (rng.next_u64() as usize) % repr_sim.len();
+            insts.push(Err(inx));
+            repr_sim.swap_remove(inx);
+        }
+    }
+    assert_eq!(insts.len(), (insertions + removals) as usize);
+    (insts, repr_sim)
+}
