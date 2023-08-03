@@ -12,13 +12,14 @@ mod arena;
 mod arena_trait;
 mod chain;
 pub mod iterators;
-mod nonzero_inx_vec;
+//mod nonzero_inx_vec;
 mod ord_arena;
 mod ptr;
 pub use advancer::Advancer;
 pub use arena_trait::ArenaTrait;
 pub use chain::{ChainArena, Link};
 pub use ptr::Ptr;
+mod safe_nonzero_inx_vec;
 mod surject;
 pub use surject::SurjectArena;
 pub mod chain_iterators;
@@ -29,14 +30,14 @@ pub use ord_arena::{ord_iterators, OrdArena};
 pub mod utils {
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::arena::InternalEntry;
-    #[cfg(not(feature = "expose_internal_utils"))]
-    pub(crate) use crate::nonzero_inx_vec::{nzusize_unchecked, NonZeroInxVec};
-    #[cfg(feature = "expose_internal_utils")]
-    pub use crate::nonzero_inx_vec::{nzusize_unchecked, NonZeroInxVec};
     // only intended for size_of tests and such
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::ord_arena::Node;
     pub use crate::ptr::{ptrinx_unchecked, PtrGen, PtrInx, PtrNoGen};
+    #[cfg(not(feature = "expose_internal_utils"))]
+    pub(crate) use crate::safe_nonzero_inx_vec::{nzusize_unchecked, NonZeroInxVec};
+    #[cfg(feature = "expose_internal_utils")]
+    pub use crate::safe_nonzero_inx_vec::{nzusize_unchecked, NonZeroInxVec};
 }
 
 extern crate alloc;
