@@ -13,7 +13,7 @@
 - Fixed `ChainArena::insert_start` and `ChainArena::insert_end` to return `Result` and actually
   return ownership on failure like the documentation says
 - Some iterator structs have more parameters
-- The pointer traits are now `unsafe` and should only be implemented through `ptr_struct`
+- The pointer traits are now `` and should only be implemented through `ptr_struct`
 - Slightly optimized `SurjectArena`
 - Refactored iterator struct organization
 - Added `Unpin + RefUnwindSafe + UnwindSafe` to the pointer traits

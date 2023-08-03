@@ -327,26 +327,24 @@ impl<P: Ptr, T> Arena<P, T> {
         if remaining > 0 {
             // Safety: `old_virt_cap` cannot be more than `isize::MAX`,
             // `target > 0` because `remaining > 0`, `isize::MAX` guarantees
-            unsafe {
-                let old_root = self.freelist_root;
-                // we can choose the new root to go anywhere in the new capacity, but we choose
-                // to point at the previous virtual capacity.
-                self.freelist_root = Some(ptrinx_unchecked(old_virt_cap.wrapping_add(1)));
-                // initialize the freelist with each entry pointing to the next
-                for i in old_virt_cap.wrapping_add(2)
-                    ..old_virt_cap.wrapping_add(remaining).wrapping_add(1)
-                {
-                    self.m.push(Free(ptrinx_unchecked(i)));
+            let old_root = self.freelist_root;
+            // we can choose the new root to go anywhere in the new capacity, but we choose
+            // to point at the previous virtual capacity.
+            self.freelist_root = Some(ptrinx_unchecked(old_virt_cap.wrapping_add(1)));
+            // initialize the freelist with each entry pointing to the next
+            for i in
+                old_virt_cap.wrapping_add(2)..old_virt_cap.wrapping_add(remaining).wrapping_add(1)
+            {
+                self.m.push(Free(ptrinx_unchecked(i)));
+            }
+            match old_root {
+                Some(old_root) => {
+                    // The last `Free` points to the old root
+                    self.m.push(Free(old_root));
                 }
-                match old_root {
-                    Some(old_root) => {
-                        // The last `Free` points to the old root
-                        self.m.push(Free(old_root));
-                    }
-                    None => {
-                        // the last `Free` points to itself
-                        self.m.push(Free(ptrinx_unchecked(target)));
-                    }
+                None => {
+                    // the last `Free` points to itself
+                    self.m.push(Free(ptrinx_unchecked(target)));
                 }
             }
         }
@@ -712,19 +710,15 @@ impl<P: Ptr, T> Arena<P, T> {
         // drop all `T` and recreate the freelist
         for i in self.m.nziter() {
             // Safety: `isize::MAX` guarantee
-            unsafe {
-                let next = ptrinx_unchecked(i.get().wrapping_add(1));
-                *self.m_get_mut(P::Inx::new(i)).unwrap() = Free(next);
-            }
+            let next = ptrinx_unchecked(i.get().wrapping_add(1));
+            *self.m_get_mut(P::Inx::new(i)).unwrap() = Free(next);
         }
         if !self.m.is_empty() {
             // the last freelist node points to itself
             // Safety: `isize::MAX` guarantee, and `!self.m.is_empty()`
-            unsafe {
-                let last = nzusize_unchecked(self.m.len());
-                *self.m.get_mut(last).unwrap() = Free(P::Inx::new(last));
-                self.freelist_root = Some(ptrinx_unchecked(1));
-            }
+            let last = nzusize_unchecked(self.m.len());
+            *self.m.get_mut(last).unwrap() = Free(P::Inx::new(last));
+            self.freelist_root = Some(ptrinx_unchecked(1));
         } else {
             self.freelist_root = None;
         }
@@ -770,23 +764,21 @@ impl<P: Ptr, T> Arena<P, T> {
         }
 
         // Safety: `isize::MAX` guarantee
-        unsafe {
-            for i in self.m.len().wrapping_add(2)..old_virt_cap.wrapping_add(1) {
-                // point to next
-                self.m.push(Free(ptrinx_unchecked(i)));
-            }
-            if self.m.len() < old_virt_cap {
-                // new root starting at extension of `self.m` beyond `source.m`
-                self.freelist_root = Some(ptrinx_unchecked(source.m.len().wrapping_add(1)));
-                self.m.push(match source.freelist_root {
-                    // points to old root
-                    Some(inx) => Free(inx),
-                    // points to itself
-                    None => Free(ptrinx_unchecked(self.m.len().wrapping_add(1))),
-                });
-            } else {
-                self.freelist_root = source.freelist_root;
-            }
+        for i in self.m.len().wrapping_add(2)..old_virt_cap.wrapping_add(1) {
+            // point to next
+            self.m.push(Free(ptrinx_unchecked(i)));
+        }
+        if self.m.len() < old_virt_cap {
+            // new root starting at extension of `self.m` beyond `source.m`
+            self.freelist_root = Some(ptrinx_unchecked(source.m.len().wrapping_add(1)));
+            self.m.push(match source.freelist_root {
+                // points to old root
+                Some(inx) => Free(inx),
+                // points to itself
+                None => Free(ptrinx_unchecked(self.m.len().wrapping_add(1))),
+            });
+        } else {
+            self.freelist_root = source.freelist_root;
         }
     }
 
@@ -904,23 +896,21 @@ impl<P: Ptr, T: Clone> Clone for Arena<P, T> {
         }
 
         // Safety: `isize::MAX` guarantee
-        unsafe {
-            for i in self.m.len().wrapping_add(2)..old_virt_cap.wrapping_add(1) {
-                // point to next
-                self.m.push(Free(ptrinx_unchecked(i)));
-            }
-            if self.m.len() < old_virt_cap {
-                // new root starting at extension of `self.m` beyond `source.m`
-                self.freelist_root = Some(ptrinx_unchecked(source.m.len().wrapping_add(1)));
-                self.m.push(match source.freelist_root {
-                    // points to old root
-                    Some(inx) => Free(inx),
-                    // points to itself
-                    None => Free(ptrinx_unchecked(self.m.len().wrapping_add(1))),
-                });
-            } else {
-                self.freelist_root = source.freelist_root;
-            }
+        for i in self.m.len().wrapping_add(2)..old_virt_cap.wrapping_add(1) {
+            // point to next
+            self.m.push(Free(ptrinx_unchecked(i)));
+        }
+        if self.m.len() < old_virt_cap {
+            // new root starting at extension of `self.m` beyond `source.m`
+            self.freelist_root = Some(ptrinx_unchecked(source.m.len().wrapping_add(1)));
+            self.m.push(match source.freelist_root {
+                // points to old root
+                Some(inx) => Free(inx),
+                // points to itself
+                None => Free(ptrinx_unchecked(self.m.len().wrapping_add(1))),
+            });
+        } else {
+            self.freelist_root = source.freelist_root;
         }
     }
 }

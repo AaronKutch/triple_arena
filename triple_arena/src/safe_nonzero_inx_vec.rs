@@ -7,7 +7,7 @@ use core::num::NonZeroUsize;
 /// # Safety
 ///
 /// `x` must not be 0
-pub const unsafe fn nzusize_unchecked(x: usize) -> NonZeroUsize {
+pub const fn nzusize_unchecked(x: usize) -> NonZeroUsize {
     if let Some(nz) = NonZeroUsize::new(x) {
         nz
     } else {
@@ -15,7 +15,7 @@ pub const unsafe fn nzusize_unchecked(x: usize) -> NonZeroUsize {
     }
 }
 
-pub const NZONE: NonZeroUsize = unsafe { nzusize_unchecked(1) };
+pub const NZONE: NonZeroUsize = nzusize_unchecked(1);
 
 #[derive(Clone)]
 pub struct NonZeroInxVec<T> {

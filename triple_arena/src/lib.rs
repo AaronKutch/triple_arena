@@ -1,6 +1,7 @@
 #![no_std]
 // false positives
 #![allow(clippy::while_let_on_iterator)]
+#![deny(unsafe_code)]
 
 // TODO all places where we have an internal .get_..().unwrap() need to have
 // .get_inx_unwrap() (removes both the return and generation input wastage) do

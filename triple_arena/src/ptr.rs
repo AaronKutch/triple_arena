@@ -12,7 +12,7 @@ use crate::utils::nzusize_unchecked;
 /// Users should never have to implement this, it is implemented only for the
 /// `NonZeroU...` types and for `()`.
 #[allow(clippy::missing_safety_doc)]
-pub unsafe trait PtrGen:
+pub trait PtrGen:
     Debug
     + Hash
     + Clone
@@ -44,7 +44,7 @@ pub unsafe trait PtrGen:
 macro_rules! impl_gen {
     ($($x: ident)*) => {
         $(
-            unsafe impl PtrGen for $x {
+             impl PtrGen for $x {
                 #[inline]
                 fn one() -> Self {
                     Self::new(1).unwrap()
@@ -69,7 +69,7 @@ macro_rules! impl_gen {
 
 impl_gen!(NonZeroU8 NonZeroU16 NonZeroU32 NonZeroU64 NonZeroU128);
 
-unsafe impl PtrGen for () {
+impl PtrGen for () {
     #[inline]
     fn one() -> Self {}
 
@@ -85,7 +85,7 @@ unsafe impl PtrGen for () {
 /// Users should never have to implement this, it is implemented only for Rust's
 /// unsigned integers.
 #[allow(clippy::missing_safety_doc)]
-pub unsafe trait PtrInx:
+pub trait PtrInx:
     Debug
     + Hash
     + Clone
@@ -114,7 +114,7 @@ pub unsafe trait PtrInx:
 macro_rules! impl_ptr_inx {
     ($($nz:ident $x:ident);*;) => {
         $(
-            unsafe impl PtrInx for $nz {
+             impl PtrInx for $nz {
                 #[inline]
                 fn new(inx: NonZeroUsize) -> Self {
                     $nz::new(inx.get() as $x).unwrap()
@@ -148,7 +148,7 @@ impl_ptr_inx!(
 /// # Safety
 ///
 /// `x` must not be 0 and must be within the `PtrInx` limits
-pub unsafe fn ptrinx_unchecked<P: PtrInx>(x: usize) -> P {
+pub fn ptrinx_unchecked<P: PtrInx>(x: usize) -> P {
     PtrInx::new(nzusize_unchecked(x))
 }
 
@@ -166,7 +166,7 @@ pub unsafe fn ptrinx_unchecked<P: PtrInx>(x: usize) -> P {
 /// implementation should differentiate between pointers at the same index but
 /// different generation. `Default` should use the `invalid` function.
 #[allow(clippy::missing_safety_doc)]
-pub unsafe trait Ptr:
+pub trait Ptr:
     Debug
     + Hash
     + Clone
@@ -270,7 +270,7 @@ macro_rules! ptr_struct {
                 _internal_gen: $gen_type,
             }
 
-            unsafe impl $crate::Ptr for $struct_name {
+             impl $crate::Ptr for $struct_name {
                 type Inx = $inx_type;
                 type Gen = $gen_type;
 
@@ -351,7 +351,7 @@ macro_rules! ptr_struct {
                 _internal_gen: (),
             }
 
-            unsafe impl $crate::Ptr for $struct_name {
+             impl $crate::Ptr for $struct_name {
                 type Inx = $inx_type;
                 type Gen = ();
 
@@ -464,7 +464,7 @@ pub struct PtrNoGen<P: Ptr> {
     _internal_gen: (),
 }
 
-unsafe impl<P: Ptr> Ptr for PtrNoGen<P> {
+impl<P: Ptr> Ptr for PtrNoGen<P> {
     type Gen = ();
     type Inx = P::Inx;
 

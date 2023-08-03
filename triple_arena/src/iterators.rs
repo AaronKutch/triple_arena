@@ -29,9 +29,7 @@ impl<P: Ptr, T> Advancer for PtrAdvancer<P, T> {
         loop {
             let old_inx = self.inx;
             if let Some(allocation) = collection.m.get(old_inx) {
-                unsafe {
-                    self.inx = nzusize_unchecked(old_inx.get().wrapping_add(1));
-                }
+                self.inx = nzusize_unchecked(old_inx.get().wrapping_add(1));
                 if let Allocated(g, _) = allocation {
                     return Some(P::_from_raw(P::Inx::new(old_inx), *g))
                 }
@@ -85,7 +83,7 @@ impl<'a, P: Ptr, T> Iterator for ValsMut<'a, P, T> {
         if let Some(p) = self.adv.advance(self.arena) {
             let tmp = self.arena.get_mut(p).unwrap();
             // safety: subsequent calls to `next` will not access the same data
-            unsafe { Some(&mut *(tmp as *mut T)) }
+            unimplemented!()
         } else {
             None
         }
@@ -121,7 +119,7 @@ impl<'a, P: Ptr, T> Iterator for IterMut<'a, P, T> {
         if let Some(p) = self.adv.advance(self.arena) {
             let tmp = self.arena.get_mut(p).unwrap();
             // safety: subsequent calls to `next` will not access the same data
-            unsafe { Some((p, &mut *(tmp as *mut T))) }
+            unimplemented!()
         } else {
             None
         }

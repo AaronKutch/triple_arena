@@ -198,8 +198,16 @@ fn remove_only_ord_arena(bencher: &mut Bencher) {
     let insts = get_remove_insts();
     bencher.iter(|| {
         let mut i = 0;
+        //let mut j = 0;
         for inst in &insts {
             dbg!(i);
+            /*if i >= repr_inxs.len() {
+                j += 1;
+                if j > 1 {
+                    panic!();
+                }
+                continue;
+            }*/
             a.remove(repr_inxs.swap_remove(*inst)).unwrap();
             i += 1;
         }
