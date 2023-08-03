@@ -32,7 +32,7 @@ use crate::{utils::PtrInx, Arena, ChainArena, Link, Ptr};
 // really bad worst case removal scenarios.
 
 #[derive(Clone)]
-pub(in crate::ord_arena) struct Node<P: Ptr, K, V> {
+pub struct Node<P: Ptr, K, V> {
     pub k_v: (K, V),
     // Pointer back to parent
     pub p_back: Option<P::Inx>,

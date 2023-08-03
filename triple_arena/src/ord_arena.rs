@@ -1,5 +1,5 @@
 mod ord;
-pub use ord::OrdArena;
+pub use ord::{Node, OrdArena};
 mod find;
 mod insert;
 pub mod ord_iterators;

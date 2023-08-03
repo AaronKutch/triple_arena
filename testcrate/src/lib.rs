@@ -10,14 +10,10 @@ use triple_arena::{ptr_struct, Ptr};
 use triple_arena_render::*;
 
 #[cfg(miri)]
-pub const A: u64 = B << 1;
-#[cfg(miri)]
-pub const B: u64 = 1 << 8;
+pub const A: u64 = 1 << 8;
 
 #[cfg(not(miri))]
-pub const A: u64 = B << 1;
-#[cfg(not(miri))]
-pub const B: u64 = 1 << 11;
+pub const A: u64 = 1 << 11;
 
 pub struct MyNode<P: Ptr> {
     pub sources: Vec<(P, String)>,
@@ -54,7 +50,15 @@ thread_local! {
     pub static CLONE_COUNT: RefCell<u64> = RefCell::new(0);
     pub static CMP_COUNT: RefCell<u64> = RefCell::new(0);
     pub static VAL_NUM: RefCell<u64> = RefCell::new(0);
-    //pub static KEY_VAL_RECORD: RefCell<Arena<P1, (CKey, CVal)>> = RefCell::new(Arena::new());
+    pub static SEED: RefCell<u64> = RefCell::new(0);
+}
+
+pub fn get_next_seed() -> u64 {
+    SEED.with(|f| {
+        let x = *f.borrow();
+        *f.borrow_mut() = x.checked_add(1).unwrap();
+        x
+    })
 }
 
 pub fn get_clone_count() -> u64 {

@@ -5,7 +5,9 @@ use core::{marker::PhantomData, num::NonZeroUsize};
 use InternalEntry::*;
 
 use crate::{
-    nonzero_inx_vec::nzusize_unchecked, utils::PtrInx, Advancer, Arena, InternalEntry, Ptr,
+    arena::InternalEntry,
+    utils::{nzusize_unchecked, PtrInx},
+    Advancer, Arena, Ptr,
 };
 
 /// An advancer over the valid `P`s of an `Arena`
