@@ -10,14 +10,10 @@ use triple_arena::{ptr_struct, Ptr};
 use triple_arena_render::*;
 
 #[cfg(miri)]
-pub const A: u64 = B << 1;
-#[cfg(miri)]
-pub const B: u64 = 1 << 8;
+pub const A: u64 = 1 << 8;
 
 #[cfg(not(miri))]
-pub const A: u64 = B << 1;
-#[cfg(not(miri))]
-pub const B: u64 = 1 << 11;
+pub const A: u64 = 1 << 0;
 
 pub struct MyNode<P: Ptr> {
     pub sources: Vec<(P, String)>,

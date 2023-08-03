@@ -1,17 +1,17 @@
 use std::collections::BTreeMap;
 
 use rand_xoshiro::{rand_core::SeedableRng, Xoshiro128StarStar};
-use testcrate::{fuzz_fill_inst, get_cmp_count, CKey, CVal, A, B, P1};
+use testcrate::{fuzz_fill_inst, get_cmp_count, CKey, CVal, A, P1};
 use triple_arena::OrdArena;
 
 fn get_std_insts() -> Vec<Result<(CKey, CVal), usize>> {
     let mut rng = Xoshiro128StarStar::seed_from_u64(0);
     // we fill the arena up to `A` elements, then randomly insert and remove the
     // same number of `B` elements, then empty it in the same random way
-    let (mut insts, sim) = fuzz_fill_inst(&mut rng, &[], A, B);
-    let tmp = fuzz_fill_inst(&mut rng, &sim, B, B);
+    let (mut insts, sim) = fuzz_fill_inst(&mut rng, &[], 2 * A, A);
+    let tmp = fuzz_fill_inst(&mut rng, &sim, A, A);
     insts.extend_from_slice(&tmp.0);
-    let tmp = fuzz_fill_inst(&mut rng, &tmp.1, B, A);
+    let tmp = fuzz_fill_inst(&mut rng, &tmp.1, A, 2 * A);
     insts.extend_from_slice(&tmp.0);
     assert!(tmp.1.is_empty());
     insts
