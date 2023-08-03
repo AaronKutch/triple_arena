@@ -34,7 +34,7 @@ fn get_remove_insts() -> Vec<usize> {
     let (insts, _) = fuzz_fill_inst_bench(&mut rng, &sim, 0, 8 * A);
     insts.into_iter().map(|r| r.unwrap_err()).collect()
 }
-
+/*
 // simulates approximately what a perfect arena with no extra checks and the
 // same size of data could achieve
 #[bench]
@@ -185,7 +185,7 @@ fn remove_only_std_btree(bencher: &mut Bencher) {
         }
     })
 }
-
+*/
 #[bench]
 fn remove_only_ord_arena(bencher: &mut Bencher) {
     let mut a = OrdArena::<P1, u128, u128>::new();
