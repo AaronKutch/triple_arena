@@ -56,6 +56,9 @@ fn ord_arena_find_to_remove_count() {
     assert_eq!(get_cmp_count(), 159913);
 }
 
+// in case the implementation of `BTreeMap` changes, do not want to break CI or
+// crater
+/*
 #[test]
 fn std_btree_count() {
     let mut a = BTreeMap::<CKey, CVal>::new();
@@ -75,3 +78,4 @@ fn std_btree_count() {
     }
     assert_eq!(get_cmp_count(), 234337);
 }
+*/
