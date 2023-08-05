@@ -1,13 +1,17 @@
 [package]
 name = "triple_arena"
 # change the dependency used by `triple_arena_render` when the minor version or higher is changed
-version = "0.9.0"
+version = "0.10.0"
 edition = "2021"
 authors = ["Aaron Kutch <aaronkutch@att.net>"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/AaronKutch/triple_arena"
 documentation = "https://docs.rs/triple_arena"
-description = "Arena supporting non-Clone types, deletion, and more"
+description = "Regular, Chain, Surjection, and Ordered Arenas supporting non-Clone types, deletion, and more"
 keywords = ["arena", "generation", "no_std"]
 categories = ["memory-management", "data-structures", "no-std"]
+
+[features]
+# this is only for testing purposes
+expose_internal_utils = []

@@ -4,15 +4,22 @@ use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::{ptr_struct, ChainArena, Ptr};
+use testcrate::P0;
+use triple_arena::{Advancer, ChainArena, Ptr};
+
+const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
+
+const STATS: (usize, usize, u128) = if cfg!(miri) {
+    (13, 1, 220)
+} else {
+    (44, 1070, 217040)
+};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
         $rng.next_u32() as usize % $len
     };
 }
-
-ptr_struct!(P0);
 
 #[test]
 #[allow(clippy::type_complexity)]
@@ -43,14 +50,16 @@ fn fuzz_chain() {
     let mut iters999 = 0;
     let mut max_len = 0;
 
-    for _ in 0..1_000_000 {
+    for _ in 0..N {
         assert_eq!(a.len(), list.len());
         assert_eq!(b.len(), a.len());
         assert_eq!(a.gen().get(), gen);
         assert_eq!(a.is_empty(), list.is_empty());
         let len = list.len();
-        if let Err(e) = ChainArena::_check_invariants(&a) {
-            panic!("{e}");
+        if !cfg!(miri) {
+            if let Err(e) = ChainArena::_check_invariants(&a) {
+                panic!("{e}");
+            }
         }
         op_inx = rng.next_u32() % 1000;
         match op_inx {
@@ -319,8 +328,8 @@ fn fuzz_chain() {
                         }
                     }
                 } else {
-                    assert!(a.insert_start(invalid, u64::MAX).is_none());
-                    assert!(a.insert_end(invalid, u64::MAX).is_none());
+                    assert_eq!(a.insert_start(invalid, u64::MAX), Err(u64::MAX));
+                    assert_eq!(a.insert_end(invalid, u64::MAX), Err(u64::MAX));
                 }
             }
             200..=399 => {
@@ -423,7 +432,31 @@ fn fuzz_chain() {
                     assert!(a.exchange_next(invalid, invalid).is_none());
                 }
             }
-            700..=849 => {
+            700..=709 => {
+                // get_link, get_link_mut, get, get_mut, Index, IndexMut
+                if len != 0 {
+                    let t = list[next_inx!(rng, len)];
+                    let (ptr, interlink) = b[&t];
+                    let link = a.get_link(ptr).unwrap();
+                    assert_eq!(link.prev(), interlink.0.map(|t| b[&t].0));
+                    assert_eq!(link.next(), interlink.1.map(|t| b[&t].0));
+                    assert_eq!(link.t, t);
+                    let link = a.get_link_mut(ptr).unwrap();
+                    assert_eq!(link.prev(), interlink.0.map(|t| b[&t].0));
+                    assert_eq!(link.next(), interlink.1.map(|t| b[&t].0));
+                    assert_eq!(*link.t, t);
+                    assert_eq!(&a[ptr], &t);
+                    assert_eq!(*a.get(ptr).unwrap(), t);
+                    assert_eq!(*a.get_mut(ptr).unwrap(), t);
+                    assert_eq!(&a[ptr], &t);
+                    let tmp = &mut a[ptr];
+                    assert_eq!(*tmp, t);
+                } else {
+                    assert!(a.get(invalid).is_none());
+                    assert!(a.get_mut(invalid).is_none());
+                }
+            }
+            710..=749 => {
                 // invalidate
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
@@ -434,9 +467,96 @@ fn fuzz_chain() {
                     // do not need to be updated because we are looking up based on the `t` value
                     // which is unchanged. This includes single link cyclic chains
                     b.insert(t, (new_ptr, interlink));
-                    assert_eq!(t, a[new_ptr].t);
+                    assert_eq!(t, *a.get(new_ptr).unwrap());
                 } else {
                     assert!(a.invalidate(invalid).is_none());
+                }
+            }
+            750..=799 => {
+                // replace_and_keep_gen
+                if len != 0 {
+                    let t = list.swap_remove(next_inx!(rng, len));
+                    let t_new = new_t();
+                    list.push(t_new);
+                    let interlink = b[&t].1;
+                    // correct `t`-based interlinks, do this before other replacements so we don't
+                    // have to special case cyclical chains
+                    if let Some(interlink) = interlink.0 {
+                        let tmp = b.get_mut(&interlink).unwrap();
+                        if let Some(ref mut tmp) = tmp.1 .0 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                        if let Some(ref mut tmp) = tmp.1 .1 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                    }
+                    if let Some(interlink) = interlink.1 {
+                        let tmp = b.get_mut(&interlink).unwrap();
+                        if let Some(ref mut tmp) = tmp.1 .0 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                        if let Some(ref mut tmp) = tmp.1 .1 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                    }
+                    let (ptr, interlink) = b.remove(&t).unwrap();
+                    let t_old = a.replace_and_keep_gen(ptr, t_new).unwrap();
+                    assert_eq!(t, t_old);
+                    b.insert(t_new, (ptr, interlink));
+                } else {
+                    assert_eq!(a.replace_and_keep_gen(invalid, u64::MAX), Err(u64::MAX));
+                }
+            }
+            800..=849 => {
+                // replace_and_update_gen
+                if len != 0 {
+                    let t = list.swap_remove(next_inx!(rng, len));
+                    let t_new = new_t();
+                    list.push(t_new);
+                    let interlink = b[&t].1;
+                    // correct `t`-based interlinks, do this before other replacements so we don't
+                    // have to special case cyclical chains
+                    if let Some(interlink) = interlink.0 {
+                        let tmp = b.get_mut(&interlink).unwrap();
+                        if let Some(ref mut tmp) = tmp.1 .0 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                        if let Some(ref mut tmp) = tmp.1 .1 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                    }
+                    if let Some(interlink) = interlink.1 {
+                        let tmp = b.get_mut(&interlink).unwrap();
+                        if let Some(ref mut tmp) = tmp.1 .0 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                        if let Some(ref mut tmp) = tmp.1 .1 {
+                            if *tmp == t {
+                                *tmp = t_new;
+                            }
+                        }
+                    }
+                    let (ptr, interlink) = b.remove(&t).unwrap();
+                    let (t_old, ptr_new) = a.replace_and_update_gen(ptr, t_new).unwrap();
+                    gen += 1;
+                    assert_eq!(t, t_old);
+                    b.insert(t_new, (ptr_new, interlink));
+                } else {
+                    assert_eq!(a.replace_and_keep_gen(invalid, u64::MAX), Err(u64::MAX));
                 }
             }
             850..=899 => {
@@ -474,7 +594,7 @@ fn fuzz_chain() {
                     assert!(a.swap(invalid, invalid).is_none());
                 }
             }
-            900..=979 => {
+            900..=959 => {
                 // are_neighbors
                 if len != 0 {
                     let t0 = list[next_inx!(rng, len)];
@@ -490,25 +610,52 @@ fn fuzz_chain() {
                     assert!(!a.are_neighbors(invalid, invalid));
                 }
             }
+            960..=969 => {
+                // get2_mut
+                if len == 0 {
+                    assert!(a.get2_mut(invalid, invalid).is_none());
+                } else {
+                    let p0 = b[&list[next_inx!(rng, len)]].0;
+                    let p1 = b[&list[next_inx!(rng, len)]].0;
+                    if p0 == p1 {
+                        assert!(a.get2_mut(p0, p1).is_none());
+                    } else {
+                        let tmp = a.get2_mut(p0, p1).unwrap();
+                        assert_eq!((*tmp.0, *tmp.1), (*a.get(p0).unwrap(), *a.get(p1).unwrap()));
+                    }
+                }
+            }
+            970..=979 => {
+                // advancer
+                let mut i = 0;
+                let rand_insert_i = if len == 0 { 0 } else { next_inx!(rng, len) };
+                let mut adv = a.advancer();
+                while let Some(p) = adv.advance(&a) {
+                    assert_eq!(p, b[&a[p]].0);
+                    // insert at random time
+                    if i == rand_insert_i {
+                        let t = new_t();
+                        let ptr = a.insert_new(t);
+                        b.insert(t, (ptr, (None, None)));
+                        list.push(t);
+                    }
+                    i += 1;
+                }
+                // depends on the invalidated elements witnessed
+                assert!((i == len.saturating_sub(1)) || (i == len) || (i == (len + 1)));
+            }
             980..=984 => {
-                // next_chain_ptr
+                // advancer_chain
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
                     let mut t_to_explore = HashSet::new();
                     let mut iters = 0;
 
-                    let init = b[&t].0;
-                    let mut p = init;
-                    let mut switch = false;
-                    let mut stop = !a.contains(init);
-                    loop {
-                        if stop {
-                            break
-                        }
-                        t_to_explore.insert(a[p].t);
+                    let mut adv = a.advancer_chain(b[&t].0);
+                    while let Some(p) = adv.advance(&a) {
+                        t_to_explore.insert(a.get(p).unwrap());
                         // make sure we aren't double counting and the hash set is just dropping
                         iters += 1;
-                        a.next_chain_ptr(init, &mut p, &mut switch, &mut stop);
                     }
                     assert_eq!(t_to_explore.len(), iters);
 
@@ -533,9 +680,8 @@ fn fuzz_chain() {
                     }
                     assert!(t_to_explore.is_empty());
                 } else {
-                    let mut stop = false;
-                    a.next_chain_ptr(invalid, &mut P0::invalid(), &mut false, &mut stop);
-                    assert!(stop);
+                    let mut adv = a.advancer_chain(P0::invalid());
+                    assert!(adv.advance(&a).is_none());
                 }
             }
             985..=989 => {
@@ -544,22 +690,16 @@ fn fuzz_chain() {
                     let t = list[next_inx!(rng, len)];
                     let init = b[&t].0;
                     let mut iter = a.iter_chain(init);
-                    let mut p = init;
-                    let mut switch = false;
-                    let mut stop = !a.contains(init);
-                    loop {
-                        if stop {
-                            break
-                        }
-                        assert_eq!(iter.next().unwrap(), (p, &a[p]));
-                        a.next_chain_ptr(init, &mut p, &mut switch, &mut stop);
+                    let mut adv = a.advancer_chain(init);
+                    while let Some(p) = adv.advance(&a) {
+                        assert_eq!(iter.next().unwrap(), (p, a.get_link(p).unwrap()));
                     }
                 } else {
                     let mut iter = a.iter_chain(invalid);
                     assert!(iter.next().is_none());
                 }
             }
-            990..=997 => {
+            990..=994 => {
                 // remove_chain
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
@@ -601,9 +741,47 @@ fn fuzz_chain() {
                     assert!(a.remove_chain(invalid).is_none());
                 }
             }
+            995 => {
+                // iter, iter_mut, ptrs, vals, vals_mut
+                for (ptr, link) in &a {
+                    assert_eq!(b[&link.t].0, ptr);
+                }
+                for (ptr, link) in &mut a {
+                    assert_eq!(b[link.t].0, ptr);
+                }
+                for ptr in a.ptrs() {
+                    assert!(a.contains(ptr));
+                }
+                for link in a.vals() {
+                    assert!(b.contains_key(&link.t));
+                }
+                for link in a.vals_mut() {
+                    assert!(b.contains_key(link.t));
+                }
+            }
+            996 => {
+                // drain
+                let prev_cap = a.capacity();
+                for (ptr, link) in a.drain() {
+                    assert_eq!(b[&link.t].0, ptr);
+                }
+                assert_eq!(a.capacity(), prev_cap);
+                b.clear();
+                gen += 1;
+                list.clear();
+            }
+            997 => {
+                // capacity_drain via the `IntoIter` impl
+                let a_clone = a.clone();
+                for (ptr, link) in a_clone {
+                    assert_eq!(b[&link.t].0, ptr);
+                }
+            }
             998 => {
                 // clear
+                let prev_cap = a.capacity();
                 a.clear();
+                assert_eq!(a.capacity(), prev_cap);
                 b.clear();
                 gen += 1;
                 list.clear();
@@ -611,6 +789,7 @@ fn fuzz_chain() {
             999 => {
                 // clear_and_shrink
                 a.clear_and_shrink();
+                assert_eq!(a.capacity(), 0);
                 b.clear();
                 gen += 1;
                 list.clear();
@@ -620,5 +799,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), (35, 1051, 248502));
+    assert_eq!((max_len, iters999, a.gen().get()), STATS);
 }

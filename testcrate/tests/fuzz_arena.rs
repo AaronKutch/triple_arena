@@ -4,15 +4,22 @@ use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::{ptr_struct, Arena};
+use testcrate::P0;
+use triple_arena::{Advancer, Arena};
+
+const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
+
+const STATS: (usize, usize, u128) = if cfg!(miri) {
+    (1, 11, 238)
+} else {
+    (1067, 72, 138829)
+};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
         $rng.next_u32() as usize % $len
     };
 }
-
-ptr_struct!(P0);
 
 #[test]
 fn fuzz_arena() {
@@ -51,13 +58,15 @@ fn fuzz_arena() {
     a.clear_and_shrink();
     gen += 1;
 
-    for _ in 0..1_000_000 {
+    for _ in 0..N {
         assert_eq!(b.len(), list.len());
         assert_eq!(a.len(), b.len());
         assert_eq!(a.gen().get(), gen);
         let len = list.len();
         assert_eq!(a.is_empty(), b.is_empty());
-        Arena::_check_invariants(&a).unwrap();
+        if !cfg!(miri) {
+            Arena::_check_invariants(&a).unwrap();
+        }
         op_inx = rng.next_u32() % 1000;
         // I am only using inclusive ranges because exclusive ones are not stable as of
         // writing
@@ -165,7 +174,7 @@ fn fuzz_arena() {
                     let t0 = list.swap_remove(next_inx!(rng, len));
                     let t1 = new_t();
                     let old_ptr = b.remove(&t0).unwrap();
-                    let (new_ptr, output_t) = a.replace_and_update_gen(old_ptr, t1).unwrap();
+                    let (output_t, new_ptr) = a.replace_and_update_gen(old_ptr, t1).unwrap();
                     gen += 1;
                     assert_eq!(t0, output_t);
                     list.push(t1);
@@ -280,15 +289,12 @@ fn fuzz_arena() {
                 assert_eq!(n, list.len());
             }
             940..=949 => {
-                // canonical first_ptr/next_ptr loop
+                // advancer
                 let mut i = 0;
                 let rand_remove_i = if len == 0 { 0 } else { next_inx!(rng, len) };
                 let rand_insert_i = if len == 0 { 0 } else { next_inx!(rng, len) };
-                let (mut p, mut bo) = a.first_ptr();
-                loop {
-                    if bo {
-                        break
-                    }
+                let mut adv = a.advancer();
+                while let Some(p) = adv.advance(&a) {
                     assert_eq!(p, b[&a[p]]);
 
                     // remove and insert at random times
@@ -304,8 +310,6 @@ fn fuzz_arena() {
                         assert_eq!(t, a.remove(ptr).unwrap());
                         gen += 1;
                     }
-
-                    a.next_ptr(&mut p, &mut bo);
                     i += 1;
                 }
                 // depends on the invalidated elements witnessed
@@ -406,6 +410,7 @@ fn fuzz_arena() {
             999 => {
                 // clear_and_shrink
                 a.clear_and_shrink();
+                assert_eq!(a.capacity(), 0);
                 gen += 1;
                 list.clear();
                 b.clear();
@@ -417,8 +422,12 @@ fn fuzz_arena() {
     }
     // I may need a custom allocator, because some of the determinism is dependent
     // on the interactions between `reserve` and `try_insert`
-    assert_eq!((iters999, max_len, a.gen().get()), (1067, 72, 138831));
+    assert_eq!((iters999, max_len, a.gen().get()), STATS);
 }
+
+const M: usize = if cfg!(miri) { 1000 } else { 100_000 };
+
+const STATS_2: (usize, u128) = if cfg!(miri) { (23, 450) } else { (77, 46957) };
 
 // for testing `clone` and `clone_from` which interact between multiple arenas
 #[test]
@@ -426,7 +435,7 @@ fn fuzz_multi_arena() {
     fn inner(
         rng: &mut Xoshiro128StarStar,
         a: &mut Arena<P0, u64>,
-        gen: &mut u64,
+        gen: &mut u128,
         b: &mut HashMap<u64, P0>,
         list: &mut Vec<u64>,
         new_t: &mut dyn FnMut() -> u64,
@@ -435,7 +444,9 @@ fn fuzz_multi_arena() {
         assert_eq!(a.len(), b.len());
         assert_eq!(a.gen().get(), *gen);
         assert_eq!(a.is_empty(), b.is_empty());
-        Arena::_check_invariants(a).unwrap();
+        if !cfg!(miri) {
+            Arena::_check_invariants(a).unwrap();
+        }
         let len = a.len();
         match rng.next_u32() % 1000 {
             0..=499 => {
@@ -456,7 +467,9 @@ fn fuzz_multi_arena() {
             }
             998 => {
                 // clear
+                let prev_cap = a.capacity();
                 a.clear();
+                assert_eq!(a.capacity(), prev_cap);
                 *gen += 1;
                 list.clear();
                 b.clear();
@@ -464,6 +477,7 @@ fn fuzz_multi_arena() {
             999 => {
                 // clear_and_shrink
                 a.clear_and_shrink();
+                assert_eq!(a.capacity(), 0);
                 *gen += 1;
                 list.clear();
                 b.clear();
@@ -498,7 +512,7 @@ fn fuzz_multi_arena() {
     // determinism
     let mut max_len0 = 0;
 
-    for _ in 0..100_000 {
+    for _ in 0..M {
         inner(
             &mut rng, &mut a0, &mut gen0, &mut b0, &mut list0, &mut new_t,
         );
@@ -545,5 +559,5 @@ fn fuzz_multi_arena() {
             _ => unreachable!(),
         }
     }
-    assert_eq!((max_len0, a0.gen().get()), (77, 46957));
+    assert_eq!((max_len0, a0.gen().get()), STATS_2);
 }

@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.10.0] - 2023-08-05
+### Fixes
+- Changed the `Index` and `IndexMut` impls of `ChainArena` to return `&T` and `&mut T` respectively,
+  this removes an unintentional place where chains could be broken.
+
+### Changes
+- Replaced all `first_ptr`, `next_ptr`, and similar functions with the `Advance` paradigm
+- Changed `Link::prev` and others to take `&self`, moved `ChainArena::get` and mutable versions to
+  `ChainArena::get_link`, made `ChainArena::get` return just the `&T`.
+- Changed order of returned parameters of the `replace_and_update_gen` functions
+- Fixed `ChainArena::insert_start` and `ChainArena::insert_end` to return `Result` and actually
+  return ownership on failure like the documentation says
+- Some iterator structs have more parameters
+- The pointer traits are now `unsafe` and should only be implemented through `ptr_struct`
+- Slightly optimized `SurjectArena`
+- Refactored iterator struct organization
+- Added `Unpin + RefUnwindSafe + UnwindSafe` to the pointer traits
+
+### Additions
+- Added `OrdArena`
+- Added `Advance`
+- Added `ArenaTrait`
+- Added several Arena cloning functions
+- Added `PtrNoGen<P>`
+- Added `ChainArena::replace_and_keep_gen` and `ChainArena::replace_and_update_gen`
+- Added missing `IntoIterator` and `FromIterator` impls
+- Added several hidden functions for getting entries while ignoring generation counters
+
 ## [0.9.0] - 2023-06-04
 ### Changes
 - Completely overhauled `SurjectArena` to have three generic parameters

@@ -1,21 +1,29 @@
 use std::{
     cmp::max,
     collections::{HashMap, HashSet},
+    hint::black_box,
 };
 
 use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
-use triple_arena::{ptr_struct, Ptr, SurjectArena};
+use testcrate::P0;
+use triple_arena::{Advancer, Ptr, SurjectArena};
+
+const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
+
+const STATS: (usize, usize, u64, u128) = if cfg!(miri) {
+    (8, 3, 0, 71)
+} else {
+    (43, 11, 1047, 78918)
+};
 
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
         $rng.next_u32() as usize % $len
     };
 }
-
-ptr_struct!(P0);
 
 #[test]
 fn fuzz_surject() {
@@ -69,30 +77,32 @@ fn fuzz_surject() {
     let mut max_key_len = 0;
     let mut max_val_len = 0;
 
-    for _ in 0..1_000_000 {
+    for _ in 0..N {
         assert_eq!(a.len_vals(), list.len());
         assert_eq!(a.len_vals(), b.len());
         let len = list.len();
-        let mut len_keys = 0;
-        for set in b.values() {
-            assert!(!set.is_empty());
-            let set_len = set.len();
-            assert_eq!(
-                set.len(),
-                a.len_key_set(set[next_inx!(rng, set_len)].p).unwrap().get()
-            );
-            len_keys += set_len;
-        }
-        assert_eq!(a.len_keys(), len_keys);
         if a.gen().get() != gen {
             dbg!(a.gen().get(), gen, op_inx);
             panic!();
         }
         assert_eq!(a.gen().get(), gen);
         assert_eq!(a.is_empty(), list.is_empty());
-        if let Err(e) = SurjectArena::_check_invariants(&a) {
-            dbg!(op_inx);
-            panic!("{e}");
+        if !cfg!(miri) {
+            let mut len_keys = 0;
+            for set in b.values() {
+                assert!(!set.is_empty());
+                let set_len = set.len();
+                assert_eq!(
+                    set.len(),
+                    a.len_key_set(set[next_inx!(rng, set_len)].p).unwrap().get()
+                );
+                len_keys += set_len;
+            }
+            assert_eq!(a.len_keys(), len_keys);
+            if let Err(e) = SurjectArena::_check_invariants(&a) {
+                dbg!(op_inx);
+                panic!("{e}");
+            }
         }
         op_inx = rng.next_u32() % 1000;
         match op_inx {
@@ -462,7 +472,7 @@ fn fuzz_surject() {
                     assert!(a.swap_vals(invalid, invalid).is_none());
                 }
             }
-            600..=979 => {
+            600..=969 => {
                 // reserved
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
@@ -475,8 +485,23 @@ fn fuzz_surject() {
                     assert!(a.get(invalid).is_none());
                 }
             }
+            970..=979 => {
+                // advancer
+                let mut i = 0;
+                let mut adv = a.advancer();
+                while let Some(p) = adv.advance(&a) {
+                    assert!(a.contains(p));
+                    i += 1;
+                }
+                // depends on the invalidated elements witnessed
+                assert!(
+                    (i == a.len_keys().saturating_sub(1))
+                        || (i == a.len_keys())
+                        || (i == (a.len_keys() + 1))
+                );
+            }
             980..=989 => {
-                // next_surject_ptr
+                // advancer_surject
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
                     let set = &b[&v];
@@ -485,18 +510,10 @@ fn fuzz_surject() {
                     let mut iters = 0;
                     let mut seen = HashSet::new();
 
-                    let init = pair.p;
-                    let mut p = init;
-                    let mut stop = !a.contains(init);
-                    loop {
-                        if stop {
-                            break
-                        }
-
+                    let mut adv = a.advancer_surject(pair.p);
+                    while let Some(p) = adv.advance(&a) {
                         seen.insert(p);
                         iters += 1;
-
-                        a.next_surject_ptr(init, &mut p, &mut stop);
                     }
                     assert_eq!(seen.len(), iters);
 
@@ -505,43 +522,59 @@ fn fuzz_surject() {
                     }
                     assert!(seen.is_empty());
                 } else {
-                    let mut stop = false;
-                    a.next_surject_ptr(invalid, &mut P0::invalid(), &mut stop);
-                    assert!(stop);
+                    let mut adv = a.advancer_surject(P0::invalid());
+                    assert!(adv.advance(&a).is_none());
                 }
             }
-            990..=997 => {
+            990..=996 => {
                 // iter_surject
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
                     let set = &b[&v];
                     let set_len = set.len();
                     let pair = set[next_inx!(rng, set_len)];
-                    let mut iter = a.iter_surject(pair.p);
-
                     let init = pair.p;
-                    let mut p = init;
-                    let mut stop = !a.contains(init);
-                    loop {
-                        if stop {
-                            break
-                        }
-
+                    let mut iter = a.iter_surject(init);
+                    let mut adv = a.advancer_surject(init);
+                    while let Some(p) = adv.advance(&a) {
                         assert_eq!(
                             iter.next().unwrap(),
                             (p, a.get_key(p).unwrap(), a.get_val(p).unwrap())
                         );
-
-                        a.next_surject_ptr(init, &mut p, &mut stop);
                     }
                 } else {
                     let mut iter = a.iter_surject(invalid);
                     assert!(iter.next().is_none());
                 }
             }
+            997 => {
+                // iter, keys, keys_mut, ptrs, vals, vals_mut
+                for (_, _, v) in &a {
+                    assert!(b.contains_key(v));
+                }
+                for k in a.keys() {
+                    black_box(k);
+                }
+                for k in a.keys_mut() {
+                    black_box(k);
+                }
+                for p in a.ptrs() {
+                    black_box(p);
+                }
+                for v in a.vals() {
+                    assert!(b.contains_key(v));
+                }
+                for v in a.vals_mut() {
+                    assert!(b.contains_key(v));
+                }
+            }
             998 => {
                 // clear
+                let prev_cap_keys = a.capacity_keys();
+                let prev_cap_vals = a.capacity_vals();
                 a.clear();
+                assert_eq!(a.capacity_keys(), prev_cap_keys);
+                assert_eq!(a.capacity_vals(), prev_cap_vals);
                 b.clear();
                 gen += 1;
                 list.clear();
@@ -549,6 +582,8 @@ fn fuzz_surject() {
             999 => {
                 // clear_and_shrink
                 a.clear_and_shrink();
+                assert_eq!(a.capacity_keys(), 0);
+                assert_eq!(a.capacity_vals(), 0);
                 b.clear();
                 gen += 1;
                 list.clear();
@@ -559,8 +594,5 @@ fn fuzz_surject() {
         max_key_len = max(max_key_len, a.len_keys());
         max_val_len = max(max_val_len, a.len_vals());
     }
-    assert_eq!(
-        (max_key_len, max_val_len, iters999, a.gen().get()),
-        (46, 12, 1004, 79192)
-    );
+    assert_eq!((max_key_len, max_val_len, iters999, a.gen().get()), STATS);
 }

@@ -1,0 +1,31 @@
+use rand_xoshiro::{rand_core::SeedableRng, Xoshiro128StarStar};
+use testcrate::{fuzz_fill_inst, CKey, CVal, A, P1};
+use triple_arena::Arena;
+
+#[test]
+fn test_inst_framework() {
+    let mut rng = Xoshiro128StarStar::seed_from_u64(0);
+
+    let mut a = Arena::<P1, (CKey, CVal)>::new();
+    let mut repr = vec![];
+    let mut repr_inxs = vec![];
+    let (insts, expected) = fuzz_fill_inst(&mut rng, &repr, 2 * A, A);
+    for inst in insts {
+        match inst {
+            Ok(pair) => {
+                repr.push((pair.0.clone_uncounting(), pair.1.clone_uncounting()));
+                repr_inxs.push(a.insert(pair));
+            }
+            Err(inx) => {
+                a.remove(repr_inxs.swap_remove(inx)).unwrap();
+                repr.swap_remove(inx);
+            }
+        }
+    }
+    assert_eq!(repr, expected);
+}
+
+#[test]
+fn clone_from_to() {
+    // TODO test all `clone_from` and `clone_to` functions
+}
