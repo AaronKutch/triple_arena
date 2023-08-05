@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.10.0] - TODO
+## [0.10.0] - 2023-08-05
 ### Fixes
 - Changed the `Index` and `IndexMut` impls of `ChainArena` to return `&T` and `&mut T` respectively,
   this removes an unintentional place where chains could be broken.
