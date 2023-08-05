@@ -207,15 +207,18 @@ pub unsafe trait Ptr:
     fn _from_raw(inx: Self::Inx, gen: Self::Gen) -> Self;
 }
 
-/// Convenience macro for quickly making new structs that implement `Ptr`. By
-/// default, `usize` is used for the index type and `NonZeroU64` is used for the
-/// generation type. The struct name can be followed by square brackets
-/// containing the type used for the index which can include `u8` through
-/// `u128`. After the optional square brackets, optional parenthesis can be
-/// added which contain the the generation type which can be `NonZeroU8` through
-/// `NonZeroU128`. The parenthesis can also be empty in which case the Arena
-/// will not use generation counters. This all can be followed by a comma
-/// separated list of attributes.
+/// Convenience macro for quickly making new structs that implement `Ptr`. The
+/// index and generation types can be changed to be smaller for less memory
+/// footprint in exchange for smaller maximum arena capacity and generations.
+///
+/// By default, `NonZeroUsize` is used for the index type and `NonZeroU64` is
+/// used for the generation type. The struct name can be followed by square
+/// brackets containing the type used for the index which can include
+/// `NonZeroU8` through `NonZeroU128`. After the optional square brackets,
+/// optional parenthesis can be added which contain the the generation type
+/// which can be `NonZeroU8` through `NonZeroU128`. The parenthesis can also be
+/// empty in which case the Arena will not use generation counters. This all can
+/// be followed by a comma separated list of attributes.
 ///
 /// ```
 /// use core::num::{NonZeroU16, NonZeroU8};
@@ -228,8 +231,7 @@ pub unsafe trait Ptr:
 /// ptr_struct!(P0 doc="An example struct `P0` that implements `Ptr`");
 /// let _: Arena<P0, String>;
 ///
-///
-/// // `P1` will have a smaller `u16` index type
+/// // `P1` will have a smaller `NonZeroU16` index type
 /// ptr_struct!(P1[NonZeroU16]);
 ///
 /// // `P2` will have a smaller `NonZeroU16` generation type

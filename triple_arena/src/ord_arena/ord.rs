@@ -117,6 +117,12 @@ pub struct Node<P: Ptr, K, V> {
 ///     assert_eq!(expected[i], (p, *key));
 /// }
 /// ```
+///
+/// Note: due to a known problem with cache locality, insert and find operations
+/// can take twice the time they would on a `BTreeMap`. A future `triple_arena`
+/// version will hopefully find a way to fix this, however it should still be
+/// faster in many cases if `Ptr`s can be reused multiple times. Try to minimize
+/// the points where `find_key` is required.
 pub struct OrdArena<P: Ptr, K, V> {
     pub(in crate::ord_arena) root: P::Inx,
     pub(in crate::ord_arena) first: P::Inx,

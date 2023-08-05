@@ -39,9 +39,7 @@ use InternalEntry::*;
 
 /// An arena supporting non-Clone `T` (`T` has no requirements other than
 /// `Sized`, but some traits are only active if `T` implements them), deletion,
-/// and optional generation counters. The index and generation types can be
-/// changed to be smaller for less memory footprint in exchange for smaller
-/// maximum capacity.
+/// and optional generation counters.
 ///
 /// `P` is a struct implementing `Ptr`, which has associated types for
 /// determining what the arena's indexes and generation counters should be.
@@ -79,7 +77,9 @@ use InternalEntry::*;
 /// let hello_ptr: P0 = arena.insert("hello".to_string());
 ///
 /// // Nice debug representations. See also the `triple_arena_render` crate for
-/// // trait-based rendering of graphs.
+/// // trait-based rendering of graphs. Note that the internal indexes are
+/// // starting at 1 because `NonZero` types are used. This allows for memory
+/// // niche optimizations of `Option<P>` and other such things.
 /// assert_eq!(
 ///     &format!("{:?}", arena),
 ///     "{P0[1](2): \"test\", P0[2](2): \"hello\"}"
