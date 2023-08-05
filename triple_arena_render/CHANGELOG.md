@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0] - TODO
+### Crate
+- `triple_arena` 0.10.0
+
+### Changes
+- The impl of `DebugNodeTrait` for `Link` is now predicated on `T: DebugNodeTrait` and forwards the
+  call to the `T`
+
 ## [0.9.0] - 2023-06-04
 ### Crate
 - `triple_arena` 0.9.0

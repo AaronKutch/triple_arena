@@ -1,4 +1,7 @@
-use crate::{Arena, ChainArena, Link, OrdArena, Ptr, SurjectArena};
+use crate::{
+    chain_iterators, iterators, ord_iterators, surject_iterators, Advancer, Arena, ChainArena,
+    Link, OrdArena, Ptr, SurjectArena,
+};
 
 /// A trait that encapsulates some common functions across the different arena
 /// types. Intended for functions that want to be generic over the arenas.
@@ -7,6 +10,7 @@ pub trait ArenaTrait {
     type P: Ptr;
     /// The element type
     type E;
+    type Adv: Advancer;
 
     fn new() -> Self;
     fn capacity(&self) -> usize;
@@ -16,12 +20,14 @@ pub trait ArenaTrait {
     fn insert(&mut self, e: Self::E) -> Self::P;
     fn remove(&mut self, p: Self::P) -> Option<Self::E>;
     fn get(&self, p: Self::P) -> Option<&Self::E>;
+    fn advancer(&self) -> Self::Adv;
     fn contains(&self, p: Self::P) -> bool;
     fn clear(&mut self);
     fn clear_and_shrink(&mut self);
 }
 
 impl<P: Ptr, T> ArenaTrait for Arena<P, T> {
+    type Adv = iterators::PtrAdvancer<P, T>;
     type E = T;
     type P = P;
 
@@ -57,6 +63,10 @@ impl<P: Ptr, T> ArenaTrait for Arena<P, T> {
         self.get(p)
     }
 
+    fn advancer(&self) -> Self::Adv {
+        self.advancer()
+    }
+
     fn contains(&self, p: Self::P) -> bool {
         self.contains(p)
     }
@@ -71,6 +81,7 @@ impl<P: Ptr, T> ArenaTrait for Arena<P, T> {
 }
 
 impl<P: Ptr, T> ArenaTrait for ChainArena<P, T> {
+    type Adv = chain_iterators::PtrAdvancer<P, T>;
     type E = Link<P, T>;
     type P = P;
 
@@ -111,6 +122,10 @@ impl<P: Ptr, T> ArenaTrait for ChainArena<P, T> {
         self.get_link(p)
     }
 
+    fn advancer(&self) -> Self::Adv {
+        self.advancer()
+    }
+
     fn contains(&self, p: Self::P) -> bool {
         self.contains(p)
     }
@@ -125,6 +140,7 @@ impl<P: Ptr, T> ArenaTrait for ChainArena<P, T> {
 }
 
 impl<P: Ptr, K> ArenaTrait for SurjectArena<P, K, ()> {
+    type Adv = surject_iterators::PtrAdvancer<P, K, ()>;
     type E = K;
     type P = P;
 
@@ -160,6 +176,10 @@ impl<P: Ptr, K> ArenaTrait for SurjectArena<P, K, ()> {
         self.get_key(p)
     }
 
+    fn advancer(&self) -> Self::Adv {
+        self.advancer()
+    }
+
     fn contains(&self, p: Self::P) -> bool {
         self.contains(p)
     }
@@ -174,6 +194,7 @@ impl<P: Ptr, K> ArenaTrait for SurjectArena<P, K, ()> {
 }
 
 impl<P: Ptr, K: Ord, V> ArenaTrait for OrdArena<P, K, V> {
+    type Adv = ord_iterators::PtrAdvancer<P, K, V>;
     type E = (K, V);
     type P = P;
 
@@ -208,6 +229,10 @@ impl<P: Ptr, K: Ord, V> ArenaTrait for OrdArena<P, K, V> {
 
     fn get(&self, p: Self::P) -> Option<&Self::E> {
         self.get(p)
+    }
+
+    fn advancer(&self) -> Self::Adv {
+        self.advancer()
     }
 
     fn contains(&self, p: Self::P) -> bool {

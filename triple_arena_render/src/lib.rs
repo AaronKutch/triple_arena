@@ -107,24 +107,9 @@ impl<P: Ptr> DebugNodeTrait<P> for DebugNode<P> {
     }
 }
 
-impl<P: Ptr, T: Debug> DebugNodeTrait<P> for Link<P, T> {
-    fn debug_node(_p_this: P, this: &Self) -> DebugNode<P> {
-        DebugNode {
-            sources: if let Some(prev) = this.prev() {
-                vec![(prev, String::new())]
-            } else {
-                vec![]
-            },
-            center: format!("{:?}", this.t)
-                .lines()
-                .map(|l| l.to_owned())
-                .collect(),
-            sinks: if let Some(next) = this.prev() {
-                vec![(next, String::new())]
-            } else {
-                vec![]
-            },
-        }
+impl<P: Ptr, T: DebugNodeTrait<P>> DebugNodeTrait<P> for Link<P, T> {
+    fn debug_node(p_this: P, this: &Self) -> DebugNode<P> {
+        DebugNodeTrait::debug_node(p_this, &this.t)
     }
 }
 
