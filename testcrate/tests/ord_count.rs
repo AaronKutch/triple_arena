@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use rand_xoshiro::{rand_core::SeedableRng, Xoshiro128StarStar};
 use testcrate::{fuzz_fill_inst, get_cmp_count, CKey, CVal, A, P1};
 use triple_arena::OrdArena;
@@ -61,7 +59,7 @@ fn ord_arena_find_to_remove_count() {
 /*
 #[test]
 fn std_btree_count() {
-    let mut a = BTreeMap::<CKey, CVal>::new();
+    let mut a = std::collections::BTreeMap::<CKey, CVal>::new();
     let mut repr_keys = vec![];
     let insts = get_std_insts();
     for inst in insts {

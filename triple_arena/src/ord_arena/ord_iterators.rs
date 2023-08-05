@@ -82,7 +82,6 @@ impl<'a, P: Ptr, K, V> Iterator for Vals<'a, P, K, V> {
     }
 }
 
-/*
 /// A mutable iterator over `&mut V` in an `OrdArena`
 pub struct ValsMut<'a, P: Ptr, K, V> {
     arena: &'a mut OrdArena<P, K, V>,
@@ -93,9 +92,15 @@ impl<'a, P: Ptr, K, V> Iterator for ValsMut<'a, P, K, V> {
     type Item = &'a mut V;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(p) = self.adv.advance(self.arena) {
+            let tmp = self.arena.get_val_mut(p).unwrap();
+            // safety: subsequent calls to `next` will not access the same data
+            unsafe { Some(&mut *(tmp as *mut V)) }
+        } else {
+            None
+        }
     }
 }
-*/
 
 /// An iterator over `(P, &K, &V)` in an `OrdArena`
 pub struct Iter<'a, P: Ptr, K, V> {
@@ -110,6 +115,81 @@ impl<'a, P: Ptr, K, V> Iterator for Iter<'a, P, K, V> {
         self.adv
             .advance(self.arena)
             .map(|p| (p, self.arena.get(p).unwrap()))
+    }
+}
+
+/// A draining iterator over `(P, K, V)` in an `OrdArena`
+pub struct Drain<'a, P: Ptr, K, V> {
+    arena: &'a mut OrdArena<P, K, V>,
+    adv: PtrAdvancer<P, K, V>,
+}
+
+impl<'a, P: Ptr, K, V> Drop for Drain<'a, P, K, V> {
+    fn drop(&mut self) {
+        if !self.arena.is_empty() {
+            self.arena.clear();
+        }
+        // else normal operation
+    }
+}
+
+impl<'a, P: Ptr, K, V> Iterator for Drain<'a, P, K, V> {
+    type Item = (P, (K, V));
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // TODO can we do this more efficiently by ignoring the tree structure but deal
+        // with leaking also?
+        self.adv.advance(self.arena).map(|p| {
+            let res = self.arena.remove(p).unwrap();
+            (p, res.t)
+        })
+    }
+}
+
+/// A capacity draining iterator over `(P, T)` in an `Arena`
+pub struct CapacityDrain<P: Ptr, K, V> {
+    arena: OrdArena<P, K, V>,
+    adv: PtrAdvancer<P, K, V>,
+}
+
+impl<P: Ptr, K, V> Iterator for CapacityDrain<P, K, V> {
+    type Item = (P, (K, V));
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // TODO we can definitely do this more efficiently
+        self.adv.advance(&self.arena).map(|p| {
+            let res = self.arena.remove(p).unwrap();
+            (p, res.t)
+        })
+    }
+}
+
+impl<P: Ptr, K, V> IntoIterator for OrdArena<P, K, V> {
+    type IntoIter = CapacityDrain<P, K, V>;
+    type Item = (P, (K, V));
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.capacity_drain()
+    }
+}
+
+impl<'a, P: Ptr, K, V> IntoIterator for &'a OrdArena<P, K, V> {
+    type IntoIter = Iter<'a, P, K, V>;
+    type Item = (P, &'a (K, V));
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<P: Ptr, K: Ord, V> FromIterator<(K, V)> for OrdArena<P, K, V> {
+    /// Uses `insert` and lets it replace identical keys
+    fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+        let mut a = OrdArena::new();
+        for pair in iter {
+            let _ = a.insert(pair);
+        }
+        a
     }
 }
 
@@ -149,11 +229,11 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         }
     }
 
-    /*
     /// Mutable iteration over `&mut V`
-    pub fn vals_mut(&mut self) -> ValsMut<P, V> {
+    pub fn vals_mut(&mut self) -> ValsMut<P, K, V> {
+        let adv = self.advancer();
+        ValsMut { arena: self, adv }
     }
-    */
 
     /// Iteration over `(P, &K, &V)` tuples
     pub fn iter(&self) -> Iter<P, K, V> {
@@ -161,5 +241,26 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             arena: self,
             adv: self.advancer(),
         }
+    }
+
+    /// By-entry iteration over `(P, K, V)` tuples. Consumes all entries in
+    /// `self`, but retains capacity.
+    ///
+    /// Note: When the `Drain` struct is dropped, any remaining iterations will
+    /// be consumed and dropped like normal. If the `Drain` struct is leaked
+    /// (such as with [core::mem::forget]), unspecified behavior will result.
+    pub fn drain(&mut self) -> Drain<P, K, V> {
+        // NOTE: I have not thought fully about how our new invariants interact with
+        // leaking the `Drain` struct, just use a normal advancer
+
+        let adv = self.advancer();
+        Drain { arena: self, adv }
+    }
+
+    /// By-entry iteration with `(P, K, V)` tuples. Consumes all entries and
+    /// capacity.
+    pub fn capacity_drain(self) -> CapacityDrain<P, K, V> {
+        let adv = self.advancer();
+        CapacityDrain { arena: self, adv }
     }
 }

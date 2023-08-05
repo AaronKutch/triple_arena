@@ -1,11 +1,11 @@
-use std::{cmp::Ordering, collections::BTreeMap};
+use std::{cmp::Ordering, collections::BTreeMap, hint::black_box};
 
 use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::OrdArena;
+use triple_arena::{Advancer, OrdArena};
 
 const N: usize = if cfg!(miri) {
     1000
@@ -16,11 +16,11 @@ const N: usize = if cfg!(miri) {
 };
 
 const STATS: (usize, u64, u128) = if cfg!(miri) {
-    (49, 1, 128)
+    (65, 1, 128)
 } else if cfg!(debug_assertions) {
-    (165, 112, 12947)
+    (285, 111, 14529)
 } else {
-    (276, 5075, 648045)
+    (401, 5074, 744185)
 };
 
 macro_rules! next_inx {
@@ -419,8 +419,7 @@ fn fuzz_ord() {
                     assert!(a.swap_vals(invalid, invalid).is_none())
                 }
             }
-            // TODO test everything
-            520..=995 => {
+            520..=994 => {
                 // find_key with get_val
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {
@@ -429,6 +428,24 @@ fn fuzz_ord() {
                     assert!(set.contains_key(&v));
                 } else {
                     assert!(a.find_key(&new_k).is_none())
+                }
+            }
+            995 => {
+                // advancer, ptrs, iter, keys, keys_mut, vals, vals_mut
+                let mut adv = a.advancer();
+                let mut ptrs = a.ptrs();
+                let mut iter = a.iter();
+                let mut keys = a.keys();
+                let mut vals = a.vals();
+                while let Some(p) = adv.advance(&a) {
+                    let pair = a.get(p).unwrap();
+                    assert_eq!(ptrs.next().unwrap(), p);
+                    assert_eq!(iter.next().unwrap(), (p, pair));
+                    assert_eq!(*keys.next().unwrap(), pair.0);
+                    assert_eq!(*vals.next().unwrap(), pair.1);
+                }
+                for v in a.vals_mut() {
+                    black_box(v);
                 }
             }
             996 => {
@@ -451,21 +468,43 @@ fn fuzz_ord() {
                     assert!(a.max().is_none());
                 }
             }
-            998 => {
-                // clear
-                let prev_cap = a.capacity();
-                a.clear();
-                assert_eq!(a.capacity(), prev_cap);
-                b.clear();
-                gen += 1;
-                list.clear();
-            }
+            998 => {}
             999 => {
-                // clear_and_shrink
-                a.clear_and_shrink();
-                assert_eq!(a.capacity(), 0);
+                match rng.next_u32() % 4 {
+                    0 => {
+                        // clear_and_shrink
+                        a.clear_and_shrink();
+                        assert_eq!(a.capacity(), 0);
+                        gen += 1;
+                    }
+                    1 => {
+                        // clear
+                        let prev_cap = a.capacity();
+                        a.clear();
+                        assert_eq!(a.capacity(), prev_cap);
+                        gen += 1;
+                    }
+                    2 => {
+                        // drain
+                        // TODO improve
+                        gen += a.len() as u128;
+                        let prev_cap = a.capacity();
+                        for (p, k_v) in a.drain() {
+                            black_box((p, k_v));
+                        }
+                        assert_eq!(a.capacity(), prev_cap);
+                    }
+                    3 => {
+                        // drain_capacity
+                        for (p, k_v) in a.clone() {
+                            black_box((p, k_v));
+                        }
+                        a.clear();
+                        gen += 1;
+                    }
+                    _ => unreachable!(),
+                }
                 b.clear();
-                gen += 1;
                 list.clear();
                 iters999 += 1;
             }

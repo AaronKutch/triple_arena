@@ -31,6 +31,7 @@ use crate::{utils::PtrInx, Arena, ChainArena, Link, Ptr};
 // with any `None` child could not have a rank higher than 2), but it leads to
 // really bad worst case removal scenarios.
 
+/// Internal node for an `OrdArena`
 #[derive(Clone)]
 pub struct Node<P: Ptr, K, V> {
     pub k_v: (K, V),

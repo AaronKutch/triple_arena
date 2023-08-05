@@ -167,24 +167,8 @@ impl<'a, P: Ptr, K, V> Iterator for IterSurject<'a, P, K, V> {
     }
 }
 
-// TODO we are running into the `IterMut` problem
-/*
-/// An iterator over `(P, &mut T)` in a `SurjectArena`
-pub struct IterMut<'a, P: Ptr, T> {
-    iter: iterators::Iter<'a, P, Link<P, PVal>>,
-    vals_mut: &'a mut Arena<PVal, Val<T>>,
-}
-
-impl<'a, P: Ptr, T> Iterator for IterMut<'a, P, T> {
-    type Item = (P, &'a mut T);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let (p, p_val) = self.iter.next()?;
-        let tmp = &mut self.vals_mut.get_mut(p_val.t).unwrap().t;
-        Some((p, tmp))
-    }
-}
-*/
+// I don't think it would be safe to implement an `IterMut` because the same
+// values would be returned multiple times
 
 impl<'a, P: Ptr, K, V> IntoIterator for &'a SurjectArena<P, K, V> {
     type IntoIter = Iter<'a, P, K, V>;

@@ -33,11 +33,12 @@ pub mod utils {
     // only intended for size_of tests and such
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::ord_arena::Node;
-    pub use crate::ptr::{ptrinx_unchecked, PtrGen, PtrInx, PtrNoGen};
+    pub use crate::ptr::{PtrGen, PtrInx, PtrNoGen};
     #[cfg(not(feature = "expose_internal_utils"))]
-    pub(crate) use crate::safe_nonzero_inx_vec::{nzusize_unchecked, NonZeroInxVec};
+    pub(crate) use crate::safe_nonzero_inx_vec::NonZeroInxVec;
     #[cfg(feature = "expose_internal_utils")]
-    pub use crate::safe_nonzero_inx_vec::{nzusize_unchecked, NonZeroInxVec};
+    pub use crate::safe_nonzero_inx_vec::NonZeroInxVec;
+    pub(crate) use crate::{ptr::ptrinx_unchecked, safe_nonzero_inx_vec::nzusize_unchecked};
 }
 
 extern crate alloc;

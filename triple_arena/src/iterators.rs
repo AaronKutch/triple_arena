@@ -134,6 +134,15 @@ pub struct Drain<'a, P: Ptr, T> {
     adv: PtrAdvancer<P, T>,
 }
 
+impl<'a, P: Ptr, T> Drop for Drain<'a, P, T> {
+    fn drop(&mut self) {
+        if !self.arena.is_empty() {
+            self.arena.clear();
+        }
+        // else normal operation
+    }
+}
+
 impl<'a, P: Ptr, T> Iterator for Drain<'a, P, T> {
     type Item = (P, T);
 
@@ -146,22 +155,13 @@ impl<'a, P: Ptr, T> Iterator for Drain<'a, P, T> {
     }
 }
 
-impl<'a, P: Ptr, T> Drop for Drain<'a, P, T> {
-    fn drop(&mut self) {
-        if !self.arena.is_empty() {
-            self.arena.clear();
-        }
-        // else normal operation
-    }
-}
-
 /// A capacity draining iterator over `(P, T)` in an `Arena`
 pub struct CapacityDrain<P: Ptr, T> {
     arena: Arena<P, T>,
     adv: PtrAdvancer<P, T>,
 }
 
-impl<T, P: Ptr> Iterator for CapacityDrain<P, T> {
+impl<P: Ptr, T> Iterator for CapacityDrain<P, T> {
     type Item = (P, T);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -265,7 +265,7 @@ impl<P: Ptr, T> Arena<P, T> {
     ///
     /// Note: When the `Drain` struct is dropped, any remaining iterations will
     /// be consumed and dropped like normal. If the `Drain` struct is leaked
-    /// (such as with [mem::forget]), unspecified behavior will result.
+    /// (such as with [core::mem::forget]), unspecified behavior will result.
     pub fn drain(&mut self) -> Drain<P, T> {
         // NOTE: I have not thought fully about how our new invariants interact with
         // leaking the `Drain` struct, just use a normal advancer
