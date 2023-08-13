@@ -817,7 +817,9 @@ impl<P: Ptr, T> Arena<P, T> {
     pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
         match self.m_get(p) {
             Some(Allocated(_, t)) => t,
-            _ => panic!("get_inx_unwrap of unallocated entry"),
+            // if we use `panic` it induces stack management on every hot path according to the
+            // assembly
+            _ => unreachable!(), /* panic!("get_inx_unwrap of unallocated entry"), */
         }
     }
 
@@ -828,7 +830,7 @@ impl<P: Ptr, T> Arena<P, T> {
     pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
         match self.m_get_mut(p) {
             Some(Allocated(_, t)) => t,
-            _ => panic!("get_inx_mut_unwrap of unallocated entry"),
+            _ => unreachable!(), /* panic!("get_inx_mut_unwrap of unallocated entry"), */
         }
     }
 }

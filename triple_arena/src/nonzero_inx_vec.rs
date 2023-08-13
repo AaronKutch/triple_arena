@@ -316,6 +316,7 @@ impl<T> NonZeroInxVec<T> {
         }
     }
 
+    /*
     /// Same as `get` except that bounds are not checked.
     ///
     /// # Safety
@@ -341,6 +342,7 @@ impl<T> NonZeroInxVec<T> {
         // the function's safety section presupposes `inx.get <= self.len()`
         unsafe { &mut *self.nonzero_index_ptr_mut().wrapping_add(inx.get()) }
     }
+    */
 
     #[inline]
     pub const fn nziter(&self) -> IntoNonZeroUsizeIterator {
