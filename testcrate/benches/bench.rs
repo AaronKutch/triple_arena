@@ -109,9 +109,9 @@ fn std_bench_ord_arena_find_to_remove(bencher: &mut Bencher) {
         let insts = get_std_bench_insts(get_next_seed());
         for inst in &insts {
             match inst {
-                Ok(pair) => {
-                    repr_keys.push(pair.0);
-                    let _ = a.insert(*pair);
+                Ok((k, v)) => {
+                    repr_keys.push(*k);
+                    let _ = a.insert(*k, *v);
                 }
                 Err(inx) => {
                     let key = repr_keys.swap_remove(*inx);
@@ -131,8 +131,8 @@ fn std_bench_ord_arena(bencher: &mut Bencher) {
         let insts = get_std_bench_insts(get_next_seed());
         for inst in &insts {
             match inst {
-                Ok(pair) => {
-                    repr_inxs.push(a.insert(*pair).0);
+                Ok((k, v)) => {
+                    repr_inxs.push(a.insert(*k, *v).0);
                 }
                 Err(inx) => {
                     a.remove(repr_inxs.swap_remove(*inx)).unwrap();
@@ -158,8 +158,8 @@ fn insert_only_ord_arena(bencher: &mut Bencher) {
     bencher.iter(|| {
         let mut a = OrdArena::<P1, u128, u128>::new();
         let insts = get_insert_insts(get_next_seed());
-        for inst in &insts {
-            let _ = a.insert(*inst);
+        for (k, v) in &insts {
+            let _ = a.insert(*k, *v);
         }
     })
 }
@@ -187,9 +187,9 @@ fn find_only_ord_arena(bencher: &mut Bencher) {
         let mut a = OrdArena::<P1, u128, u128>::new();
         let insts = get_insert_insts(get_next_seed());
         let mut repr_keys: Vec<u128> = vec![];
-        for inst in &insts {
-            let _ = a.insert(*inst);
-            repr_keys.push(inst.0);
+        for (k, v) in &insts {
+            let _ = a.insert(*k, *v);
+            repr_keys.push(*k);
         }
         for key in &repr_keys {
             let tmp = a.find_key(key).unwrap();
@@ -204,9 +204,9 @@ fn remove_only_std_btree(bencher: &mut Bencher) {
         let mut a = BTreeMap::<u128, u128>::new();
         let insts = get_insert_insts(get_next_seed());
         let mut repr_keys: Vec<u128> = vec![];
-        for inst in &insts {
-            repr_keys.push(inst.0);
-            a.insert(inst.0, inst.1);
+        for (k, v) in &insts {
+            repr_keys.push(*k);
+            a.insert(*k, *v);
         }
         let insts = get_remove_insts(get_next_seed());
         for inst in &insts {
@@ -221,8 +221,8 @@ fn remove_only_ord_arena(bencher: &mut Bencher) {
         let mut a = OrdArena::<P1, u128, u128>::new();
         let insts = get_insert_insts(get_next_seed());
         let mut repr_inxs: Vec<P1> = vec![];
-        for inst in &insts {
-            repr_inxs.push(a.insert(*inst).0);
+        for (k, v) in &insts {
+            repr_inxs.push(a.insert(*k, *v).0);
         }
         let insts = get_remove_insts(get_next_seed());
         for inst in &insts {

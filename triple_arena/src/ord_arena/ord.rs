@@ -34,7 +34,8 @@ use crate::{utils::PtrInx, Arena, ChainArena, Link, Ptr};
 /// Internal node for an `OrdArena`
 #[derive(Clone)]
 pub struct Node<P: Ptr, K, V> {
-    pub k_v: (K, V),
+    pub k: K,
+    pub v: V,
     // Pointer back to parent
     pub p_back: Option<P::Inx>,
     // Pointer to left subtree
@@ -81,13 +82,11 @@ pub struct Node<P: Ptr, K, V> {
 /// ptr_struct!(P0);
 /// let mut a: OrdArena<P0, u64, ()> = OrdArena::new();
 ///
-/// // we purposely group the key-value pairs in tuples for technical
-/// // performance reasons, and often they are returned as tuples
-/// let p50 = a.insert((50, ())).0;
-/// let p30 = a.insert((30, ())).0;
-/// let p70 = a.insert((70, ())).0;
-/// let p60 = a.insert((60, ())).0;
-/// let p10 = a.insert((10, ())).0;
+/// let p50 = a.insert(50, ()).0;
+/// let p30 = a.insert(30, ()).0;
+/// let p70 = a.insert(70, ()).0;
+/// let p60 = a.insert(60, ()).0;
+/// let p10 = a.insert(10, ()).0;
 ///
 /// assert_eq!(a.min().unwrap(), p10);
 /// assert_eq!(a.max().unwrap(), p70);
@@ -113,7 +112,7 @@ pub struct Node<P: Ptr, K, V> {
 /// // The iterators are fully deterministic and iterate from the
 /// // least element to the greatest
 /// let expected = [(p10, 10), (p30, 30), (p60, 60), (p70, 70)];
-/// for (i, (p, (key, _))) in a.iter().enumerate() {
+/// for (i, (p, key, _)) in a.iter().enumerate() {
 ///     assert_eq!(expected[i], (p, *key));
 /// }
 /// ```
@@ -199,28 +198,28 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// the result gives the `Ptr` to the next lesser key, and using
     /// [next](crate::Link::next) gives the `Ptr` to the next greater key.
     #[must_use]
-    pub fn get_link(&self, p: P) -> Option<Link<P, &(K, V)>> {
+    pub fn get_link(&self, p: P) -> Option<Link<P, (&K, &V)>> {
         self.a
             .get_link(p)
-            .map(|link| Link::new(link.prev_next(), &link.t.k_v))
+            .map(|link| Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
     }
 
     /// Returns a reference to the key-value pair pointed to by `p`
     #[must_use]
-    pub fn get(&self, p: P) -> Option<&(K, V)> {
-        self.a.get(p).map(|node| &node.k_v)
+    pub fn get(&self, p: P) -> Option<(&K, &V)> {
+        self.a.get(p).map(|node| (&node.k, &node.v))
     }
 
     /// Returns a reference to the key pointed to by `p`
     #[must_use]
     pub fn get_key(&self, p: P) -> Option<&K> {
-        self.a.get(p).map(|node: &Node<P, K, V>| &node.k_v.0)
+        self.a.get(p).map(|node: &Node<P, K, V>| &node.k)
     }
 
     /// Returns a reference to the value pointed to by `p`
     #[must_use]
     pub fn get_val(&self, p: P) -> Option<&V> {
-        self.a.get(p).map(|node| &node.k_v.1)
+        self.a.get(p).map(|node| &node.v)
     }
 
     /// Returns the full `Link<P, (&K, &mut V)>`. Using
@@ -231,19 +230,19 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     pub fn get_link_mut(&mut self, p: P) -> Option<Link<P, (&K, &mut V)>> {
         self.a
             .get_link_mut(p)
-            .map(|link| Link::new(link.prev_next(), (&link.t.k_v.0, &mut link.t.k_v.1)))
+            .map(|link| Link::new(link.prev_next(), (&link.t.k, &mut link.t.v)))
     }
 
     /// Returns a mutable reference to the key-value pair pointed to by `p`
     #[must_use]
     pub fn get_mut(&mut self, p: P) -> Option<(&K, &mut V)> {
-        self.a.get_mut(p).map(|t| (&t.k_v.0, &mut t.k_v.1))
+        self.a.get_mut(p).map(|t| (&t.k, &mut t.v))
     }
 
     /// Returns a mutable reference to the value pointed to by `p`
     #[must_use]
     pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
-        self.a.get_mut(p).map(|t| &mut t.k_v.1)
+        self.a.get_mut(p).map(|t| &mut t.v)
     }
 
     /// Gets two references pointed to by `p0` and `p1`.
@@ -257,8 +256,8 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     ) -> Option<(Link<P, (&K, &mut V)>, Link<P, (&K, &mut V)>)> {
         self.a.get2_link_mut(p0, p1).map(|(link0, link1)| {
             (
-                Link::new(link0.prev_next(), (&link0.t.k_v.0, &mut link0.t.k_v.1)),
-                Link::new(link1.prev_next(), (&link1.t.k_v.0, &mut link1.t.k_v.1)),
+                Link::new(link0.prev_next(), (&link0.t.k, &mut link0.t.v)),
+                Link::new(link1.prev_next(), (&link1.t.k, &mut link1.t.v)),
             )
         })
     }
@@ -270,7 +269,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     pub fn get2_val_mut(&mut self, p0: P, p1: P) -> Option<(&mut V, &mut V)> {
         self.a
             .get2_mut(p0, p1)
-            .map(|(t0, t1)| (&mut t0.k_v.1, &mut t1.k_v.1))
+            .map(|(t0, t1)| (&mut t0.v, &mut t1.v))
     }
 
     /// Invalidates all references to the entry pointed to by `p`, and returns a
@@ -291,7 +290,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// Returns ownership of `new` instead if `p` is invalid
     pub fn replace_val_and_keep_gen(&mut self, p: P, new: V) -> Result<V, V> {
         if let Some(t) = self.a.get_mut(p) {
-            let old = mem::replace(&mut t.k_v.1, new);
+            let old = mem::replace(&mut t.v, new);
             Ok(old)
         } else {
             Err(new)
@@ -308,7 +307,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     pub fn replace_val_and_update_gen(&mut self, p: P, new: V) -> Result<(V, P), V> {
         // the tree pointers do not have generation counters
         if let Some(p_new) = self.a.invalidate(p) {
-            let old = mem::replace(&mut self.a.get_mut(p_new).unwrap().k_v.1, new);
+            let old = mem::replace(&mut self.a.get_mut(p_new).unwrap().v, new);
             Ok((old, p_new))
         } else {
             Err(new)
@@ -330,7 +329,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         } else {
             let (lhs, rhs) = self.a.get2_mut(p0, p1)?;
             // be careful to swap only the inner `V` values
-            mem::swap(&mut lhs.k_v.1, &mut rhs.k_v.1);
+            mem::swap(&mut lhs.v, &mut rhs.v);
             Some(())
         }
     }
@@ -351,26 +350,26 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
     /// `self`, with the ordering preserved in a single chain
     /// ([next](crate::Link::next) points to the next greater entry)
-    pub fn clone_to_chain_arena<U, F: FnMut(P, Link<P, &(K, V)>) -> U>(
+    pub fn clone_to_chain_arena<U, F: FnMut(P, Link<P, (&K, &V)>) -> U>(
         &self,
         chain_arena: &mut ChainArena<P, U>,
         mut map: F,
     ) {
         chain_arena.clone_from_with(&self.a, |p, link| {
-            map(p, Link::new(link.prev_next(), &link.t.k_v))
+            map(p, Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
         })
     }
 
     /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
     /// `self`
-    pub fn clone_to_arena<U, F: FnMut(P, Link<P, &(K, V)>) -> U>(
+    pub fn clone_to_arena<U, F: FnMut(P, Link<P, (&K, &V)>) -> U>(
         &self,
         arena: &mut Arena<P, U>,
         mut map: F,
     ) {
         arena.clone_from_with(&self.a.a, |p, link| {
-            map(p, Link::new(link.prev_next(), &link.t.k_v))
+            map(p, Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
         });
     }
 }
@@ -383,10 +382,8 @@ impl<P: Ptr, K: Clone, V0> OrdArena<P, K, V0> {
         mut map: F,
     ) {
         self.a.clone_from_with(&source.a, |p, link| Node {
-            k_v: (
-                link.t.k_v.0.clone(),
-                map(p, Link::new(link.prev_next(), &link.t.k_v.1)),
-            ),
+            k: link.t.k.clone(),
+            v: map(p, Link::new(link.prev_next(), &link.t.v)),
             p_back: link.t.p_back,
             p_tree0: link.t.p_tree0,
             p_tree1: link.t.p_tree1,
@@ -439,6 +436,9 @@ impl<P: Ptr, K, V, B: Borrow<P>> IndexMut<B> for OrdArena<P, K, V> {
 
 impl<P: Ptr, K: Debug, V: Debug> Debug for OrdArena<P, K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_map().entries(self.iter()).finish()
+        // TODO here and in other triple `Debug`s we need a flat triple
+        f.debug_map()
+            .entries(self.iter().map(|triple| (triple.0, (triple.1, triple.2))))
+            .finish()
     }
 }

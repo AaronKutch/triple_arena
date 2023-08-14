@@ -37,8 +37,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             }
             if let Some(prev) = prev {
                 if Ord::cmp(
-                    &this.a.get_ignore_gen(prev.inx()).unwrap().1.t.k_v.0,
-                    &this.a.get_ignore_gen(p.inx()).unwrap().1.t.k_v.0,
+                    &this.a.get_ignore_gen(prev.inx()).unwrap().1.t.k,
+                    &this.a.get_ignore_gen(p.inx()).unwrap().1.t.k,
                 ) == Ordering::Greater
                 {
                     return Err("incorrect ordering")
@@ -143,7 +143,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         loop {
             let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
-            match Ord::cmp(k, &node.k_v.0) {
+            match Ord::cmp(k, &node.k) {
                 Ordering::Less => p = node.p_tree0?,
                 Ordering::Equal => break Some(Ptr::_from_raw(p, gen)),
                 Ordering::Greater => p = node.p_tree1?,
@@ -167,7 +167,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         loop {
             let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
-            match Ord::cmp(k, &node.k_v.0) {
+            match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
                     if direction == Some(true) {
                         break None
@@ -212,7 +212,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         loop {
             let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
-            match Ord::cmp(k, &node.k_v.0) {
+            match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
                     if let Some(p_tree0) = node.p_tree0 {
                         p = p_tree0;
@@ -244,7 +244,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         let ordering = loop {
             let link = self.a.get_inx_unwrap(p);
             let node = &link.t;
-            match Ord::cmp(k, &node.k_v.0) {
+            match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
                     if direction == Some(true) {
                         break Ordering::Less

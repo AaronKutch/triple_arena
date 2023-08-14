@@ -10,10 +10,11 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// there is a new insertion, which will need to be rebalanced. Returns
     /// `Err` if there was a replacement (which does not happen with the
     /// nonhereditary case).
-    fn raw_insert(&mut self, k_v: (K, V), nonhereditary: bool) -> (P, Option<(K, V)>) {
+    fn raw_insert(&mut self, k: K, v: V, nonhereditary: bool) -> (P, Option<(K, V)>) {
         if self.a.is_empty() {
             let p_new = self.a.insert_new(Node {
-                k_v,
+                k,
+                v,
                 p_back: None,
                 p_tree0: None,
                 p_tree1: None,
@@ -29,14 +30,15 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
             let p_with_gen = crate::Ptr::_from_raw(p, gen);
-            match Ord::cmp(&k_v.0, &node.k_v.0) {
+            match Ord::cmp(&k, &node.k) {
                 Ordering::Less => {
                     if let Some(p_tree0) = node.p_tree0 {
                         p = p_tree0
                     } else {
                         // insert new leaf
                         let new_node = Node {
-                            k_v,
+                            k,
+                            v,
                             p_back: Some(p),
                             p_tree0: None,
                             p_tree1: None,
@@ -65,7 +67,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         } else {
                             // go the Ordering::Less route
                             let new_node = Node {
-                                k_v,
+                                k,
+                                v,
                                 p_back: Some(p),
                                 p_tree0: None,
                                 p_tree1: None,
@@ -83,9 +86,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                             }
                         }
                     } else {
-                        let old_v =
-                            mem::replace(&mut self.a.get_mut(p_with_gen).unwrap().k_v.1, k_v.1);
-                        return (p_with_gen, Some((k_v.0, old_v)))
+                        let old_v = mem::replace(&mut self.a.get_mut(p_with_gen).unwrap().v, v);
+                        return (p_with_gen, Some((k, old_v)))
                     }
                 }
                 Ordering::Greater => {
@@ -93,7 +95,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         p = p_tree1
                     } else {
                         let new_node = Node {
-                            k_v,
+                            k,
+                            v,
                             p_back: Some(p),
                             p_tree0: None,
                             p_tree1: None,
@@ -120,12 +123,13 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     fn raw_insert_linear(
         &mut self,
         p_init: Option<P>,
-        k_v: (K, V),
+        k: K,
+        v: V,
         nonhereditary: bool,
     ) -> Result<(P, Option<(K, V)>), (K, V)> {
         if let Some(p_init) = p_init {
             if !self.a.contains(p_init) {
-                return Err(k_v)
+                return Err((k, v))
             }
             let mut p = p_init.inx();
             // detects if we would switch probing directions, note that even if `Ord` is
@@ -134,7 +138,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             let mut direction = None;
             let direction = loop {
                 let link = self.a.get_inx_unwrap(p);
-                match Ord::cmp(&k_v.0, &link.t.k_v.0) {
+                match Ord::cmp(&k, &link.t.k) {
                     Ordering::Less => {
                         if direction == Some(true) {
                             break Ordering::Less
@@ -199,7 +203,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 Ordering::Less => {
                     // insert new leaf
                     let new_node = Node {
-                        k_v,
+                        k,
+                        v,
                         p_back: Some(p),
                         p_tree0: None,
                         p_tree1: None,
@@ -220,14 +225,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     if nonhereditary {
                         unreachable!()
                     } else {
-                        let old_v =
-                            mem::replace(&mut self.a.get_mut(p_with_gen).unwrap().k_v.1, k_v.1);
-                        Ok((p_with_gen, Some((k_v.0, old_v))))
+                        let old_v = mem::replace(&mut self.a.get_mut(p_with_gen).unwrap().v, v);
+                        Ok((p_with_gen, Some((k, old_v))))
                     }
                 }
                 Ordering::Greater => {
                     let new_node = Node {
-                        k_v,
+                        k,
+                        v,
                         p_back: Some(p),
                         p_tree0: None,
                         p_tree1: None,
@@ -246,7 +251,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             }
         } else if self.a.is_empty() {
             let p_new = self.a.insert_new(Node {
-                k_v,
+                k,
+                v,
                 p_back: None,
                 p_tree0: None,
                 p_tree1: None,
@@ -257,7 +263,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             self.root = p_new.inx();
             return Ok((p_new, None))
         } else {
-            return Err(k_v)
+            return Err((k, v))
         }
     }
 
@@ -639,8 +645,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// are returned. The existing key is not replaced, which should not make a
     /// difference unless special `Ord` definitions are being used.
     #[must_use]
-    pub fn insert(&mut self, k_v: (K, V)) -> (P, Option<(K, V)>) {
-        let (p, k_v) = self.raw_insert(k_v, false);
+    pub fn insert(&mut self, k: K, v: V) -> (P, Option<(K, V)>) {
+        let (p, k_v) = self.raw_insert(k, v, false);
         if k_v.is_none() {
             self.rebalance_inserted(p.inx());
         }
@@ -652,8 +658,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// `self`, the inserted key is inserted in a [prev](crate::Link::prev)
     /// position to all the equal keys. Future calls to `self.find_key` with
     /// an equal `k_v.0` could find any of the equal keys.
-    pub fn insert_nonhereditary(&mut self, k_v: (K, V)) -> P {
-        let (p, _) = self.raw_insert(k_v, true);
+    pub fn insert_nonhereditary(&mut self, k: K, v: V) -> P {
+        let (p, _) = self.raw_insert(k, v, true);
         self.rebalance_inserted(p.inx());
         p
     }
@@ -670,9 +676,10 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     pub fn insert_linear(
         &mut self,
         p_init: Option<P>,
-        k_v: (K, V),
+        k: K,
+        v: V,
     ) -> Result<(P, Option<(K, V)>), (K, V)> {
-        match self.raw_insert_linear(p_init, k_v, false) {
+        match self.raw_insert_linear(p_init, k, v, false) {
             Ok((p, k_v)) => {
                 if k_v.is_none() {
                     self.rebalance_inserted(p.inx());
@@ -688,9 +695,10 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     pub fn insert_nonhereditary_linear(
         &mut self,
         p_init: Option<P>,
-        k_v: (K, V),
+        k: K,
+        v: V,
     ) -> Result<P, (K, V)> {
-        match self.raw_insert_linear(p_init, k_v, true) {
+        match self.raw_insert_linear(p_init, k, v, true) {
             Ok((p, _)) => {
                 self.rebalance_inserted(p.inx());
                 Ok(p)

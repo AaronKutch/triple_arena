@@ -109,12 +109,13 @@ pub struct Iter<'a, P: Ptr, K, V> {
 }
 
 impl<'a, P: Ptr, K, V> Iterator for Iter<'a, P, K, V> {
-    type Item = (P, &'a (K, V));
+    type Item = (P, &'a K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.adv
-            .advance(self.arena)
-            .map(|p| (p, self.arena.get(p).unwrap()))
+        self.adv.advance(self.arena).map(|p| {
+            let tmp = self.arena.get(p).unwrap();
+            (p, tmp.0, tmp.1)
+        })
     }
 }
 
@@ -134,14 +135,14 @@ impl<'a, P: Ptr, K, V> Drop for Drain<'a, P, K, V> {
 }
 
 impl<'a, P: Ptr, K, V> Iterator for Drain<'a, P, K, V> {
-    type Item = (P, (K, V));
+    type Item = (P, K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
         // TODO can we do this more efficiently by ignoring the tree structure but deal
         // with leaking also?
         self.adv.advance(self.arena).map(|p| {
             let res = self.arena.remove(p).unwrap();
-            (p, res.t)
+            (p, res.t.0, res.t.1)
         })
     }
 }
@@ -153,20 +154,20 @@ pub struct CapacityDrain<P: Ptr, K, V> {
 }
 
 impl<P: Ptr, K, V> Iterator for CapacityDrain<P, K, V> {
-    type Item = (P, (K, V));
+    type Item = (P, K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
         // TODO we can definitely do this more efficiently
         self.adv.advance(&self.arena).map(|p| {
             let res = self.arena.remove(p).unwrap();
-            (p, res.t)
+            (p, res.t.0, res.t.1)
         })
     }
 }
 
 impl<P: Ptr, K, V> IntoIterator for OrdArena<P, K, V> {
     type IntoIter = CapacityDrain<P, K, V>;
-    type Item = (P, (K, V));
+    type Item = (P, K, V);
 
     fn into_iter(self) -> Self::IntoIter {
         self.capacity_drain()
@@ -175,7 +176,7 @@ impl<P: Ptr, K, V> IntoIterator for OrdArena<P, K, V> {
 
 impl<'a, P: Ptr, K, V> IntoIterator for &'a OrdArena<P, K, V> {
     type IntoIter = Iter<'a, P, K, V>;
-    type Item = (P, &'a (K, V));
+    type Item = (P, &'a K, &'a V);
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -186,8 +187,8 @@ impl<P: Ptr, K: Ord, V> FromIterator<(K, V)> for OrdArena<P, K, V> {
     /// Uses `insert` and lets it replace identical keys
     fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
         let mut a = OrdArena::new();
-        for pair in iter {
-            let _ = a.insert(pair);
+        for (k, v) in iter {
+            let _ = a.insert(k, v);
         }
         a
     }

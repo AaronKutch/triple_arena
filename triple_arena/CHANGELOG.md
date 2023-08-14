@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.11.0] - TODO
+### Changes
+- Undid the tuple grouping of key value pairs in `OrdArena`, because it wasn't worth it and will not
+  be compatible with the future cache local version anyway.
+
 ## [0.10.0] - 2023-08-05
 ### Fixes
 - Changed the `Index` and `IndexMut` impls of `ChainArena` to return `&T` and `&mut T` respectively,

@@ -43,7 +43,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             link.prev(),
             link.next(),
         );
-        let res = Some(Link::new(link.prev_next(), link.t.k_v));
+        let res = Some(Link::new(link.prev_next(), (link.t.k, link.t.v)));
         if self.a.is_empty() {
             // last node to be removed, our invariants require that `self.a.is_empty` be
             // checked to determine whether or not `self.first`, etc are valid.
