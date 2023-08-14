@@ -7,18 +7,16 @@
 // this after OrdArena is settled
 // check all `get_inx_mut_unwrap` to see if we can replace with the _t variant
 
-mod advancer;
 mod arena;
+pub mod arena_iterators;
 mod arena_trait;
 mod chain;
-pub mod iterators;
 mod nonzero_inx_vec;
 mod ord_arena;
-mod ptr;
-pub use advancer::Advancer;
+mod traits;
 pub use arena_trait::ArenaTrait;
 pub use chain::{ChainArena, Link};
-pub use ptr::Ptr;
+pub use traits::{Advancer, Ptr};
 //mod safe_nonzero_inx_vec;
 //use safe_nonzero_inx_vec as nonzero_inx_vec;
 mod surject;
@@ -38,8 +36,8 @@ pub mod utils {
     // only intended for size_of tests and such
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::ord_arena::Node;
-    pub use crate::ptr::{PtrGen, PtrInx, PtrNoGen};
-    pub(crate) use crate::{nonzero_inx_vec::nzusize_unchecked, ptr::ptrinx_unchecked};
+    pub use crate::traits::{PtrGen, PtrInx, PtrNoGen};
+    pub(crate) use crate::{nonzero_inx_vec::nzusize_unchecked, traits::ptrinx_unchecked};
 }
 
 extern crate alloc;

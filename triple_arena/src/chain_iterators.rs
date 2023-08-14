@@ -2,12 +2,12 @@
 
 use core::marker::PhantomData;
 
-pub use crate::iterators::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
-use crate::{iterators, Advancer, ChainArena, Link, Ptr};
+pub use crate::arena_iterators::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
+use crate::{arena_iterators, Advancer, ChainArena, Link, Ptr};
 
 /// An advancer over the valid `P`s of a `ChainArena`
 pub struct PtrAdvancer<P: Ptr, T> {
-    adv: iterators::PtrAdvancer<P, Link<P, T>>,
+    adv: arena_iterators::PtrAdvancer<P, Link<P, T>>,
 }
 
 impl<P: Ptr, T> Advancer for PtrAdvancer<P, T> {

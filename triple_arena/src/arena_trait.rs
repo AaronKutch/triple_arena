@@ -1,6 +1,6 @@
 use crate::{
-    chain_iterators, iterators, ord_iterators, surject_iterators, Advancer, Arena, ChainArena,
-    Link, OrdArena, Ptr, SurjectArena,
+    arena_iterators, chain_iterators, ord_iterators, surject_iterators, Advancer, Arena,
+    ChainArena, Link, OrdArena, Ptr, SurjectArena,
 };
 
 /// A trait that encapsulates some common functions across the different arena
@@ -34,7 +34,7 @@ pub trait ArenaTrait {
 }
 
 impl<P: Ptr, T> ArenaTrait for Arena<P, T> {
-    type Adv = iterators::PtrAdvancer<P, T>;
+    type Adv = arena_iterators::PtrAdvancer<P, T>;
     type E = T;
     type GetMutRes<'a> = &'a mut Self::E where Self: 'a;
     type GetRes<'a> = &'a Self::E where Self: 'a;

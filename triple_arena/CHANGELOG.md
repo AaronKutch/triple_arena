@@ -4,6 +4,7 @@
 ### Changes
 - Undid the tuple grouping of key value pairs in `OrdArena`, because it wasn't worth it and will not
   be compatible with the future cache local version anyway.
+- Renamed the `iterators` module to `arena_iterators`
 
 ## [0.10.0] - 2023-08-05
 ### Fixes
