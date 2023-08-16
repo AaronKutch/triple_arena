@@ -1,11 +1,13 @@
 use core::cmp::{min, Ordering};
 
-use crate::{Advancer, OrdArena, Ptr};
+use crate::{Advancer, ChainArena, OrdArena, Ptr};
 
 impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
+        // needed because of special functions like `compress_and_shrink`
+        ChainArena::_check_invariants(&this.a)?;
         if this.a.is_empty() {
             return Ok(())
         }
@@ -18,7 +20,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             return Err("this.root is broken")
         };
         // first check the chain and ordering
-        let mut count = 0;
+        let mut count = 0usize;
         let mut prev: Option<P> = None;
         let first_gen = if let Some((first_gen, link)) = this.a.get_ignore_gen(this.first) {
             if link.prev().is_some() {
@@ -31,7 +33,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 
         let mut adv = this.a.advancer_chain(Ptr::_from_raw(this.first, first_gen));
         while let Some(p) = adv.advance(&this.a) {
-            count += 1;
+            count = count.checked_add(1).unwrap();
             if !this.a.contains(p) {
                 return Err("invalid Ptr")
             }
@@ -275,7 +277,48 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     }
 }
 
+// example use of the below in debugging
 /*
+use std::path::PathBuf;
+use triple_arena::{ptr_struct, Arena, OrdArena};
+use triple_arena_render::{render_to_svg_file, DebugNode};
+// ...
+let debug_arena = a.debug_arena();
+let mut debug_arena2 = Arena::new();
+let res = OrdArena::_check_invariants(&a);
+if res.is_err() {
+    debug_arena2.clone_from_with(
+        &debug_arena,
+        |_, (rank, k, _, p_tree0, p_back, p_tree1)| DebugNode {
+            sources: if let Some(p_back) = p_back {
+                vec![(*p_back, String::new())]
+            } else {
+                vec![]
+            },
+            center: vec![format!("r: {rank}, k: {k}")],
+            sinks: {
+                let mut v = vec![];
+                if let Some(p_tree0) = p_tree0 {
+                    v.push((*p_tree0, "0".to_owned()));
+                }
+                if let Some(p_tree1) = p_tree1 {
+                    v.push((*p_tree1, "1".to_owned()));
+                }
+                v
+            },
+        },
+    );
+    render_to_svg_file(&debug_arena2, false, PathBuf::from("tmp.svg".to_owned()))
+        .unwrap();
+    println!("{}", a.debug());
+    dbg!(len);
+}
+res.unwrap();
+*/
+
+/// Used for development debugging only, see find.rs for example
+#[cfg(feature = "expose_internal_utils")]
+#[allow(clippy::type_complexity)]
 impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> OrdArena<P, K, V> {
     pub fn debug_arena(&self) -> crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>)> {
         let mut res: crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>)> =
@@ -283,8 +326,8 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
         self.a.clone_to_arena(&mut res, |_, link| {
             (
                 link.t.rank,
-                link.t.k_v.0.clone(),
-                link.t.k_v.1.clone(),
+                link.t.k.clone(),
+                link.t.v.clone(),
                 link.t
                     .p_tree0
                     .map(|inx| Ptr::_from_raw(inx, crate::utils::PtrGen::one())),
@@ -348,8 +391,8 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
                 "(inx: {:2?}, k: {:3?}, v: {:3?}, rank: {:2?}, p_back: {:2?}, p_tree0: {:2?}, \
                  p_tree1: {:2?})",
                 p.inx(),
-                n.k_v.0,
-                n.k_v.1,
+                n.k,
+                n.v,
                 n.rank,
                 n.p_back,
                 n.p_tree0,
@@ -360,4 +403,3 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
         s
     }
 }
-*/

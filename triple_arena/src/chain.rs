@@ -7,7 +7,7 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use crate::{Arena, Ptr};
+use crate::{Advancer, Arena, Ptr};
 
 /// This represents a link in a `ChainArena` that has a public `t: T` field and
 /// `Option<Ptr<P>>` interlinks to the previous and next links.
@@ -162,6 +162,8 @@ impl<P: Ptr, T> ChainArena<P, T> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
+        // needs to be done because of upstream manual `InternalEntry` handling
+        Arena::_check_invariants(&this.a)?;
         for (p, link) in &this.a {
             // note: we must check both cases of equality when checking for single link
             // cyclic chains, because we _must_ not rely on any kind of induction (any set
@@ -569,12 +571,12 @@ impl<P: Ptr, T> ChainArena<P, T> {
                 return Some(len)
             }
             tmp = self.a.remove_internal(next, false).unwrap().next();
-            len += 1;
+            len = len.wrapping_add(1);
         }
         let mut tmp = init.prev();
         while let Some(prev) = tmp {
             tmp = self.a.remove_internal(prev, false).unwrap().prev();
-            len += 1;
+            len = len.wrapping_add(1);
         }
         Some(len)
     }
@@ -733,6 +735,135 @@ impl<P: Ptr, T> ChainArena<P, T> {
         self.a.clear_and_shrink()
     }
 
+    /// Compresses the arena by moving around entries to be able to shrink the
+    /// capacity down to the length. All links and link prev-next relations
+    /// remain, but all `Ptr`s and interlinks are invalidated. New `Ptr`s to
+    /// the entries can be found again by iterators and advancers. Notably, when
+    /// iterating or advancing after a call to this function or during `map`ping
+    /// with [ChainArena::compress_and_shrink_with], whole chains at a time are
+    /// advanced through without discontinuity (although there is not a
+    /// specified ordering of links within the chain). Additionally, cache
+    /// locality is improved by neighboring links being moved close together
+    /// in memory.
+    pub fn compress_and_shrink(&mut self) {
+        self.compress_and_shrink_with(|_, _| ())
+    }
+
+    /// The same as [ChainArena::compress_and_shrink] except that `map` is run
+    /// on every `Link<P, &mut T>` with its new `Ptr` and interlinks.
+    pub fn compress_and_shrink_with<F: FnMut(P, Link<P, &mut T>)>(&mut self, mut map: F) {
+        // If we try using any linear loop method, we run into a problem where the
+        // arbitrary prev or next node has an unknown back interlink. We use this method
+        // because it has the added benefit of bringing in order links together in
+        // memory.
+        self.a.inc_gen();
+        let gen = self.gen();
+        let mut new = Arena::<P, Link<P, T>>::new();
+        new.reserve(self.len());
+        new.set_gen(gen);
+        let mut adv = self.a.advancer();
+        'outer: while let Some(p_init) = adv.advance(&self.a) {
+            // an initial prelude is absolutely required to link up cyclic chains and handle
+            // SLCCs
+            let link = self.a.remove(p_init).unwrap();
+            let p_init = p_init.inx();
+            let mut p_init_prev = None;
+            let mut p_next = link.next().map(|p| p.inx());
+            let q_init = if let Some(prev) = link.prev() {
+                if prev.inx() == p_init {
+                    // SLCC
+                    new.insert_with(|q| Link::new((Some(q), Some(q)), link.t));
+                    continue 'outer
+                } else {
+                    let q = new.insert(Link::new((None, None), link.t));
+                    p_init_prev = Some(prev.inx());
+                    q
+                }
+            } else {
+                new.insert(Link::new((None, None), link.t))
+            };
+            let mut q_prev = q_init;
+            loop {
+                p_next = if let Some(p_next) = p_next {
+                    let p_gen = self.a.get_ignore_gen(p_next).unwrap().0;
+                    let link = self.a.remove(Ptr::_from_raw(p_next, p_gen)).unwrap();
+                    let tmp_next = link.next().map(|p| p.inx());
+                    let t = link.t;
+                    if Some(p_next) == p_init_prev {
+                        // cyclic chain, connect in one step
+                        let q = new.insert(Link::new((Some(q_prev), Some(q_init)), t));
+                        new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q);
+                        new.get_inx_mut_unwrap(q_init.inx()).prev_next.0 = Some(q);
+                        continue 'outer
+                    }
+                    let q = new.insert(Link::new((Some(q_prev), None), t));
+                    new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q);
+                    q_prev = q;
+                    tmp_next
+                } else {
+                    // reached end of chain, next loop will handle starting from `p_init_prev`
+                    break
+                };
+            }
+            let mut p_prev = p_init_prev;
+            let mut q_next = q_init;
+            loop {
+                p_prev = if let Some(p_prev) = p_prev {
+                    let p_gen = self.a.get_ignore_gen(p_prev).unwrap().0;
+                    let link = self.a.remove(Ptr::_from_raw(p_prev, p_gen)).unwrap();
+                    let tmp_prev = link.prev().map(|p| p.inx());
+                    let t = link.t;
+                    let q = new.insert(Link::new((None, Some(q_next)), t));
+                    new.get_inx_mut_unwrap(q_next.inx()).prev_next.0 = Some(q);
+                    q_next = q;
+                    tmp_prev
+                } else {
+                    break
+                };
+            }
+        }
+        self.a = new;
+        for (q, link) in self.iter_mut() {
+            map(q, link);
+        }
+    }
+
+    /// A variation of `compress_and_shrink_with` that is intended for a single
+    /// acyclic chain that has `first_link` as the first link in the chain.
+    pub(crate) fn compress_and_shrink_acyclic_chain_with<F: FnMut(P, Link<P, &mut T>)>(
+        &mut self,
+        first_link: P,
+        mut map: F,
+    ) {
+        self.a.inc_gen();
+        let gen = self.gen();
+        let mut new = Arena::<P, Link<P, T>>::new();
+        new.reserve(self.len());
+        new.set_gen(gen);
+        let p_init = first_link;
+        let link = self.a.remove(p_init).unwrap();
+        let mut p_next = link.next().map(|p| p.inx());
+        let mut q_prev = new.insert(Link::new((None, None), link.t));
+        loop {
+            p_next = if let Some(p_next) = p_next {
+                let p_gen = self.a.get_ignore_gen(p_next).unwrap().0;
+                let link = self.a.remove(Ptr::_from_raw(p_next, p_gen)).unwrap();
+                let tmp_next = link.next().map(|p| p.inx());
+                let t = link.t;
+                let q = new.insert(Link::new((Some(q_prev), None), t));
+                new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q);
+                q_prev = q;
+                tmp_next
+            } else {
+                break
+            };
+        }
+        self.a = new;
+        for (q, link) in self.iter_mut() {
+            map(q, link);
+        }
+    }
+
     /// Has the same properties of [Arena::clone_from_with], preserving
     /// interlinks as well.
     pub fn clone_from_with<U, F: FnMut(P, &Link<P, U>) -> T>(
@@ -822,7 +953,11 @@ impl<P: Ptr, T, B: Borrow<P>> IndexMut<B> for ChainArena<P, T> {
 
 impl<P: Ptr, T: Debug> Debug for Link<P, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({:?}, {:?}) {:?}", self.prev(), self.next(), self.t)
+        if f.alternate() {
+            write!(f, "({:?}, {:?}) {:#?}", self.prev(), self.next(), self.t)
+        } else {
+            write!(f, "({:?}, {:?}) {:?}", self.prev(), self.next(), self.t)
+        }
     }
 }
 
@@ -872,13 +1007,22 @@ impl<P: Ptr, T: Ord> Ord for Link<P, T> {
 
 impl<P: Ptr, T: Display> Display for Link<P, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({:?}, {:?}) {}", self.prev(), self.next(), self.t)
+        if f.alternate() {
+            write!(f, "({:?}, {:?}) {:#}", self.prev(), self.next(), self.t)
+        } else {
+            write!(f, "({:?}, {:?}) {}", self.prev(), self.next(), self.t)
+        }
     }
 }
 
 impl<P: Ptr, T: Debug> Debug for ChainArena<P, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.a)
+        // needs to be done this way have the proper formatting
+        if f.alternate() {
+            write!(f, "{:#?}", self.a)
+        } else {
+            write!(f, "{:?}", self.a)
+        }
     }
 }
 

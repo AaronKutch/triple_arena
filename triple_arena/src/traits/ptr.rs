@@ -188,6 +188,9 @@ pub unsafe trait Ptr:
     /// generation tracking is wanted, otherwise `()`.
     type Gen: PtrGen;
 
+    /// The struct name used in debugging (needed by `PtrNoGen` for example)
+    fn name() -> &'static str;
+
     /// Returns a new `Ptr` with a generation value `PtrGen::one()`. Because the
     /// arena starts with generation 2, this is guaranteed invalid when
     /// generation counters are used. The raw index is also set to `Inx::max()`
@@ -276,6 +279,10 @@ macro_rules! ptr_struct {
                 type Inx = $inx_type;
                 type Gen = $gen_type;
 
+                fn name() -> &'static str {
+                    stringify!($struct_name)
+                }
+
                 #[inline]
                 fn invalid() -> Self {
                     Self {
@@ -319,7 +326,7 @@ macro_rules! ptr_struct {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                     f.write_fmt(format_args!(
                         "{}[{:?}]({:?})",
-                        stringify!($struct_name),
+                        <Self as $crate::Ptr>::name(),
                         $crate::Ptr::inx(*self),
                         $crate::Ptr::gen(*self),
                     ))
@@ -356,6 +363,10 @@ macro_rules! ptr_struct {
             unsafe impl $crate::Ptr for $struct_name {
                 type Inx = $inx_type;
                 type Gen = ();
+
+                fn name() -> &'static str {
+                    stringify!($struct_name)
+                }
 
                 #[inline]
                 fn invalid() -> Self {
@@ -400,7 +411,7 @@ macro_rules! ptr_struct {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                     f.write_fmt(format_args!(
                         "{}[{:?}]",
-                        stringify!($struct_name),
+                        <Self as $crate::Ptr>::name(),
                         $crate::Ptr::inx(*self),
                     ))
                 }
@@ -470,6 +481,10 @@ unsafe impl<P: Ptr> Ptr for PtrNoGen<P> {
     type Gen = ();
     type Inx = P::Inx;
 
+    fn name() -> &'static str {
+        P::name()
+    }
+
     #[inline]
     fn invalid() -> Self {
         Self {
@@ -509,11 +524,7 @@ impl<P: Ptr> core::default::Default for PtrNoGen<P> {
 
 impl<P: Ptr> core::fmt::Debug for PtrNoGen<P> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.write_fmt(format_args!(
-            "{}[{:?}]",
-            stringify!($struct_name),
-            Ptr::inx(*self),
-        ))
+        f.write_fmt(format_args!("{}[{:?}]", Self::name(), Ptr::inx(*self),))
     }
 }
 

@@ -5,14 +5,14 @@ use rand_xoshiro::{
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::{Advancer, ChainArena, Ptr};
+use triple_arena::{utils::PtrGen, Advancer, ChainArena, Ptr};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
 const STATS: (usize, usize, u128) = if cfg!(miri) {
-    (13, 1, 220)
+    (16, 1, 221)
 } else {
-    (44, 1070, 217040)
+    (44, 1071, 217949)
 };
 
 macro_rules! next_inx {
@@ -610,7 +610,7 @@ fn fuzz_chain() {
                     assert!(!a.are_neighbors(invalid, invalid));
                 }
             }
-            960..=969 => {
+            960..=968 => {
                 // get2_mut
                 if len == 0 {
                     assert!(a.get2_mut(invalid, invalid).is_none());
@@ -623,6 +623,59 @@ fn fuzz_chain() {
                         let tmp = a.get2_mut(p0, p1).unwrap();
                         assert_eq!((*tmp.0, *tmp.1), (*a.get(p0).unwrap(), *a.get(p1).unwrap()));
                     }
+                }
+            }
+            969 => {
+                // compress_and_shrink_with
+                // compress_and_shrink is difficult to test, we just note its definition is
+                // self.compress_and_shrink_with(|_, _| ())
+
+                let mut tmp = HashMap::new();
+                let mut tmp2 = HashMap::new();
+                let q_gen = PtrGen::increment(a.gen());
+                a.compress_and_shrink_with(|q, link| {
+                    assert_eq!(q_gen, q.gen());
+                    tmp.insert(*link.t, (q, link.prev_next()));
+                    tmp2.insert(q, *link.t);
+                });
+                assert_eq!(tmp.len(), a.len());
+                assert_eq!(a.capacity(), a.len());
+                gen += 1;
+                for (t, (p, prev_next)) in &tmp {
+                    assert_eq!(*t, a[p]);
+                    assert_eq!(*prev_next, a.get_link(*p).unwrap().prev_next());
+                }
+                for (p, link) in a.iter() {
+                    assert_eq!(q_gen, p.gen());
+                    if let Some(prev) = link.prev() {
+                        assert_eq!(q_gen, prev.gen());
+                    }
+                    if let Some(next) = link.next() {
+                        assert_eq!(q_gen, next.gen());
+                    }
+                    b.get_mut(&link.t).unwrap().0 = p;
+                }
+                // because we fix the interlinks based on what we get from the closure, we want
+                // to first make sure that transitivity holds, so that we aren't getting false
+                // positives
+                for (t, (_, prev_next)) in &tmp {
+                    let p_prev = b[t].1 .0;
+                    let p_next = b[t].1 .1;
+                    let q_prev = prev_next.0;
+                    let q_next = prev_next.1;
+                    assert_eq!(p_prev.is_some(), q_prev.is_some());
+                    assert_eq!(p_next.is_some(), q_next.is_some());
+                    if let Some(p_prev) = p_prev {
+                        assert_eq!(b[&p_prev].0, q_prev.unwrap());
+                    }
+                    if let Some(p_next) = p_next {
+                        assert_eq!(b[&p_next].0, q_next.unwrap());
+                    }
+                }
+                // fix interlinks
+                for (t, (_, prev_next)) in &tmp {
+                    b.get_mut(t).unwrap().1 .0 = prev_next.0.map(|prev| *tmp2.get(&prev).unwrap());
+                    b.get_mut(t).unwrap().1 .1 = prev_next.1.map(|next| *tmp2.get(&next).unwrap());
                 }
             }
             970..=979 => {

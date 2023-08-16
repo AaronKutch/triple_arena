@@ -1,6 +1,7 @@
 use core::{
     borrow::Borrow,
     fmt, mem,
+    num::NonZeroUsize,
     ops::{Index, IndexMut},
 };
 
@@ -212,22 +213,24 @@ impl<P: Ptr, T> Arena<P, T> {
         if this.capacity() != this.m.len() {
             return Err("virtual capacity != m_len")
         }
-        let mut n_allocated = 0;
+        let mut n_allocated = 0usize;
         for i in this.m.nziter() {
-            n_allocated += matches!(this.m.get(i).unwrap(), Allocated(..)) as usize;
+            if matches!(this.m.get(i).unwrap(), Allocated(..)) {
+                n_allocated = n_allocated.checked_add(1).unwrap();
+            }
         }
         let n_free = this.m.len() - n_allocated;
         if this.len() != n_allocated {
             return Err("len != n_allocated")
         }
         // checking freelist integrity
-        let mut freelist_len = 0;
+        let mut freelist_len = 0usize;
         if let Some(root) = this.freelist_root {
             let mut tmp_inx = root;
             for i in 0.. {
                 let entry = this.m.get(P::Inx::get(tmp_inx)).unwrap();
                 if let Free(inx) = entry {
-                    freelist_len += 1;
+                    freelist_len = freelist_len.checked_add(1).unwrap();
                     if *inx == tmp_inx {
                         // last one
                         break
@@ -275,6 +278,10 @@ impl<P: Ptr, T> Arena<P, T> {
     /// lib.rs for details).
     pub fn capacity(&self) -> usize {
         self.m.len()
+    }
+
+    pub(crate) fn set_gen(&mut self, new_gen: P::Gen) {
+        self.gen = new_gen;
     }
 
     /// Return the arena generation counter (unless `P::Gen` is `()` in which
@@ -354,7 +361,7 @@ impl<P: Ptr, T> Arena<P, T> {
 
     #[must_use]
     #[inline]
-    fn m_get(&self, inx: P::Inx) -> Option<&InternalEntry<P, T>> {
+    pub(crate) fn m_get(&self, inx: P::Inx) -> Option<&InternalEntry<P, T>> {
         self.m.get(P::Inx::get(inx))
     }
 
@@ -390,7 +397,7 @@ impl<P: Ptr, T> Arena<P, T> {
     pub fn try_insert(&mut self, t: T) -> Result<P, T> {
         if let Some(inx) = self.freelist_root {
             self.unwrap_replace_free(inx, self.gen(), t);
-            self.len += 1;
+            self.len = self.len.wrapping_add(1);
             Ok(Ptr::_from_raw(inx, self.gen()))
         } else {
             Err(t)
@@ -409,7 +416,7 @@ impl<P: Ptr, T> Arena<P, T> {
         if let Some(inx) = self.freelist_root {
             let ptr = P::_from_raw(inx, self.gen());
             self.unwrap_replace_free(inx, self.gen(), create(ptr));
-            self.len += 1;
+            self.len = self.len.wrapping_add(1);
             Ok(ptr)
         } else {
             Err(create)
@@ -467,7 +474,7 @@ impl<P: Ptr, T> Arena<P, T> {
         };
         let ptr = P::_from_raw(inx, self.gen());
         self.unwrap_replace_free(inx, self.gen(), create(ptr));
-        self.len += 1;
+        self.len = self.len.wrapping_add(1);
         ptr
     }
 
@@ -559,7 +566,7 @@ impl<P: Ptr, T> Arena<P, T> {
                 } else {
                     // in both cases the new root is the entry we just removed
                     self.freelist_root = Some(p.inx());
-                    self.len -= 1;
+                    self.len = self.len.wrapping_sub(1);
                     if inc_gen {
                         self.inc_gen();
                     }
@@ -586,7 +593,7 @@ impl<P: Ptr, T> Arena<P, T> {
             let inx = P::Inx::new(inx);
             if let Allocated(gen, t) = entry {
                 if pred(P::_from_raw(inx, *gen), t) {
-                    self.len -= 1;
+                    self.len = self.len.wrapping_sub(1);
                     if let Some(free) = self.freelist_root {
                         // point to previous root
                         *entry = Free(free);
@@ -739,6 +746,49 @@ impl<P: Ptr, T> Arena<P, T> {
         self.freelist_root = None;
         self.inc_gen();
         self.len = 0;
+    }
+
+    /// This is currently only used by `SurjectArena::compress_and_shrink_with`
+    /// in a way that avoids a broken freelist.
+    pub(crate) fn raw_entry_swap_special(&mut self, i0: NonZeroUsize, i1: NonZeroUsize) {
+        if i0 != i1 {
+            let (entry0, entry1) = self.m.get2_mut(i0, i1).unwrap();
+            mem::swap(entry0, entry1);
+        }
+    }
+
+    /// Compresses the arena by moving around entries to be able to shrink the
+    /// capacity down to the length. All entries remain, but all `Ptr`s are
+    /// invalidated. New `Ptr`s to the entries can be found again by iterators
+    /// and advancers.
+    pub fn compress_and_shrink(&mut self) {
+        self.compress_and_shrink_with(|_, _| ())
+    }
+
+    /// The same as [Arena::compress_and_shrink] except that `map` is run on
+    /// every `T` with its new `Ptr`.
+    pub fn compress_and_shrink_with<F: FnMut(P, &mut T)>(&mut self, mut map: F) {
+        self.inc_gen();
+        let gen = self.gen();
+        let mut new_m = NonZeroInxVec::<InternalEntry<P, T>>::new();
+        new_m.reserve(self.len());
+        let mut j = 1;
+        for i in self.m.nziter() {
+            let entry = mem::replace(
+                self.m.get_mut(i).unwrap(),
+                Free(PtrInx::new(NonZeroUsize::new(1).unwrap())),
+            );
+            if let Allocated(_, mut t) = entry {
+                map(
+                    Ptr::_from_raw(PtrInx::new(NonZeroUsize::new(j).unwrap()), gen),
+                    &mut t,
+                );
+                new_m.push(Allocated(gen, t));
+                j = j.wrapping_add(1);
+            }
+        }
+        self.m = new_m;
+        self.freelist_root = None;
     }
 
     /// Like [Arena::clone_from] except the `Clone` bound is not required

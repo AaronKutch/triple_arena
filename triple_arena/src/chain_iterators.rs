@@ -41,7 +41,7 @@ impl<P: Ptr, T> Advancer for ChainPtrAdvancer<P, T> {
         if self.max_advances == 0 {
             return None
         } else {
-            self.max_advances -= 1;
+            self.max_advances = self.max_advances.wrapping_sub(1);
         }
         if let Some(ptr) = self.ptr {
             if self.switch {

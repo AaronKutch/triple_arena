@@ -43,7 +43,7 @@ impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
         if self.max_advances == 0 {
             return None
         } else {
-            self.max_advances -= 1;
+            self.max_advances = self.max_advances.wrapping_sub(1);
         }
         if let Some(ptr) = self.ptr {
             if let Some(link) = collection.keys.get_link(ptr) {

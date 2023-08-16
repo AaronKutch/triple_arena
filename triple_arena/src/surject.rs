@@ -3,7 +3,11 @@ use core::{mem, num::NonZeroUsize};
 
 use fmt::Debug;
 
-use crate::{utils::PtrNoGen, Advancer, Arena, ChainArena, Ptr};
+use crate::{
+    arena::InternalEntry,
+    utils::{PtrInx, PtrNoGen},
+    Advancer, Arena, ChainArena, Ptr,
+};
 
 #[derive(Clone)]
 pub(crate) struct Key<P: Ptr, K> {
@@ -158,12 +162,15 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
+        // needs to be done because of manual `InternalEntry` handling
+        ChainArena::_check_invariants(&this.keys)?;
+        Arena::_check_invariants(&this.vals)?;
         // there should be exactly one key chain associated with each val
         let mut count = Arena::<PtrNoGen<P>, usize>::new();
         count.clone_from_with(&this.vals, |_, _| 0);
         for link in this.keys.vals() {
             match count.get_mut(link.t.p_val) {
-                Some(p) => *p += 1,
+                Some(len) => *len = len.checked_add(1).unwrap(),
                 None => return Err("key points to nonexistent val"),
             }
         }
@@ -187,7 +194,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
                     if c == 0 {
                         return Err("did not reach end of key chain in expected time")
                     }
-                    c -= 1;
+                    c = c.checked_sub(1).unwrap();
                     let link = this.keys.get_link(tmp).unwrap();
                     if let Some(next) = link.next() {
                         tmp = next;
@@ -604,6 +611,100 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     pub fn clear_and_shrink(&mut self) {
         self.keys.clear_and_shrink();
         self.vals.clear_and_shrink();
+    }
+
+    /// Compresses the arena by moving around entries to be able to shrink the
+    /// capacities of the keys and values down to their respective lengths. All
+    /// surject relations remain, but all `Ptr`s are invalidated. New `Ptr`s
+    /// to the entries can be found again by iterators and advancers.
+    /// Notably, when iterating or advancing after a call to this type of
+    /// function or during `map`ping with
+    /// [SurjectArena::compress_and_shrink_with], whole surjects at a time
+    /// are advanced through without discontinuity. Additionally, cache locality
+    /// is improved by keys within the same surject being moved close together
+    /// in memory.
+    pub fn compress_and_shrink(&mut self) {
+        self.compress_and_shrink_with(|_, _, _| ())
+    }
+
+    /// The same as [SurjectArena::compress_and_shrink] except that `map` is run
+    /// on every `(P, &mut K, &mut V)` with the new `Ptr`s.
+    pub fn compress_and_shrink_with<F: FnMut(P, &mut K, &mut V)>(&mut self, mut map: F) {
+        // we run into the problem of not being able to lookup keys from values, so we
+        // do a special kind of manual compression on the values
+        let mut first_unallocated = None;
+        for i in self.vals.m.nziter() {
+            if matches!(
+                self.vals.m_get(P::Inx::new(i)).unwrap(),
+                InternalEntry::Free(_)
+            ) {
+                first_unallocated = Some(i);
+                break
+            }
+        }
+
+        // first compress the keys so that their cache locality is improved
+        let mut p_val_last = None;
+        let mut new_p_val = None;
+        self.keys.compress_and_shrink_with(|p, link| {
+            let p_val = link.t.p_val;
+            if Some(p_val) != p_val_last {
+                let mut new_change = false;
+                if let Some(i_unallocated) = first_unallocated {
+                    let i = P::Inx::get(p_val.inx());
+                    if i > i_unallocated {
+                        // move it into the unallocated spot
+                        self.vals.raw_entry_swap_special(i_unallocated, i);
+                        // change all `p_val`s of the surject
+                        new_p_val = Some(P::Inx::new(i_unallocated));
+                        new_change = true;
+                        // get the next unallocated index
+                        let mut j = i_unallocated.get().wrapping_add(1);
+                        loop {
+                            if j > self.vals.m.len() {
+                                first_unallocated = None;
+                                break
+                            }
+                            let j_nz = NonZeroUsize::new(j).unwrap();
+                            if matches!(
+                                self.vals.m_get(P::Inx::new(j_nz)).unwrap(),
+                                InternalEntry::Free(_)
+                            ) {
+                                first_unallocated = Some(j_nz);
+                                break
+                            }
+                            j = j.wrapping_add(1);
+                        }
+                    }
+                }
+                if !new_change {
+                    // the `p_val` of this new surject we are encountering does not need to be
+                    // changed
+                    new_p_val = None;
+                }
+                p_val_last = Some(p_val);
+            }
+            if let Some(new_p_val) = new_p_val {
+                link.t.p_val = Ptr::_from_raw(new_p_val, ());
+            }
+            map(
+                p,
+                &mut link.t.k,
+                &mut self.vals.get_inx_mut_unwrap(link.t.p_val.inx()).v,
+            )
+        });
+        // important: remove all free entries, set freelist root to `None`, and shrink
+        // to fit `self.vals`, completes the compression and fixes the likely broken
+        // freelist
+        while let Some(i) = NonZeroUsize::new(self.vals.m.len()) {
+            if let Some(InternalEntry::Free(_)) = self.vals.m.get(i) {
+                self.vals.m.pop().unwrap();
+            } else {
+                break
+            }
+        }
+        self.vals.freelist_root = None;
+        self.vals.m.shrink_to_fit();
     }
 
     /// Has the same properties of [Arena::clone_from_with]

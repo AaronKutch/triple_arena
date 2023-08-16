@@ -9,14 +9,14 @@ use rand_xoshiro::{
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::{Advancer, Ptr, SurjectArena};
+use triple_arena::{utils::PtrGen, Advancer, Ptr, SurjectArena};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
 const STATS: (usize, usize, u64, u128) = if cfg!(miri) {
-    (8, 3, 0, 71)
+    (8, 3, 0, 73)
 } else {
-    (43, 11, 1047, 78918)
+    (39, 11, 1036, 79891)
 };
 
 macro_rules! next_inx {
@@ -472,7 +472,7 @@ fn fuzz_surject() {
                     assert!(a.swap_vals(invalid, invalid).is_none());
                 }
             }
-            600..=969 => {
+            600..=968 => {
                 // reserved
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
@@ -483,6 +483,46 @@ fn fuzz_surject() {
                     assert_eq!((*tmp.0, *tmp.1), (pair.k, v));
                 } else {
                     assert!(a.get(invalid).is_none());
+                }
+            }
+            969 => {
+                // compress_and_shrink_with
+                // compress_and_shrink is difficult to test, we just note its definition is
+                // self.compress_and_shrink_with(|_, _, _| ())
+
+                let mut tmp: HashMap<Val, HashMap<Key, P0>> = HashMap::new();
+                let q_gen = PtrGen::increment(a.gen());
+                a.compress_and_shrink_with(|q, key, val| {
+                    assert_eq!(q_gen, q.gen());
+                    if let Some(set) = tmp.get_mut(val) {
+                        set.insert(*key, q);
+                    } else {
+                        let mut set = HashMap::new();
+                        set.insert(*key, q);
+                        tmp.insert(*val, set);
+                    }
+                });
+                assert_eq!(tmp.len(), a.len_vals());
+                assert_eq!(a.capacity_keys(), a.len_keys());
+                assert_eq!(a.capacity_vals(), a.len_vals());
+                gen += 1;
+                let mut total_keys = 0;
+                for (val, set) in &tmp {
+                    for (key, q) in set {
+                        assert_eq!(val, a.get_val(*q).unwrap());
+                        assert_eq!(key, a.get_key(*q).unwrap());
+                        total_keys += 1;
+                    }
+                    let q_any = set.iter().next().unwrap().1;
+                    assert_eq!(set.len(), a.len_key_set(*q_any).unwrap().get());
+                }
+                assert_eq!(total_keys, a.len_keys());
+                // fix `Ptr`s
+                for (val, set) in &tmp {
+                    for pair in b.get_mut(val).unwrap() {
+                        let q = set[&pair.k];
+                        pair.p = q;
+                    }
                 }
             }
             970..=979 => {

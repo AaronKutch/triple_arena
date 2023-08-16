@@ -346,6 +346,94 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         self.a.clear_and_shrink();
     }
 
+    /// Compresses the arena by moving around entries to be able to shrink the
+    /// capacity down to the length. All key-value relations remain, but all
+    /// `Ptr`s are invalidated. New `Ptr`s to the entries can be found again
+    /// by iterators and advancers. Additionally, cache locality is improved
+    /// by neighboring keys being moved close together in memory, and search
+    /// speed is improved by the tree being balanced close to the ideal
+    /// balancing.
+    pub fn compress_and_shrink(&mut self) {
+        self.compress_and_shrink_with(|_, _, _| ())
+    }
+
+    /// The same as [OrdArena::compress_and_shrink] except that `map` is run
+    /// on every `(P, &K, &mut V)` with the new `Ptr`.
+    pub fn compress_and_shrink_with<F: FnMut(P, &K, &mut V)>(&mut self, mut map: F) {
+        if let Some(min) = self.min() {
+            self.a
+                .compress_and_shrink_acyclic_chain_with(min, |p, link| {
+                    // handles partially exterior nodes for later
+                    link.t.p_tree0 = None;
+                    link.t.p_tree1 = None;
+                    map(p, &link.t.k, &mut link.t.v)
+                });
+            // redo the tree structure for better balance
+            let p_first = P::Inx::new(NonZeroUsize::new(1).unwrap());
+            self.first = p_first;
+            self.last = P::Inx::new(NonZeroUsize::new(self.a.len()).unwrap());
+            let root_rank = (self
+                .a
+                .len()
+                .wrapping_sub(1)
+                .next_power_of_two()
+                .trailing_zeros() as u8)
+                .wrapping_add(1);
+            let mut i = NonZeroUsize::new(self.a.len()).unwrap();
+            loop {
+                let mut lvl = root_rank;
+                let p = P::Inx::new(i);
+                let mut subtree_first = 1;
+                let mut subtree_last = self.a.len();
+                let mut last_subtree_mid = None;
+                loop {
+                    let subtree_len = subtree_last.wrapping_sub(subtree_first).wrapping_add(1);
+                    let subtree_mid = subtree_first.wrapping_add(subtree_len.wrapping_shr(1));
+                    if i.get() == subtree_mid {
+                        // important: actual accesses are only done at this time
+                        let node = self.a.get_inx_mut_unwrap_t(p);
+                        if subtree_len == 1 {
+                            node.rank = 1;
+                        } else if subtree_len == 2 {
+                            node.rank = 2;
+                        } else if subtree_len == 3 || subtree_len == 4 {
+                            node.rank = 3;
+                        } else {
+                            node.rank = lvl;
+                        }
+                        if let Some(last_subtree_mid) = last_subtree_mid {
+                            let p_back = P::Inx::new(NonZeroUsize::new(last_subtree_mid).unwrap());
+                            node.p_back = Some(p_back);
+                            let node = self.a.get_inx_mut_unwrap_t(p_back);
+                            if i < P::Inx::get(p_back) {
+                                node.p_tree0 = Some(p);
+                            } else {
+                                node.p_tree1 = Some(p);
+                            }
+                        } else {
+                            node.p_back = None;
+                            self.root = p;
+                        }
+                        break
+                    } else if i.get() < subtree_mid {
+                        subtree_last = subtree_mid.wrapping_sub(1);
+                    } else {
+                        subtree_first = subtree_mid.wrapping_add(1);
+                    }
+                    lvl = lvl.wrapping_sub(1);
+                    last_subtree_mid = Some(subtree_mid);
+                }
+                i = if let Some(prev) = NonZeroUsize::new(i.get().wrapping_sub(1)) {
+                    prev
+                } else {
+                    break
+                }
+            }
+        } else {
+            self.a.clear_and_shrink();
+        }
+    }
+
     /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
     /// `self`, with the ordering preserved in a single chain

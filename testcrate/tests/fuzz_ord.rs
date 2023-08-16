@@ -1,11 +1,15 @@
-use std::{cmp::Ordering, collections::BTreeMap, hint::black_box};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, HashMap},
+    hint::black_box,
+};
 
 use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::{Advancer, OrdArena};
+use triple_arena::{utils::PtrGen, Advancer, OrdArena, Ptr};
 
 const N: usize = if cfg!(miri) {
     1000
@@ -16,11 +20,11 @@ const N: usize = if cfg!(miri) {
 };
 
 const STATS: (usize, u64, u128) = if cfg!(miri) {
-    (65, 1, 128)
+    (65, 1, 130)
 } else if cfg!(debug_assertions) {
-    (285, 111, 14529)
+    (289, 111, 14626)
 } else {
-    (401, 5074, 744185)
+    (404, 5074, 749119)
 };
 
 macro_rules! next_inx {
@@ -468,7 +472,46 @@ fn fuzz_ord() {
                     assert!(a.max().is_none());
                 }
             }
-            998 => {}
+            998 => {
+                // compress_and_shrink_with
+                // compress_and_shrink is difficult to test, we just note its definition is
+                // self.compress_and_shrink_with(|_, _, _| ())
+
+                let mut tmp: HashMap<Val, Triple> = HashMap::new();
+                let q_gen = PtrGen::increment(a.gen());
+                a.compress_and_shrink_with(|q, key, val| {
+                    assert_eq!(q_gen, q.gen());
+                    tmp.insert(*val, Triple {
+                        p: q,
+                        k: *key,
+                        v: *val,
+                    });
+                });
+                assert_eq!(tmp.len(), a.len());
+                assert_eq!(a.capacity(), a.len());
+                gen += 1;
+                for (val, triple) in &tmp {
+                    assert_eq!(val, a.get_val(triple.p).unwrap());
+                    assert_eq!(triple.k, *a.get_key(triple.p).unwrap());
+                }
+                // fix `Ptr`s
+                for (val, triple) in &tmp {
+                    for set_part in b.get_mut(&triple.k).unwrap() {
+                        if set_part.0 == val {
+                            set_part.1.p = triple.p;
+                            break
+                        }
+                    }
+                }
+                for triple in &mut list {
+                    for set_part in &b[&triple.k] {
+                        if *set_part.0 == triple.v {
+                            triple.p = set_part.1.p;
+                            break
+                        }
+                    }
+                }
+            }
             999 => {
                 match rng.next_u32() % 4 {
                     0 => {
