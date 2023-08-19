@@ -154,47 +154,50 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     }
 
     /// The same as [OrdArena::find_key], except it uses linear
-    /// comparisons starting at `p_init`. If `p` is not within a small constant
-    /// number of elements away from where `k` should be ordered, this
-    /// function may operate in `O(n)` time instead of the `O(1)` this is
-    /// intended for. Returns `None` if `p_init` is invalid or the key was not
-    /// found.
+    /// comparisons starting at `p_init`. If the key is not found
+    /// within `num` comparisons, or `p_init` is invalid, a normal search is
+    /// used. Returns `None` if the key was not found.
     #[must_use]
-    pub fn find_key_linear(&self, p_init: P, k: &K) -> Option<P> {
+    pub fn find_key_linear(&self, p_init: P, num: usize, k: &K) -> Option<P> {
         if !self.a.contains(p_init) {
-            return None
+            return self.find_key(k)
         }
+        // we settled on the model of trying `num` linear comparisons, because any kind
+        // of search starting from the leaves of the tree runs into the problem that
+        // constant numbers of distance can leave the target on the other side of the
+        // tree, and the search time becomes twice the normal search time in many cases.
         let mut p = p_init.inx();
         let mut direction = None;
-        loop {
+        for _ in 0..num {
             let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
                     if direction == Some(true) {
-                        break None
+                        break
                     }
                     direction = Some(false);
                     if let Some(prev) = link.prev() {
                         p = prev.inx();
                     } else {
-                        break None
+                        break
                     }
                 }
-                Ordering::Equal => break Some(Ptr::_from_raw(p, gen)),
+                Ordering::Equal => return Some(Ptr::_from_raw(p, gen)),
                 Ordering::Greater => {
                     if direction == Some(false) {
-                        break None
+                        break
                     }
                     direction = Some(true);
                     if let Some(next) = link.next() {
                         p = next.inx();
                     } else {
-                        break None
+                        break
                     }
                 }
             }
         }
+        self.find_key(k)
     }
 
     /// Finds a `Ptr` with an associated key that is equal key to `k`. If such a
@@ -237,43 +240,43 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// Combines the behaviors of [OrdArena::find_similar_key] and
     /// [OrdArena::find_key_linear]
     #[must_use]
-    pub fn find_similar_key_linear(&self, p_init: P, k: &K) -> Option<(P, Ordering)> {
+    pub fn find_similar_key_linear(&self, p_init: P, num: usize, k: &K) -> Option<(P, Ordering)> {
         if !self.a.contains(p_init) {
-            return None
+            return self.find_similar_key(k)
         }
         let mut p = p_init.inx();
         let mut direction = None;
-        let ordering = loop {
-            let link = self.a.get_inx_unwrap(p);
+        for _ in 0..num {
+            let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
+            let p_with_gen = Ptr::_from_raw(p, gen);
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
                     if direction == Some(true) {
-                        break Ordering::Less
+                        return Some((p_with_gen, Ordering::Less))
                     }
                     direction = Some(false);
                     if let Some(prev) = link.prev() {
                         p = prev.inx();
                     } else {
-                        break Ordering::Less
+                        return Some((p_with_gen, Ordering::Less))
                     }
                 }
-                Ordering::Equal => break Ordering::Equal,
+                Ordering::Equal => return Some((p_with_gen, Ordering::Equal)),
                 Ordering::Greater => {
                     if direction == Some(false) {
-                        break Ordering::Greater
+                        return Some((p_with_gen, Ordering::Greater))
                     }
                     direction = Some(true);
                     if let Some(next) = link.next() {
                         p = next.inx();
                     } else {
-                        break Ordering::Greater
+                        return Some((p_with_gen, Ordering::Greater))
                     }
                 }
             }
-        };
-        let (gen, _) = self.a.get_ignore_gen(p).unwrap();
-        Some((Ptr::_from_raw(p, gen), ordering))
+        }
+        self.find_similar_key(k)
     }
 }
 

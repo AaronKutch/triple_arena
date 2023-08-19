@@ -7,6 +7,8 @@
 ### Changes
 - Undid the tuple grouping of key value pairs in `OrdArena`, because it wasn't worth it and will not
   be compatible with the future cache local version anyway.
+- Added a `num` argument to the `OrdArena::*_linear` functions and changed their signatures
+- Added some raw functions
 - Renamed the `iterators` module to `arena_iterators`
 
 ### Additions

@@ -22,7 +22,7 @@ const N: usize = if cfg!(miri) {
 const STATS: (usize, u64, u128) = if cfg!(miri) {
     (65, 1, 130)
 } else if cfg!(debug_assertions) {
-    (289, 111, 14626)
+    (297, 112, 14550)
 } else {
     (404, 5074, 749119)
 };
@@ -76,18 +76,7 @@ fn fuzz_ord() {
     let mut b: BTreeMap<Key, BTreeMap<Val, Triple>> = BTreeMap::new();
 
     let invalid = a.insert_nonhereditary(Key { k: 0 }, Val { v: 0 });
-    assert!(a.insert_linear(None, Key { k: 0 }, Val { v: 0 }).is_err());
-    assert!(a
-        .insert_nonhereditary_linear(None, Key { k: 0 }, Val { v: 0 })
-        .is_err());
-    a.remove(invalid).unwrap();
-    assert!(a
-        .insert_linear(Some(invalid), Key { k: 0 }, Val { v: 0 })
-        .is_err());
-    assert!(a
-        .insert_nonhereditary_linear(Some(invalid), Key { k: 0 }, Val { v: 0 })
-        .is_err());
-    gen += 1;
+    assert!(a.insert_empty(Key { k: 0 }, Val { v: 0 }).is_none());
     a.clear_and_shrink();
     gen += 1;
     let mut op_inx;
@@ -154,16 +143,16 @@ fn fuzz_ord() {
                 // insert, insert_similar
                 let k = new_k();
                 let v = new_v();
-                let (p, k_v) = if (rng.next_u32() % 100) < 90 {
+                let (p, k_v) = if (rng.next_u32() & 1) == 0 {
                     a.insert(k, v)
                 } else {
                     let p_init = if a.is_empty() {
-                        None
+                        Ptr::invalid()
                     } else {
                         // start from anywhere
-                        Some(list[next_inx!(rng, len)].p)
+                        list[next_inx!(rng, len)].p
                     };
-                    a.insert_linear(p_init, k, v).unwrap()
+                    a.insert_linear(p_init, 4, k, v)
                 };
                 let triple = Triple { p, k, v };
                 list.push(triple);
@@ -195,12 +184,12 @@ fn fuzz_ord() {
                     a.insert_nonhereditary(k, v)
                 } else {
                     let p_init = if a.is_empty() {
-                        None
+                        Ptr::invalid()
                     } else {
                         // start from anywhere
-                        Some(list[next_inx!(rng, len)].p)
+                        list[next_inx!(rng, len)].p
                     };
-                    a.insert_nonhereditary_linear(p_init, k, v).unwrap()
+                    a.insert_nonhereditary_linear(p_init, 4, k, v)
                 };
                 let triple = Triple { p, k, v };
                 list.push(triple);
@@ -231,10 +220,10 @@ fn fuzz_ord() {
                 // find_similar_key, find_similar_key_linear
                 let new_k = new_k();
                 if len != 0 {
-                    let (p, ord) = if (rng.next_u32() % 100) < 90 {
+                    let (p, ord) = if (rng.next_u32() & 1) == 0 {
                         a.find_similar_key(&new_k).unwrap()
                     } else {
-                        a.find_similar_key_linear(list[next_inx!(rng, len)].p, &new_k)
+                        a.find_similar_key_linear(list[next_inx!(rng, len)].p, 4, &new_k)
                             .unwrap()
                     };
                     let link = a.get_link(p).unwrap();
@@ -257,28 +246,28 @@ fn fuzz_ord() {
                     }
                 } else {
                     assert!(a.find_similar_key(&new_k).is_none());
-                    assert!(a.find_similar_key_linear(invalid, &new_k).is_none());
+                    assert!(a.find_similar_key_linear(invalid, 4, &new_k).is_none());
                 }
             }
             350..=399 => {
                 // find_key, find_key_linear
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {
-                    let p = if (rng.next_u32() % 100) < 90 {
+                    let p = if (rng.next_u32() & 1) == 0 {
                         a.find_key(&new_k).unwrap()
                     } else {
-                        a.find_key_linear(list[next_inx!(rng, len)].p, &new_k)
+                        a.find_key_linear(list[next_inx!(rng, len)].p, 4, &new_k)
                             .unwrap()
                     };
                     let v = *a.get_val(p).unwrap();
                     assert!(set.contains_key(&v));
-                } else if (rng.next_u32() % 100) < 90 {
+                } else if (rng.next_u32() & 1) == 0 {
                     assert!(a.find_key(&new_k).is_none());
                 } else if len == 0 {
-                    assert!(a.find_key_linear(invalid, &new_k).is_none());
+                    assert!(a.find_key_linear(invalid, 4, &new_k).is_none());
                 } else {
                     assert!(a
-                        .find_key_linear(list[next_inx!(rng, len)].p, &new_k)
+                        .find_key_linear(list[next_inx!(rng, len)].p, 4, &new_k)
                         .is_none());
                 }
             }
