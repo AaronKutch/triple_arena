@@ -624,12 +624,13 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// is improved by keys within the same surject being moved close together
     /// in memory.
     pub fn compress_and_shrink(&mut self) {
-        self.compress_and_shrink_with(|_, _, _| ())
+        self.compress_and_shrink_with(|_, _, _, _| ())
     }
 
     /// The same as [SurjectArena::compress_and_shrink] except that `map` is run
-    /// on every `(P, &mut K, &mut V)` with the new `Ptr`s.
-    pub fn compress_and_shrink_with<F: FnMut(P, &mut K, &mut V)>(&mut self, mut map: F) {
+    /// on every `(P, &mut K, &mut V, P)` with the first `P` being the old `Ptr`
+    /// and the last `P` being the new `Ptr`.
+    pub fn compress_and_shrink_with<F: FnMut(P, &mut K, &mut V, P)>(&mut self, mut map: F) {
         // we run into the problem of not being able to lookup keys from values, so we
         // do a special kind of manual compression on the values
         let mut first_unallocated = None;
@@ -646,8 +647,8 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         // first compress the keys so that their cache locality is improved
         let mut p_val_last = None;
         let mut new_p_val = None;
-        self.keys.compress_and_shrink_with(|p, link| {
-            let p_val = link.t.p_val;
+        self.keys.compress_and_shrink_with(|p, key, q| {
+            let p_val = key.p_val;
             if Some(p_val) != p_val_last {
                 let mut new_change = false;
                 if let Some(i_unallocated) = first_unallocated {
@@ -685,12 +686,13 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
                 p_val_last = Some(p_val);
             }
             if let Some(new_p_val) = new_p_val {
-                link.t.p_val = Ptr::_from_raw(new_p_val, ());
+                key.p_val = Ptr::_from_raw(new_p_val, ());
             }
             map(
                 p,
-                &mut link.t.k,
-                &mut self.vals.get_inx_mut_unwrap(link.t.p_val.inx()).v,
+                &mut key.k,
+                &mut self.vals.get_inx_mut_unwrap(key.p_val.inx()).v,
+                q,
             )
         });
         // important: remove all free entries, set freelist root to `None`, and shrink

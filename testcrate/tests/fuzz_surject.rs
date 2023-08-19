@@ -492,7 +492,12 @@ fn fuzz_surject() {
 
                 let mut tmp: HashMap<Val, HashMap<Key, P0>> = HashMap::new();
                 let q_gen = PtrGen::increment(a.gen());
-                a.compress_and_shrink_with(|q, key, val| {
+                a.compress_and_shrink_with(|p, key, val, q| {
+                    for pair in b.get(val).unwrap() {
+                        if pair.k == *key {
+                            assert_eq!(pair.p, p);
+                        }
+                    }
                     assert_eq!(q_gen, q.gen());
                     if let Some(set) = tmp.get_mut(val) {
                         set.insert(*key, q);

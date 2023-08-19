@@ -479,7 +479,9 @@ fn fuzz_ord() {
 
                 let mut tmp: HashMap<Val, Triple> = HashMap::new();
                 let q_gen = PtrGen::increment(a.gen());
-                a.compress_and_shrink_with(|q, key, val| {
+                a.compress_and_shrink_with(|p, key, val, q| {
+                    let set = &b[key];
+                    assert_eq!(set[val].p, p);
                     assert_eq!(q_gen, q.gen());
                     tmp.insert(*val, Triple {
                         p: q,

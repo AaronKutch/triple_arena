@@ -746,12 +746,13 @@ impl<P: Ptr, T> ChainArena<P, T> {
     /// locality is improved by neighboring links being moved close together
     /// in memory.
     pub fn compress_and_shrink(&mut self) {
-        self.compress_and_shrink_with(|_, _| ())
+        self.compress_and_shrink_with(|_, _, _| ())
     }
 
     /// The same as [ChainArena::compress_and_shrink] except that `map` is run
-    /// on every `Link<P, &mut T>` with its new `Ptr` and interlinks.
-    pub fn compress_and_shrink_with<F: FnMut(P, Link<P, &mut T>)>(&mut self, mut map: F) {
+    /// on every `(P, &mut T, P)` with the first `P` being the old `Ptr` and the
+    /// last being the new `Ptr`.
+    pub fn compress_and_shrink_with<F: FnMut(P, &mut T, P)>(&mut self, mut map: F) {
         // If we try using any linear loop method, we run into a problem where the
         // arbitrary prev or next node has an unknown back interlink. We use this method
         // because it has the added benefit of bringing in order links together in
@@ -765,6 +766,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
         'outer: while let Some(p_init) = adv.advance(&self.a) {
             // an initial prelude is absolutely required to link up cyclic chains and handle
             // SLCCs
+            let p = p_init;
             let link = self.a.remove(p_init).unwrap();
             let p_init = p_init.inx();
             let mut p_init_prev = None;
@@ -772,7 +774,8 @@ impl<P: Ptr, T> ChainArena<P, T> {
             let q_init = if let Some(prev) = link.prev() {
                 if prev.inx() == p_init {
                     // SLCC
-                    new.insert_with(|q| Link::new((Some(q), Some(q)), link.t));
+                    let q = new.insert_with(|q| Link::new((Some(q), Some(q)), link.t));
+                    map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
                     continue 'outer
                 } else {
                     let q = new.insert(Link::new((None, None), link.t));
@@ -782,21 +785,25 @@ impl<P: Ptr, T> ChainArena<P, T> {
             } else {
                 new.insert(Link::new((None, None), link.t))
             };
+            map(p, &mut new.get_inx_mut_unwrap(q_init.inx()).t, q_init);
             let mut q_prev = q_init;
             loop {
                 p_next = if let Some(p_next) = p_next {
                     let p_gen = self.a.get_ignore_gen(p_next).unwrap().0;
-                    let link = self.a.remove(Ptr::_from_raw(p_next, p_gen)).unwrap();
+                    let p = Ptr::_from_raw(p_next, p_gen);
+                    let link = self.a.remove(p).unwrap();
                     let tmp_next = link.next().map(|p| p.inx());
                     let t = link.t;
                     if Some(p_next) == p_init_prev {
                         // cyclic chain, connect in one step
                         let q = new.insert(Link::new((Some(q_prev), Some(q_init)), t));
+                        map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
                         new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q);
                         new.get_inx_mut_unwrap(q_init.inx()).prev_next.0 = Some(q);
                         continue 'outer
                     }
                     let q = new.insert(Link::new((Some(q_prev), None), t));
+                    map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
                     new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q);
                     q_prev = q;
                     tmp_next
@@ -810,10 +817,12 @@ impl<P: Ptr, T> ChainArena<P, T> {
             loop {
                 p_prev = if let Some(p_prev) = p_prev {
                     let p_gen = self.a.get_ignore_gen(p_prev).unwrap().0;
-                    let link = self.a.remove(Ptr::_from_raw(p_prev, p_gen)).unwrap();
+                    let p = Ptr::_from_raw(p_prev, p_gen);
+                    let link = self.a.remove(p).unwrap();
                     let tmp_prev = link.prev().map(|p| p.inx());
                     let t = link.t;
                     let q = new.insert(Link::new((None, Some(q_next)), t));
+                    map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
                     new.get_inx_mut_unwrap(q_next.inx()).prev_next.0 = Some(q);
                     q_next = q;
                     tmp_prev
@@ -823,14 +832,11 @@ impl<P: Ptr, T> ChainArena<P, T> {
             }
         }
         self.a = new;
-        for (q, link) in self.iter_mut() {
-            map(q, link);
-        }
     }
 
     /// A variation of `compress_and_shrink_with` that is intended for a single
     /// acyclic chain that has `first_link` as the first link in the chain.
-    pub(crate) fn compress_and_shrink_acyclic_chain_with<F: FnMut(P, Link<P, &mut T>)>(
+    pub(crate) fn compress_and_shrink_acyclic_chain_with<F: FnMut(P, &mut T, P)>(
         &mut self,
         first_link: P,
         mut map: F,
@@ -844,13 +850,16 @@ impl<P: Ptr, T> ChainArena<P, T> {
         let link = self.a.remove(p_init).unwrap();
         let mut p_next = link.next().map(|p| p.inx());
         let mut q_prev = new.insert(Link::new((None, None), link.t));
+        map(p_init, &mut new.get_inx_mut_unwrap(q_prev.inx()).t, q_prev);
         loop {
             p_next = if let Some(p_next) = p_next {
                 let p_gen = self.a.get_ignore_gen(p_next).unwrap().0;
-                let link = self.a.remove(Ptr::_from_raw(p_next, p_gen)).unwrap();
+                let p = Ptr::_from_raw(p_next, p_gen);
+                let link = self.a.remove(p).unwrap();
                 let tmp_next = link.next().map(|p| p.inx());
                 let t = link.t;
                 let q = new.insert(Link::new((Some(q_prev), None), t));
+                map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
                 new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q);
                 q_prev = q;
                 tmp_next
@@ -859,9 +868,6 @@ impl<P: Ptr, T> ChainArena<P, T> {
             };
         }
         self.a = new;
-        for (q, link) in self.iter_mut() {
-            map(q, link);
-        }
     }
 
     /// Has the same properties of [Arena::clone_from_with], preserving

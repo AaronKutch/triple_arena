@@ -762,12 +762,13 @@ impl<P: Ptr, T> Arena<P, T> {
     /// invalidated. New `Ptr`s to the entries can be found again by iterators
     /// and advancers.
     pub fn compress_and_shrink(&mut self) {
-        self.compress_and_shrink_with(|_, _| ())
+        self.compress_and_shrink_with(|_, _, _| ())
     }
 
     /// The same as [Arena::compress_and_shrink] except that `map` is run on
-    /// every `T` with its new `Ptr`.
-    pub fn compress_and_shrink_with<F: FnMut(P, &mut T)>(&mut self, mut map: F) {
+    /// `(P, &mut T, P)`, with the first `P` being the old `Ptr` and the last
+    /// `P` being the new `Ptr`.
+    pub fn compress_and_shrink_with<F: FnMut(P, &mut T, P)>(&mut self, mut map: F) {
         self.inc_gen();
         let gen = self.gen();
         let mut new_m = NonZeroInxVec::<InternalEntry<P, T>>::new();
@@ -778,10 +779,11 @@ impl<P: Ptr, T> Arena<P, T> {
                 self.m.get_mut(i).unwrap(),
                 Free(PtrInx::new(NonZeroUsize::new(1).unwrap())),
             );
-            if let Allocated(_, mut t) = entry {
+            if let Allocated(old_gen, mut t) = entry {
                 map(
-                    Ptr::_from_raw(PtrInx::new(NonZeroUsize::new(j).unwrap()), gen),
+                    Ptr::_from_raw(PtrInx::new(i), old_gen),
                     &mut t,
+                    Ptr::_from_raw(PtrInx::new(NonZeroUsize::new(j).unwrap()), gen),
                 );
                 new_m.push(Allocated(gen, t));
                 j = j.wrapping_add(1);

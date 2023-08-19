@@ -329,7 +329,7 @@ fn fuzz_arena() {
                 a.compress_and_shrink();
                 assert_eq!(a.capacity(), a.len());
                 gen += 1;
-                // for this base test, manually rewrite `Ptr`s
+                // for this base test, manually recast `Ptr`s
                 for (p, t) in a.iter() {
                     *b.get_mut(t).unwrap() = p;
                 }
@@ -338,9 +338,10 @@ fn fuzz_arena() {
                 // compress_and_shrink_with
                 let mut tmp = HashMap::new();
                 let q_gen = PtrGen::increment(a.gen());
-                a.compress_and_shrink_with(|p, t| {
-                    assert_eq!(q_gen, p.gen());
-                    tmp.insert(*t, p);
+                a.compress_and_shrink_with(|p, t, q| {
+                    assert_eq!(b[t], p);
+                    assert_eq!(q_gen, q.gen());
+                    tmp.insert(*t, q);
                 });
                 assert_eq!(tmp.len(), a.len());
                 assert_eq!(a.capacity(), a.len());
@@ -348,7 +349,7 @@ fn fuzz_arena() {
                 for (t, p) in tmp {
                     assert_eq!(t, a[p]);
                 }
-                // for this base test, manually rewrite `Ptr`s
+                // for this base test, manually recast `Ptr`s
                 for (p, t) in a.iter() {
                     assert_eq!(q_gen, p.gen());
                     *b.get_mut(t).unwrap() = p;

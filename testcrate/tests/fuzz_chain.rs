@@ -633,49 +633,34 @@ fn fuzz_chain() {
                 let mut tmp = HashMap::new();
                 let mut tmp2 = HashMap::new();
                 let q_gen = PtrGen::increment(a.gen());
-                a.compress_and_shrink_with(|q, link| {
+                a.compress_and_shrink_with(|p, t, q| {
+                    assert_eq!(b[t].0, p);
                     assert_eq!(q_gen, q.gen());
-                    tmp.insert(*link.t, (q, link.prev_next()));
-                    tmp2.insert(q, *link.t);
+                    tmp.insert(*t, q);
+                    tmp2.insert(q, p);
                 });
                 assert_eq!(tmp.len(), a.len());
                 assert_eq!(a.capacity(), a.len());
                 gen += 1;
-                for (t, (p, prev_next)) in &tmp {
-                    assert_eq!(*t, a[p]);
-                    assert_eq!(*prev_next, a.get_link(*p).unwrap().prev_next());
+                for (t, q) in &tmp {
+                    assert_eq!(*t, a[q]);
                 }
-                for (p, link) in a.iter() {
-                    assert_eq!(q_gen, p.gen());
+                for (q, link) in a.iter() {
+                    assert_eq!(q_gen, q.gen());
+                    // make sure the modified interlinks agree with the `tmp2` mapping
                     if let Some(prev) = link.prev() {
                         assert_eq!(q_gen, prev.gen());
+                        let p_prev = b[&link.t].1 .0.unwrap();
+                        assert_eq!(tmp2[&prev], b[&p_prev].0);
                     }
                     if let Some(next) = link.next() {
                         assert_eq!(q_gen, next.gen());
-                    }
-                    b.get_mut(&link.t).unwrap().0 = p;
-                }
-                // because we fix the interlinks based on what we get from the closure, we want
-                // to first make sure that transitivity holds, so that we aren't getting false
-                // positives
-                for (t, (_, prev_next)) in &tmp {
-                    let p_prev = b[t].1 .0;
-                    let p_next = b[t].1 .1;
-                    let q_prev = prev_next.0;
-                    let q_next = prev_next.1;
-                    assert_eq!(p_prev.is_some(), q_prev.is_some());
-                    assert_eq!(p_next.is_some(), q_next.is_some());
-                    if let Some(p_prev) = p_prev {
-                        assert_eq!(b[&p_prev].0, q_prev.unwrap());
-                    }
-                    if let Some(p_next) = p_next {
-                        assert_eq!(b[&p_next].0, q_next.unwrap());
+                        let p_next = b[&link.t].1 .1.unwrap();
+                        assert_eq!(tmp2[&next], b[&p_next].0);
                     }
                 }
-                // fix interlinks
-                for (t, (_, prev_next)) in &tmp {
-                    b.get_mut(t).unwrap().1 .0 = prev_next.0.map(|prev| *tmp2.get(&prev).unwrap());
-                    b.get_mut(t).unwrap().1 .1 = prev_next.1.map(|next| *tmp2.get(&next).unwrap());
+                for (q, link) in a.iter() {
+                    b.get_mut(&link.t).unwrap().0 = q;
                 }
             }
             970..=979 => {
