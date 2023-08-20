@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.11.0] - TODO
+## [0.11.0] - 2023-08-20
 ### Fixes
 - Fixed that the `Clone::clone_from` specialization on `OrdArena` was broken
 - Fixed that the `Debug` impl of `PtrNoGen` was messed up

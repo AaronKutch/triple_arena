@@ -1,6 +1,10 @@
 # Changelog
 
-## [0.10.0] - TODO
+## [0.11.0] - 2023-08-20
+### Crate
+- `triple_arena` 0.11.0
+
+## [0.10.0] - 2023-08-05
 ### Crate
 - `triple_arena` 0.10.0
 

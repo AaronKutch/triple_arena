@@ -1,5 +1,3 @@
-// TODO currently replaced by `safe_nonzero_inx_vec`
-
 use alloc::alloc;
 use core::{alloc::Layout, cmp::max, mem, num::NonZeroUsize, ptr};
 
