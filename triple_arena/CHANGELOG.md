@@ -14,6 +14,8 @@
 ### Additions
 - Added `compress_and_shrink` and `compress_and_shrink_with` functions to all arenas
 - Added `<_ as Ptr>::name()`
+- Added the `recasting` crate and various impls for it
+- Added `Recast<Self>` bound to `Ptr`
 
 ## [0.10.0] - 2023-08-05
 ### Fixes
