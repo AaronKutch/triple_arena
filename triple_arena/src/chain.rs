@@ -13,7 +13,7 @@ use crate::{Advancer, Arena, Ptr};
 /// `Option<Ptr<P>>` interlinks to the previous and next links.
 pub struct Link<P: Ptr, T> {
     // I think the code gen should be overall better if this is done
-    prev_next: (Option<P>, Option<P>),
+    pub(crate) prev_next: (Option<P>, Option<P>),
     pub t: T,
 }
 
@@ -1050,3 +1050,14 @@ impl<P: Ptr, T> Default for ChainArena<P, T> {
         Self::new()
     }
 }
+
+impl<P: Ptr, T: PartialEq> PartialEq<ChainArena<P, T>> for ChainArena<P, T> {
+    /// Checks if all `(P, Link<P, T>)` pairs are equal. This is sensitive to
+    /// `Ptr` indexes and generation counters, but does not compare arena
+    /// capacities or `self.gen()`.
+    fn eq(&self, other: &ChainArena<P, T>) -> bool {
+        self.a == other.a
+    }
+}
+
+impl<P: Ptr, T: Eq> Eq for ChainArena<P, T> {}

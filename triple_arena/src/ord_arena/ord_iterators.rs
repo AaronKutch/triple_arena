@@ -2,6 +2,8 @@
 
 use core::marker::PhantomData;
 
+use recasting::{Recast, Recaster};
+
 use crate::{Advancer, OrdArena, Ptr};
 
 /// An advancer over the valid `P`s of an `OrdArena`
@@ -263,5 +265,23 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     pub fn capacity_drain(self) -> CapacityDrain<P, K, V> {
         let adv = self.advancer();
         CapacityDrain { arena: self, adv }
+    }
+
+    /// Performs [OrdArena::compress_and_shrink] and returns an `Arena<P, P>`
+    /// that can be used for [Recast]ing
+    pub fn compress_and_shrink_recaster(&mut self) -> crate::Arena<P, P> {
+        let mut res = crate::Arena::<P, P>::new();
+        self.clone_to_arena(&mut res, |_, _| P::invalid());
+        self.compress_and_shrink_with(|p, _, _, q| *res.get_mut(p).unwrap() = q);
+        res
+    }
+}
+
+impl<P: Ptr, I, K, V: Recast<I>> Recast<I> for OrdArena<P, K, V> {
+    fn recast<R: Recaster<Item = I>>(&mut self, recaster: &R) -> Result<(), <R as Recaster>::Item> {
+        for val in self.vals_mut() {
+            val.recast(recaster)?;
+        }
+        Ok(())
     }
 }

@@ -2,6 +2,8 @@
 
 use core::marker::PhantomData;
 
+use recasting::{Recast, Recaster};
+
 use crate::{
     arena_iterators::{self},
     chain_iterators,
@@ -263,5 +265,28 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
             adv: self.advancer_surject(p_init),
             surject_val: self.get_val(p_init),
         }
+    }
+
+    /// Performs [SurjectArena::compress_and_shrink] and returns an `Arena<P,
+    /// P>` that can be used for [Recast]ing
+    pub fn compress_and_shrink_recaster(&mut self) -> crate::Arena<P, P> {
+        let mut res = crate::Arena::<P, P>::new();
+        self.clone_keys_to_arena(&mut res, |_, _| P::invalid());
+        self.compress_and_shrink_with(|p, _, _, q| *res.get_mut(p).unwrap() = q);
+        res
+    }
+}
+
+impl<P: Ptr, I, K: Recast<I>, V: Recast<I>> Recast<I> for SurjectArena<P, K, V> {
+    /// Note that this recasts both keys and values (only the `Ptr`s are the
+    /// keyed items from the `Recast` perspective)
+    fn recast<R: Recaster<Item = I>>(&mut self, recaster: &R) -> Result<(), <R as Recaster>::Item> {
+        for key in self.keys_mut() {
+            key.recast(recaster)?;
+        }
+        for val in self.vals_mut() {
+            val.recast(recaster)?;
+        }
+        Ok(())
     }
 }

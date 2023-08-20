@@ -285,6 +285,8 @@ impl<P: Ptr, T> Arena<P, T> {
         CapacityDrain { arena: self, adv }
     }
 
+    /// Performs [Arena::compress_and_shrink] and returns an `Arena<P, P>` that
+    /// can be used for [Recast]ing
     pub fn compress_and_shrink_recaster(&mut self) -> Arena<P, P> {
         let mut res = Arena::<P, P>::new();
         res.clone_from_with(self, |_, _| P::invalid());

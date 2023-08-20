@@ -9,7 +9,7 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use crate::{utils::PtrInx, Arena, ChainArena, Link, Ptr};
+use crate::{utils::PtrInx, Advancer, Arena, ChainArena, Link, Ptr};
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
 // Sen, Siddhartha; Tarjan, Robert E. (2015).
@@ -503,6 +503,9 @@ impl<P: Ptr, K: Clone, V: Clone> Clone for OrdArena<P, K, V> {
 
     /// Has the `Ptr` and capacity preserving properties of [Arena::clone_from]
     fn clone_from(&mut self, source: &Self) {
+        self.root = source.root;
+        self.first = source.first;
+        self.last = source.last;
         self.a.clone_from(&source.a)
     }
 }
@@ -539,3 +542,33 @@ impl<P: Ptr, K: Debug, V: Debug> Debug for OrdArena<P, K, V> {
             .finish()
     }
 }
+
+impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<OrdArena<P, K, V>> for OrdArena<P, K, V> {
+    /// Checks if all `(K, V)` pairs are equal. This is sensitive to
+    /// nonhereditary ordering, but does not compare pointers, generations,
+    /// arena capacities, internal tree configuration, or `self.gen()`.
+    fn eq(&self, other: &OrdArena<P, K, V>) -> bool {
+        // first the keys
+        let mut adv0 = self.advancer();
+        let mut adv1 = other.advancer();
+        while let Some(p0) = adv0.advance(self) {
+            if let Some(p1) = adv1.advance(other) {
+                let node0 = self.a.get_inx_unwrap(p0.inx());
+                let node1 = self.a.get_inx_unwrap(p1.inx());
+                if node0.t.k != node1.t.k {
+                    return false
+                }
+                if node0.t.v != node1.t.v {
+                    return false
+                }
+            } else {
+                return false
+            }
+        }
+        adv1.advance(other).is_none()
+    }
+}
+
+impl<P: Ptr, K: Eq, V: Eq> Eq for OrdArena<P, K, V> {}
+
+// TODO PartialOrd

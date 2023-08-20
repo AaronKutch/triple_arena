@@ -20,11 +20,11 @@ const N: usize = if cfg!(miri) {
 };
 
 const STATS: (usize, u64, u128) = if cfg!(miri) {
-    (65, 1, 130)
+    (69, 1, 125)
 } else if cfg!(debug_assertions) {
     (297, 112, 14550)
 } else {
-    (404, 5074, 749119)
+    (409, 5036, 749722)
 };
 
 macro_rules! next_inx {

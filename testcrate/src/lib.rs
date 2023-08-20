@@ -10,7 +10,7 @@ use triple_arena::{ptr_struct, Ptr};
 use triple_arena_render::*;
 
 #[cfg(miri)]
-pub const A: u64 = 1 << 8;
+pub const A: u64 = 1 << 4;
 
 #[cfg(not(miri))]
 pub const A: u64 = 1 << 11;

@@ -13,7 +13,8 @@ keywords = ["arena", "generation", "no_std"]
 categories = ["memory-management", "data-structures", "no-std"]
 
 [dependencies]
-recasting = { path = "../../recasting" }
+#recasting = { path = "../../recasting" }
+recasting = "0.1"
 
 [features]
 default = []

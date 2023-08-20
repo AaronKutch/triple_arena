@@ -747,6 +747,17 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     ) {
         chain_arena.clone_from_with(&self.keys, |p, link| map(p, &link.t.k))
     }
+
+    /// Overwrites `arena` (dropping all preexisting `T` and relations,
+    /// overwriting the generation counter, and reusing capacity) with the
+    /// `Ptr` mapping of `self`.
+    pub fn clone_keys_to_arena<T, F: FnMut(P, &K) -> T>(
+        &self,
+        arena: &mut Arena<P, T>,
+        mut map: F,
+    ) {
+        self.keys.clone_to_arena(arena, |p, link| map(p, &link.t.k))
+    }
 }
 
 // we can't implement `Index` because the format would force `&(&K, &V)` which
@@ -780,3 +791,45 @@ impl<P: Ptr, K, V> Default for SurjectArena<P, K, V> {
         Self::new()
     }
 }
+
+impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<SurjectArena<P, K, V>>
+    for SurjectArena<P, K, V>
+{
+    /// Checks if all `(P, K, V)` pairs are equal. This is sensitive to
+    /// `Ptr` indexes, generation counters, and some hidden key set relations,
+    /// but does not compare arena capacities, `self.gen()`, or hidden value
+    /// pointers.
+    fn eq(&self, other: &SurjectArena<P, K, V>) -> bool {
+        // first the keys
+        let mut adv0 = self.advancer();
+        let mut adv1 = other.advancer();
+        while let Some(p0) = adv0.advance(self) {
+            if let Some(p1) = adv1.advance(other) {
+                if p0 != p1 {
+                    return false
+                }
+                let key0 = self.keys.get_inx_unwrap(p0.inx());
+                let key1 = self.keys.get_inx_unwrap(p1.inx());
+                // make sure not to depend on `p_val`
+                if key0.prev_next() != key1.prev_next() {
+                    return false
+                }
+                if key0.t.k != key1.t.k {
+                    return false
+                }
+                // the surject composition is implicitly checked by the `prev_next`
+                // checks
+                if self.vals.get_inx_unwrap(key0.t.p_val.inx()).v
+                    != other.vals.get_inx_unwrap(key1.t.p_val.inx()).v
+                {
+                    return false
+                }
+            } else {
+                return false
+            }
+        }
+        adv1.advance(other).is_none()
+    }
+}
+
+impl<P: Ptr, K: Eq, V: Eq> Eq for SurjectArena<P, K, V> {}

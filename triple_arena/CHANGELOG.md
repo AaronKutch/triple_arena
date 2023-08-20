@@ -2,6 +2,7 @@
 
 ## [0.11.0] - TODO
 ### Fixes
+- Fixed that the `Clone::clone_from` specialization on `OrdArena` was broken
 - Fixed that the `Debug` impl of `PtrNoGen` was messed up
 
 ### Changes
@@ -16,6 +17,8 @@
 - Added `<_ as Ptr>::name()`
 - Added the `recasting` crate and various impls for it
 - Added `Recast<Self>` bound to `Ptr`
+- Added `PartialEq` and `Eq` impls to the arenas
+- Added `SurjectArena::clone_keys_to_arena`
 
 ## [0.10.0] - 2023-08-05
 ### Fixes

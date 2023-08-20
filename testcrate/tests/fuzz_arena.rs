@@ -395,12 +395,14 @@ fn fuzz_arena() {
             // The following reset the length so we can reexplore small cases.
             // Because of exponential probabilities, these need to be rare.
             995 => {
-                // remove_by
+                // remove_by and `PartialEq` false cases
                 if len != 0 {
                     let mut remove = HashSet::new();
-                    for _ in 0..next_inx!(rng, len) {
+                    let num_rm = next_inx!(rng, len);
+                    for _ in 0..num_rm {
                         remove.insert(list.swap_remove((rng.next_u32() as usize) % list.len()));
                     }
+                    let a_clone = a.clone();
                     a.remove_by(|ptr, t| {
                         if remove.contains(t) {
                             remove.remove(t);
@@ -410,13 +412,25 @@ fn fuzz_arena() {
                             false
                         }
                     });
+                    if num_rm > 0 {
+                        assert_ne!(a_clone, a);
+                        // make sure there are no assymetry related problems due to the
+                        // implementation
+                        assert_ne!(a, a_clone);
+                    } else {
+                        assert_eq!(a_clone, a);
+                        assert_eq!(a, a_clone);
+                    }
                     gen += 1;
                     assert!(remove.is_empty());
                 }
             }
             996 => {
-                // capacity_drain via the `IntoIter` impl
+                // capacity_drain via the `IntoIter` impl, and `PartialEq` true cases
                 let a_clone = a.clone();
+                assert_eq!(a_clone, a);
+                // make sure there are no assymetry related problems due to the implementation
+                assert_eq!(a, a_clone);
                 for (ptr, t) in a_clone {
                     assert_eq!(b[&t], ptr);
                 }

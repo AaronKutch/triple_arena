@@ -7,7 +7,7 @@ use core::{
 
 use crate::{
     utils::{nzusize_unchecked, ptrinx_unchecked, NonZeroInxVec, PtrGen, PtrInx},
-    Ptr,
+    Advancer, Ptr,
 };
 
 /// Internal entry for an `Arena`.
@@ -978,3 +978,28 @@ impl<P: Ptr, T: Clone> Clone for Arena<P, T> {
         }
     }
 }
+
+impl<P: Ptr, T: PartialEq> PartialEq<Arena<P, T>> for Arena<P, T> {
+    /// Checks if all `(P, T)` pairs are equal. This is sensitive to `Ptr`
+    /// indexes and generation counters, but does not compare arena capacities
+    /// or `self.gen()`.
+    fn eq(&self, other: &Arena<P, T>) -> bool {
+        let mut adv0 = self.advancer();
+        let mut adv1 = other.advancer();
+        while let Some(p0) = adv0.advance(self) {
+            if let Some(p1) = adv1.advance(other) {
+                if p0 != p1 {
+                    return false
+                }
+                if self.get_inx_unwrap(p0.inx()) != other.get_inx_unwrap(p1.inx()) {
+                    return false
+                }
+            } else {
+                return false
+            }
+        }
+        adv1.advance(other).is_none()
+    }
+}
+
+impl<P: Ptr, T: Eq> Eq for Arena<P, T> {}
