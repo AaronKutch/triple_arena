@@ -2,6 +2,7 @@
 
 use core::{marker::PhantomData, num::NonZeroUsize};
 
+use recasting::{Recast, Recaster};
 use InternalEntry::*;
 
 use crate::{
@@ -282,5 +283,34 @@ impl<P: Ptr, T> Arena<P, T> {
     pub fn capacity_drain(self) -> CapacityDrain<P, T> {
         let adv = self.advancer();
         CapacityDrain { arena: self, adv }
+    }
+
+    pub fn compress_and_shrink_recaster(&mut self) -> Arena<P, P> {
+        let mut res = Arena::<P, P>::new();
+        res.clone_from_with(self, |_, _| P::invalid());
+        self.compress_and_shrink_with(|p, _, q| *res.get_mut(p).unwrap() = q);
+        res
+    }
+}
+
+impl<P: Ptr> Recaster for Arena<P, P> {
+    type Item = P;
+
+    fn recast_item(&self, item: &mut Self::Item) -> Result<(), Self::Item> {
+        if let Some(res) = self.get(*item) {
+            *item = *res;
+            Ok(())
+        } else {
+            Err(*item)
+        }
+    }
+}
+
+impl<P: Ptr, I, T: Recast<I>> Recast<I> for Arena<P, T> {
+    fn recast<R: Recaster<Item = I>>(&mut self, recaster: &R) -> Result<(), <R as Recaster>::Item> {
+        for val in self.vals_mut() {
+            val.recast(recaster)?;
+        }
+        Ok(())
     }
 }

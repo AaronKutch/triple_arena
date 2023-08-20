@@ -375,6 +375,8 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         }
     }
 
+    // TODO probably have some from_ordered function
+
     /// Assumes `!self.is_empty()`, and the keys are in order, raw entries are
     /// compressed, and all `p_tree0`s and `p_tree1`s are preset to `None`.
     pub(crate) fn raw_rebalance_assuming_compressed(&mut self) {

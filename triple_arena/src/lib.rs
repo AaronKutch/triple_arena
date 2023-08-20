@@ -10,22 +10,22 @@
 
 mod arena;
 pub mod arena_iterators;
-mod arena_trait;
 mod chain;
 mod nonzero_inx_vec;
 mod ord_arena;
 mod traits;
-pub use arena_trait::ArenaTrait;
 pub use chain::{ChainArena, Link};
-pub use traits::{Advancer, Ptr};
+pub use traits::{Advancer, ArenaTrait, Ptr};
 //mod safe_nonzero_inx_vec;
 //use safe_nonzero_inx_vec as nonzero_inx_vec;
 mod surject;
 pub use surject::SurjectArena;
 pub mod chain_iterators;
 pub mod surject_iterators;
+// reexport for the macros to use
 pub use arena::Arena;
 pub use ord_arena::{ord_iterators, OrdArena};
+pub use recasting::{Recast, Recaster};
 /// Special utilities for advanced usage
 pub mod utils {
     #[cfg(feature = "expose_internal_utils")]

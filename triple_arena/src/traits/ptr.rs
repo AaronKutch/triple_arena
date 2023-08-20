@@ -5,6 +5,8 @@ use core::{
     panic::{RefUnwindSafe, UnwindSafe},
 };
 
+use recasting::{Recast, Recaster};
+
 use crate::utils::nzusize_unchecked;
 
 /// Pointer generation information type
@@ -26,6 +28,7 @@ pub unsafe trait PtrGen:
     + Unpin
     + RefUnwindSafe
     + UnwindSafe
+    + Recast<Self>
 {
     /// Returns the first element after 0, which is special because Arenas with
     /// generation counters always start at generation 2, which means invalid
@@ -99,6 +102,7 @@ pub unsafe trait PtrInx:
     + Unpin
     + RefUnwindSafe
     + UnwindSafe
+    + Recast<Self>
 {
     /// Note: this should be truncating or zero extending cast, higher level
     /// functions should handle fallible cases
@@ -180,6 +184,7 @@ pub unsafe trait Ptr:
     + Unpin
     + RefUnwindSafe
     + UnwindSafe
+    + Recast<Self>
 {
     /// The recommended general purpose type for this is `usize`
     type Inx: PtrInx;
@@ -338,6 +343,13 @@ macro_rules! ptr_struct {
                     core::fmt::Debug::fmt(self, f)
                 }
             }
+
+            impl $crate::Recast<Self> for $struct_name {
+                fn recast<R: $crate::Recaster<Item = Self>>(&mut self, recaster: &R)
+                    -> Result<(), <R as $crate::Recaster>::Item> {
+                    recaster.recast_item(self)
+                }
+            }
         )*
     };
     ($($struct_name:ident[$inx_type:path]() $($attributes:meta),*);*) => {
@@ -420,6 +432,13 @@ macro_rules! ptr_struct {
             impl core::fmt::Display for $struct_name {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                     core::fmt::Debug::fmt(self, f)
+                }
+            }
+
+            impl $crate::Recast<Self> for $struct_name {
+                fn recast<R: $crate::Recaster<Item = Self>>(&mut self, recaster: &R)
+                    -> Result<(), <R as $crate::Recaster>::Item> {
+                    recaster.recast_item(self)
                 }
             }
         )*
@@ -531,5 +550,14 @@ impl<P: Ptr> core::fmt::Debug for PtrNoGen<P> {
 impl<P: Ptr> core::fmt::Display for PtrNoGen<P> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         core::fmt::Debug::fmt(self, f)
+    }
+}
+
+impl<P: Ptr> Recast<Self> for PtrNoGen<P> {
+    fn recast<R: Recaster<Item = Self>>(
+        &mut self,
+        recaster: &R,
+    ) -> Result<(), <R as Recaster>::Item> {
+        recaster.recast_item(self)
     }
 }
