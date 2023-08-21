@@ -1,6 +1,8 @@
 use crate::{
-    arena_iterators, chain_iterators, ord_iterators, surject_iterators, Advancer, Arena,
-    ChainArena, Link, OrdArena, Ptr, SurjectArena,
+    arena_iterators,
+    chain::{chain_no_gen_iterators, ChainNoGenArena, LinkNoGen},
+    chain_iterators, ord_iterators, surject_iterators, Advancer, Arena, ChainArena, Link, OrdArena,
+    Ptr, SurjectArena,
 };
 
 /// A trait that encapsulates some common functions across the different arena
@@ -138,6 +140,71 @@ impl<P: Ptr, T> ArenaTrait for ChainArena<P, T> {
     }
 
     fn get_mut(&mut self, p: Self::P) -> Option<Link<P, &mut T>> {
+        self.get_link_mut(p)
+    }
+
+    fn advancer(&self) -> Self::Adv {
+        self.advancer()
+    }
+
+    fn contains(&self, p: Self::P) -> bool {
+        self.contains(p)
+    }
+
+    fn clear(&mut self) {
+        self.clear()
+    }
+
+    fn clear_and_shrink(&mut self) {
+        self.clear_and_shrink()
+    }
+}
+
+impl<P: Ptr, T> ArenaTrait for ChainNoGenArena<P, T> {
+    type Adv = chain_no_gen_iterators::PtrAdvancer<P, T>;
+    type E = LinkNoGen<P, T>;
+    type GetMutRes<'a> = LinkNoGen<P, &'a mut T> where Self: 'a;
+    type GetRes<'a> = &'a Self::E where Self: 'a;
+    type P = P;
+
+    fn new() -> Self {
+        Self::new()
+    }
+
+    fn capacity(&self) -> usize {
+        self.capacity()
+    }
+
+    fn gen(&self) -> P::Gen {
+        self.gen()
+    }
+
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.is_empty()
+    }
+
+    /// Uses [ChainArena::insert] with `link.prev_next()` and `link.t`
+    fn insert(&mut self, link: Self::E) -> P {
+        if let Ok(p) = self.insert(link.prev_next(), link.t) {
+            p
+        } else {
+            unreachable!()
+        }
+    }
+
+    fn remove(&mut self, p: Self::P) -> Option<Self::E> {
+        self.remove(p)
+    }
+
+    fn get(&self, p: Self::P) -> Option<&Self::E> {
+        self.get_link(p)
+    }
+
+    fn get_mut(&mut self, p: Self::P) -> Option<LinkNoGen<P, &mut T>> {
         self.get_link_mut(p)
     }
 

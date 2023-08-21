@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.12.0] - TODO
+### Additions
+- Added `LinkNoGen` and `ChainNoGenArena` and made various performance improvements
+
 ## [0.11.0] - 2023-08-20
 ### Fixes
 - Fixed that the `Clone::clone_from` specialization on `OrdArena` was broken

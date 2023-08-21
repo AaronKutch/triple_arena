@@ -5,7 +5,7 @@ use std::{
 
 use triple_arena::{
     ptr_struct,
-    utils::{InternalEntry, Node, PtrNoGen},
+    utils::{InternalEntry, LinkNoGen, Node, PtrNoGen},
     Link, Ptr,
 };
 
@@ -26,10 +26,12 @@ fn size_of_ptr() {
     assert_eq!(size_of::<P2>(), size_of::<(NonZeroU8, NonZeroU8)>());
 }
 
+#[cfg(target_pointer_width = "64")]
 #[test]
 fn size_of_node() {
     assert_eq!(size_of::<Node<P0, (), ()>>(), 32);
     assert_eq!(size_of::<Link<P0, ()>>(), 32);
+    assert_eq!(size_of::<LinkNoGen<P0, ()>>(), 16);
     assert_eq!(size_of::<InternalEntry<P0, ()>>(), 16);
     assert_eq!(
         size_of::<InternalEntry<P0, Link<P0, Node<P0, (), ()>>>>(),
@@ -38,6 +40,7 @@ fn size_of_node() {
 
     assert_eq!(size_of::<Node<P1, (), ()>>(), 32);
     assert_eq!(size_of::<Link<P1, ()>>(), 16);
+    assert_eq!(size_of::<LinkNoGen<P1, ()>>(), 16);
     assert_eq!(size_of::<InternalEntry<P1, ()>>(), 8);
     assert_eq!(
         size_of::<InternalEntry<P1, Link<P1, Node<P1, (), ()>>>>(),

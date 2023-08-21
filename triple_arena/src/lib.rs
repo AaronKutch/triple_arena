@@ -13,12 +13,11 @@ pub use arena::arena_iterators;
 mod chain;
 mod ord;
 mod traits;
-pub use chain::{ChainArena, Link};
+pub use chain::{chain_iterators, ChainArena, Link};
 pub use traits::{Advancer, ArenaTrait, Ptr};
 mod surject;
 // reexport for the macros to use
 pub use arena::Arena;
-pub use chain::chain_iterators;
 pub use ord::{ord_iterators, OrdArena};
 pub use recasting::{Recast, Recaster};
 pub use surject::{surject_iterators, SurjectArena};
@@ -33,8 +32,11 @@ pub mod utils {
     // only intended for size_of tests and such
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::ord::Node;
-    pub use crate::traits::{PtrGen, PtrInx, PtrNoGen};
     pub(crate) use crate::{arena::nzusize_unchecked, traits::ptrinx_unchecked};
+    pub use crate::{
+        chain::{chain_no_gen_iterators, ChainNoGenArena, LinkNoGen},
+        traits::{PtrGen, PtrInx, PtrNoGen},
+    };
 }
 
 extern crate alloc;
