@@ -109,6 +109,7 @@ impl PartialEq for CKey {
     }
 }
 
+#[allow(clippy::incorrect_partial_ord_impl_on_ord_type)]
 impl PartialOrd for CKey {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         inc_cmp_count();
