@@ -241,7 +241,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     #[must_use]
     pub fn len_key_set(&self, p: P) -> Option<NonZeroUsize> {
         let p_val = self.keys.get(p)?.p_val;
-        Some(self.vals.get(p_val).unwrap().key_count)
+        Some(self.vals.get_inx_unwrap(p_val.inx()).key_count)
     }
 
     /// Returns if the arena is empty (`self.len_keys() == 0` if and only if
@@ -318,8 +318,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         };
         self.vals[p_val].key_count = NonZeroUsize::new(
             self.vals
-                .get(p_val)
-                .unwrap()
+                .get_inx_unwrap(p_val.inx())
                 .key_count
                 .get()
                 .wrapping_add(1),
@@ -344,8 +343,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         };
         self.vals[p_val].key_count = NonZeroUsize::new(
             self.vals
-                .get(p_val)
-                .unwrap()
+                .get_inx_unwrap(p_val.inx())
                 .key_count
                 .get()
                 .wrapping_add(1),
@@ -383,14 +381,14 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     #[must_use]
     pub fn get_val(&self, p: P) -> Option<&V> {
         let p_val = self.keys.get(p)?.p_val;
-        Some(&self.vals.get(p_val).unwrap().v)
+        Some(&self.vals.get_inx_unwrap(p_val.inx()).v)
     }
 
     /// Returns a reference to the key-value pair pointed to by `p`
     #[must_use]
     pub fn get(&self, p: P) -> Option<(&K, &V)> {
         let key = self.keys.get(p)?;
-        Some((&key.k, &self.vals.get(key.p_val).unwrap().v))
+        Some((&key.k, &self.vals.get_inx_unwrap(key.p_val.inx()).v))
     }
 
     /// Returns a mutable reference to the value pointed to by `p`
@@ -408,14 +406,17 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     #[must_use]
     pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
         let p_val = self.keys.get(p)?.p_val;
-        Some(&mut self.vals.get_mut(p_val).unwrap().v)
+        Some(&mut self.vals.get_inx_mut_unwrap(p_val.inx()).v)
     }
 
     /// Returns a mutable reference to the key-value pair pointed to by `p`
     #[must_use]
     pub fn get_mut(&mut self, p: P) -> Option<(&mut K, &mut V)> {
         let key = self.keys.get_mut(p)?;
-        Some((&mut key.k, &mut self.vals.get_mut(key.p_val).unwrap().v))
+        Some((
+            &mut key.k,
+            &mut self.vals.get_inx_mut_unwrap(key.p_val.inx()).v,
+        ))
     }
 
     /// Gets two `&mut K` references pointed to by `p0` and `p1`. If
@@ -492,8 +493,8 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
             // corresponds to same set
             return None
         }
-        let len0 = self.vals.get(p_val0).unwrap().key_count.get();
-        let len1 = self.vals.get(p_val1).unwrap().key_count.get();
+        let len0 = self.vals.get_inx_unwrap(p_val0.inx()).key_count.get();
+        let len1 = self.vals.get_inx_unwrap(p_val1.inx()).key_count.get();
         if len0 < len1 {
             mem::swap(&mut p_val0, &mut p_val1);
             mem::swap(&mut p0, &mut p1);
@@ -501,8 +502,8 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         // overwrite the `PVal`s in the smaller chain
         let mut tmp = p1;
         loop {
-            self.keys.get_mut(tmp).unwrap().p_val = p_val0;
-            tmp = self.keys.get_link(tmp).unwrap().next().unwrap();
+            self.keys.get_inx_mut_unwrap_t(tmp.inx()).p_val = p_val0;
+            tmp = self.keys.get_inx_unwrap(tmp.inx()).next().unwrap();
             if tmp == p1 {
                 break
             }
@@ -513,7 +514,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         self.keys.exchange_next(p0, p1).unwrap();
         // it is be impossible to overflow this, it would mean that we have already
         // inserted `usize + 1` elements
-        self.vals.get_mut(p_val0).unwrap().key_count =
+        self.vals.get_inx_mut_unwrap(p_val0.inx()).key_count =
             NonZeroUsize::new(len0.wrapping_add(len1)).unwrap();
         Some((self.vals.remove_internal(p_val1, false).unwrap().v, p0))
     }
@@ -528,13 +529,13 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         let key = self.keys.remove(p)?.t;
         let p_val = key.p_val;
         let k = key.k;
-        let key_count = self.vals.get(p_val).unwrap().key_count.get();
+        let key_count = self.vals.get_inx_unwrap(p_val.inx()).key_count.get();
         if key_count == 1 {
             // last key, remove the value
             Some((k, Some(self.vals.remove(p_val).unwrap().v)))
         } else {
             // decrement the key count
-            self.vals.get_mut(p_val).unwrap().key_count =
+            self.vals.get_inx_mut_unwrap(p_val.inx()).key_count =
                 NonZeroUsize::new(key_count.wrapping_sub(1)).unwrap();
             Some((k, None))
         }
