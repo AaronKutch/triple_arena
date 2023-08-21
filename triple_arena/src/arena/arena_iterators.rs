@@ -152,7 +152,7 @@ impl<'a, P: Ptr, T> Iterator for Drain<'a, P, T> {
         // leaking the `Drain` struct, just use a normal advancer
         self.adv
             .advance(self.arena)
-            .map(|p| (p, self.arena.remove_internal(p, false).unwrap()))
+            .map(|p| (p, self.arena.remove_internal_inx_unwrap(p.inx(), false)))
     }
 }
 

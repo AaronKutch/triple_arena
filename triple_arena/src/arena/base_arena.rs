@@ -576,6 +576,34 @@ impl<P: Ptr, T> Arena<P, T> {
         }
     }
 
+    /// Same as [Arena::remove_internal] but using an `P::Inx` and panicking if
+    /// `p` is invalid
+    pub(crate) fn remove_internal_inx_unwrap(&mut self, p: P::Inx, inc_gen: bool) -> T {
+        let freelist_ptr = if let Some(free) = self.freelist_root {
+            // points to previous root
+            free
+        } else {
+            // points to itself
+            p
+        };
+        let allocation = self.m_get_mut(p).unwrap();
+        let old = mem::replace(allocation, Free(freelist_ptr));
+        match old {
+            Free(_) => {
+                unreachable!()
+            }
+            Allocated(_, old_t) => {
+                // in both cases the new root is the entry we just removed
+                self.freelist_root = Some(p);
+                self.len = self.len.wrapping_sub(1);
+                if inc_gen {
+                    self.inc_gen();
+                }
+                old_t
+            }
+        }
+    }
+
     /// Removes the `T` pointed to by `p`, returns the `T`, and invalidates old
     /// `Ptr`s to the `T`. Does no invalidation and returns `None` if `p` is
     /// invalid.

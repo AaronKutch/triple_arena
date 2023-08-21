@@ -516,7 +516,10 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         // inserted `usize + 1` elements
         self.vals.get_inx_mut_unwrap(p_val0.inx()).key_count =
             NonZeroUsize::new(len0.wrapping_add(len1)).unwrap();
-        Some((self.vals.remove_internal(p_val1, false).unwrap().v, p0))
+        Some((
+            self.vals.remove_internal_inx_unwrap(p_val1.inx(), false).v,
+            p0,
+        ))
     }
 
     /// Removes the key pointed to by `p`. If there were other keys still in the

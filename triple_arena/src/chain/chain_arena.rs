@@ -262,7 +262,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
             (None, None) => Ok(self.a.insert(Link::new((None, None), t))),
             (None, Some(p1)) => {
                 // if there is a failure it cannot result in a node being inserted
-                if let Some(link) = self.a.get_mut(p1) {
+                if let Some(link) = self.a.get(p1) {
                     if let Some(p0) = link.prev() {
                         // insert into middle of chain
                         let res = self.a.insert(Link::new((Some(p0), Some(p1)), t));
@@ -279,7 +279,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
                 }
             }
             (Some(p0), None) => {
-                if let Some(link) = self.a.get_mut(p0) {
+                if let Some(link) = self.a.get(p0) {
                     if let Some(p1) = link.next() {
                         // insert into middle of chain
                         let res = self.a.insert(Link::new((Some(p0), Some(p1)), t));
@@ -322,7 +322,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
             (None, None) => Some(self.a.insert_with(|p| Link::new((None, None), create(p)))),
             (None, Some(p1)) => {
                 // if there is a failure it cannot result in a node being inserted
-                if let Some(link) = self.a.get_mut(p1) {
+                if let Some(link) = self.a.get(p1) {
                     if let Some(p0) = link.prev() {
                         // insert into middle of chain
                         let res = self
@@ -343,7 +343,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
                 }
             }
             (Some(p0), None) => {
-                if let Some(link) = self.a.get_mut(p0) {
+                if let Some(link) = self.a.get(p0) {
                     if let Some(p1) = link.next() {
                         // insert into middle of chain
                         let res = self
@@ -407,7 +407,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
     /// preexisting first link. Returns ownership of `t` if `p_start` is not
     /// valid or is not the start of a chain
     pub fn insert_start(&mut self, p_start: P, t: T) -> Result<P, T> {
-        if let Some(link) = self.a.get_mut(p_start) {
+        if let Some(link) = self.a.get(p_start) {
             if link.prev().is_some() {
                 // not at start of chain
                 Err(t)
@@ -425,7 +425,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
     /// preexisting end link. Returns ownership of `t` if `p_end` is not valid
     /// or is not the end of a chain
     pub fn insert_end(&mut self, p_end: P, t: T) -> Result<P, T> {
-        if let Some(link) = self.a.get_mut(p_end) {
+        if let Some(link) = self.a.get(p_end) {
             if link.next().is_some() {
                 // not at end of chain
                 Err(t)
@@ -548,9 +548,17 @@ impl<P: Ptr, T> ChainArena<P, T> {
     // this is tested by the `SurjectArena` fuzz test
     /// Like `remove_chain` but assumes the chain is cyclic and `p` is valid
     pub(crate) fn remove_cyclic_chain_internal(&mut self, p: P, inc_gen: bool) {
-        let mut tmp = self.a.remove_internal(p, false).unwrap().next().unwrap();
+        let mut tmp = self
+            .a
+            .remove_internal_inx_unwrap(p.inx(), false)
+            .next()
+            .unwrap();
         while tmp.inx() != p.inx() {
-            tmp = self.a.remove_internal(tmp, false).unwrap().next().unwrap();
+            tmp = self
+                .a
+                .remove_internal_inx_unwrap(tmp.inx(), false)
+                .next()
+                .unwrap();
         }
         if inc_gen {
             self.a.inc_gen();
@@ -570,12 +578,12 @@ impl<P: Ptr, T> ChainArena<P, T> {
                 // cyclical
                 return Some(len)
             }
-            tmp = self.a.remove_internal(next, false).unwrap().next();
+            tmp = self.a.remove_internal_inx_unwrap(next.inx(), false).next();
             len = len.wrapping_add(1);
         }
         let mut tmp = init.prev();
         while let Some(prev) = tmp {
-            tmp = self.a.remove_internal(prev, false).unwrap().prev();
+            tmp = self.a.remove_internal_inx_unwrap(prev.inx(), false).prev();
             len = len.wrapping_add(1);
         }
         Some(len)
