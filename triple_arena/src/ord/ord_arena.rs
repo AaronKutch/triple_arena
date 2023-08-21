@@ -307,7 +307,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     pub fn replace_val_and_update_gen(&mut self, p: P, new: V) -> Result<(V, P), V> {
         // the tree pointers do not have generation counters
         if let Some(p_new) = self.a.invalidate(p) {
-            let old = mem::replace(&mut self.a.get_mut(p_new).unwrap().v, new);
+            let old = mem::replace(&mut self.a.get_inx_mut_unwrap_t(p_new.inx()).v, new);
             Ok((old, p_new))
         } else {
             Err(new)
