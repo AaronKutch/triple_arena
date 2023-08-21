@@ -123,10 +123,10 @@ pub struct Node<P: Ptr, K, V> {
 /// many cases if `Ptr`s can be reused multiple times. Try to minimize
 /// the points where `find_key` is required.
 pub struct OrdArena<P: Ptr, K, V> {
-    pub(in crate::ord_arena) root: P::Inx,
-    pub(in crate::ord_arena) first: P::Inx,
-    pub(in crate::ord_arena) last: P::Inx,
-    pub(in crate::ord_arena) a: ChainArena<P, Node<P, K, V>>,
+    pub(in crate::ord) root: P::Inx,
+    pub(in crate::ord) first: P::Inx,
+    pub(in crate::ord) last: P::Inx,
+    pub(in crate::ord) a: ChainArena<P, Node<P, K, V>>,
 }
 
 impl<P: Ptr, K, V> OrdArena<P, K, V> {

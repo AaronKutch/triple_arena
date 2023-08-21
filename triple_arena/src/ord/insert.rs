@@ -2,7 +2,7 @@
 
 use core::{cmp::Ordering, mem};
 
-use super::ord::Node;
+use super::ord_arena::Node;
 use crate::{OrdArena, Ptr};
 
 impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
