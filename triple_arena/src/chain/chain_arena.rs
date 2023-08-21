@@ -266,12 +266,12 @@ impl<P: Ptr, T> ChainArena<P, T> {
                     if let Some(p0) = link.prev() {
                         // insert into middle of chain
                         let res = self.a.insert(Link::new((Some(p0), Some(p1)), t));
-                        self.a.get_mut(p0).unwrap().prev_next.1 = Some(res);
-                        self.a.get_mut(p1).unwrap().prev_next.0 = Some(res);
+                        self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
+                        self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
                         Ok(res)
                     } else {
                         let res = self.a.insert(Link::new((None, Some(p1)), t));
-                        self.a.get_mut(p1).unwrap().prev_next.0 = Some(res);
+                        self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
                         Ok(res)
                     }
                 } else {
@@ -283,12 +283,12 @@ impl<P: Ptr, T> ChainArena<P, T> {
                     if let Some(p1) = link.next() {
                         // insert into middle of chain
                         let res = self.a.insert(Link::new((Some(p0), Some(p1)), t));
-                        self.a.get_mut(p0).unwrap().prev_next.1 = Some(res);
-                        self.a.get_mut(p1).unwrap().prev_next.0 = Some(res);
+                        self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
+                        self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
                         Ok(res)
                     } else {
                         let res = self.a.insert(Link::new((Some(p0), None), t));
-                        self.a.get_mut(p0).unwrap().prev_next.1 = Some(res);
+                        self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
                         Ok(res)
                     }
                 } else {
@@ -301,8 +301,8 @@ impl<P: Ptr, T> ChainArena<P, T> {
                     return Err(t)
                 }
                 let res = self.a.insert(Link::new((Some(p0), Some(p1)), t));
-                self.a.get_mut(p0).unwrap().prev_next.1 = Some(res);
-                self.a.get_mut(p1).unwrap().prev_next.0 = Some(res);
+                self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
+                self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
                 Ok(res)
             }
         }
@@ -328,14 +328,14 @@ impl<P: Ptr, T> ChainArena<P, T> {
                         let res = self
                             .a
                             .insert_with(|p| Link::new((Some(p0), Some(p1)), create(p)));
-                        self.a.get_mut(p0).unwrap().prev_next.1 = Some(res);
-                        self.a.get_mut(p1).unwrap().prev_next.0 = Some(res);
+                        self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
+                        self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
                         Some(res)
                     } else {
                         let res = self
                             .a
                             .insert_with(|p| Link::new((None, Some(p1)), create(p)));
-                        self.a.get_mut(p1).unwrap().prev_next.0 = Some(res);
+                        self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
                         Some(res)
                     }
                 } else {
@@ -349,14 +349,14 @@ impl<P: Ptr, T> ChainArena<P, T> {
                         let res = self
                             .a
                             .insert_with(|p| Link::new((Some(p0), Some(p1)), create(p)));
-                        self.a.get_mut(p0).unwrap().prev_next.1 = Some(res);
-                        self.a.get_mut(p1).unwrap().prev_next.0 = Some(res);
+                        self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
+                        self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
                         Some(res)
                     } else {
                         let res = self
                             .a
                             .insert_with(|p| Link::new((Some(p0), None), create(p)));
-                        self.a.get_mut(p0).unwrap().prev_next.1 = Some(res);
+                        self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
                         Some(res)
                     }
                 } else {
@@ -371,8 +371,8 @@ impl<P: Ptr, T> ChainArena<P, T> {
                 let res = self
                     .a
                     .insert_with(|p| Link::new((Some(p0), Some(p1)), create(p)));
-                self.a.get_mut(p0).unwrap().prev_next.1 = Some(res);
-                self.a.get_mut(p1).unwrap().prev_next.0 = Some(res);
+                self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
+                self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
                 Some(res)
             }
         }
@@ -413,7 +413,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
                 Err(t)
             } else {
                 let res = self.a.insert(Link::new((None, Some(p_start)), t));
-                self.a.get_mut(p_start).unwrap().prev_next.0 = Some(res);
+                self.a.get_inx_mut_unwrap(p_start.inx()).prev_next.0 = Some(res);
                 Ok(res)
             }
         } else {
@@ -431,7 +431,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
                 Err(t)
             } else {
                 let res = self.a.insert(Link::new((Some(p_end), None), t));
-                self.a.get_mut(p_end).unwrap().prev_next.1 = Some(res);
+                self.a.get_inx_mut_unwrap(p_end.inx()).prev_next.1 = Some(res);
                 Ok(res)
             }
         } else {
@@ -530,15 +530,15 @@ impl<P: Ptr, T> ChainArena<P, T> {
         match link.prev_next() {
             (None, None) => (),
             (None, Some(p1)) => {
-                self.a.get_mut(p1).unwrap().prev_next.0 = None;
+                self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = None;
             }
             (Some(p0), None) => {
-                self.a.get_mut(p0).unwrap().prev_next.1 = None;
+                self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = None;
             }
             (Some(p0), Some(p1)) => {
                 if p.inx() != p0.inx() {
-                    self.a.get_mut(p0).unwrap().prev_next.1 = Some(p1);
-                    self.a.get_mut(p1).unwrap().prev_next.0 = Some(p0);
+                    self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(p1);
+                    self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(p0);
                 } // else it is a single link cyclic chain
             }
         }
@@ -591,21 +591,21 @@ impl<P: Ptr, T> ChainArena<P, T> {
     pub fn invalidate(&mut self, p: P) -> Option<P> {
         let p_new = self.a.invalidate(p)?;
         // fix invalidated interlinks
-        match self.a.get(p_new).unwrap().prev_next() {
+        match self.a.get_inx_unwrap(p_new.inx()).prev_next() {
             (None, None) => (),
             (None, Some(p1)) => {
-                self.a.get_mut(p1).unwrap().prev_next.0 = Some(p_new);
+                self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(p_new);
             }
             (Some(p0), None) => {
-                self.a.get_mut(p0).unwrap().prev_next.1 = Some(p_new);
+                self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(p_new);
             }
             (Some(p0), Some(p1)) => {
                 if p0.inx() == p.inx() {
                     // single link cyclical chain must be handled separately
-                    self.a.get_mut(p_new).unwrap().prev_next = (Some(p_new), Some(p_new));
+                    self.a.get_inx_mut_unwrap(p_new.inx()).prev_next = (Some(p_new), Some(p_new));
                 } else {
-                    self.a.get_mut(p1).unwrap().prev_next.0 = Some(p_new);
-                    self.a.get_mut(p0).unwrap().prev_next.1 = Some(p_new);
+                    self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(p_new);
+                    self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(p_new);
                 }
             }
         }
@@ -671,8 +671,8 @@ impl<P: Ptr, T> ChainArena<P, T> {
     #[must_use]
     pub fn connect(&mut self, p_prev: P, p_next: P) -> Option<()> {
         if self.get_link(p_prev)?.next().is_none() && self.get_link(p_next)?.prev().is_none() {
-            self.a.get_mut(p_prev).unwrap().prev_next.1 = Some(p_next);
-            self.a.get_mut(p_next).unwrap().prev_next.0 = Some(p_prev);
+            self.a.get_inx_mut_unwrap(p_prev.inx()).prev_next.1 = Some(p_next);
+            self.a.get_inx_mut_unwrap(p_next.inx()).prev_next.0 = Some(p_prev);
             Some(())
         } else {
             None
@@ -684,8 +684,8 @@ impl<P: Ptr, T> ChainArena<P, T> {
     #[must_use]
     pub fn break_prev(&mut self, p: P) -> Option<()> {
         let u = self.get_link(p)?.prev()?;
-        self.a.get_mut(p).unwrap().prev_next.0 = None;
-        self.a.get_mut(u).unwrap().prev_next.1 = None;
+        self.a.get_inx_mut_unwrap(p.inx()).prev_next.0 = None;
+        self.a.get_inx_mut_unwrap(u.inx()).prev_next.1 = None;
         Some(())
     }
 
@@ -694,8 +694,8 @@ impl<P: Ptr, T> ChainArena<P, T> {
     #[must_use]
     pub fn break_next(&mut self, p: P) -> Option<()> {
         let d = self.get_link(p)?.next()?;
-        self.a.get_mut(p).unwrap().prev_next.1 = None;
-        self.a.get_mut(d).unwrap().prev_next.0 = None;
+        self.a.get_inx_mut_unwrap(p.inx()).prev_next.1 = None;
+        self.a.get_inx_mut_unwrap(d.inx()).prev_next.0 = None;
         Some(())
     }
 
@@ -712,12 +712,12 @@ impl<P: Ptr, T> ChainArena<P, T> {
     pub fn exchange_next(&mut self, p0: P, p1: P) -> Option<()> {
         if self.contains(p0) && self.contains(p1) {
             // get downstream links
-            let d0 = self.get_link(p0).unwrap().next()?;
-            let d1 = self.get_link(p1).unwrap().next()?;
-            self.a.get_mut(p0).unwrap().prev_next.1 = Some(d1);
-            self.a.get_mut(p1).unwrap().prev_next.1 = Some(d0);
-            self.a.get_mut(d0).unwrap().prev_next.0 = Some(p1);
-            self.a.get_mut(d1).unwrap().prev_next.0 = Some(p0);
+            let d0 = self.a.get_inx_unwrap(p0.inx()).next()?;
+            let d1 = self.a.get_inx_unwrap(p1.inx()).next()?;
+            self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(d1);
+            self.a.get_inx_mut_unwrap(p1.inx()).prev_next.1 = Some(d0);
+            self.a.get_inx_mut_unwrap(d0.inx()).prev_next.0 = Some(p1);
+            self.a.get_inx_mut_unwrap(d1.inx()).prev_next.0 = Some(p0);
             Some(())
         } else {
             None
