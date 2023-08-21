@@ -5,14 +5,14 @@ use rand_xoshiro::{
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::{Advancer, ChainArena, Ptr};
+use triple_arena::{utils::PtrGen, Advancer, ChainArena, Ptr};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
 const STATS: (usize, usize, u128) = if cfg!(miri) {
-    (13, 1, 220)
+    (16, 1, 221)
 } else {
-    (44, 1070, 217040)
+    (44, 1071, 217949)
 };
 
 macro_rules! next_inx {
@@ -610,7 +610,7 @@ fn fuzz_chain() {
                     assert!(!a.are_neighbors(invalid, invalid));
                 }
             }
-            960..=969 => {
+            960..=968 => {
                 // get2_mut
                 if len == 0 {
                     assert!(a.get2_mut(invalid, invalid).is_none());
@@ -623,6 +623,44 @@ fn fuzz_chain() {
                         let tmp = a.get2_mut(p0, p1).unwrap();
                         assert_eq!((*tmp.0, *tmp.1), (*a.get(p0).unwrap(), *a.get(p1).unwrap()));
                     }
+                }
+            }
+            969 => {
+                // compress_and_shrink_with
+                // compress_and_shrink is difficult to test, we just note its definition is
+                // self.compress_and_shrink_with(|_, _| ())
+
+                let mut tmp = HashMap::new();
+                let mut tmp2 = HashMap::new();
+                let q_gen = PtrGen::increment(a.gen());
+                a.compress_and_shrink_with(|p, t, q| {
+                    assert_eq!(b[t].0, p);
+                    assert_eq!(q_gen, q.gen());
+                    tmp.insert(*t, q);
+                    tmp2.insert(q, p);
+                });
+                assert_eq!(tmp.len(), a.len());
+                assert_eq!(a.capacity(), a.len());
+                gen += 1;
+                for (t, q) in &tmp {
+                    assert_eq!(*t, a[q]);
+                }
+                for (q, link) in a.iter() {
+                    assert_eq!(q_gen, q.gen());
+                    // make sure the modified interlinks agree with the `tmp2` mapping
+                    if let Some(prev) = link.prev() {
+                        assert_eq!(q_gen, prev.gen());
+                        let p_prev = b[&link.t].1 .0.unwrap();
+                        assert_eq!(tmp2[&prev], b[&p_prev].0);
+                    }
+                    if let Some(next) = link.next() {
+                        assert_eq!(q_gen, next.gen());
+                        let p_next = b[&link.t].1 .1.unwrap();
+                        assert_eq!(tmp2[&next], b[&p_next].0);
+                    }
+                }
+                for (q, link) in a.iter() {
+                    b.get_mut(&link.t).unwrap().0 = q;
                 }
             }
             970..=979 => {

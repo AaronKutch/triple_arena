@@ -5,14 +5,14 @@ use rand_xoshiro::{
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::{Advancer, Arena};
+use triple_arena::{utils::PtrGen, Advancer, Arena, Ptr};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
 const STATS: (usize, usize, u128) = if cfg!(miri) {
-    (1, 11, 238)
+    (1, 11, 239)
 } else {
-    (1067, 72, 138829)
+    (1069, 74, 138703)
 };
 
 macro_rules! next_inx {
@@ -315,7 +315,7 @@ fn fuzz_arena() {
                 // depends on the invalidated elements witnessed
                 assert!((i == len.saturating_sub(1)) || (i == len) || (i == (len + 1)));
             }
-            950..=993 => {
+            950..=991 => {
                 // iter_mut
                 let mut n = 0;
                 for (ptr, t) in a.iter_mut() {
@@ -323,6 +323,37 @@ fn fuzz_arena() {
                     n += 1;
                 }
                 assert_eq!(n, list.len());
+            }
+            992 => {
+                // compress_and_shrink
+                a.compress_and_shrink();
+                assert_eq!(a.capacity(), a.len());
+                gen += 1;
+                // for this base test, manually recast `Ptr`s
+                for (p, t) in a.iter() {
+                    *b.get_mut(t).unwrap() = p;
+                }
+            }
+            993 => {
+                // compress_and_shrink_with
+                let mut tmp = HashMap::new();
+                let q_gen = PtrGen::increment(a.gen());
+                a.compress_and_shrink_with(|p, t, q| {
+                    assert_eq!(b[t], p);
+                    assert_eq!(q_gen, q.gen());
+                    tmp.insert(*t, q);
+                });
+                assert_eq!(tmp.len(), a.len());
+                assert_eq!(a.capacity(), a.len());
+                gen += 1;
+                for (t, p) in tmp {
+                    assert_eq!(t, a[p]);
+                }
+                // for this base test, manually recast `Ptr`s
+                for (p, t) in a.iter() {
+                    assert_eq!(q_gen, p.gen());
+                    *b.get_mut(t).unwrap() = p;
+                }
             }
             994 => {
                 // clone_from variants. these are mainly tested in `multi_arena`, but we want
@@ -364,12 +395,14 @@ fn fuzz_arena() {
             // The following reset the length so we can reexplore small cases.
             // Because of exponential probabilities, these need to be rare.
             995 => {
-                // remove_by
+                // remove_by and `PartialEq` false cases
                 if len != 0 {
                     let mut remove = HashSet::new();
-                    for _ in 0..next_inx!(rng, len) {
+                    let num_rm = next_inx!(rng, len);
+                    for _ in 0..num_rm {
                         remove.insert(list.swap_remove((rng.next_u32() as usize) % list.len()));
                     }
+                    let a_clone = a.clone();
                     a.remove_by(|ptr, t| {
                         if remove.contains(t) {
                             remove.remove(t);
@@ -379,13 +412,25 @@ fn fuzz_arena() {
                             false
                         }
                     });
+                    if num_rm > 0 {
+                        assert_ne!(a_clone, a);
+                        // make sure there are no assymetry related problems due to the
+                        // implementation
+                        assert_ne!(a, a_clone);
+                    } else {
+                        assert_eq!(a_clone, a);
+                        assert_eq!(a, a_clone);
+                    }
                     gen += 1;
                     assert!(remove.is_empty());
                 }
             }
             996 => {
-                // capacity_drain via the `IntoIter` impl
+                // capacity_drain via the `IntoIter` impl, and `PartialEq` true cases
                 let a_clone = a.clone();
+                assert_eq!(a_clone, a);
+                // make sure there are no assymetry related problems due to the implementation
+                assert_eq!(a, a_clone);
                 for (ptr, t) in a_clone {
                     assert_eq!(b[&t], ptr);
                 }

@@ -2,9 +2,11 @@
 
 use core::marker::PhantomData;
 
+use recasting::{Recast, Recaster};
+
 use crate::{
+    arena_iterators::{self},
     chain_iterators,
-    iterators::{self},
     surject::{Key, Val},
     utils::PtrNoGen,
     Advancer, Arena, Link, Ptr, SurjectArena,
@@ -43,7 +45,7 @@ impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
         if self.max_advances == 0 {
             return None
         } else {
-            self.max_advances -= 1;
+            self.max_advances = self.max_advances.wrapping_sub(1);
         }
         if let Some(ptr) = self.ptr {
             if let Some(link) = collection.keys.get_link(ptr) {
@@ -70,7 +72,7 @@ impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
 
 /// An iterator over the valid `P`s of a `SurjectArena`
 pub struct Ptrs<'a, P: Ptr, K> {
-    iter: iterators::Ptrs<'a, P, Link<P, Key<P, K>>>,
+    iter: arena_iterators::Ptrs<'a, P, Link<P, Key<P, K>>>,
 }
 
 impl<'a, P: Ptr, K> Iterator for Ptrs<'a, P, K> {
@@ -83,7 +85,7 @@ impl<'a, P: Ptr, K> Iterator for Ptrs<'a, P, K> {
 
 /// An iterator over `&K` in a `SurjectArena`
 pub struct Keys<'a, P: Ptr, K> {
-    iter: iterators::Vals<'a, P, Link<P, Key<P, K>>>,
+    iter: arena_iterators::Vals<'a, P, Link<P, Key<P, K>>>,
 }
 
 impl<'a, P: Ptr, K> Iterator for Keys<'a, P, K> {
@@ -96,7 +98,7 @@ impl<'a, P: Ptr, K> Iterator for Keys<'a, P, K> {
 
 /// An iterator over `&V` in a `SurjectArena`
 pub struct Vals<'a, P: Ptr, V> {
-    iter: iterators::Vals<'a, PtrNoGen<P>, Val<V>>,
+    iter: arena_iterators::Vals<'a, PtrNoGen<P>, Val<V>>,
 }
 
 impl<'a, P: Ptr, V> Iterator for Vals<'a, P, V> {
@@ -122,7 +124,7 @@ impl<'a, P: Ptr, K> Iterator for KeysMut<'a, P, K> {
 
 /// A mutable iterator over `&mut V` in a `SurjectArena`
 pub struct ValsMut<'a, P: Ptr, V> {
-    iter_mut: iterators::ValsMut<'a, PtrNoGen<P>, Val<V>>,
+    iter_mut: arena_iterators::ValsMut<'a, PtrNoGen<P>, Val<V>>,
 }
 
 impl<'a, P: Ptr, V> Iterator for ValsMut<'a, P, V> {
@@ -135,7 +137,7 @@ impl<'a, P: Ptr, V> Iterator for ValsMut<'a, P, V> {
 
 /// An iterator over `(P, &K, &V)` in a `SurjectArena`
 pub struct Iter<'a, P: Ptr, K, V> {
-    iter: iterators::Iter<'a, P, Link<P, Key<P, K>>>,
+    iter: arena_iterators::Iter<'a, P, Link<P, Key<P, K>>>,
     vals: &'a Arena<PtrNoGen<P>, Val<V>>,
 }
 
@@ -263,5 +265,28 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
             adv: self.advancer_surject(p_init),
             surject_val: self.get_val(p_init),
         }
+    }
+
+    /// Performs [SurjectArena::compress_and_shrink] and returns an `Arena<P,
+    /// P>` that can be used for [Recast]ing
+    pub fn compress_and_shrink_recaster(&mut self) -> crate::Arena<P, P> {
+        let mut res = crate::Arena::<P, P>::new();
+        self.clone_keys_to_arena(&mut res, |_, _| P::invalid());
+        self.compress_and_shrink_with(|p, _, _, q| *res.get_mut(p).unwrap() = q);
+        res
+    }
+}
+
+impl<P: Ptr, I, K: Recast<I>, V: Recast<I>> Recast<I> for SurjectArena<P, K, V> {
+    /// Note that this recasts both keys and values (only the `Ptr`s are the
+    /// keyed items from the `Recast` perspective)
+    fn recast<R: Recaster<Item = I>>(&mut self, recaster: &R) -> Result<(), <R as Recaster>::Item> {
+        for key in self.keys_mut() {
+            key.recast(recaster)?;
+        }
+        for val in self.vals_mut() {
+            val.recast(recaster)?;
+        }
+        Ok(())
     }
 }

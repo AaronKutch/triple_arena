@@ -1,11 +1,15 @@
-use std::{cmp::Ordering, collections::BTreeMap, hint::black_box};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, HashMap},
+    hint::black_box,
+};
 
 use rand_xoshiro::{
     rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
 };
 use testcrate::P0;
-use triple_arena::{Advancer, OrdArena};
+use triple_arena::{utils::PtrGen, Advancer, OrdArena, Ptr};
 
 const N: usize = if cfg!(miri) {
     1000
@@ -16,11 +20,11 @@ const N: usize = if cfg!(miri) {
 };
 
 const STATS: (usize, u64, u128) = if cfg!(miri) {
-    (65, 1, 128)
+    (69, 1, 125)
 } else if cfg!(debug_assertions) {
-    (285, 111, 14529)
+    (297, 112, 14550)
 } else {
-    (401, 5074, 744185)
+    (409, 5036, 749722)
 };
 
 macro_rules! next_inx {
@@ -71,19 +75,8 @@ fn fuzz_ord() {
     // the tricky part is that we need to handle nonhereditary cases
     let mut b: BTreeMap<Key, BTreeMap<Val, Triple>> = BTreeMap::new();
 
-    let invalid = a.insert_nonhereditary((Key { k: 0 }, Val { v: 0 }));
-    assert!(a.insert_linear(None, (Key { k: 0 }, Val { v: 0 })).is_err());
-    assert!(a
-        .insert_nonhereditary_linear(None, (Key { k: 0 }, Val { v: 0 }))
-        .is_err());
-    a.remove(invalid).unwrap();
-    assert!(a
-        .insert_linear(Some(invalid), (Key { k: 0 }, Val { v: 0 }))
-        .is_err());
-    assert!(a
-        .insert_nonhereditary_linear(Some(invalid), (Key { k: 0 }, Val { v: 0 }))
-        .is_err());
-    gen += 1;
+    let invalid = a.insert_nonhereditary(Key { k: 0 }, Val { v: 0 });
+    assert!(a.insert_empty(Key { k: 0 }, Val { v: 0 }).is_none());
     a.clear_and_shrink();
     gen += 1;
     let mut op_inx;
@@ -150,16 +143,16 @@ fn fuzz_ord() {
                 // insert, insert_similar
                 let k = new_k();
                 let v = new_v();
-                let (p, k_v) = if (rng.next_u32() % 100) < 90 {
-                    a.insert((k, v))
+                let (p, k_v) = if (rng.next_u32() & 1) == 0 {
+                    a.insert(k, v)
                 } else {
                     let p_init = if a.is_empty() {
-                        None
+                        Ptr::invalid()
                     } else {
                         // start from anywhere
-                        Some(list[next_inx!(rng, len)].p)
+                        list[next_inx!(rng, len)].p
                     };
-                    a.insert_linear(p_init, (k, v)).unwrap()
+                    a.insert_linear(p_init, 4, k, v)
                 };
                 let triple = Triple { p, k, v };
                 list.push(triple);
@@ -188,15 +181,15 @@ fn fuzz_ord() {
                 let k = new_k();
                 let v = new_v();
                 let p = if (rng.next_u32() % 100) < 90 {
-                    a.insert_nonhereditary((k, v))
+                    a.insert_nonhereditary(k, v)
                 } else {
                     let p_init = if a.is_empty() {
-                        None
+                        Ptr::invalid()
                     } else {
                         // start from anywhere
-                        Some(list[next_inx!(rng, len)].p)
+                        list[next_inx!(rng, len)].p
                     };
-                    a.insert_nonhereditary_linear(p_init, (k, v)).unwrap()
+                    a.insert_nonhereditary_linear(p_init, 4, k, v)
                 };
                 let triple = Triple { p, k, v };
                 list.push(triple);
@@ -227,10 +220,10 @@ fn fuzz_ord() {
                 // find_similar_key, find_similar_key_linear
                 let new_k = new_k();
                 if len != 0 {
-                    let (p, ord) = if (rng.next_u32() % 100) < 90 {
+                    let (p, ord) = if (rng.next_u32() & 1) == 0 {
                         a.find_similar_key(&new_k).unwrap()
                     } else {
-                        a.find_similar_key_linear(list[next_inx!(rng, len)].p, &new_k)
+                        a.find_similar_key_linear(list[next_inx!(rng, len)].p, 4, &new_k)
                             .unwrap()
                     };
                     let link = a.get_link(p).unwrap();
@@ -239,10 +232,10 @@ fn fuzz_ord() {
                             if let Some(prev) = link.prev() {
                                 assert!(a.get_key(prev).unwrap().lt(&new_k));
                             }
-                            assert!(new_k.lt(&link.t.0));
+                            assert!(new_k.lt(link.t.0));
                         }
                         Ordering::Equal => {
-                            assert_eq!(link.t.0, new_k);
+                            assert_eq!(*link.t.0, new_k);
                         }
                         Ordering::Greater => {
                             assert!(link.t.0.lt(&new_k));
@@ -253,28 +246,28 @@ fn fuzz_ord() {
                     }
                 } else {
                     assert!(a.find_similar_key(&new_k).is_none());
-                    assert!(a.find_similar_key_linear(invalid, &new_k).is_none());
+                    assert!(a.find_similar_key_linear(invalid, 4, &new_k).is_none());
                 }
             }
             350..=399 => {
                 // find_key, find_key_linear
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {
-                    let p = if (rng.next_u32() % 100) < 90 {
+                    let p = if (rng.next_u32() & 1) == 0 {
                         a.find_key(&new_k).unwrap()
                     } else {
-                        a.find_key_linear(list[next_inx!(rng, len)].p, &new_k)
+                        a.find_key_linear(list[next_inx!(rng, len)].p, 4, &new_k)
                             .unwrap()
                     };
                     let v = *a.get_val(p).unwrap();
                     assert!(set.contains_key(&v));
-                } else if (rng.next_u32() % 100) < 90 {
+                } else if (rng.next_u32() & 1) == 0 {
                     assert!(a.find_key(&new_k).is_none());
                 } else if len == 0 {
-                    assert!(a.find_key_linear(invalid, &new_k).is_none());
+                    assert!(a.find_key_linear(invalid, 4, &new_k).is_none());
                 } else {
                     assert!(a
-                        .find_key_linear(list[next_inx!(rng, len)].p, &new_k)
+                        .find_key_linear(list[next_inx!(rng, len)].p, 4, &new_k)
                         .is_none());
                 }
             }
@@ -283,8 +276,8 @@ fn fuzz_ord() {
                 if len != 0 {
                     let t = &list[next_inx!(rng, len)];
                     assert!(a.contains(t.p));
-                    assert_eq!(a.get_link(t.p).unwrap().t, &(t.k, t.v));
-                    assert_eq!(a.get(t.p).unwrap(), &(t.k, t.v));
+                    assert_eq!(a.get_link(t.p).unwrap().t, (&t.k, &t.v));
+                    assert_eq!(a.get(t.p).unwrap(), (&t.k, &t.v));
                     assert_eq!(a.get_key(t.p).unwrap(), &t.k);
                     assert_eq!(a.get_val(t.p).unwrap(), &t.v);
                     let mut tmp = t.v;
@@ -438,11 +431,11 @@ fn fuzz_ord() {
                 let mut keys = a.keys();
                 let mut vals = a.vals();
                 while let Some(p) = adv.advance(&a) {
-                    let pair = a.get(p).unwrap();
+                    let (k, v) = a.get(p).unwrap();
                     assert_eq!(ptrs.next().unwrap(), p);
-                    assert_eq!(iter.next().unwrap(), (p, pair));
-                    assert_eq!(*keys.next().unwrap(), pair.0);
-                    assert_eq!(*vals.next().unwrap(), pair.1);
+                    assert_eq!(iter.next().unwrap(), (p, k, v));
+                    assert_eq!(*keys.next().unwrap(), *k);
+                    assert_eq!(*vals.next().unwrap(), *v);
                 }
                 for v in a.vals_mut() {
                     black_box(v);
@@ -468,7 +461,48 @@ fn fuzz_ord() {
                     assert!(a.max().is_none());
                 }
             }
-            998 => {}
+            998 => {
+                // compress_and_shrink_with
+                // compress_and_shrink is difficult to test, we just note its definition is
+                // self.compress_and_shrink_with(|_, _, _| ())
+
+                let mut tmp: HashMap<Val, Triple> = HashMap::new();
+                let q_gen = PtrGen::increment(a.gen());
+                a.compress_and_shrink_with(|p, key, val, q| {
+                    let set = &b[key];
+                    assert_eq!(set[val].p, p);
+                    assert_eq!(q_gen, q.gen());
+                    tmp.insert(*val, Triple {
+                        p: q,
+                        k: *key,
+                        v: *val,
+                    });
+                });
+                assert_eq!(tmp.len(), a.len());
+                assert_eq!(a.capacity(), a.len());
+                gen += 1;
+                for (val, triple) in &tmp {
+                    assert_eq!(val, a.get_val(triple.p).unwrap());
+                    assert_eq!(triple.k, *a.get_key(triple.p).unwrap());
+                }
+                // fix `Ptr`s
+                for (val, triple) in &tmp {
+                    for set_part in b.get_mut(&triple.k).unwrap() {
+                        if set_part.0 == val {
+                            set_part.1.p = triple.p;
+                            break
+                        }
+                    }
+                }
+                for triple in &mut list {
+                    for set_part in &b[&triple.k] {
+                        if *set_part.0 == triple.v {
+                            triple.p = set_part.1.p;
+                            break
+                        }
+                    }
+                }
+            }
             999 => {
                 match rng.next_u32() % 4 {
                     0 => {
@@ -489,15 +523,15 @@ fn fuzz_ord() {
                         // TODO improve
                         gen += a.len() as u128;
                         let prev_cap = a.capacity();
-                        for (p, k_v) in a.drain() {
-                            black_box((p, k_v));
+                        for (p, k, v) in a.drain() {
+                            black_box((p, k, v));
                         }
                         assert_eq!(a.capacity(), prev_cap);
                     }
                     3 => {
                         // drain_capacity
-                        for (p, k_v) in a.clone() {
-                            black_box((p, k_v));
+                        for (p, k, v) in a.clone() {
+                            black_box((p, k, v));
                         }
                         a.clear();
                         gen += 1;

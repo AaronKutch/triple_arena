@@ -1,6 +1,6 @@
 use crate::{
-    chain_iterators, iterators, ord_iterators, surject_iterators, Advancer, Arena, ChainArena,
-    Link, OrdArena, Ptr, SurjectArena,
+    arena_iterators, chain_iterators, ord_iterators, surject_iterators, Advancer, Arena,
+    ChainArena, Link, OrdArena, Ptr, SurjectArena,
 };
 
 /// A trait that encapsulates some common functions across the different arena
@@ -10,6 +10,12 @@ pub trait ArenaTrait {
     type P: Ptr;
     /// The element type
     type E;
+    type GetRes<'a>
+    where
+        Self: 'a;
+    type GetMutRes<'a>
+    where
+        Self: 'a;
     type Adv: Advancer;
 
     fn new() -> Self;
@@ -19,7 +25,8 @@ pub trait ArenaTrait {
     fn is_empty(&self) -> bool;
     fn insert(&mut self, e: Self::E) -> Self::P;
     fn remove(&mut self, p: Self::P) -> Option<Self::E>;
-    fn get(&self, p: Self::P) -> Option<&Self::E>;
+    fn get(&self, p: Self::P) -> Option<Self::GetRes<'_>>;
+    fn get_mut(&mut self, p: Self::P) -> Option<Self::GetMutRes<'_>>;
     fn advancer(&self) -> Self::Adv;
     fn contains(&self, p: Self::P) -> bool;
     fn clear(&mut self);
@@ -27,8 +34,10 @@ pub trait ArenaTrait {
 }
 
 impl<P: Ptr, T> ArenaTrait for Arena<P, T> {
-    type Adv = iterators::PtrAdvancer<P, T>;
+    type Adv = arena_iterators::PtrAdvancer<P, T>;
     type E = T;
+    type GetMutRes<'a> = &'a mut Self::E where Self: 'a;
+    type GetRes<'a> = &'a Self::E where Self: 'a;
     type P = P;
 
     fn new() -> Self {
@@ -63,6 +72,10 @@ impl<P: Ptr, T> ArenaTrait for Arena<P, T> {
         self.get(p)
     }
 
+    fn get_mut(&mut self, p: Self::P) -> Option<&mut Self::E> {
+        self.get_mut(p)
+    }
+
     fn advancer(&self) -> Self::Adv {
         self.advancer()
     }
@@ -83,6 +96,8 @@ impl<P: Ptr, T> ArenaTrait for Arena<P, T> {
 impl<P: Ptr, T> ArenaTrait for ChainArena<P, T> {
     type Adv = chain_iterators::PtrAdvancer<P, T>;
     type E = Link<P, T>;
+    type GetMutRes<'a> = Link<P, &'a mut T> where Self: 'a;
+    type GetRes<'a> = &'a Self::E where Self: 'a;
     type P = P;
 
     fn new() -> Self {
@@ -122,6 +137,10 @@ impl<P: Ptr, T> ArenaTrait for ChainArena<P, T> {
         self.get_link(p)
     }
 
+    fn get_mut(&mut self, p: Self::P) -> Option<Link<P, &mut T>> {
+        self.get_link_mut(p)
+    }
+
     fn advancer(&self) -> Self::Adv {
         self.advancer()
     }
@@ -142,6 +161,8 @@ impl<P: Ptr, T> ArenaTrait for ChainArena<P, T> {
 impl<P: Ptr, K> ArenaTrait for SurjectArena<P, K, ()> {
     type Adv = surject_iterators::PtrAdvancer<P, K, ()>;
     type E = K;
+    type GetMutRes<'a> = &'a mut Self::E where Self: 'a;
+    type GetRes<'a> = &'a Self::E where Self: 'a;
     type P = P;
 
     fn new() -> Self {
@@ -176,6 +197,10 @@ impl<P: Ptr, K> ArenaTrait for SurjectArena<P, K, ()> {
         self.get_key(p)
     }
 
+    fn get_mut(&mut self, p: Self::P) -> Option<&mut Self::E> {
+        self.get_key_mut(p)
+    }
+
     fn advancer(&self) -> Self::Adv {
         self.advancer()
     }
@@ -196,6 +221,8 @@ impl<P: Ptr, K> ArenaTrait for SurjectArena<P, K, ()> {
 impl<P: Ptr, K: Ord, V> ArenaTrait for OrdArena<P, K, V> {
     type Adv = ord_iterators::PtrAdvancer<P, K, V>;
     type E = (K, V);
+    type GetMutRes<'a> = (&'a K, &'a mut V) where Self: 'a;
+    type GetRes<'a> = (&'a K, &'a V) where Self: 'a;
     type P = P;
 
     fn new() -> Self {
@@ -220,15 +247,19 @@ impl<P: Ptr, K: Ord, V> ArenaTrait for OrdArena<P, K, V> {
 
     /// Uses the hereditary insert
     fn insert(&mut self, e: Self::E) -> P {
-        self.insert(e).0
+        self.insert(e.0, e.1).0
     }
 
     fn remove(&mut self, p: Self::P) -> Option<Self::E> {
         self.remove(p).map(|link| link.t)
     }
 
-    fn get(&self, p: Self::P) -> Option<&Self::E> {
+    fn get(&self, p: Self::P) -> Option<(&K, &V)> {
         self.get(p)
+    }
+
+    fn get_mut(&mut self, p: Self::P) -> Option<(&K, &mut V)> {
+        self.get_mut(p)
     }
 
     fn advancer(&self) -> Self::Adv {

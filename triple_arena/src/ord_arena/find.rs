@@ -1,11 +1,13 @@
 use core::cmp::{min, Ordering};
 
-use crate::{Advancer, OrdArena, Ptr};
+use crate::{Advancer, ChainArena, OrdArena, Ptr};
 
 impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
+        // needed because of special functions like `compress_and_shrink`
+        ChainArena::_check_invariants(&this.a)?;
         if this.a.is_empty() {
             return Ok(())
         }
@@ -18,7 +20,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             return Err("this.root is broken")
         };
         // first check the chain and ordering
-        let mut count = 0;
+        let mut count = 0usize;
         let mut prev: Option<P> = None;
         let first_gen = if let Some((first_gen, link)) = this.a.get_ignore_gen(this.first) {
             if link.prev().is_some() {
@@ -31,14 +33,14 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 
         let mut adv = this.a.advancer_chain(Ptr::_from_raw(this.first, first_gen));
         while let Some(p) = adv.advance(&this.a) {
-            count += 1;
+            count = count.checked_add(1).unwrap();
             if !this.a.contains(p) {
                 return Err("invalid Ptr")
             }
             if let Some(prev) = prev {
                 if Ord::cmp(
-                    &this.a.get_ignore_gen(prev.inx()).unwrap().1.t.k_v.0,
-                    &this.a.get_ignore_gen(p.inx()).unwrap().1.t.k_v.0,
+                    &this.a.get_ignore_gen(prev.inx()).unwrap().1.t.k,
+                    &this.a.get_ignore_gen(p.inx()).unwrap().1.t.k,
                 ) == Ordering::Greater
                 {
                     return Err("incorrect ordering")
@@ -143,7 +145,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         loop {
             let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
-            match Ord::cmp(k, &node.k_v.0) {
+            match Ord::cmp(k, &node.k) {
                 Ordering::Less => p = node.p_tree0?,
                 Ordering::Equal => break Some(Ptr::_from_raw(p, gen)),
                 Ordering::Greater => p = node.p_tree1?,
@@ -152,47 +154,50 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     }
 
     /// The same as [OrdArena::find_key], except it uses linear
-    /// comparisons starting at `p_init`. If `p` is not within a small constant
-    /// number of elements away from where `k` should be ordered, this
-    /// function may operate in `O(n)` time instead of the `O(1)` this is
-    /// intended for. Returns `None` if `p_init` is invalid or the key was not
-    /// found.
+    /// comparisons starting at `p_init`. If the key is not found
+    /// within `num` comparisons, or `p_init` is invalid, a normal search is
+    /// used. Returns `None` if the key was not found.
     #[must_use]
-    pub fn find_key_linear(&self, p_init: P, k: &K) -> Option<P> {
+    pub fn find_key_linear(&self, p_init: P, num: usize, k: &K) -> Option<P> {
         if !self.a.contains(p_init) {
-            return None
+            return self.find_key(k)
         }
+        // we settled on the model of trying `num` linear comparisons, because any kind
+        // of search starting from the leaves of the tree runs into the problem that
+        // constant numbers of distance can leave the target on the other side of the
+        // tree, and the search time becomes twice the normal search time in many cases.
         let mut p = p_init.inx();
         let mut direction = None;
-        loop {
+        for _ in 0..num {
             let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
-            match Ord::cmp(k, &node.k_v.0) {
+            match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
                     if direction == Some(true) {
-                        break None
+                        break
                     }
                     direction = Some(false);
                     if let Some(prev) = link.prev() {
                         p = prev.inx();
                     } else {
-                        break None
+                        break
                     }
                 }
-                Ordering::Equal => break Some(Ptr::_from_raw(p, gen)),
+                Ordering::Equal => return Some(Ptr::_from_raw(p, gen)),
                 Ordering::Greater => {
                     if direction == Some(false) {
-                        break None
+                        break
                     }
                     direction = Some(true);
                     if let Some(next) = link.next() {
                         p = next.inx();
                     } else {
-                        break None
+                        break
                     }
                 }
             }
         }
+        self.find_key(k)
     }
 
     /// Finds a `Ptr` with an associated key that is equal key to `k`. If such a
@@ -212,7 +217,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         loop {
             let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
-            match Ord::cmp(k, &node.k_v.0) {
+            match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
                     if let Some(p_tree0) = node.p_tree0 {
                         p = p_tree0;
@@ -235,47 +240,88 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// Combines the behaviors of [OrdArena::find_similar_key] and
     /// [OrdArena::find_key_linear]
     #[must_use]
-    pub fn find_similar_key_linear(&self, p_init: P, k: &K) -> Option<(P, Ordering)> {
+    pub fn find_similar_key_linear(&self, p_init: P, num: usize, k: &K) -> Option<(P, Ordering)> {
         if !self.a.contains(p_init) {
-            return None
+            return self.find_similar_key(k)
         }
         let mut p = p_init.inx();
         let mut direction = None;
-        let ordering = loop {
-            let link = self.a.get_inx_unwrap(p);
+        for _ in 0..num {
+            let (gen, link) = self.a.get_ignore_gen(p).unwrap();
             let node = &link.t;
-            match Ord::cmp(k, &node.k_v.0) {
+            let p_with_gen = Ptr::_from_raw(p, gen);
+            match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
                     if direction == Some(true) {
-                        break Ordering::Less
+                        return Some((p_with_gen, Ordering::Less))
                     }
                     direction = Some(false);
                     if let Some(prev) = link.prev() {
                         p = prev.inx();
                     } else {
-                        break Ordering::Less
+                        return Some((p_with_gen, Ordering::Less))
                     }
                 }
-                Ordering::Equal => break Ordering::Equal,
+                Ordering::Equal => return Some((p_with_gen, Ordering::Equal)),
                 Ordering::Greater => {
                     if direction == Some(false) {
-                        break Ordering::Greater
+                        return Some((p_with_gen, Ordering::Greater))
                     }
                     direction = Some(true);
                     if let Some(next) = link.next() {
                         p = next.inx();
                     } else {
-                        break Ordering::Greater
+                        return Some((p_with_gen, Ordering::Greater))
                     }
                 }
             }
-        };
-        let (gen, _) = self.a.get_ignore_gen(p).unwrap();
-        Some((Ptr::_from_raw(p, gen), ordering))
+        }
+        self.find_similar_key(k)
     }
 }
 
+// example use of the below in debugging
 /*
+use std::path::PathBuf;
+use triple_arena::{ptr_struct, Arena, OrdArena};
+use triple_arena_render::{render_to_svg_file, DebugNode};
+// ...
+let debug_arena = a.debug_arena();
+let mut debug_arena2 = Arena::new();
+let res = OrdArena::_check_invariants(&a);
+if res.is_err() {
+    debug_arena2.clone_from_with(
+        &debug_arena,
+        |_, (rank, k, _, p_tree0, p_back, p_tree1)| DebugNode {
+            sources: if let Some(p_back) = p_back {
+                vec![(*p_back, String::new())]
+            } else {
+                vec![]
+            },
+            center: vec![format!("r: {rank}, k: {k}")],
+            sinks: {
+                let mut v = vec![];
+                if let Some(p_tree0) = p_tree0 {
+                    v.push((*p_tree0, "0".to_owned()));
+                }
+                if let Some(p_tree1) = p_tree1 {
+                    v.push((*p_tree1, "1".to_owned()));
+                }
+                v
+            },
+        },
+    );
+    render_to_svg_file(&debug_arena2, false, PathBuf::from("tmp.svg".to_owned()))
+        .unwrap();
+    println!("{}", a.debug());
+    dbg!(len);
+}
+res.unwrap();
+*/
+
+/// Used for development debugging only, see find.rs for example
+#[cfg(feature = "expose_internal_utils")]
+#[allow(clippy::type_complexity)]
 impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> OrdArena<P, K, V> {
     pub fn debug_arena(&self) -> crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>)> {
         let mut res: crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>)> =
@@ -283,8 +329,8 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
         self.a.clone_to_arena(&mut res, |_, link| {
             (
                 link.t.rank,
-                link.t.k_v.0.clone(),
-                link.t.k_v.1.clone(),
+                link.t.k.clone(),
+                link.t.v.clone(),
                 link.t
                     .p_tree0
                     .map(|inx| Ptr::_from_raw(inx, crate::utils::PtrGen::one())),
@@ -348,8 +394,8 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
                 "(inx: {:2?}, k: {:3?}, v: {:3?}, rank: {:2?}, p_back: {:2?}, p_tree0: {:2?}, \
                  p_tree1: {:2?})",
                 p.inx(),
-                n.k_v.0,
-                n.k_v.1,
+                n.k,
+                n.v,
                 n.rank,
                 n.p_back,
                 n.p_tree0,
@@ -360,4 +406,3 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
         s
     }
 }
-*/

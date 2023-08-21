@@ -5,6 +5,8 @@ use core::{
     panic::{RefUnwindSafe, UnwindSafe},
 };
 
+use recasting::{Recast, Recaster};
+
 use crate::utils::nzusize_unchecked;
 
 /// Pointer generation information type
@@ -26,6 +28,7 @@ pub unsafe trait PtrGen:
     + Unpin
     + RefUnwindSafe
     + UnwindSafe
+    + Recast<Self>
 {
     /// Returns the first element after 0, which is special because Arenas with
     /// generation counters always start at generation 2, which means invalid
@@ -99,6 +102,7 @@ pub unsafe trait PtrInx:
     + Unpin
     + RefUnwindSafe
     + UnwindSafe
+    + Recast<Self>
 {
     /// Note: this should be truncating or zero extending cast, higher level
     /// functions should handle fallible cases
@@ -180,6 +184,7 @@ pub unsafe trait Ptr:
     + Unpin
     + RefUnwindSafe
     + UnwindSafe
+    + Recast<Self>
 {
     /// The recommended general purpose type for this is `usize`
     type Inx: PtrInx;
@@ -187,6 +192,9 @@ pub unsafe trait Ptr:
     /// The recommended general purpose type for this is `NonZeroU64` if
     /// generation tracking is wanted, otherwise `()`.
     type Gen: PtrGen;
+
+    /// The struct name used in debugging (needed by `PtrNoGen` for example)
+    fn name() -> &'static str;
 
     /// Returns a new `Ptr` with a generation value `PtrGen::one()`. Because the
     /// arena starts with generation 2, this is guaranteed invalid when
@@ -276,6 +284,10 @@ macro_rules! ptr_struct {
                 type Inx = $inx_type;
                 type Gen = $gen_type;
 
+                fn name() -> &'static str {
+                    stringify!($struct_name)
+                }
+
                 #[inline]
                 fn invalid() -> Self {
                     Self {
@@ -319,7 +331,7 @@ macro_rules! ptr_struct {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                     f.write_fmt(format_args!(
                         "{}[{:?}]({:?})",
-                        stringify!($struct_name),
+                        <Self as $crate::Ptr>::name(),
                         $crate::Ptr::inx(*self),
                         $crate::Ptr::gen(*self),
                     ))
@@ -329,6 +341,13 @@ macro_rules! ptr_struct {
             impl core::fmt::Display for $struct_name {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                     core::fmt::Debug::fmt(self, f)
+                }
+            }
+
+            impl $crate::Recast<Self> for $struct_name {
+                fn recast<R: $crate::Recaster<Item = Self>>(&mut self, recaster: &R)
+                    -> Result<(), <R as $crate::Recaster>::Item> {
+                    recaster.recast_item(self)
                 }
             }
         )*
@@ -356,6 +375,10 @@ macro_rules! ptr_struct {
             unsafe impl $crate::Ptr for $struct_name {
                 type Inx = $inx_type;
                 type Gen = ();
+
+                fn name() -> &'static str {
+                    stringify!($struct_name)
+                }
 
                 #[inline]
                 fn invalid() -> Self {
@@ -400,7 +423,7 @@ macro_rules! ptr_struct {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                     f.write_fmt(format_args!(
                         "{}[{:?}]",
-                        stringify!($struct_name),
+                        <Self as $crate::Ptr>::name(),
                         $crate::Ptr::inx(*self),
                     ))
                 }
@@ -409,6 +432,13 @@ macro_rules! ptr_struct {
             impl core::fmt::Display for $struct_name {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                     core::fmt::Debug::fmt(self, f)
+                }
+            }
+
+            impl $crate::Recast<Self> for $struct_name {
+                fn recast<R: $crate::Recaster<Item = Self>>(&mut self, recaster: &R)
+                    -> Result<(), <R as $crate::Recaster>::Item> {
+                    recaster.recast_item(self)
                 }
             }
         )*
@@ -470,6 +500,10 @@ unsafe impl<P: Ptr> Ptr for PtrNoGen<P> {
     type Gen = ();
     type Inx = P::Inx;
 
+    fn name() -> &'static str {
+        P::name()
+    }
+
     #[inline]
     fn invalid() -> Self {
         Self {
@@ -509,16 +543,21 @@ impl<P: Ptr> core::default::Default for PtrNoGen<P> {
 
 impl<P: Ptr> core::fmt::Debug for PtrNoGen<P> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.write_fmt(format_args!(
-            "{}[{:?}]",
-            stringify!($struct_name),
-            Ptr::inx(*self),
-        ))
+        f.write_fmt(format_args!("{}[{:?}]", Self::name(), Ptr::inx(*self),))
     }
 }
 
 impl<P: Ptr> core::fmt::Display for PtrNoGen<P> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         core::fmt::Debug::fmt(self, f)
+    }
+}
+
+impl<P: Ptr> Recast<Self> for PtrNoGen<P> {
+    fn recast<R: Recaster<Item = Self>>(
+        &mut self,
+        recaster: &R,
+    ) -> Result<(), <R as Recaster>::Item> {
+        recaster.recast_item(self)
     }
 }

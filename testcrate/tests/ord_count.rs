@@ -22,8 +22,8 @@ fn ord_arena_count() {
     let insts = get_std_insts();
     for inst in insts {
         match inst {
-            Ok(pair) => {
-                repr_inxs.push(a.insert(pair).0);
+            Ok((k, v)) => {
+                repr_inxs.push(a.insert(k, v).0);
             }
             Err(inx) => {
                 a.remove(repr_inxs.swap_remove(inx)).unwrap();
@@ -40,9 +40,9 @@ fn ord_arena_find_to_remove_count() {
     let insts = get_std_insts();
     for inst in insts {
         match inst {
-            Ok(pair) => {
-                repr_keys.push(pair.0.clone_uncounting());
-                let _ = a.insert(pair);
+            Ok((k, v)) => {
+                repr_keys.push(k.clone_uncounting());
+                let _ = a.insert(k, v);
             }
             Err(inx) => {
                 let key = repr_keys.swap_remove(inx);

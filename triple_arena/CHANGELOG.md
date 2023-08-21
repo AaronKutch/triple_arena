@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.11.0] - 2023-08-20
+### Fixes
+- Fixed that the `Clone::clone_from` specialization on `OrdArena` was broken
+- Fixed that the `Debug` impl of `PtrNoGen` was messed up
+
+### Changes
+- Undid the tuple grouping of key value pairs in `OrdArena`, because it wasn't worth it and will not
+  be compatible with the future cache local version anyway.
+- Added a `num` argument to the `OrdArena::*_linear` functions and changed their signatures
+- Added some raw functions
+- Renamed the `iterators` module to `arena_iterators`
+
+### Additions
+- Added `compress_and_shrink` and `compress_and_shrink_with` functions to all arenas
+- Added `<_ as Ptr>::name()`
+- Added the `recasting` crate and various impls for it
+- Added `Recast<Self>` bound to `Ptr`
+- Added `PartialEq` and `Eq` impls to the arenas
+- Added `SurjectArena::clone_keys_to_arena`
+
 ## [0.10.0] - 2023-08-05
 ### Fixes
 - Changed the `Index` and `IndexMut` impls of `ChainArena` to return `&T` and `&mut T` respectively,

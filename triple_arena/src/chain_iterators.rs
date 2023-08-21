@@ -2,12 +2,14 @@
 
 use core::marker::PhantomData;
 
-pub use crate::iterators::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
-use crate::{iterators, Advancer, ChainArena, Link, Ptr};
+use recasting::{Recast, Recaster};
+
+pub use crate::arena_iterators::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
+use crate::{arena_iterators, Advancer, ChainArena, Link, Ptr};
 
 /// An advancer over the valid `P`s of a `ChainArena`
 pub struct PtrAdvancer<P: Ptr, T> {
-    adv: iterators::PtrAdvancer<P, Link<P, T>>,
+    adv: arena_iterators::PtrAdvancer<P, Link<P, T>>,
 }
 
 impl<P: Ptr, T> Advancer for PtrAdvancer<P, T> {
@@ -41,7 +43,7 @@ impl<P: Ptr, T> Advancer for ChainPtrAdvancer<P, T> {
         if self.max_advances == 0 {
             return None
         } else {
-            self.max_advances -= 1;
+            self.max_advances = self.max_advances.wrapping_sub(1);
         }
         if let Some(ptr) = self.ptr {
             if self.switch {
@@ -254,5 +256,32 @@ impl<P: Ptr, T> ChainArena<P, T> {
     /// Same as [crate::Arena::capacity_drain]
     pub fn capacity_drain(self) -> CapacityDrain<P, Link<P, T>> {
         self.a.capacity_drain()
+    }
+
+    /// Performs [ChainArena::compress_and_shrink] and returns an `Arena<P, P>`
+    /// that can be used for [Recast]ing
+    pub fn compress_and_shrink_recaster(&mut self) -> crate::Arena<P, P> {
+        let mut res = crate::Arena::<P, P>::new();
+        self.clone_to_arena(&mut res, |_, _| P::invalid());
+        self.compress_and_shrink_with(|p, _, q| *res.get_mut(p).unwrap() = q);
+        res
+    }
+}
+
+impl<P: Ptr, I, T: Recast<I>> Recast<I> for ChainArena<P, T> {
+    fn recast<R: Recaster<Item = I>>(&mut self, recaster: &R) -> Result<(), <R as Recaster>::Item> {
+        for val in self.vals_mut() {
+            val.t.recast(recaster)?;
+        }
+        Ok(())
+    }
+}
+
+impl<P: Ptr, T: Recast<P>> Recast<P> for Link<P, T> {
+    /// Recasts both the interlinks and the `T`
+    fn recast<R: Recaster<Item = P>>(&mut self, recaster: &R) -> Result<(), <R as Recaster>::Item> {
+        self.prev_next.recast(recaster)?;
+        self.t.recast(recaster)?;
+        Ok(())
     }
 }

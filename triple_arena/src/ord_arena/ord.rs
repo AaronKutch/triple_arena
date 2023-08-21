@@ -9,7 +9,7 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use crate::{utils::PtrInx, Arena, ChainArena, Link, Ptr};
+use crate::{utils::PtrInx, Advancer, Arena, ChainArena, Link, Ptr};
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
 // Sen, Siddhartha; Tarjan, Robert E. (2015).
@@ -34,7 +34,8 @@ use crate::{utils::PtrInx, Arena, ChainArena, Link, Ptr};
 /// Internal node for an `OrdArena`
 #[derive(Clone)]
 pub struct Node<P: Ptr, K, V> {
-    pub k_v: (K, V),
+    pub k: K,
+    pub v: V,
     // Pointer back to parent
     pub p_back: Option<P::Inx>,
     // Pointer to left subtree
@@ -81,13 +82,11 @@ pub struct Node<P: Ptr, K, V> {
 /// ptr_struct!(P0);
 /// let mut a: OrdArena<P0, u64, ()> = OrdArena::new();
 ///
-/// // we purposely group the key-value pairs in tuples for technical
-/// // performance reasons, and often they are returned as tuples
-/// let p50 = a.insert((50, ())).0;
-/// let p30 = a.insert((30, ())).0;
-/// let p70 = a.insert((70, ())).0;
-/// let p60 = a.insert((60, ())).0;
-/// let p10 = a.insert((10, ())).0;
+/// let p50 = a.insert(50, ()).0;
+/// let p30 = a.insert(30, ()).0;
+/// let p70 = a.insert(70, ()).0;
+/// let p60 = a.insert(60, ()).0;
+/// let p10 = a.insert(10, ()).0;
 ///
 /// assert_eq!(a.min().unwrap(), p10);
 /// assert_eq!(a.max().unwrap(), p70);
@@ -113,7 +112,7 @@ pub struct Node<P: Ptr, K, V> {
 /// // The iterators are fully deterministic and iterate from the
 /// // least element to the greatest
 /// let expected = [(p10, 10), (p30, 30), (p60, 60), (p70, 70)];
-/// for (i, (p, (key, _))) in a.iter().enumerate() {
+/// for (i, (p, key, _)) in a.iter().enumerate() {
 ///     assert_eq!(expected[i], (p, *key));
 /// }
 /// ```
@@ -199,28 +198,28 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// the result gives the `Ptr` to the next lesser key, and using
     /// [next](crate::Link::next) gives the `Ptr` to the next greater key.
     #[must_use]
-    pub fn get_link(&self, p: P) -> Option<Link<P, &(K, V)>> {
+    pub fn get_link(&self, p: P) -> Option<Link<P, (&K, &V)>> {
         self.a
             .get_link(p)
-            .map(|link| Link::new(link.prev_next(), &link.t.k_v))
+            .map(|link| Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
     }
 
     /// Returns a reference to the key-value pair pointed to by `p`
     #[must_use]
-    pub fn get(&self, p: P) -> Option<&(K, V)> {
-        self.a.get(p).map(|node| &node.k_v)
+    pub fn get(&self, p: P) -> Option<(&K, &V)> {
+        self.a.get(p).map(|node| (&node.k, &node.v))
     }
 
     /// Returns a reference to the key pointed to by `p`
     #[must_use]
     pub fn get_key(&self, p: P) -> Option<&K> {
-        self.a.get(p).map(|node: &Node<P, K, V>| &node.k_v.0)
+        self.a.get(p).map(|node: &Node<P, K, V>| &node.k)
     }
 
     /// Returns a reference to the value pointed to by `p`
     #[must_use]
     pub fn get_val(&self, p: P) -> Option<&V> {
-        self.a.get(p).map(|node| &node.k_v.1)
+        self.a.get(p).map(|node| &node.v)
     }
 
     /// Returns the full `Link<P, (&K, &mut V)>`. Using
@@ -231,19 +230,19 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     pub fn get_link_mut(&mut self, p: P) -> Option<Link<P, (&K, &mut V)>> {
         self.a
             .get_link_mut(p)
-            .map(|link| Link::new(link.prev_next(), (&link.t.k_v.0, &mut link.t.k_v.1)))
+            .map(|link| Link::new(link.prev_next(), (&link.t.k, &mut link.t.v)))
     }
 
     /// Returns a mutable reference to the key-value pair pointed to by `p`
     #[must_use]
     pub fn get_mut(&mut self, p: P) -> Option<(&K, &mut V)> {
-        self.a.get_mut(p).map(|t| (&t.k_v.0, &mut t.k_v.1))
+        self.a.get_mut(p).map(|t| (&t.k, &mut t.v))
     }
 
     /// Returns a mutable reference to the value pointed to by `p`
     #[must_use]
     pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
-        self.a.get_mut(p).map(|t| &mut t.k_v.1)
+        self.a.get_mut(p).map(|t| &mut t.v)
     }
 
     /// Gets two references pointed to by `p0` and `p1`.
@@ -257,8 +256,8 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     ) -> Option<(Link<P, (&K, &mut V)>, Link<P, (&K, &mut V)>)> {
         self.a.get2_link_mut(p0, p1).map(|(link0, link1)| {
             (
-                Link::new(link0.prev_next(), (&link0.t.k_v.0, &mut link0.t.k_v.1)),
-                Link::new(link1.prev_next(), (&link1.t.k_v.0, &mut link1.t.k_v.1)),
+                Link::new(link0.prev_next(), (&link0.t.k, &mut link0.t.v)),
+                Link::new(link1.prev_next(), (&link1.t.k, &mut link1.t.v)),
             )
         })
     }
@@ -270,7 +269,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     pub fn get2_val_mut(&mut self, p0: P, p1: P) -> Option<(&mut V, &mut V)> {
         self.a
             .get2_mut(p0, p1)
-            .map(|(t0, t1)| (&mut t0.k_v.1, &mut t1.k_v.1))
+            .map(|(t0, t1)| (&mut t0.v, &mut t1.v))
     }
 
     /// Invalidates all references to the entry pointed to by `p`, and returns a
@@ -291,7 +290,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// Returns ownership of `new` instead if `p` is invalid
     pub fn replace_val_and_keep_gen(&mut self, p: P, new: V) -> Result<V, V> {
         if let Some(t) = self.a.get_mut(p) {
-            let old = mem::replace(&mut t.k_v.1, new);
+            let old = mem::replace(&mut t.v, new);
             Ok(old)
         } else {
             Err(new)
@@ -308,7 +307,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     pub fn replace_val_and_update_gen(&mut self, p: P, new: V) -> Result<(V, P), V> {
         // the tree pointers do not have generation counters
         if let Some(p_new) = self.a.invalidate(p) {
-            let old = mem::replace(&mut self.a.get_mut(p_new).unwrap().k_v.1, new);
+            let old = mem::replace(&mut self.a.get_mut(p_new).unwrap().v, new);
             Ok((old, p_new))
         } else {
             Err(new)
@@ -330,7 +329,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         } else {
             let (lhs, rhs) = self.a.get2_mut(p0, p1)?;
             // be careful to swap only the inner `V` values
-            mem::swap(&mut lhs.k_v.1, &mut rhs.k_v.1);
+            mem::swap(&mut lhs.v, &mut rhs.v);
             Some(())
         }
     }
@@ -347,30 +346,127 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         self.a.clear_and_shrink();
     }
 
+    /// Compresses the arena by moving around entries to be able to shrink the
+    /// capacity down to the length. All key-value relations remain, but all
+    /// `Ptr`s are invalidated. New `Ptr`s to the entries can be found again
+    /// by iterators and advancers. Additionally, cache locality is improved
+    /// by neighboring keys being moved close together in memory, and search
+    /// speed is improved by the tree being balanced close to the ideal
+    /// balancing.
+    pub fn compress_and_shrink(&mut self) {
+        self.compress_and_shrink_with(|_, _, _, _| ())
+    }
+
+    /// The same as [OrdArena::compress_and_shrink] except that `map` is run
+    /// on every `(P, &K, &mut V, P)` with the first `P` being the old `Ptr` and
+    /// the last `P` being the new `Ptr`.
+    pub fn compress_and_shrink_with<F: FnMut(P, &K, &mut V, P)>(&mut self, mut map: F) {
+        if let Some(min) = self.min() {
+            self.a
+                .compress_and_shrink_acyclic_chain_with(min, |p, node, q| {
+                    // handles partially exterior nodes for later
+                    node.p_tree0 = None;
+                    node.p_tree1 = None;
+                    map(p, &node.k, &mut node.v, q)
+                });
+            self.raw_rebalance_assuming_compressed();
+        } else {
+            self.a.clear_and_shrink();
+        }
+    }
+
+    // TODO probably have some from_ordered function
+
+    /// Assumes `!self.is_empty()`, and the keys are in order, raw entries are
+    /// compressed, and all `p_tree0`s and `p_tree1`s are preset to `None`.
+    pub(crate) fn raw_rebalance_assuming_compressed(&mut self) {
+        // redo the tree structure for better balance
+        let p_first = P::Inx::new(NonZeroUsize::new(1).unwrap());
+        self.first = p_first;
+        self.last = P::Inx::new(NonZeroUsize::new(self.a.len()).unwrap());
+        let root_rank = (self
+            .a
+            .len()
+            .wrapping_sub(1)
+            .next_power_of_two()
+            .trailing_zeros() as u8)
+            .wrapping_add(1);
+        let mut i = NonZeroUsize::new(self.a.len()).unwrap();
+        loop {
+            let mut lvl = root_rank;
+            let p = P::Inx::new(i);
+            let mut subtree_first = 1;
+            let mut subtree_last = self.a.len();
+            let mut last_subtree_mid = None;
+            loop {
+                let subtree_len = subtree_last.wrapping_sub(subtree_first).wrapping_add(1);
+                let subtree_mid = subtree_first.wrapping_add(subtree_len.wrapping_shr(1));
+                if i.get() == subtree_mid {
+                    // important: actual accesses are only done at this time
+                    let node = self.a.get_inx_mut_unwrap_t(p);
+                    if subtree_len == 1 {
+                        node.rank = 1;
+                    } else if subtree_len == 2 {
+                        node.rank = 2;
+                    } else if subtree_len == 3 || subtree_len == 4 {
+                        node.rank = 3;
+                    } else {
+                        node.rank = lvl;
+                    }
+                    if let Some(last_subtree_mid) = last_subtree_mid {
+                        let p_back = P::Inx::new(NonZeroUsize::new(last_subtree_mid).unwrap());
+                        node.p_back = Some(p_back);
+                        let node = self.a.get_inx_mut_unwrap_t(p_back);
+                        if i < P::Inx::get(p_back) {
+                            node.p_tree0 = Some(p);
+                        } else {
+                            node.p_tree1 = Some(p);
+                        }
+                    } else {
+                        node.p_back = None;
+                        self.root = p;
+                    }
+                    break
+                } else if i.get() < subtree_mid {
+                    subtree_last = subtree_mid.wrapping_sub(1);
+                } else {
+                    subtree_first = subtree_mid.wrapping_add(1);
+                }
+                lvl = lvl.wrapping_sub(1);
+                last_subtree_mid = Some(subtree_mid);
+            }
+            i = if let Some(prev) = NonZeroUsize::new(i.get().wrapping_sub(1)) {
+                prev
+            } else {
+                break
+            }
+        }
+    }
+
     /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
     /// `self`, with the ordering preserved in a single chain
     /// ([next](crate::Link::next) points to the next greater entry)
-    pub fn clone_to_chain_arena<U, F: FnMut(P, Link<P, &(K, V)>) -> U>(
+    pub fn clone_to_chain_arena<U, F: FnMut(P, Link<P, (&K, &V)>) -> U>(
         &self,
         chain_arena: &mut ChainArena<P, U>,
         mut map: F,
     ) {
         chain_arena.clone_from_with(&self.a, |p, link| {
-            map(p, Link::new(link.prev_next(), &link.t.k_v))
+            map(p, Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
         })
     }
 
     /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
     /// `self`
-    pub fn clone_to_arena<U, F: FnMut(P, Link<P, &(K, V)>) -> U>(
+    pub fn clone_to_arena<U, F: FnMut(P, Link<P, (&K, &V)>) -> U>(
         &self,
         arena: &mut Arena<P, U>,
         mut map: F,
     ) {
         arena.clone_from_with(&self.a.a, |p, link| {
-            map(p, Link::new(link.prev_next(), &link.t.k_v))
+            map(p, Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
         });
     }
 }
@@ -383,10 +479,8 @@ impl<P: Ptr, K: Clone, V0> OrdArena<P, K, V0> {
         mut map: F,
     ) {
         self.a.clone_from_with(&source.a, |p, link| Node {
-            k_v: (
-                link.t.k_v.0.clone(),
-                map(p, Link::new(link.prev_next(), &link.t.k_v.1)),
-            ),
+            k: link.t.k.clone(),
+            v: map(p, Link::new(link.prev_next(), &link.t.v)),
             p_back: link.t.p_back,
             p_tree0: link.t.p_tree0,
             p_tree1: link.t.p_tree1,
@@ -409,6 +503,9 @@ impl<P: Ptr, K: Clone, V: Clone> Clone for OrdArena<P, K, V> {
 
     /// Has the `Ptr` and capacity preserving properties of [Arena::clone_from]
     fn clone_from(&mut self, source: &Self) {
+        self.root = source.root;
+        self.first = source.first;
+        self.last = source.last;
         self.a.clone_from(&source.a)
     }
 }
@@ -439,6 +536,39 @@ impl<P: Ptr, K, V, B: Borrow<P>> IndexMut<B> for OrdArena<P, K, V> {
 
 impl<P: Ptr, K: Debug, V: Debug> Debug for OrdArena<P, K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_map().entries(self.iter()).finish()
+        // TODO here and in other triple `Debug`s we need a flat triple
+        f.debug_map()
+            .entries(self.iter().map(|triple| (triple.0, (triple.1, triple.2))))
+            .finish()
     }
 }
+
+impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<OrdArena<P, K, V>> for OrdArena<P, K, V> {
+    /// Checks if all `(K, V)` pairs are equal. This is sensitive to
+    /// nonhereditary ordering, but does not compare pointers, generations,
+    /// arena capacities, internal tree configuration, or `self.gen()`.
+    fn eq(&self, other: &OrdArena<P, K, V>) -> bool {
+        // first the keys
+        let mut adv0 = self.advancer();
+        let mut adv1 = other.advancer();
+        while let Some(p0) = adv0.advance(self) {
+            if let Some(p1) = adv1.advance(other) {
+                let node0 = self.a.get_inx_unwrap(p0.inx());
+                let node1 = self.a.get_inx_unwrap(p1.inx());
+                if node0.t.k != node1.t.k {
+                    return false
+                }
+                if node0.t.v != node1.t.v {
+                    return false
+                }
+            } else {
+                return false
+            }
+        }
+        adv1.advance(other).is_none()
+    }
+}
+
+impl<P: Ptr, K: Eq, V: Eq> Eq for OrdArena<P, K, V> {}
+
+// TODO PartialOrd

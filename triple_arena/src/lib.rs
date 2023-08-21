@@ -1,44 +1,44 @@
 #![no_std]
 // false positives
 #![allow(clippy::while_let_on_iterator)]
+#![allow(clippy::comparison_chain)]
 
 // TODO all places where we have an internal .get_..().unwrap() need to have
 // .get_inx_unwrap() (removes both the return and generation input wastage) do
 // this after OrdArena is settled
 // check all `get_inx_mut_unwrap` to see if we can replace with the _t variant
 
-mod advancer;
 mod arena;
-mod arena_trait;
+pub mod arena_iterators;
 mod chain;
-pub mod iterators;
-//mod nonzero_inx_vec;
+mod nonzero_inx_vec;
 mod ord_arena;
-mod ptr;
-pub use advancer::Advancer;
-pub use arena_trait::ArenaTrait;
+mod traits;
 pub use chain::{ChainArena, Link};
-pub use ptr::Ptr;
-mod safe_nonzero_inx_vec;
+pub use traits::{Advancer, ArenaTrait, Ptr};
+//mod safe_nonzero_inx_vec;
+//use safe_nonzero_inx_vec as nonzero_inx_vec;
 mod surject;
 pub use surject::SurjectArena;
 pub mod chain_iterators;
 pub mod surject_iterators;
+// reexport for the macros to use
 pub use arena::Arena;
 pub use ord_arena::{ord_iterators, OrdArena};
+pub use recasting::{Recast, Recaster};
 /// Special utilities for advanced usage
 pub mod utils {
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::arena::InternalEntry;
+    #[cfg(not(feature = "expose_internal_utils"))]
+    pub(crate) use crate::nonzero_inx_vec::NonZeroInxVec;
+    #[cfg(feature = "expose_internal_utils")]
+    pub use crate::nonzero_inx_vec::NonZeroInxVec;
     // only intended for size_of tests and such
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::ord_arena::Node;
-    pub use crate::ptr::{PtrGen, PtrInx, PtrNoGen};
-    #[cfg(not(feature = "expose_internal_utils"))]
-    pub(crate) use crate::safe_nonzero_inx_vec::NonZeroInxVec;
-    #[cfg(feature = "expose_internal_utils")]
-    pub use crate::safe_nonzero_inx_vec::NonZeroInxVec;
-    pub(crate) use crate::{ptr::ptrinx_unchecked, safe_nonzero_inx_vec::nzusize_unchecked};
+    pub use crate::traits::{PtrGen, PtrInx, PtrNoGen};
+    pub(crate) use crate::{nonzero_inx_vec::nzusize_unchecked, traits::ptrinx_unchecked};
 }
 
 extern crate alloc;

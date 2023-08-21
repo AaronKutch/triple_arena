@@ -6,247 +6,71 @@ use super::ord::Node;
 use crate::{OrdArena, Ptr};
 
 impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
-    /// Inserts at a leaf and manages ordering and replacement. Returns `Ok` if
-    /// there is a new insertion, which will need to be rebalanced. Returns
-    /// `Err` if there was a replacement (which does not happen with the
-    /// nonhereditary case).
-    fn raw_insert(&mut self, k_v: (K, V), nonhereditary: bool) -> (P, Option<(K, V)>) {
-        if self.a.is_empty() {
-            let p_new = self.a.insert_new(Node {
-                k_v,
-                p_back: None,
-                p_tree0: None,
-                p_tree1: None,
-                rank: 1,
-            });
-            self.first = p_new.inx();
-            self.last = p_new.inx();
-            self.root = p_new.inx();
-            return (p_new, None)
-        }
-        let mut p = self.root;
-        loop {
-            let (gen, link) = self.a.get_ignore_gen(p).unwrap();
-            let node = &link.t;
-            let p_with_gen = crate::Ptr::_from_raw(p, gen);
-            match Ord::cmp(&k_v.0, &node.k_v.0) {
-                Ordering::Less => {
-                    if let Some(p_tree0) = node.p_tree0 {
-                        p = p_tree0
-                    } else {
-                        // insert new leaf
-                        let new_node = Node {
-                            k_v,
-                            p_back: Some(p),
-                            p_tree0: None,
-                            p_tree1: None,
-                            rank: 1,
-                        };
-                        if let Ok(p_new) = self.a.insert((None, Some(p_with_gen)), new_node) {
-                            // fix tree pointer in leaf direction
-                            self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree0 = Some(p_new.inx());
-                            if self.first == p {
-                                self.first = p_new.inx()
-                            }
-                            break (p_new, None)
-                        } else {
-                            unreachable!()
-                        }
-                    }
-                }
-                Ordering::Equal => {
-                    if nonhereditary {
-                        // supporting multiple equal keys
-                        // need to get to leaves, use `p_tree0` bias to get to first spot
-                        if let Some(p_tree0) = node.p_tree0 {
-                            p = p_tree0
-                        } else if let Some(p_tree1) = node.p_tree1 {
-                            p = p_tree1
-                        } else {
-                            // go the Ordering::Less route
-                            let new_node = Node {
-                                k_v,
-                                p_back: Some(p),
-                                p_tree0: None,
-                                p_tree1: None,
-                                rank: 1,
-                            };
-                            if let Ok(p_new) = self.a.insert((None, Some(p_with_gen)), new_node) {
-                                self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree0 =
-                                    Some(p_new.inx());
-                                if self.first == p {
-                                    self.first = p_new.inx()
-                                }
-                                break (p_new, None)
-                            } else {
-                                unreachable!()
-                            }
-                        }
-                    } else {
-                        let old_v =
-                            mem::replace(&mut self.a.get_mut(p_with_gen).unwrap().k_v.1, k_v.1);
-                        return (p_with_gen, Some((k_v.0, old_v)))
-                    }
-                }
-                Ordering::Greater => {
-                    if let Some(p_tree1) = node.p_tree1 {
-                        p = p_tree1
-                    } else {
-                        let new_node = Node {
-                            k_v,
-                            p_back: Some(p),
-                            p_tree0: None,
-                            p_tree1: None,
-                            rank: 1,
-                        };
-                        if let Ok(p_new) = self.a.insert((Some(p_with_gen), None), new_node) {
-                            self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree1 = Some(p_new.inx());
-                            if self.last == p {
-                                self.last = p_new.inx()
-                            }
-                            break (p_new, None)
-                        } else {
-                            unreachable!()
-                        }
-                    }
-                }
-            }
+    /// Inserts key-value pair `k_v` into `self` and returns a `Ptr` to it. If
+    /// the inserted key is equal to a key already contained in `self`, the
+    /// new value replaces the old value, and `k_v.0` and the old value
+    /// are returned. The existing key is not replaced, which should not make a
+    /// difference unless special `Ord` definitions are being used.
+    #[must_use]
+    pub fn insert(&mut self, k: K, v: V) -> (P, Option<(K, V)>) {
+        if self.is_empty() {
+            (self.insert_empty(k, v).unwrap(), None)
+        } else {
+            let (p, direction) = self.find_similar_key(&k).unwrap();
+            self.insert_inx_manual_unwrap(k, v, p.inx(), direction)
         }
     }
 
-    /// Same as [OrdArena::raw_insert] except that it uses linear probing
-    /// starting from `p`. If `p_init` is `None`, this will return an error
-    /// unless `self.is_empty()`.
-    fn raw_insert_linear(
-        &mut self,
-        p_init: Option<P>,
-        k_v: (K, V),
-        nonhereditary: bool,
-    ) -> Result<(P, Option<(K, V)>), (K, V)> {
-        if let Some(p_init) = p_init {
-            if !self.a.contains(p_init) {
-                return Err(k_v)
+    /// Inserts key-value pair `k_v` into `self` and returns a
+    /// `Ptr` to it. If the inserted key is equal to a key already contained in
+    /// `self`, the inserted key is inserted in a [prev](crate::Link::prev)
+    /// position to all the equal keys. Future calls to `self.find_key` with
+    /// an equal `k_v.0` could find any of the equal keys.
+    pub fn insert_nonhereditary(&mut self, k: K, v: V) -> P {
+        if self.is_empty() {
+            self.insert_empty(k, v).unwrap()
+        } else {
+            let (p, mut direction) = self.find_similar_key(&k).unwrap();
+            if direction == Ordering::Equal {
+                direction = Ordering::Less;
             }
-            let mut p = p_init.inx();
-            // detects if we would switch probing directions, note that even if `Ord` is
-            // rigged to do nontransitive things it will still not result in an infinite
-            // loop
-            let mut direction = None;
-            let direction = loop {
-                let link = self.a.get_inx_unwrap(p);
-                match Ord::cmp(&k_v.0, &link.t.k_v.0) {
-                    Ordering::Less => {
-                        if direction == Some(true) {
-                            break Ordering::Less
-                        }
-                        direction = Some(false);
-                        if let Some(prev) = link.prev() {
-                            p = prev.inx();
-                        } else {
-                            break Ordering::Less
-                        }
-                    }
-                    Ordering::Equal => break Ordering::Equal,
-                    Ordering::Greater => {
-                        if direction == Some(false) {
-                            break Ordering::Greater
-                        }
-                        direction = Some(true);
-                        if let Some(next) = link.next() {
-                            p = next.inx();
-                        } else {
-                            break Ordering::Greater
-                        }
-                    }
-                }
-            };
-            let link = self.a.get_inx_unwrap(p);
-            // first, step to node with `None` subtree if we need to
-            let direction = match direction {
-                Ordering::Less => {
-                    if link.t.p_tree0.is_some() {
-                        p = link.prev().unwrap().inx();
-                        Ordering::Greater
-                    } else {
-                        Ordering::Less
-                    }
-                }
-                Ordering::Equal => {
-                    if nonhereditary {
-                        if link.t.p_tree0.is_some() {
-                            p = link.prev().unwrap().inx();
-                            // special case to account for rank 2 elbos
-                            Ordering::Greater
-                        } else {
-                            Ordering::Less
-                        }
-                    } else {
-                        direction
-                    }
-                }
-                Ordering::Greater => {
-                    if link.t.p_tree1.is_some() {
-                        p = link.next().unwrap().inx();
-                        Ordering::Less
-                    } else {
-                        Ordering::Greater
-                    }
-                }
-            };
-            let (gen, _) = self.a.get_ignore_gen(p).unwrap();
-            let p_with_gen = Ptr::_from_raw(p, gen);
-            match direction {
-                Ordering::Less => {
-                    // insert new leaf
-                    let new_node = Node {
-                        k_v,
-                        p_back: Some(p),
-                        p_tree0: None,
-                        p_tree1: None,
-                        rank: 1,
-                    };
-                    if let Ok(p_new) = self.a.insert((None, Some(p_with_gen)), new_node) {
-                        // fix tree pointer in leaf direction
-                        self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree0 = Some(p_new.inx());
-                        if self.first == p {
-                            self.first = p_new.inx()
-                        }
-                        Ok((p_new, None))
-                    } else {
-                        unreachable!()
-                    }
-                }
-                Ordering::Equal => {
-                    if nonhereditary {
-                        unreachable!()
-                    } else {
-                        let old_v =
-                            mem::replace(&mut self.a.get_mut(p_with_gen).unwrap().k_v.1, k_v.1);
-                        Ok((p_with_gen, Some((k_v.0, old_v))))
-                    }
-                }
-                Ordering::Greater => {
-                    let new_node = Node {
-                        k_v,
-                        p_back: Some(p),
-                        p_tree0: None,
-                        p_tree1: None,
-                        rank: 1,
-                    };
-                    if let Ok(p_new) = self.a.insert((Some(p_with_gen), None), new_node) {
-                        self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree1 = Some(p_new.inx());
-                        if self.last == p {
-                            self.last = p_new.inx()
-                        }
-                        Ok((p_new, None))
-                    } else {
-                        unreachable!()
-                    }
-                }
+            self.insert_inx_manual_unwrap(k, v, p.inx(), direction).0
+        }
+    }
+
+    /// The same as [OrdArena::insert], except it uses linear comparisons
+    /// starting at `p_init`. If the insertion point is not found within `num`
+    /// comparisons, or `p_init` is invalid, a normal insertion is used.
+    pub fn insert_linear(&mut self, p_init: P, num: usize, k: K, v: V) -> (P, Option<(K, V)>) {
+        if self.is_empty() {
+            (self.insert_empty(k, v).unwrap(), None)
+        } else {
+            let (p, direction) = self.find_similar_key_linear(p_init, num, &k).unwrap();
+            self.insert_inx_manual_unwrap(k, v, p.inx(), direction)
+        }
+    }
+
+    /// Combines the behaviors of [OrdArena::insert_nonhereditary] and
+    /// [OrdArena::insert_linear]
+    pub fn insert_nonhereditary_linear(&mut self, p_init: P, num: usize, k: K, v: V) -> P {
+        if self.is_empty() {
+            self.insert_empty(k, v).unwrap()
+        } else {
+            let (p, mut direction) = self.find_similar_key_linear(p_init, num, &k).unwrap();
+            if direction == Ordering::Equal {
+                direction = Ordering::Less;
             }
-        } else if self.a.is_empty() {
+            self.insert_inx_manual_unwrap(k, v, p.inx(), direction).0
+        }
+    }
+
+    /// Inserts key `k` and value `v` into an empty arena, returning a `Ptr` to
+    /// it. Returns `None` if the arena was not empty.
+    pub fn insert_empty(&mut self, k: K, v: V) -> Option<P> {
+        if self.is_empty() {
             let p_new = self.a.insert_new(Node {
-                k_v,
+                k,
+                v,
                 p_back: None,
                 p_tree0: None,
                 p_tree1: None,
@@ -255,9 +79,98 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             self.first = p_new.inx();
             self.last = p_new.inx();
             self.root = p_new.inx();
-            return Ok((p_new, None))
+            Some(p_new)
         } else {
-            return Err(k_v)
+            None
+        }
+    }
+
+    /// Inserts key `k` and value `v` at `p`. Does not enforce key orderings,
+    /// and instead accepts whatever `direction` says. If `direction` is
+    /// `Ordering::Equal`, the value at `p` is replaced and returned with `k`.
+    /// If `direction` is `Ordering::Less`, the pair is inserted as a new entry
+    /// before `p`. If `direction` is `Ordering::Greater`, the pair is inserted
+    /// after `p`. Returns the `Ptr` to the pair, and the replaced pair if there
+    /// was one.
+    ///
+    /// # Panics
+    ///
+    /// If `p` is invalid.
+    pub fn insert_inx_manual_unwrap(
+        &mut self,
+        k: K,
+        v: V,
+        p: P::Inx,
+        direction: Ordering,
+    ) -> (P, Option<(K, V)>) {
+        let (p, direction) = match direction {
+            Ordering::Less => {
+                // first need to linear step to a node with a `None` in the right position if
+                // needed
+                let link = self.a.get_inx_unwrap(p);
+                if link.t.p_tree0.is_some() {
+                    (link.prev().unwrap().inx(), true)
+                } else {
+                    (p, false)
+                }
+            }
+            Ordering::Equal => {
+                // replacement case
+                let old_v = mem::replace(&mut self.a.get_inx_mut_unwrap_t(p).v, v);
+                return (
+                    Ptr::_from_raw(p, self.a.get_ignore_gen(p).unwrap().0),
+                    Some((k, old_v)),
+                )
+            }
+            Ordering::Greater => {
+                let link = self.a.get_inx_unwrap(p);
+                if link.t.p_tree1.is_some() {
+                    (link.next().unwrap().inx(), false)
+                } else {
+                    (p, true)
+                }
+            }
+        };
+        let p_with_gen = Ptr::_from_raw(p, self.a.get_ignore_gen(p).unwrap().0);
+        if direction {
+            let new_node = Node {
+                k,
+                v,
+                p_back: Some(p),
+                p_tree0: None,
+                p_tree1: None,
+                rank: 1,
+            };
+            if let Ok(p_new) = self.a.insert((Some(p_with_gen), None), new_node) {
+                self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree1 = Some(p_new.inx());
+                if self.last == p {
+                    self.last = p_new.inx()
+                }
+                self.rebalance_inserted(p_new.inx());
+                (p_new, None)
+            } else {
+                unreachable!()
+            }
+        } else {
+            let new_node = Node {
+                k,
+                v,
+                p_back: Some(p),
+                p_tree0: None,
+                p_tree1: None,
+                rank: 1,
+            };
+            if let Ok(p_new) = self.a.insert((None, Some(p_with_gen)), new_node) {
+                // fix tree pointer in leaf direction
+                self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree0 = Some(p_new.inx());
+                if self.first == p {
+                    self.first = p_new.inx()
+                }
+                self.rebalance_inserted(p_new.inx());
+                (p_new, None)
+            } else {
+                unreachable!()
+            }
         }
     }
 
@@ -630,72 +543,6 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             // violated, so we can just return. This also implies that we only need at most
             // one restructure.
             break
-        }
-    }
-
-    /// Inserts key-value pair `k_v` into `self` and returns a `Ptr` to it. If
-    /// the inserted key is equal to a key already contained in `self`, the
-    /// new value replaces the old value, and `k_v.0` and the old value
-    /// are returned. The existing key is not replaced, which should not make a
-    /// difference unless special `Ord` definitions are being used.
-    #[must_use]
-    pub fn insert(&mut self, k_v: (K, V)) -> (P, Option<(K, V)>) {
-        let (p, k_v) = self.raw_insert(k_v, false);
-        if k_v.is_none() {
-            self.rebalance_inserted(p.inx());
-        }
-        (p, k_v)
-    }
-
-    /// Inserts key-value pair `k_v` into `self` and returns a
-    /// `Ptr` to it. If the inserted key is equal to a key already contained in
-    /// `self`, the inserted key is inserted in a [prev](crate::Link::prev)
-    /// position to all the equal keys. Future calls to `self.find_key` with
-    /// an equal `k_v.0` could find any of the equal keys.
-    pub fn insert_nonhereditary(&mut self, k_v: (K, V)) -> P {
-        let (p, _) = self.raw_insert(k_v, true);
-        self.rebalance_inserted(p.inx());
-        p
-    }
-
-    /// Uses linear comparisons starting at `p_init` in order to insert
-    /// key-value pair `k_v`. If `p_init` is not within a small constant number
-    /// of elements away from where the key should be ordered, this function
-    /// may operate in `O(n)` time instead of the `O(1)` this is intended
-    /// for. If the inserted key is equal to a key already contained in
-    /// `self`, the new value replaces the old value, and `k` and the old
-    /// value are returned. If `self.is_empty()`, `p_init` should be `None`,
-    /// otherwise there will be an error. Returns an `Err` if `p_init` is
-    /// invalid or if it is `None` and `!self.is_empty()`.
-    pub fn insert_linear(
-        &mut self,
-        p_init: Option<P>,
-        k_v: (K, V),
-    ) -> Result<(P, Option<(K, V)>), (K, V)> {
-        match self.raw_insert_linear(p_init, k_v, false) {
-            Ok((p, k_v)) => {
-                if k_v.is_none() {
-                    self.rebalance_inserted(p.inx());
-                }
-                Ok((p, k_v))
-            }
-            Err(k_v) => Err(k_v),
-        }
-    }
-
-    /// Combines the behaviors of [OrdArena::insert_nonhereditary] and
-    /// [OrdArena::insert_linear]
-    pub fn insert_nonhereditary_linear(
-        &mut self,
-        p_init: Option<P>,
-        k_v: (K, V),
-    ) -> Result<P, (K, V)> {
-        match self.raw_insert_linear(p_init, k_v, true) {
-            Ok((p, _)) => {
-                self.rebalance_inserted(p.inx());
-                Ok(p)
-            }
-            Err(k_v) => Err(k_v),
         }
     }
 }

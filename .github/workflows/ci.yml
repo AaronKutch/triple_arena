@@ -18,6 +18,8 @@ jobs:
           rustup default stable
       - name: Run test suite
         run: |
+          cargo build --no-default-features
+          cargo build --all-features
           cargo test --all-features
           cargo test --release --all-features
           cargo r --bin render0

@@ -86,6 +86,10 @@ impl<T> NonZeroInxVec<T> {
         }
     }
 
+    pub fn shrink_to_fit(&mut self) {
+        self.v.shrink_to_fit();
+    }
+
     pub fn nziter(&self) -> IntoNonZeroUsizeIterator {
         nzusize_iter(NZONE, self.len())
     }

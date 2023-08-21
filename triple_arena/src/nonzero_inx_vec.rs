@@ -1,5 +1,3 @@
-// TODO currently replaced by `safe_nonzero_inx_vec`
-
 use alloc::alloc;
 use core::{alloc::Layout, cmp::max, mem, num::NonZeroUsize, ptr};
 
@@ -316,6 +314,7 @@ impl<T> NonZeroInxVec<T> {
         }
     }
 
+    /*
     /// Same as `get` except that bounds are not checked.
     ///
     /// # Safety
@@ -340,6 +339,41 @@ impl<T> NonZeroInxVec<T> {
         // Safety: The first element is 1 so that the `wrapping_offset(-1)` is undone,
         // the function's safety section presupposes `inx.get <= self.len()`
         unsafe { &mut *self.nonzero_index_ptr_mut().wrapping_add(inx.get()) }
+    }
+    */
+
+    /// Shrinks the capacity of `self` as much as possible. The allocator may
+    /// give extra space for more capacity.
+    pub fn shrink_to_fit(&mut self) {
+        let new_cap = self.len();
+
+        if new_cap == self.capacity() {
+            // Don't do anything
+            return
+        }
+
+        if new_cap == 0 {
+            // this is all we have to do, capacity is set to 0 by this function
+            self.clear_and_shrink();
+            return
+        }
+
+        let new_layout = Layout::array::<T>(new_cap).unwrap();
+
+        // Safety: layout is for a nonzero sized allocation, nulls from the allocator
+        // are handled, we copy over correctly, we deallocate, and we set the
+        // new allocation pointer and new capacity
+        unsafe {
+            let new_ptr = alloc::alloc(new_layout);
+            if new_ptr.is_null() {
+                alloc::handle_alloc_error(new_layout)
+            }
+            let new_ptr = new_ptr as *mut T;
+            ptr::copy(self.allocation_ptr(), new_ptr, self.len());
+            alloc::dealloc(self.allocation_ptr() as *mut u8, self.layout());
+            self.set_allocation_ptr(new_ptr);
+            self.set_capacity(new_cap)
+        }
     }
 
     #[inline]
