@@ -7,7 +7,7 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use crate::{Advancer, Arena, Ptr};
+use crate::{Advancer, Arena, ChainArena, Link, Ptr};
 
 /// The same as [crate::Link] except that the interlinks do not have a
 /// generation counter
@@ -38,6 +38,17 @@ impl<P: Ptr, T> LinkNoGen<P, T> {
     /// Construct a `LinkNoGen` from its components
     pub fn new(prev_next: (Option<P::Inx>, Option<P::Inx>), t: T) -> Self {
         Self { prev_next, t }
+    }
+
+    /// Construct a `LinkNoGen` from a regular `Link`
+    pub fn from_link(link: Link<P, T>) -> Self {
+        Self {
+            prev_next: (
+                link.prev_next.0.map(|p| p.inx()),
+                link.prev_next.1.map(|p| p.inx()),
+            ),
+            t: link.t,
+        }
     }
 }
 
@@ -816,6 +827,31 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
             let t = map(p, link);
             LinkNoGen::new(link.prev_next(), t)
         })
+    }
+
+    /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
+    /// generation counter, and reusing capacity) with the `Ptr` mapping of
+    /// `self`, except that the interlink structure has been dropped.
+    pub fn clone_to_chain_arena<U, F: FnMut(P, &T) -> U>(
+        &self,
+        chain_arena: &mut ChainArena<P, U>,
+        mut map: F,
+    ) {
+        chain_arena.a.clone_from_with(&self.a, |p, link| {
+            let prev = if let Some(prev) = link.prev() {
+                let (gen, _) = self.a.get_ignore_gen(prev).unwrap();
+                Some(Ptr::_from_raw(prev, gen))
+            } else {
+                None
+            };
+            let next = if let Some(next) = link.next() {
+                let (gen, _) = self.a.get_ignore_gen(next).unwrap();
+                Some(Ptr::_from_raw(next, gen))
+            } else {
+                None
+            };
+            Link::new((prev, next), map(p, &link.t))
+        });
     }
 
     /// Overwrites `arena` (dropping all preexisting `T`, overwriting the

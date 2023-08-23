@@ -5,6 +5,7 @@ use fmt::Debug;
 
 use crate::{
     arena::InternalEntry,
+    chain::ChainNoGenArena,
     utils::{PtrInx, PtrNoGen},
     Advancer, Arena, ChainArena, Ptr,
 };
@@ -149,7 +150,7 @@ pub(crate) struct Val<V> {
 /// );
 /// ```
 pub struct SurjectArena<P: Ptr, K, V> {
-    pub(crate) keys: ChainArena<P, Key<P, K>>,
+    pub(crate) keys: ChainNoGenArena<P, Key<P, K>>,
     pub(crate) vals: Arena<PtrNoGen<P>, Val<V>>,
 }
 
@@ -163,7 +164,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
         // needs to be done because of manual `InternalEntry` handling
-        ChainArena::_check_invariants(&this.keys)?;
+        ChainNoGenArena::_check_invariants(&this.keys)?;
         Arena::_check_invariants(&this.vals)?;
         // there should be exactly one key chain associated with each val
         let mut count = Arena::<PtrNoGen<P>, usize>::new();
@@ -189,20 +190,20 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
                 // and reach a count of zero, then we know that the chain encountered all the
                 // needed keys. Subsequent encounters with the rest of the chain is ignored
                 // because the count is zeroed afterwards.
-                let mut tmp = p;
+                let mut tmp = p.inx();
                 loop {
                     if c == 0 {
                         return Err("did not reach end of key chain in expected time")
                     }
                     c = c.checked_sub(1).unwrap();
-                    let link = this.keys.get_link(tmp).unwrap();
+                    let (_, link) = this.keys.get_ignore_gen(tmp).unwrap();
                     if let Some(next) = link.next() {
                         tmp = next;
                     } else {
                         return Err("key chain is not cyclic")
                     }
                     // have the test after the match so that we check for single node cyclics
-                    if tmp == p {
+                    if tmp == p.inx() {
                         if c != 0 {
                             return Err("key chain did not have all keys associated with value")
                         }
@@ -217,7 +218,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
 
     pub fn new() -> Self {
         Self {
-            keys: ChainArena::new(),
+            keys: ChainNoGenArena::new(),
             vals: Arena::new(),
         }
     }
@@ -324,7 +325,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
                 .wrapping_add(1),
         )
         .unwrap();
-        if let Ok(p) = self.keys.insert((Some(p), None), Key { k, p_val }) {
+        if let Ok(p) = self.keys.insert((Some(p.inx()), None), Key { k, p_val }) {
             Ok(p)
         } else {
             unreachable!()
@@ -349,7 +350,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
                 .wrapping_add(1),
         )
         .unwrap();
-        if let Some(p) = self.keys.insert_with((Some(p), None), |p_link| Key {
+        if let Some(p) = self.keys.insert_with((Some(p.inx()), None), |p_link| Key {
             k: create_k(p_link),
             p_val,
         }) {
@@ -500,11 +501,11 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
             mem::swap(&mut p0, &mut p1);
         }
         // overwrite the `PVal`s in the smaller chain
-        let mut tmp = p1;
+        let mut tmp = p1.inx();
         loop {
-            self.keys.get_inx_mut_unwrap_t(tmp.inx()).p_val = p_val0;
-            tmp = self.keys.get_inx_unwrap(tmp.inx()).next().unwrap();
-            if tmp == p1 {
+            self.keys.get_inx_mut_unwrap_t(tmp).p_val = p_val0;
+            tmp = self.keys.get_inx_unwrap(tmp).next().unwrap();
+            if tmp == p1.inx() {
                 break
             }
         }
@@ -549,7 +550,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     #[must_use]
     pub fn remove(&mut self, p: P) -> Option<V> {
         let p_val = self.keys.get(p)?.p_val;
-        self.keys.remove_cyclic_chain_internal(p, true);
+        self.keys.remove_cyclic_chain_internal(p.inx(), true);
         Some(self.vals.remove(p_val).unwrap().v)
     }
 
@@ -747,6 +748,18 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     pub fn clone_keys_to_chain_arena<T, F: FnMut(P, &K) -> T>(
         &self,
         chain_arena: &mut ChainArena<P, T>,
+        mut map: F,
+    ) {
+        self.keys
+            .clone_to_chain_arena(chain_arena, |p, key| map(p, &key.k))
+    }
+
+    /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
+    /// generation counter, and reusing capacity) with the `Ptr` mapping of
+    /// `self`, with groups of keys preserved as cyclical chains.
+    pub fn clone_keys_to_chain_no_gen_arena<T, F: FnMut(P, &K) -> T>(
+        &self,
+        chain_arena: &mut ChainNoGenArena<P, T>,
         mut map: F,
     ) {
         chain_arena.clone_from_with(&self.keys, |p, link| map(p, &link.t.k))

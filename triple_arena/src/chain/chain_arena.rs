@@ -545,6 +545,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
         Some(link)
     }
 
+    /*
     // this is tested by the `SurjectArena` fuzz test
     /// Like `remove_chain` but assumes the chain is cyclic and `p` is valid
     pub(crate) fn remove_cyclic_chain_internal(&mut self, p: P, inc_gen: bool) {
@@ -564,6 +565,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
             self.a.inc_gen();
         }
     }
+    */
 
     /// Efficiently removes the entire chain that `p` is connected to (which
     /// might only include itself). Returns the length of the chain. Returns
