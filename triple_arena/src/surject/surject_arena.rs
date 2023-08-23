@@ -5,8 +5,7 @@ use fmt::Debug;
 
 use crate::{
     arena::InternalEntry,
-    chain::{ChainNoGenArena, LinkNoGen},
-    utils::{PtrInx, PtrNoGen},
+    utils::{ChainNoGenArena, LinkNoGen, PtrInx, PtrNoGen},
     Advancer, Arena, ChainArena, Ptr,
 };
 

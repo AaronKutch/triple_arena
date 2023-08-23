@@ -109,7 +109,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 // needed
                 let link = self.a.get_inx_unwrap(p);
                 if link.t.p_tree0.is_some() {
-                    (link.prev().unwrap().inx(), true)
+                    (link.prev().unwrap(), true)
                 } else {
                     (p, false)
                 }
@@ -125,13 +125,12 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             Ordering::Greater => {
                 let link = self.a.get_inx_unwrap(p);
                 if link.t.p_tree1.is_some() {
-                    (link.next().unwrap().inx(), false)
+                    (link.next().unwrap(), false)
                 } else {
                     (p, true)
                 }
             }
         };
-        let p_with_gen = Ptr::_from_raw(p, self.a.get_no_gen(p).unwrap().0);
         if direction {
             let new_node = Node {
                 k,
@@ -141,8 +140,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 p_tree1: None,
                 rank: 1,
             };
-            if let Ok(p_new) = self.a.insert((Some(p_with_gen), None), new_node) {
-                self.a.get_no_gen_mut(p).unwrap().1.t.p_tree1 = Some(p_new.inx());
+            if let Ok(p_new) = self.a.insert((Some(p), None), new_node) {
+                self.a.get_inx_mut_unwrap_t(p).p_tree1 = Some(p_new.inx());
                 if self.last == p {
                     self.last = p_new.inx()
                 }
@@ -160,9 +159,9 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 p_tree1: None,
                 rank: 1,
             };
-            if let Ok(p_new) = self.a.insert((None, Some(p_with_gen)), new_node) {
+            if let Ok(p_new) = self.a.insert((None, Some(p)), new_node) {
                 // fix tree pointer in leaf direction
-                self.a.get_no_gen_mut(p).unwrap().1.t.p_tree0 = Some(p_new.inx());
+                self.a.get_inx_mut_unwrap_t(p).p_tree0 = Some(p_new.inx());
                 if self.first == p {
                     self.first = p_new.inx()
                 }

@@ -6,9 +6,8 @@ use recasting::{Recast, Recaster};
 
 use crate::{
     arena_iterators::{self},
-    chain::LinkNoGen,
     surject::{Key, Val},
-    utils::{chain_no_gen_iterators, PtrNoGen},
+    utils::{chain_no_gen_iterators, LinkNoGen, PtrNoGen},
     Advancer, Arena, Ptr, SurjectArena,
 };
 

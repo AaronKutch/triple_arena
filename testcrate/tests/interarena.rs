@@ -3,7 +3,7 @@ use rand_xoshiro::{
     Xoshiro128StarStar,
 };
 use testcrate::{fuzz_fill_inst, CKey, CVal, A, P1};
-use triple_arena::{Arena, ChainArena, OrdArena, SurjectArena};
+use triple_arena::{utils::ChainNoGenArena, Arena, ChainArena, OrdArena, SurjectArena};
 
 #[test]
 fn test_inst_framework() {
@@ -59,6 +59,40 @@ fn std_chain() -> ChainArena<P1, (CKey, CVal)> {
     let mut rng = Xoshiro128StarStar::seed_from_u64(0);
 
     let mut a = ChainArena::<P1, (CKey, CVal)>::new();
+    let mut repr = vec![];
+    let mut repr_inxs = vec![];
+    let (mut insts, expected) = fuzz_fill_inst(&mut rng, &repr, 3 * A, A);
+    let tmp = fuzz_fill_inst(&mut rng, &expected, 2 * A, 3 * A);
+    insts.extend_from_slice(&tmp.0);
+    for inst in insts {
+        match inst {
+            Ok(pair) => {
+                repr.push((pair.0.clone_uncounting(), pair.1.clone_uncounting()));
+                repr_inxs.push(a.insert_new_cyclic(pair));
+            }
+            Err(inx) => {
+                a.remove(repr_inxs.swap_remove(inx)).unwrap();
+                repr.swap_remove(inx);
+            }
+        }
+    }
+    let ptrs: Vec<P1> = a.ptrs().collect();
+    let len = ptrs.len();
+    // randomly connect
+    for _ in 0..A {
+        let p0 = ptrs[(rng.next_u64() as usize) % len];
+        let p1 = ptrs[(rng.next_u64() as usize) % len];
+        a.exchange_next(p0, p1).unwrap();
+    }
+    assert_eq!(a.len(), A as usize);
+    assert!(a.capacity() >= (2 * A as usize));
+    a
+}
+
+fn std_chain_no_gen() -> ChainNoGenArena<P1, (CKey, CVal)> {
+    let mut rng = Xoshiro128StarStar::seed_from_u64(0);
+
+    let mut a = ChainNoGenArena::<P1, (CKey, CVal)>::new();
     let mut repr = vec![];
     let mut repr_inxs = vec![];
     let (mut insts, expected) = fuzz_fill_inst(&mut rng, &repr, 3 * A, A);
@@ -196,6 +230,34 @@ fn clone_from_to_recast() {
         assert_eq!(a1.get_link(p).unwrap(), link);
     });
 
+    let a0 = std_chain_no_gen();
+    let a1 = a0.clone();
+    assert_eq!(a0, a1);
+    assert_eq!(a1, a0);
+    let mut a1 = ChainNoGenArena::new();
+    a0.clone_into(&mut a1);
+    assert_eq!(a0, a1);
+    assert_eq!(a1, a0);
+    let mut a1 = ChainNoGenArena::new();
+    a1.clone_from(&a0);
+    assert_eq!(a0, a1);
+    assert_eq!(a1, a0);
+    let recaster = a1.compress_and_shrink_recaster();
+    assert_eq!(recaster.len(), a0.len());
+    for (p, q) in recaster {
+        assert_eq!(a0.get(p).unwrap(), a1.get(q).unwrap());
+    }
+    a1.clone_from(&a0);
+    let mut a2 = Arena::new();
+    a0.clone_to_arena(&mut a2, |p, link| {
+        assert_eq!(a1.get_link(p).unwrap(), link);
+    });
+    a1.clone_from(&a0);
+    let mut a2 = ChainArena::new();
+    a0.clone_to_chain_arena(&mut a2, |p, pair| {
+        assert_eq!(a1.get(p).unwrap(), pair);
+    });
+
     let a0 = std_surject();
     let a1 = a0.clone();
     assert_eq!(a0, a1);
@@ -243,12 +305,12 @@ fn clone_from_to_recast() {
     }
     a1.clone_from(&a0);
     let mut a2 = ChainArena::new();
-    a0.clone_to_chain_arena(&mut a2, |p, link| {
-        assert_eq!(a1.get_link(p).unwrap(), link);
+    a0.clone_to_chain_arena(&mut a2, |p, key, val| {
+        assert_eq!(a1.get(p).unwrap(), (key, val));
     });
     a1.clone_from(&a0);
     let mut a2 = Arena::new();
-    a0.clone_to_arena(&mut a2, |p, link| {
-        assert_eq!(a1.get_link(p).unwrap(), link);
+    a0.clone_to_arena(&mut a2, |p, key, val| {
+        assert_eq!(a1.get(p).unwrap(), (key, val));
     });
 }

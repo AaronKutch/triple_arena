@@ -1,13 +1,13 @@
 use core::cmp::{min, Ordering};
 
-use crate::{Advancer, ChainArena, OrdArena, Ptr};
+use crate::{utils::ChainNoGenArena, Advancer, OrdArena, Ptr};
 
 impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
         // needed because of special functions like `compress_and_shrink`
-        ChainArena::_check_invariants(&this.a)?;
+        ChainNoGenArena::_check_invariants(&this.a)?;
         if this.a.is_empty() {
             return Ok(())
         }
@@ -22,16 +22,15 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         // first check the chain and ordering
         let mut count = 0usize;
         let mut prev: Option<P> = None;
-        let first_gen = if let Some((first_gen, link)) = this.a.get_no_gen(this.first) {
+        if let Some((_, link)) = this.a.get_no_gen(this.first) {
             if link.prev().is_some() {
                 return Err("this.first is broken")
             }
-            first_gen
         } else {
             return Err("this.first is broken")
-        };
+        }
 
-        let mut adv = this.a.advancer_chain(Ptr::_from_raw(this.first, first_gen));
+        let mut adv = this.a.advancer_chain(this.first);
         while let Some(p) = adv.advance(&this.a) {
             count = count.checked_add(1).unwrap();
             if !this.a.contains(p) {
@@ -178,7 +177,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     }
                     direction = Some(false);
                     if let Some(prev) = link.prev() {
-                        p = prev.inx();
+                        p = prev;
                     } else {
                         break
                     }
@@ -190,7 +189,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     }
                     direction = Some(true);
                     if let Some(next) = link.next() {
-                        p = next.inx();
+                        p = next;
                     } else {
                         break
                     }
@@ -257,7 +256,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     }
                     direction = Some(false);
                     if let Some(prev) = link.prev() {
-                        p = prev.inx();
+                        p = prev;
                     } else {
                         return Some((p_with_gen, Ordering::Less))
                     }
@@ -269,7 +268,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     }
                     direction = Some(true);
                     if let Some(next) = link.next() {
-                        p = next.inx();
+                        p = next;
                     } else {
                         return Some((p_with_gen, Ordering::Greater))
                     }
@@ -379,14 +378,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
         writeln!(s, "root: {:?}", self.root).unwrap();
         writeln!(s, "first: {:?}", self.first).unwrap();
         writeln!(s, "last: {:?}", self.last).unwrap();
-        let init = Ptr::_from_raw(
-            self.first,
-            self.a
-                .get_no_gen(self.first)
-                .map(|x| x.0)
-                .unwrap_or(<P::Gen as crate::utils::PtrGen>::one()),
-        );
-        let mut adv = self.a.advancer_chain(init);
+        let mut adv = self.a.advancer_chain(self.first);
         while let Some(p) = adv.advance(&self.a) {
             let n = self.a.get(p).unwrap();
             writeln!(

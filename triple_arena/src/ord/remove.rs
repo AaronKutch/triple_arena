@@ -1,9 +1,9 @@
-use crate::{Link, OrdArena, Ptr};
+use crate::{OrdArena, Ptr};
 
 impl<P: Ptr, K, V> OrdArena<P, K, V> {
-    /// Removes the key-value link at `p`. Returns `None` if `p` is invalid.
+    /// Removes the key-value pair at `p`. Returns `None` if `p` is invalid.
     #[must_use]
-    pub fn remove(&mut self, p: P) -> Option<Link<P, (K, V)>> {
+    pub fn remove(&mut self, p: P) -> Option<(K, V)> {
         let link = self.a.remove(p)?;
         // when removing a nonleaf node of the tree, its place in the tree is
         // replaced by a similar node, and if that node is nonleaf then it is
@@ -43,7 +43,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             link.prev(),
             link.next(),
         );
-        let res = Some(Link::new(link.prev_next(), (link.t.k, link.t.v)));
+        let res = Some((link.t.k, link.t.v));
         if self.a.is_empty() {
             // last node to be removed, our invariants require that `self.a.is_empty` be
             // checked to determine whether or not `self.first`, etc are valid.
@@ -70,8 +70,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     // the start), go only `Link::next`
                     use_next = true;
                     d_next.unwrap()
-                }
-                .inx();
+                };
                 let r = self.a.get_inx_mut_unwrap(p_r);
                 // keep the old configuration of the replacement node
                 let buf = (

@@ -545,28 +545,6 @@ impl<P: Ptr, T> ChainArena<P, T> {
         Some(link)
     }
 
-    /*
-    // this is tested by the `SurjectArena` fuzz test
-    /// Like `remove_chain` but assumes the chain is cyclic and `p` is valid
-    pub(crate) fn remove_cyclic_chain_internal(&mut self, p: P, inc_gen: bool) {
-        let mut tmp = self
-            .a
-            .remove_internal_inx_unwrap(p.inx(), false)
-            .next()
-            .unwrap();
-        while tmp.inx() != p.inx() {
-            tmp = self
-                .a
-                .remove_internal_inx_unwrap(tmp.inx(), false)
-                .next()
-                .unwrap();
-        }
-        if inc_gen {
-            self.a.inc_gen();
-        }
-    }
-    */
-
     /// Efficiently removes the entire chain that `p` is connected to (which
     /// might only include itself). Returns the length of the chain. Returns
     /// `None` if `p` is not valid.
@@ -840,42 +818,6 @@ impl<P: Ptr, T> ChainArena<P, T> {
                     break
                 };
             }
-        }
-        self.a = new;
-    }
-
-    /// A variation of `compress_and_shrink_with` that is intended for a single
-    /// acyclic chain that has `first_link` as the first link in the chain.
-    pub(crate) fn compress_and_shrink_acyclic_chain_with<F: FnMut(P, &mut T, P)>(
-        &mut self,
-        first_link: P,
-        mut map: F,
-    ) {
-        self.a.inc_gen();
-        let gen = self.gen();
-        let mut new = Arena::<P, Link<P, T>>::new();
-        new.reserve(self.len());
-        new.set_gen(gen);
-        let p_init = first_link;
-        let link = self.a.remove(p_init).unwrap();
-        let mut p_next = link.next().map(|p| p.inx());
-        let mut q_prev = new.insert(Link::new((None, None), link.t));
-        map(p_init, &mut new.get_inx_mut_unwrap(q_prev.inx()).t, q_prev);
-        loop {
-            p_next = if let Some(p_next) = p_next {
-                let p_gen = self.a.get_no_gen(p_next).unwrap().0;
-                let p = Ptr::_from_raw(p_next, p_gen);
-                let link = self.a.remove(p).unwrap();
-                let tmp_next = link.next().map(|p| p.inx());
-                let t = link.t;
-                let q = new.insert(Link::new((Some(q_prev), None), t));
-                map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
-                new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q);
-                q_prev = q;
-                tmp_next
-            } else {
-                break
-            };
         }
         self.a = new;
     }

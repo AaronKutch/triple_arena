@@ -10,7 +10,7 @@ use crate::{Advancer, OrdArena, Ptr};
 pub struct PtrAdvancer<P: Ptr, K, V> {
     // same as for `ChainPtrAdvancer` except we get to assume the chain is acyclical and we start
     // from the beginning
-    ptr: Option<P>,
+    ptr: Option<P::Inx>,
     _boo: PhantomData<(K, V)>,
 }
 
@@ -20,14 +20,14 @@ impl<P: Ptr, K, V> Advancer for PtrAdvancer<P, K, V> {
 
     fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
         if let Some(ptr) = self.ptr {
-            if let Some(link) = collection.a.get_link(ptr) {
+            if let Some((gen, link)) = collection.a.get_no_gen(ptr) {
                 if let Some(next) = link.next() {
                     self.ptr = Some(next);
                 } else {
                     // could be unreachable under invalidation
                     self.ptr = None;
                 }
-                Some(ptr)
+                Some(Ptr::_from_raw(ptr, gen))
             } else {
                 self.ptr = None;
                 None
@@ -144,7 +144,7 @@ impl<'a, P: Ptr, K, V> Iterator for Drain<'a, P, K, V> {
         // with leaking also?
         self.adv.advance(self.arena).map(|p| {
             let res = self.arena.remove(p).unwrap();
-            (p, res.t.0, res.t.1)
+            (p, res.0, res.1)
         })
     }
 }
@@ -162,7 +162,7 @@ impl<P: Ptr, K, V> Iterator for CapacityDrain<P, K, V> {
         // TODO we can definitely do this more efficiently
         self.adv.advance(&self.arena).map(|p| {
             let res = self.arena.remove(p).unwrap();
-            (p, res.t.0, res.t.1)
+            (p, res.0, res.1)
         })
     }
 }
@@ -203,7 +203,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// entry is _not_ supported during each advancement.
     pub fn advancer(&self) -> PtrAdvancer<P, K, V> {
         PtrAdvancer {
-            ptr: self.min(),
+            ptr: self.min().map(|p| p.inx()),
             _boo: PhantomData,
         }
     }
@@ -271,7 +271,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// that can be used for [Recast]ing
     pub fn compress_and_shrink_recaster(&mut self) -> crate::Arena<P, P> {
         let mut res = crate::Arena::<P, P>::new();
-        self.clone_to_arena(&mut res, |_, _| P::invalid());
+        self.clone_to_arena(&mut res, |_, _, _| P::invalid());
         self.compress_and_shrink_with(|p, _, _, q| *res.get_mut(p).unwrap() = q);
         res
     }

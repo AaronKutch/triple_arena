@@ -1,8 +1,7 @@
 use crate::{
-    arena_iterators,
-    chain::{chain_no_gen_iterators, ChainNoGenArena, LinkNoGen},
-    chain_iterators, ord_iterators, surject_iterators, Advancer, Arena, ChainArena, Link, OrdArena,
-    Ptr, SurjectArena,
+    arena_iterators, chain_iterators, ord_iterators, surject_iterators,
+    utils::{chain_no_gen_iterators, ChainNoGenArena, LinkNoGen},
+    Advancer, Arena, ChainArena, Link, OrdArena, Ptr, SurjectArena,
 };
 
 /// A trait that encapsulates some common functions across the different arena
@@ -318,7 +317,7 @@ impl<P: Ptr, K: Ord, V> ArenaTrait for OrdArena<P, K, V> {
     }
 
     fn remove(&mut self, p: Self::P) -> Option<Self::E> {
-        self.remove(p).map(|link| link.t)
+        self.remove(p)
     }
 
     fn get(&self, p: Self::P) -> Option<(&K, &V)> {

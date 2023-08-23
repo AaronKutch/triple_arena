@@ -9,7 +9,11 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use crate::{utils::PtrInx, Advancer, Arena, ChainArena, Link, Ptr};
+use crate::{
+    chain::LinkNoGen,
+    utils::{ChainNoGenArena, PtrInx},
+    Advancer, Arena, ChainArena, Link, Ptr,
+};
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
 // Sen, Siddhartha; Tarjan, Robert E. (2015).
@@ -103,11 +107,13 @@ pub struct Node<P: Ptr, K, V> {
 /// // `(p60, Ordering::Less)`
 /// assert_eq!(a.find_similar_key(&53).unwrap(), (p60, Ordering::Less));
 ///
+/// // in `O(1)` time get the previous and next pairs
+/// assert_eq!(a.get_link(p60).unwrap().prev_next(), (Some(p50), Some(p70)));
+///
 /// // `remove` does have to do `O(log n)` tree rebalancing, but it avoids
 /// // needing to redo the lookup if the `Ptr` is kept around
 /// let link = a.remove(p50).unwrap();
-/// assert_eq!(link.t, (50, ()));
-/// assert_eq!(link.prev_next(), (Some(p30), Some(p60)));
+/// assert_eq!(link, (50, ()));
 ///
 /// // The iterators are fully deterministic and iterate from the
 /// // least element to the greatest
@@ -126,7 +132,7 @@ pub struct OrdArena<P: Ptr, K, V> {
     pub(in crate::ord) root: P::Inx,
     pub(in crate::ord) first: P::Inx,
     pub(in crate::ord) last: P::Inx,
-    pub(in crate::ord) a: ChainArena<P, Node<P, K, V>>,
+    pub(in crate::ord) a: ChainNoGenArena<P, Node<P, K, V>>,
 }
 
 impl<P: Ptr, K, V> OrdArena<P, K, V> {
@@ -135,7 +141,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             root: P::Inx::new(NonZeroUsize::new(1).unwrap()),
             first: P::Inx::new(NonZeroUsize::new(1).unwrap()),
             last: P::Inx::new(NonZeroUsize::new(1).unwrap()),
-            a: ChainArena::new(),
+            a: ChainNoGenArena::new(),
         }
     }
 
@@ -194,16 +200,6 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         self.a.contains(p)
     }
 
-    /// Returns the full `Link<P, (&K, &V)>`. Using [prev](crate::Link::prev) on
-    /// the result gives the `Ptr` to the next lesser key, and using
-    /// [next](crate::Link::next) gives the `Ptr` to the next greater key.
-    #[must_use]
-    pub fn get_link(&self, p: P) -> Option<Link<P, (&K, &V)>> {
-        self.a
-            .get_link(p)
-            .map(|link| Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
-    }
-
     /// Returns a reference to the key-value pair pointed to by `p`
     #[must_use]
     pub fn get(&self, p: P) -> Option<(&K, &V)> {
@@ -222,15 +218,10 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         self.a.get(p).map(|node| &node.v)
     }
 
-    /// Returns the full `Link<P, (&K, &mut V)>`. Using
-    /// [prev](crate::Link::prev) on the result gives the `Ptr` to the next
-    /// lesser key, and using [next](crate::Link::next) gives the `Ptr` to
-    /// the next greater key.
+    /// Returns a mutable reference to the value pointed to by `p`
     #[must_use]
-    pub fn get_link_mut(&mut self, p: P) -> Option<Link<P, (&K, &mut V)>> {
-        self.a
-            .get_link_mut(p)
-            .map(|link| Link::new(link.prev_next(), (&link.t.k, &mut link.t.v)))
+    pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
+        self.a.get_mut(p).map(|t| &mut t.v)
     }
 
     /// Returns a mutable reference to the key-value pair pointed to by `p`
@@ -239,25 +230,35 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         self.a.get_mut(p).map(|t| (&t.k, &mut t.v))
     }
 
-    /// Returns a mutable reference to the value pointed to by `p`
+    /// Returns the full `Link<P, (&K, &V)>`. Using [prev](crate::Link::prev) on
+    /// the result gives the `Ptr` to the next lesser key, and using
+    /// [next](crate::Link::next) gives the `Ptr` to the next greater key.
     #[must_use]
-    pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
-        self.a.get_mut(p).map(|t| &mut t.v)
+    pub fn get_link(&self, p: P) -> Option<Link<P, (&K, &V)>> {
+        self.a.get_link(p).map(|link| {
+            let prev = if let Some(prev) = link.prev() {
+                let (gen, _) = self.a.get_no_gen(prev).unwrap();
+                Some(Ptr::_from_raw(prev, gen))
+            } else {
+                None
+            };
+            let next = if let Some(next) = link.next() {
+                let (gen, _) = self.a.get_no_gen(next).unwrap();
+                Some(Ptr::_from_raw(next, gen))
+            } else {
+                None
+            };
+            Link::new((prev, next), (&link.t.k, &link.t.v))
+        })
     }
 
-    /// Gets two references pointed to by `p0` and `p1`.
-    /// If `p0 == p1` or a pointer is invalid, `None` is returned.
-    #[allow(clippy::type_complexity)]
-    #[must_use]
-    pub fn get2_link_mut(
-        &mut self,
-        p0: P,
-        p1: P,
-    ) -> Option<(Link<P, (&K, &mut V)>, Link<P, (&K, &mut V)>)> {
-        self.a.get2_link_mut(p0, p1).map(|(link0, link1)| {
+    /// Returns the generation associated with `p` and a `LinkNoGen<P, &K>`, the
+    /// interlinks of which point to neighboring pairs.
+    pub fn get_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, (&K, &V)>)> {
+        self.a.get_no_gen(p).map(|(gen, link)| {
             (
-                Link::new(link0.prev_next(), (&link0.t.k, &mut link0.t.v)),
-                Link::new(link1.prev_next(), (&link1.t.k, &mut link1.t.v)),
+                gen,
+                LinkNoGen::new(link.prev_next(), (&link.t.k, &link.t.v)),
             )
         })
     }
@@ -447,40 +448,33 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
     /// `self`, with the ordering preserved in a single chain
     /// ([next](crate::Link::next) points to the next greater entry)
-    pub fn clone_to_chain_arena<U, F: FnMut(P, Link<P, (&K, &V)>) -> U>(
+    pub fn clone_to_chain_arena<U, F: FnMut(P, &K, &V) -> U>(
         &self,
         chain_arena: &mut ChainArena<P, U>,
         mut map: F,
     ) {
-        chain_arena.clone_from_with(&self.a, |p, link| {
-            map(p, Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
-        })
+        self.a
+            .clone_to_chain_arena(chain_arena, |p, node| map(p, &node.k, &node.v))
     }
 
     /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
     /// `self`
-    pub fn clone_to_arena<U, F: FnMut(P, Link<P, (&K, &V)>) -> U>(
-        &self,
-        arena: &mut Arena<P, U>,
-        mut map: F,
-    ) {
-        arena.clone_from_with(&self.a.a, |p, link| {
-            map(p, Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
-        });
+    pub fn clone_to_arena<U, F: FnMut(P, &K, &V) -> U>(&self, arena: &mut Arena<P, U>, mut map: F) {
+        arena.clone_from_with(&self.a.a, |p, link| map(p, &link.t.k, &link.t.v));
     }
 }
 
 impl<P: Ptr, K: Clone, V0> OrdArena<P, K, V0> {
     /// Has the same properties of [Arena::clone_from_with]. Clones the keys.
-    pub fn clone_from_with<V1, F: FnMut(P, Link<P, &V1>) -> V0>(
+    pub fn clone_from_with<V1, F: FnMut(P, &V1) -> V0>(
         &mut self,
         source: &OrdArena<P, K, V1>,
         mut map: F,
     ) {
         self.a.clone_from_with(&source.a, |p, link| Node {
             k: link.t.k.clone(),
-            v: map(p, Link::new(link.prev_next(), &link.t.v)),
+            v: map(p, &link.t.v),
             p_back: link.t.p_back,
             p_tree0: link.t.p_tree0,
             p_tree1: link.t.p_tree1,
