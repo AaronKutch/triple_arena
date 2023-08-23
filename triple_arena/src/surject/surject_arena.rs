@@ -5,7 +5,7 @@ use fmt::Debug;
 
 use crate::{
     arena::InternalEntry,
-    chain::ChainNoGenArena,
+    chain::{ChainNoGenArena, LinkNoGen},
     utils::{PtrInx, PtrNoGen},
     Advancer, Arena, ChainArena, Ptr,
 };
@@ -196,7 +196,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
                         return Err("did not reach end of key chain in expected time")
                     }
                     c = c.checked_sub(1).unwrap();
-                    let (_, link) = this.keys.get_ignore_gen(tmp).unwrap();
+                    let (_, link) = this.keys.get_no_gen(tmp).unwrap();
                     if let Some(next) = link.next() {
                         tmp = next;
                     } else {
@@ -458,6 +458,16 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
             },
             None => None,
         }
+    }
+
+    /// Returns the generation associated with `p` and a `LinkNoGen<P, &K>`, the
+    /// interlinks of which point to other keys in the key set. The key set is a
+    /// cyclic chain of `LinkNoGen`s.
+    #[must_use]
+    pub fn get_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &K>)> {
+        self.keys
+            .get_no_gen(p)
+            .map(|(p, link)| (p, LinkNoGen::new(link.prev_next(), &link.t.k)))
     }
 
     /// Takes the union of two key sets, of which `p0` points to a key in one

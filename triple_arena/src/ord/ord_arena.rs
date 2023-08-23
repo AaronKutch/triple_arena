@@ -172,7 +172,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         if self.is_empty() {
             None
         } else {
-            let gen = self.a.get_ignore_gen(self.first).unwrap().0;
+            let gen = self.a.get_no_gen(self.first).unwrap().0;
             Some(Ptr::_from_raw(self.first, gen))
         }
     }
@@ -184,7 +184,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         if self.is_empty() {
             None
         } else {
-            let gen = self.a.get_ignore_gen(self.last).unwrap().0;
+            let gen = self.a.get_no_gen(self.last).unwrap().0;
             Some(Ptr::_from_raw(self.last, gen))
         }
     }

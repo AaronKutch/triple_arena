@@ -51,7 +51,7 @@ impl<P: Ptr, T> Advancer for ChainPtrAdvancer<P, T> {
         }
         if let Some(ptr) = self.ptr {
             if self.switch {
-                if let Some((gen, link)) = collection.a.get_ignore_gen(ptr) {
+                if let Some((gen, link)) = collection.a.get_no_gen(ptr) {
                     if let Some(prev) = link.prev() {
                         self.ptr = Some(prev);
                     } else {
@@ -64,7 +64,7 @@ impl<P: Ptr, T> Advancer for ChainPtrAdvancer<P, T> {
                     self.ptr = None;
                     None
                 }
-            } else if let Some((gen, link)) = collection.a.get_ignore_gen(ptr) {
+            } else if let Some((gen, link)) = collection.a.get_no_gen(ptr) {
                 if let Some(next) = link.next() {
                     if next == self.init {
                         // cyclical
@@ -76,7 +76,7 @@ impl<P: Ptr, T> Advancer for ChainPtrAdvancer<P, T> {
                     self.switch = true;
                     // `init` was done on first iteration, we need to immediately use the
                     // previous node to `init`
-                    if let Some((_, link)) = collection.a.get_ignore_gen(self.init) {
+                    if let Some((_, link)) = collection.a.get_no_gen(self.init) {
                         self.ptr = link.prev();
                     } else {
                         self.ptr = None;

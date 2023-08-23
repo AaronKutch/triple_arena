@@ -3,6 +3,10 @@
 ## [0.12.0] - TODO
 ### Additions
 - Added `LinkNoGen` and `ChainNoGenArena` and made various performance improvements
+- Added `SurjectArena::get_link_no_gen`
+
+### Changes
+- Renamed all `*_ignore_gen` functions to `*_no_gen`
 
 ## [0.11.0] - 2023-08-20
 ### Fixes

@@ -14,9 +14,9 @@ use triple_arena::{utils::PtrGen, Advancer, Ptr, SurjectArena};
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
 const STATS: (usize, usize, u64, u128) = if cfg!(miri) {
-    (8, 3, 0, 73)
+    (8, 3, 0, 71)
 } else {
-    (39, 11, 1036, 79891)
+    (41, 8, 1027, 79005)
 };
 
 macro_rules! next_inx {
@@ -350,7 +350,7 @@ fn fuzz_surject() {
                     assert!(a.get2_key_mut(invalid, invalid).is_none());
                 }
             }
-            440..=449 => {
+            440..=445 => {
                 // get2_val_mut
                 if len != 0 {
                     let v0 = list[next_inx!(rng, len)];
@@ -370,6 +370,19 @@ fn fuzz_surject() {
                     }
                 } else {
                     assert!(a.get2_val_mut(invalid, invalid).is_none());
+                }
+            }
+            446..=449 => {
+                // get_link_no_gen
+                if len != 0 {
+                    let v = list[next_inx!(rng, len)];
+                    let set = &b[&v];
+                    let set_len = set.len();
+                    let pair = set[next_inx!(rng, set_len)];
+                    let (_, link) = a.get_link_no_gen(pair.p.inx()).unwrap();
+                    assert_eq!(*link.t, pair.k);
+                } else {
+                    assert!(a.get_link_no_gen(P0::invalid().inx()).is_none());
                 }
             }
             450..=499 => {
