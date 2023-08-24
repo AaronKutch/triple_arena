@@ -14,7 +14,7 @@ use crate::{
 /// An advancer over the valid `P`s of a `SurjectArena`
 pub struct PtrAdvancer<P: Ptr, K, V> {
     adv: chain_no_gen_iterators::PtrAdvancer<P, Key<P, K>>,
-    _boo: PhantomData<V>,
+    _boo: PhantomData<fn() -> V>,
 }
 
 impl<P: Ptr, K, V> Advancer for PtrAdvancer<P, K, V> {
@@ -33,7 +33,7 @@ pub struct SurjectPtrAdvancer<P: Ptr, K, V> {
     ptr: Option<P::Inx>,
     // prevent infinite loops
     max_advances: usize,
-    _boo: PhantomData<(K, V)>,
+    _boo: PhantomData<fn() -> (K, V)>,
 }
 
 impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {

@@ -11,7 +11,7 @@ pub struct PtrAdvancer<P: Ptr, K, V> {
     // same as for `ChainPtrAdvancer` except we get to assume the chain is acyclical and we start
     // from the beginning
     ptr: Option<P::Inx>,
-    _boo: PhantomData<(K, V)>,
+    _boo: PhantomData<fn() -> (K, V)>,
 }
 
 impl<P: Ptr, K, V> Advancer for PtrAdvancer<P, K, V> {

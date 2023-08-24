@@ -36,7 +36,7 @@ pub struct ChainPtrAdvancer<P: Ptr, T> {
     switch: bool,
     // prevents infinite loops in case of various shenanigans
     max_advances: usize,
-    _boo: PhantomData<(P, T)>,
+    _boo: PhantomData<fn() -> (P, T)>,
 }
 
 impl<P: Ptr, T> Advancer for ChainPtrAdvancer<P, T> {

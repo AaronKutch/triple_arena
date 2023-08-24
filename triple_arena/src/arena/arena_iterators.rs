@@ -17,9 +17,7 @@ pub struct PtrAdvancer<P: Ptr, T> {
     // needing a boolean to tell if we advanced past the last entry where `P::Inx::max` is a valid
     // entry
     inx: NonZeroUsize,
-    // TODO is there a way to satisfy generic use without bringing in `PhantomData`'s other
-    // implications?
-    _boo: PhantomData<(P, T)>,
+    _boo: PhantomData<fn() -> (P, T)>,
 }
 
 impl<P: Ptr, T> Advancer for PtrAdvancer<P, T> {
