@@ -2,6 +2,7 @@
 
 ## [0.12.0] - TODO
 ### Additions
+- Added `serde_support`
 - Added `LinkNoGen` and `ChainNoGenArena` and made various performance improvements
 - Added `SurjectArena::get_link_no_gen`
 - Added `OrdArena::get_link_no_gen`
