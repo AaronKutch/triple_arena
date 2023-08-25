@@ -85,6 +85,10 @@ pub struct Node<P: Ptr, K, V> {
 /// `find_key`, and hereditary properties may be broken for any entry in the
 /// arena.
 ///
+/// Note: the serialization impls from `serde_support` requires that `OrdArena`s
+/// are compressed with one of the `compress_and_shrink_*` functions such as
+/// [OrdArena::compress_and_shrink_recaster] before use.
+///
 /// ```
 /// use core::cmp::Ordering;
 ///
@@ -136,10 +140,10 @@ pub struct Node<P: Ptr, K, V> {
 /// many cases if `Ptr`s can be reused multiple times. Try to minimize
 /// the points where `find_key` is required.
 pub struct OrdArena<P: Ptr, K, V> {
-    pub(in crate::ord) root: P::Inx,
-    pub(in crate::ord) first: P::Inx,
-    pub(in crate::ord) last: P::Inx,
-    pub(in crate::ord) a: ChainNoGenArena<P, Node<P, K, V>>,
+    pub(crate) root: P::Inx,
+    pub(crate) first: P::Inx,
+    pub(crate) last: P::Inx,
+    pub(crate) a: ChainNoGenArena<P, Node<P, K, V>>,
 }
 
 impl<P: Ptr, K, V> OrdArena<P, K, V> {
@@ -412,6 +416,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             let mut subtree_first = 1;
             let mut subtree_last = self.a.len();
             let mut last_subtree_mid = None;
+            // TODO use a stack of 12
             loop {
                 let subtree_len = subtree_last.wrapping_sub(subtree_first).wrapping_add(1);
                 let subtree_mid = subtree_first.wrapping_add(subtree_len.wrapping_shr(1));

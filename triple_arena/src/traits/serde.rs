@@ -6,6 +6,8 @@
 //! trait before serializing the arena, or else excess capacity may be
 //! forced upon the deserializer.
 //!
+//! Note that `OrdArena` requires that it is compressed before being serialized.
+//!
 //! ```
 //! // Example using the `ron` crate
 //! use ron::{from_str, to_string};
@@ -86,6 +88,8 @@
 //! assert!(a.capacity() >= 2);
 //! ```
 
+#![allow(clippy::type_complexity)]
+
 use alloc::fmt;
 use core::{marker::PhantomData, num::NonZeroUsize};
 
@@ -97,9 +101,10 @@ use serde::{
 
 use crate::{
     arena::InternalEntry,
+    ord::Node,
     surject::{Key, Val},
     utils::{ChainNoGenArena, LinkNoGen, PtrGen, PtrInx, PtrNoGen},
-    Arena, ChainArena, Link, Ptr, SurjectArena,
+    Arena, ChainArena, Link, OrdArena, Ptr, SurjectArena,
 };
 
 impl<P: Ptr, T: Serialize> Serialize for Arena<P, T> {
@@ -191,6 +196,34 @@ impl<P: Ptr, K: Serialize, V: Serialize> Serialize for SurjectArena<P, K, V> {
         let mut s = serializer.serialize_tuple(2)?;
         s.serialize_element(&self.keys)?;
         s.serialize_element(&self.vals)?;
+        s.end()
+    }
+}
+
+impl<P: Ptr, K: Serialize, V: Serialize> Serialize for OrdArena<P, K, V> {
+    /// The `OrdArena` must be compressed or else an error will be returned (use
+    /// one of the `compress_and_shrink_*` functions).
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_map(Some(self.len()))?;
+        let mut last = None;
+        for (p, k, v) in self {
+            let err = if let Some(last) = last {
+                PtrInx::get(last).get().saturating_add(1) != PtrInx::get(p.inx()).get()
+            } else {
+                PtrInx::get(p.inx()).get() != 1
+            };
+            if err {
+                return Err(serde::ser::Error::custom(
+                    "Tried to serialize an uncompressed `OrdArena` (use one of the \
+                     `compress_and_shrink_*` functions)",
+                ))
+            }
+            s.serialize_entry(k, v)?;
+            last = Some(p.inx());
+        }
         s.end()
     }
 }
@@ -383,5 +416,77 @@ where
         } else {
             Ok(res)
         }
+    }
+}
+
+struct OrdArenaVisitor<P: Ptr, K, V>(PhantomData<fn() -> (P, K, V)>);
+
+impl<'de, P: Ptr, K, V> Visitor<'de> for OrdArenaVisitor<P, K, V>
+where
+    K: Deserialize<'de>,
+    V: Deserialize<'de>,
+{
+    type Value = OrdArena<P, K, V>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a `triple_arena` arena")
+    }
+
+    fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        let mut a: Arena<P, LinkNoGen<P, Node<P, K, V>>> = Arena::new();
+        if let Some(hint) = access.size_hint() {
+            a.m.reserve(hint);
+        }
+
+        let mut i = 1usize;
+        let mut last = None;
+        while let Some((k, v)) = access.next_entry::<K, V>()? {
+            let p = PtrInx::new(NonZeroUsize::new(i).unwrap());
+            if let Some(last) = last {
+                a.get_inx_mut_unwrap(last).prev_next.1 = Some(p);
+            }
+            let t = LinkNoGen::new((last, None), Node {
+                k,
+                v,
+                p_back: None,
+                p_tree0: None,
+                p_tree1: None,
+                rank: 0,
+            });
+            a.m.push(InternalEntry::Allocated(PtrGen::two(), t));
+            i = i.wrapping_add(1);
+            last = Some(p);
+        }
+
+        a.freelist_root = None;
+        a.len = a.m.len();
+
+        let a = ChainNoGenArena { a };
+        let tmp = P::invalid().inx();
+        let mut res = OrdArena {
+            a,
+            root: tmp,
+            first: tmp,
+            last: tmp,
+        };
+        res.raw_rebalance_assuming_compressed();
+        Ok(res)
+    }
+}
+
+impl<'de, P: Ptr, K, V> Deserialize<'de> for OrdArena<P, K, V>
+where
+    K: Deserialize<'de>,
+    V: Deserialize<'de>,
+{
+    /// This does not check the ordering of keys.
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(OrdArenaVisitor(PhantomData))
     }
 }
