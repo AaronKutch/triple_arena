@@ -35,6 +35,13 @@ use crate::{
 // with any `None` child could not have a rank higher than 2), but it leads to
 // really bad worst case removal scenarios.
 
+// TODO to fix cache locality, I'm thinking we stay with WAVL because of the
+// extra search depth induced by anything B-Tree like. It involves storing the
+// values on their own arena that preserves stable `Ptr`s. They have
+// backreferences to the keys. We group the keys together in memory, and rewrite
+// groups based on different factors. We may need tricks like the bitfields of
+// https://github.com/sebastiencs/shared-arena for a different freelist approach
+
 /// Internal node for an `OrdArena`
 #[derive(Clone)]
 pub struct Node<P: Ptr, K, V> {
@@ -143,6 +150,12 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             last: P::Inx::new(NonZeroUsize::new(1).unwrap()),
             a: ChainNoGenArena::new(),
         }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        let mut res = Self::new();
+        res.reserve(capacity);
+        res
     }
 
     /// Returns the total number of valid `Ptr`s, or equivalently the number of

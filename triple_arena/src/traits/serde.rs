@@ -91,14 +91,14 @@ use core::{marker::PhantomData, num::NonZeroUsize};
 
 use serde::{
     de::{Error, MapAccess, Visitor},
-    ser::SerializeMap,
+    ser::{SerializeMap, SerializeTuple},
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
 use crate::{
     arena::InternalEntry,
-    utils::{PtrGen, PtrInx},
-    Arena, Ptr,
+    utils::{ChainNoGenArena, LinkNoGen, PtrGen, PtrInx},
+    Arena, ChainArena, Link, Ptr,
 };
 
 impl<P: Ptr, T: Serialize> Serialize for Arena<P, T> {
@@ -111,6 +111,50 @@ impl<P: Ptr, T: Serialize> Serialize for Arena<P, T> {
             s.serialize_entry(&p.inx(), t)?;
         }
         s.end()
+    }
+}
+
+impl<P: Ptr, T: Serialize> Serialize for Link<P, T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_tuple(3)?;
+        s.serialize_element(&self.prev())?;
+        s.serialize_element(&self.next())?;
+        s.serialize_element(&self.t)?;
+        s.end()
+    }
+}
+
+impl<P: Ptr, T: Serialize> Serialize for ChainArena<P, T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.a.serialize(serializer)
+    }
+}
+
+impl<P: Ptr, T: Serialize> Serialize for LinkNoGen<P, T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_tuple(3)?;
+        s.serialize_element(&self.prev())?;
+        s.serialize_element(&self.next())?;
+        s.serialize_element(&self.t)?;
+        s.end()
+    }
+}
+
+impl<P: Ptr, T: Serialize> Serialize for ChainNoGenArena<P, T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.a.serialize(serializer)
     }
 }
 
@@ -193,5 +237,66 @@ where
         D: Deserializer<'de>,
     {
         deserializer.deserialize_map(ArenaVisitor(PhantomData))
+    }
+}
+
+impl<'de, P: Ptr, T> Deserialize<'de> for Link<P, T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let (prev, next, t): (Option<P>, Option<P>, T) = Deserialize::deserialize(deserializer)?;
+        Ok(Link::new((prev, next), t))
+    }
+}
+
+impl<'de, P: Ptr, T> Deserialize<'de> for ChainArena<P, T>
+where
+    T: Deserialize<'de>,
+{
+    /// This function returns an error in case of a broken interlink structure
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let a: Arena<P, Link<P, T>> = Deserialize::deserialize(deserializer)?;
+        match ChainArena::from_arena(a) {
+            Ok(res) => Ok(res),
+            Err(e) => Err(Error::custom(e)),
+        }
+    }
+}
+
+impl<'de, P: Ptr, T> Deserialize<'de> for LinkNoGen<P, T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let (prev, next, t): (Option<P::Inx>, Option<P::Inx>, T) =
+            Deserialize::deserialize(deserializer)?;
+        Ok(LinkNoGen::new((prev, next), t))
+    }
+}
+
+impl<'de, P: Ptr, T> Deserialize<'de> for ChainNoGenArena<P, T>
+where
+    T: Deserialize<'de>,
+{
+    /// This function returns an error in case of a broken interlink structure
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let a: Arena<P, LinkNoGen<P, T>> = Deserialize::deserialize(deserializer)?;
+        match ChainNoGenArena::from_arena(a) {
+            Ok(res) => Ok(res),
+            Err(e) => Err(Error::custom(e)),
+        }
     }
 }

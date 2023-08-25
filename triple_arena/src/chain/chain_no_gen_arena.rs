@@ -79,6 +79,14 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
         // needs to be done because of upstream manual `InternalEntry` handling
         Arena::_check_invariants(&this.a)?;
+        Self::_check_interlinks(this)?;
+        Ok(())
+    }
+
+    /// Checks that interlink transitivity holds
+    #[doc(hidden)]
+    pub fn _check_interlinks(this: &Self) -> Result<(), &'static str> {
+        let err = Err("interlink transitivity does not hold");
         for (p, link) in &this.a {
             // note: we must check both cases of equality when checking for single link
             // cyclic chains, because we _must_ not rely on any kind of induction (any set
@@ -87,18 +95,18 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
                 if let Some((_, prev)) = this.a.get_no_gen(prev) {
                     if let Some(next) = prev.next() {
                         if p.inx() != next {
-                            return Err("interlink does not correspond")
+                            return err
                         }
                     } else {
-                        return Err("next node does not exist")
+                        return err
                     }
                 } else {
-                    return Err("prev node does not exist")
+                    return err
                 }
                 if p.inx() == prev {
                     // should be a single link cyclic chain
                     if link.next() != Some(p.inx()) {
-                        return Err("broken single link cyclic chain")
+                        return err
                     }
                 }
             }
@@ -108,18 +116,18 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
                 if let Some((_, next)) = this.a.get_no_gen(next) {
                     if let Some(prev) = next.prev() {
                         if p.inx() != prev {
-                            return Err("interlink does not correspond")
+                            return err
                         }
                     } else {
-                        return Err("prev node does not exist")
+                        return err
                     }
                 } else {
-                    return Err("next node does not exist")
+                    return err
                 }
                 if p.inx() == next {
                     // should be a single link cyclic chain
                     if link.prev() != Some(p.inx()) {
-                        return Err("broken single link cyclic chain")
+                        return err
                     }
                 }
             }
@@ -129,6 +137,12 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
 
     pub fn new() -> Self {
         Self { a: Arena::new() }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        let mut res = Self::new();
+        res.reserve(capacity);
+        res
     }
 
     /// Returns the number of links in the arena
@@ -703,8 +717,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
         // memory.
         self.a.inc_gen();
         let gen = self.gen();
-        let mut new = Arena::<P, LinkNoGen<P, T>>::new();
-        new.reserve(self.len());
+        let mut new = Arena::<P, LinkNoGen<P, T>>::with_capacity(self.len());
         new.set_gen(gen);
         let mut adv = self.a.advancer();
         'outer: while let Some(p_init) = adv.advance(&self.a) {
@@ -789,8 +802,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
     ) {
         self.a.inc_gen();
         let gen = self.gen();
-        let mut new = Arena::<P, LinkNoGen<P, T>>::new();
-        new.reserve(self.len());
+        let mut new = Arena::<P, LinkNoGen<P, T>>::with_capacity(self.len());
         new.set_gen(gen);
         let p_init = first_link;
         let link = self.a.remove(p_init).unwrap();
@@ -814,6 +826,15 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
             };
         }
         self.a = new;
+    }
+
+    /// Creates a `ChainNoGenArena<P, T>` directly from an
+    /// `Arena<P, LinkNoGen<P, T>>`. Returns an error if interlink transitivity
+    /// fails to hold.
+    pub fn from_arena(arena: Arena<P, LinkNoGen<P, T>>) -> Result<Self, &'static str> {
+        let res = Self { a: arena };
+        Self::_check_interlinks(&res)?;
+        Ok(res)
     }
 
     /// Has the same properties of [Arena::clone_from_with], preserving

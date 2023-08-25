@@ -164,6 +164,14 @@ impl<P: Ptr, T> ChainArena<P, T> {
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
         // needs to be done because of upstream manual `InternalEntry` handling
         Arena::_check_invariants(&this.a)?;
+        Self::_check_interlinks(this)?;
+        Ok(())
+    }
+
+    /// Checks that interlink transitivity holds
+    #[doc(hidden)]
+    pub fn _check_interlinks(this: &Self) -> Result<(), &'static str> {
+        let err = Err("interlink transitivity does not hold");
         for (p, link) in &this.a {
             // note: we must check both cases of equality when checking for single link
             // cyclic chains, because we _must_ not rely on any kind of induction (any set
@@ -172,18 +180,18 @@ impl<P: Ptr, T> ChainArena<P, T> {
                 if let Some(prev) = this.a.get(prev) {
                     if let Some(next) = prev.next() {
                         if p != next {
-                            return Err("interlink does not correspond")
+                            return err
                         }
                     } else {
-                        return Err("next node does not exist")
+                        return err
                     }
                 } else {
-                    return Err("prev node does not exist")
+                    return err
                 }
                 if p == prev {
                     // should be a single link cyclic chain
                     if link.next() != Some(p) {
-                        return Err("broken single link cyclic chain")
+                        return err
                     }
                 }
             }
@@ -193,18 +201,18 @@ impl<P: Ptr, T> ChainArena<P, T> {
                 if let Some(next) = this.a.get(next) {
                     if let Some(prev) = next.prev() {
                         if p != prev {
-                            return Err("interlink does not correspond")
+                            return err
                         }
                     } else {
-                        return Err("prev node does not exist")
+                        return err
                     }
                 } else {
-                    return Err("next node does not exist")
+                    return err
                 }
                 if p == next {
                     // should be a single link cyclic chain
                     if link.prev() != Some(p) {
-                        return Err("broken single link cyclic chain")
+                        return err
                     }
                 }
             }
@@ -214,6 +222,12 @@ impl<P: Ptr, T> ChainArena<P, T> {
 
     pub fn new() -> Self {
         Self { a: Arena::new() }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        let mut res = Self::new();
+        res.reserve(capacity);
+        res
     }
 
     /// Returns the number of links in the arena
@@ -747,8 +761,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
         // memory.
         self.a.inc_gen();
         let gen = self.gen();
-        let mut new = Arena::<P, Link<P, T>>::new();
-        new.reserve(self.len());
+        let mut new = Arena::<P, Link<P, T>>::with_capacity(self.len());
         new.set_gen(gen);
         let mut adv = self.a.advancer();
         'outer: while let Some(p_init) = adv.advance(&self.a) {
@@ -820,6 +833,14 @@ impl<P: Ptr, T> ChainArena<P, T> {
             }
         }
         self.a = new;
+    }
+
+    /// Creates a `ChainArena<P, T>` directly from an `Arena<P, Link<P, T>>`.
+    /// Returns an error if interlink transitivity fails to hold.
+    pub fn from_arena(arena: Arena<P, Link<P, T>>) -> Result<Self, &'static str> {
+        let res = Self { a: arena };
+        Self::_check_interlinks(&res)?;
+        Ok(res)
     }
 
     /// Has the same properties of [Arena::clone_from_with], preserving

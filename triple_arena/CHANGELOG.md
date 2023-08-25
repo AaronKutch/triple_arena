@@ -5,6 +5,8 @@
 - Added `LinkNoGen` and `ChainNoGenArena` and made various performance improvements
 - Added `SurjectArena::get_link_no_gen`
 - Added `OrdArena::get_link_no_gen`
+- Added `with_capacity` to all arenas
+- Added `ChainArena::from_arena`
 
 ### Changes
 - Renamed all `*_ignore_gen` functions to `*_no_gen`

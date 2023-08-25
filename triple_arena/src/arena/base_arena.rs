@@ -250,14 +250,22 @@ impl<P: Ptr, T> Arena<P, T> {
         Ok(())
     }
 
-    /// Creates a new arena of type `T`, which are pointed to by `P`s.
-    pub fn new() -> Arena<P, T> {
-        Arena {
+    /// Creates a new arena of type `T`, which are pointed to by `P`s. The arena
+    /// will not allocate until elements are inserted.
+    pub fn new() -> Self {
+        Self {
             len: 0,
             m: NonZeroInxVec::new(),
             freelist_root: None,
             gen: PtrGen::two(),
         }
+    }
+
+    /// [Arena::new] but with the initial capacity set to at least `capacity`
+    pub fn with_capacity(capacity: usize) -> Self {
+        let mut res = Self::new();
+        res.reserve(capacity);
+        res
     }
 
     /// Returns the number of `T` in the arena

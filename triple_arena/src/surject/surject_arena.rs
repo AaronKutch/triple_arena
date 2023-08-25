@@ -222,6 +222,15 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         }
     }
 
+    /// Creates the new arena with capacity for at least `capacity_keys` keys
+    /// and `capacity_vals` values
+    pub fn with_capacity(capacity_keys: usize, capacity_vals: usize) -> Self {
+        let mut res = Self::new();
+        res.reserve_keys(capacity_keys);
+        res.reserve_vals(capacity_vals);
+        res
+    }
+
     /// Returns the total number of valid `Ptr`s, or equivalently the number of
     /// keys in the arena. `self.len_keys() >= self.len_vals()` is always
     /// true.
