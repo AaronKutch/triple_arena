@@ -6,5 +6,5 @@ publish = false
 
 [dependencies]
 rand_xoshiro = "0.6"
-triple_arena = { path = "../triple_arena", features = ["expose_internal_utils"] }
+triple_arena = { path = "../triple_arena", features = ["expose_internal_utils", "serde_support"] }
 triple_arena_render = { path = "../triple_arena_render" }

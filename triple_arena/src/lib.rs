@@ -14,6 +14,9 @@ mod chain;
 mod ord;
 mod traits;
 pub use chain::{chain_iterators, ChainArena, Link};
+// always keep this for the serde documentation
+#[cfg(feature = "serde_support")]
+pub use traits::serde;
 pub use traits::{Advancer, ArenaTrait, Ptr};
 mod surject;
 // reexport for the macros to use
@@ -28,7 +31,7 @@ pub mod utils {
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::arena::NonZeroInxVec;
     #[cfg(not(feature = "expose_internal_utils"))]
-    pub(crate) use crate::nonzero_inx_vec::NonZeroInxVec;
+    pub(crate) use crate::arena::NonZeroInxVec;
     // only intended for size_of tests and such
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::ord::Node;
@@ -37,6 +40,11 @@ pub mod utils {
         chain::{chain_no_gen_iterators, ChainNoGenArena, LinkNoGen},
         traits::{PtrGen, PtrInx, PtrNoGen},
     };
+    /// A reexport used by the macros
+    #[cfg(feature = "serde_support")]
+    pub mod serde {
+        pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    }
 }
 
 extern crate alloc;
