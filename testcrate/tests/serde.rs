@@ -1,8 +1,8 @@
 use serde::{de::DeserializeOwned, Serialize};
-use testcrate::{std_arena, std_chain, std_chain_no_gen};
+use testcrate::{std_arena, std_chain, std_chain_no_gen, std_surject};
 use triple_arena::{
     utils::{ChainNoGenArena, PtrGen},
-    Arena, ChainArena, Ptr,
+    Arena, ChainArena, Ptr, SurjectArena,
 };
 
 // RON version for debug
@@ -47,5 +47,14 @@ fn serde() {
     for (p, t) in &a {
         let q = Ptr::_from_raw(p.inx(), PtrGen::two());
         assert_eq!(b.get_link(q).unwrap(), t);
+    }
+
+    let a = std_surject();
+    let b = round_trip(&a);
+    SurjectArena::_check_invariants(&b).unwrap();
+    for (p, k, v) in &a {
+        let q = Ptr::_from_raw(p.inx(), PtrGen::two());
+        assert_eq!(b.get_key(q).unwrap(), k);
+        assert_eq!(b.get_val(q).unwrap(), v);
     }
 }

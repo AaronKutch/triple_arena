@@ -97,8 +97,9 @@ use serde::{
 
 use crate::{
     arena::InternalEntry,
-    utils::{ChainNoGenArena, LinkNoGen, PtrGen, PtrInx},
-    Arena, ChainArena, Link, Ptr,
+    surject::{Key, Val},
+    utils::{ChainNoGenArena, LinkNoGen, PtrGen, PtrInx, PtrNoGen},
+    Arena, ChainArena, Link, Ptr, SurjectArena,
 };
 
 impl<P: Ptr, T: Serialize> Serialize for Arena<P, T> {
@@ -155,6 +156,42 @@ impl<P: Ptr, T: Serialize> Serialize for ChainNoGenArena<P, T> {
         S: Serializer,
     {
         self.a.serialize(serializer)
+    }
+}
+
+impl<P: Ptr, K: Serialize> Serialize for Key<P, K> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_tuple(2)?;
+        s.serialize_element(&self.k)?;
+        s.serialize_element(&self.p_val)?;
+        s.end()
+    }
+}
+
+impl<V: Serialize> Serialize for Val<V> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_tuple(2)?;
+        s.serialize_element(&self.v)?;
+        s.serialize_element(&self.key_count)?;
+        s.end()
+    }
+}
+
+impl<P: Ptr, K: Serialize, V: Serialize> Serialize for SurjectArena<P, K, V> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_tuple(2)?;
+        s.serialize_element(&self.keys)?;
+        s.serialize_element(&self.vals)?;
+        s.end()
     }
 }
 
@@ -232,6 +269,7 @@ impl<'de, P: Ptr, T> Deserialize<'de> for Arena<P, T>
 where
     T: Deserialize<'de>,
 {
+    /// This function returns an error in case of duplicate `Ptr` keys
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -297,6 +335,53 @@ where
         match ChainNoGenArena::from_arena(a) {
             Ok(res) => Ok(res),
             Err(e) => Err(Error::custom(e)),
+        }
+    }
+}
+
+impl<'de, P: Ptr, K> Deserialize<'de> for Key<P, K>
+where
+    K: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let (k, p_val): (K, PtrNoGen<P>) = Deserialize::deserialize(deserializer)?;
+        Ok(Key { k, p_val })
+    }
+}
+
+impl<'de, V> Deserialize<'de> for Val<V>
+where
+    V: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let (v, key_count): (V, NonZeroUsize) = Deserialize::deserialize(deserializer)?;
+        Ok(Val { v, key_count })
+    }
+}
+
+impl<'de, P: Ptr, K, V> Deserialize<'de> for SurjectArena<P, K, V>
+where
+    K: Deserialize<'de>,
+    V: Deserialize<'de>,
+{
+    /// This function returns an error in case of a broken surject structure
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let (keys, vals): (ChainNoGenArena<P, Key<P, K>>, Arena<PtrNoGen<P>, Val<V>>) =
+            Deserialize::deserialize(deserializer)?;
+        let res = SurjectArena { keys, vals };
+        if let Err(e) = SurjectArena::_check_surjects(&res) {
+            Err(Error::custom(e))
+        } else {
+            Ok(res)
         }
     }
 }

@@ -22,7 +22,7 @@ pub(crate) struct Val<V> {
     pub(crate) v: V,
     // we ultimately need a reference count for efficient unions, and it
     // has the bonus of being able to easily query key chain lengths
-    key_count: NonZeroUsize,
+    pub(crate) key_count: NonZeroUsize,
 }
 
 /// A generalization of an `Arena` with three parameters: a `P: Ptr` type, a `K`
@@ -165,6 +165,12 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         // needs to be done because of manual `InternalEntry` handling
         ChainNoGenArena::_check_invariants(&this.keys)?;
         Arena::_check_invariants(&this.vals)?;
+        Self::_check_surjects(this)?;
+        Ok(())
+    }
+
+    #[doc(hidden)]
+    pub fn _check_surjects(this: &Self) -> Result<(), &'static str> {
         // there should be exactly one key chain associated with each val
         let mut count = Arena::<PtrNoGen<P>, usize>::new();
         count.clone_from_with(&this.vals, |_, _| 0);
