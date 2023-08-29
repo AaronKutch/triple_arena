@@ -2,7 +2,7 @@
 
 ## [0.12.0] - 2023-08-29
 ### Crate
-- `recasting` 0.2.0
+- `recasting` 0.2.1
 
 ### Additions
 - Added `serde_support`
