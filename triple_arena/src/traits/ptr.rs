@@ -346,7 +346,7 @@ macro_rules! ptr_struct {
 
             impl $crate::Recast<Self> for $struct_name {
                 fn recast<R: $crate::Recaster<Item = Self>>(&mut self, recaster: &R)
-                    -> Result<(), <R as $crate::Recaster>::Item> {
+                    -> core::result::Result<(), <R as $crate::Recaster>::Item> {
                     recaster.recast_item(self)
                 }
             }
@@ -437,7 +437,7 @@ macro_rules! ptr_struct {
 
             impl $crate::Recast<Self> for $struct_name {
                 fn recast<R: $crate::Recaster<Item = Self>>(&mut self, recaster: &R)
-                    -> Result<(), <R as $crate::Recaster>::Item> {
+                    -> core::result::Result<(), <R as $crate::Recaster>::Item> {
                     recaster.recast_item(self)
                 }
             }

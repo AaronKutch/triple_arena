@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.12.1] - 2023-08-29
+### Fixes
+- Fixed that `ptr_struct` did not write out the full `core::result::Result` which could lead to
+  collisions
+
 ## [0.12.0] - 2023-08-29
 ### Crate
 - `recasting` 0.2.1
