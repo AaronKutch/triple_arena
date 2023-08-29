@@ -80,8 +80,9 @@ pub struct Node<P: Ptr, K, V> {
 /// only for those keys.
 ///
 /// Note: it is a logic error for a key's ordering to change relative to other
-/// keys. The functions are constructed such that _no_ panics, aborts, memory
-/// leaks, or non-termination occurs. However, the well ordered property,
+/// keys, or for a special function like `insert_inx_manual_unwrap` to be used
+/// incorrectly. The functions are constructed such that _no_ panics, aborts,
+/// memory leaks, or non-termination occurs. However, the well ordered property,
 /// `find_key`, and hereditary properties may be broken for any entry in the
 /// arena.
 ///

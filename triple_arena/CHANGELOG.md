@@ -8,6 +8,7 @@
 - Added `OrdArena::get_link_no_gen`
 - Added `with_capacity` to all arenas
 - Added `ChainArena::from_arena`
+- Added `OrdArena::insert_inx_manual_unwrap` and `OrdArena::find_with`
 
 ### Changes
 - Renamed all `*_ignore_gen` functions to `*_no_gen`

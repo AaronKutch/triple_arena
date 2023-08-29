@@ -279,6 +279,33 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     }
 }
 
+/// Does not require `K: Ord`
+impl<P: Ptr, K, V> OrdArena<P, K, V> {
+    /// Finds a `Ptr` through binary search with a user-provided function `f`.
+    /// `f` is provided a `P, &K, &V` triple of the node the binary search is
+    /// currently at. Will go in a `Ordering::Less` direction if `f` returns
+    /// that, or an `Ordering::Greater` direction if `f` returns that. Stops and
+    /// returns the `P` when `Ordering::Equal` is returned. Returns
+    /// `None` if `self.is_empty` or an `Ordering::Equal` case is not
+    /// encountered by the end of the binary search.
+    pub fn find_with<F: FnMut(P, &K, &V) -> Ordering>(&self, mut f: F) -> Option<P> {
+        if self.a.is_empty() {
+            return None
+        }
+        let mut p = self.root;
+        loop {
+            let (gen, link) = self.a.get_no_gen(p).unwrap();
+            let node = &link.t;
+            let p_with_gen = Ptr::_from_raw(p, gen);
+            match f(p_with_gen, &node.k, &node.v) {
+                Ordering::Less => p = node.p_tree0?,
+                Ordering::Equal => break Some(p_with_gen),
+                Ordering::Greater => p = node.p_tree1?,
+            }
+        }
+    }
+}
+
 // example use of the below in debugging
 /*
 use std::path::PathBuf;

@@ -395,7 +395,23 @@ fn fuzz_ord() {
                     assert!(a.swap_vals(invalid, invalid).is_none())
                 }
             }
-            520..=994 => {
+            520..=549 => {
+                // find_with
+                let new_k = new_k();
+                if let Some(set) = b.get(&new_k) {
+                    let p = a
+                        .find_with(|p, k, v| {
+                            assert_eq!(a.get(p).unwrap(), (k, v));
+                            new_k.cmp(k)
+                        })
+                        .unwrap();
+                    let v = *a.get_val(p).unwrap();
+                    assert!(set.contains_key(&v));
+                } else {
+                    assert!(a.find_with(|_, k, _| new_k.cmp(k)).is_none());
+                }
+            }
+            550..=994 => {
                 // find_key with get_val
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {
