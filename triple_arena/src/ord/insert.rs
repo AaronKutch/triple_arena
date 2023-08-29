@@ -2,30 +2,31 @@
 
 use core::{cmp::Ordering, mem};
 
-use super::ord::Node;
+use super::ord_arena::Node;
 use crate::{OrdArena, Ptr};
 
 impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
-    /// Inserts key-value pair `k_v` into `self` and returns a `Ptr` to it. If
-    /// the inserted key is equal to a key already contained in `self`, the
-    /// new value replaces the old value, and `k_v.0` and the old value
-    /// are returned. The existing key is not replaced, which should not make a
-    /// difference unless special `Ord` definitions are being used.
+    /// Inserts key `v` with associated value `v` into `self` and returns a
+    /// `Ptr` to it. If the inserted key is equal to a key already contained
+    /// in `self`, the new value replaces the old value, and `k` and the old
+    /// value are returned. The existing key is not replaced, which should
+    /// not make a difference unless special `Ord` definitions are being
+    /// used.
     #[must_use]
     pub fn insert(&mut self, k: K, v: V) -> (P, Option<(K, V)>) {
         if self.is_empty() {
             (self.insert_empty(k, v).unwrap(), None)
         } else {
             let (p, direction) = self.find_similar_key(&k).unwrap();
-            self.insert_inx_manual_unwrap(k, v, p.inx(), direction)
+            self.insert_inx_manual_unwrap(p.inx(), direction, k, v)
         }
     }
 
-    /// Inserts key-value pair `k_v` into `self` and returns a
+    /// Inserts key `v` with associated value `v` into `self` and returns a
     /// `Ptr` to it. If the inserted key is equal to a key already contained in
-    /// `self`, the inserted key is inserted in a [prev](crate::Link::prev)
-    /// position to all the equal keys. Future calls to `self.find_key` with
-    /// an equal `k_v.0` could find any of the equal keys.
+    /// `self`, it does not replace the entry and is inserted in addition to it,
+    /// such that there can be multiple neighboring entries with equal keys.
+    /// Future calls to `self.find_key` could find any one of the equal keys.
     pub fn insert_nonhereditary(&mut self, k: K, v: V) -> P {
         if self.is_empty() {
             self.insert_empty(k, v).unwrap()
@@ -34,7 +35,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             if direction == Ordering::Equal {
                 direction = Ordering::Less;
             }
-            self.insert_inx_manual_unwrap(k, v, p.inx(), direction).0
+            self.insert_inx_manual_unwrap(p.inx(), direction, k, v).0
         }
     }
 
@@ -46,7 +47,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             (self.insert_empty(k, v).unwrap(), None)
         } else {
             let (p, direction) = self.find_similar_key_linear(p_init, num, &k).unwrap();
-            self.insert_inx_manual_unwrap(k, v, p.inx(), direction)
+            self.insert_inx_manual_unwrap(p.inx(), direction, k, v)
         }
     }
 
@@ -60,7 +61,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             if direction == Ordering::Equal {
                 direction = Ordering::Less;
             }
-            self.insert_inx_manual_unwrap(k, v, p.inx(), direction).0
+            self.insert_inx_manual_unwrap(p.inx(), direction, k, v).0
         }
     }
 
@@ -84,24 +85,27 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             None
         }
     }
+}
 
-    /// Inserts key `k` and value `v` at `p`. Does not enforce key orderings,
-    /// and instead accepts whatever `direction` says. If `direction` is
-    /// `Ordering::Equal`, the value at `p` is replaced and returned with `k`.
-    /// If `direction` is `Ordering::Less`, the pair is inserted as a new entry
-    /// before `p`. If `direction` is `Ordering::Greater`, the pair is inserted
-    /// after `p`. Returns the `Ptr` to the pair, and the replaced pair if there
-    /// was one.
+/// Does not require `K: Ord`
+impl<P: Ptr, K, V> OrdArena<P, K, V> {
+    /// Inserts key `k` with associated value `v` at `p`. Does not enforce key
+    /// orderings, and instead accepts whatever `direction` says. If
+    /// `direction` is `Ordering::Equal`, the value at `p` is replaced and
+    /// returned with `k`. If `direction` is `Ordering::Less`, the pair is
+    /// inserted as a new entry before `p`. If `direction` is
+    /// `Ordering::Greater`, the pair is inserted after `p`. Returns the
+    /// `Ptr` to the pair, and the replaced pair if there was one.
     ///
     /// # Panics
     ///
     /// If `p` is invalid.
     pub fn insert_inx_manual_unwrap(
         &mut self,
-        k: K,
-        v: V,
         p: P::Inx,
         direction: Ordering,
+        k: K,
+        v: V,
     ) -> (P, Option<(K, V)>) {
         let (p, direction) = match direction {
             Ordering::Less => {
@@ -109,7 +113,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 // needed
                 let link = self.a.get_inx_unwrap(p);
                 if link.t.p_tree0.is_some() {
-                    (link.prev().unwrap().inx(), true)
+                    (link.prev().unwrap(), true)
                 } else {
                     (p, false)
                 }
@@ -118,20 +122,19 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 // replacement case
                 let old_v = mem::replace(&mut self.a.get_inx_mut_unwrap_t(p).v, v);
                 return (
-                    Ptr::_from_raw(p, self.a.get_ignore_gen(p).unwrap().0),
+                    Ptr::_from_raw(p, self.a.get_no_gen(p).unwrap().0),
                     Some((k, old_v)),
                 )
             }
             Ordering::Greater => {
                 let link = self.a.get_inx_unwrap(p);
                 if link.t.p_tree1.is_some() {
-                    (link.next().unwrap().inx(), false)
+                    (link.next().unwrap(), false)
                 } else {
                     (p, true)
                 }
             }
         };
-        let p_with_gen = Ptr::_from_raw(p, self.a.get_ignore_gen(p).unwrap().0);
         if direction {
             let new_node = Node {
                 k,
@@ -141,8 +144,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 p_tree1: None,
                 rank: 1,
             };
-            if let Ok(p_new) = self.a.insert((Some(p_with_gen), None), new_node) {
-                self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree1 = Some(p_new.inx());
+            if let Ok(p_new) = self.a.insert((Some(p), None), new_node) {
+                self.a.get_inx_mut_unwrap_t(p).p_tree1 = Some(p_new.inx());
                 if self.last == p {
                     self.last = p_new.inx()
                 }
@@ -160,9 +163,9 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 p_tree1: None,
                 rank: 1,
             };
-            if let Ok(p_new) = self.a.insert((None, Some(p_with_gen)), new_node) {
+            if let Ok(p_new) = self.a.insert((None, Some(p)), new_node) {
                 // fix tree pointer in leaf direction
-                self.a.get_ignore_gen_mut(p).unwrap().1.t.p_tree0 = Some(p_new.inx());
+                self.a.get_inx_mut_unwrap_t(p).p_tree0 = Some(p_new.inx());
                 if self.first == p {
                     self.first = p_new.inx()
                 }

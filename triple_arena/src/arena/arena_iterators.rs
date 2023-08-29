@@ -17,9 +17,7 @@ pub struct PtrAdvancer<P: Ptr, T> {
     // needing a boolean to tell if we advanced past the last entry where `P::Inx::max` is a valid
     // entry
     inx: NonZeroUsize,
-    // TODO is there a way to satisfy generic use without bringing in `PhantomData`'s other
-    // implications?
-    _boo: PhantomData<(P, T)>,
+    _boo: PhantomData<fn() -> (P, T)>,
 }
 
 impl<P: Ptr, T> Advancer for PtrAdvancer<P, T> {
@@ -152,7 +150,7 @@ impl<'a, P: Ptr, T> Iterator for Drain<'a, P, T> {
         // leaking the `Drain` struct, just use a normal advancer
         self.adv
             .advance(self.arena)
-            .map(|p| (p, self.arena.remove_internal(p, false).unwrap()))
+            .map(|p| (p, self.arena.remove_internal_inx_unwrap(p.inx(), false)))
     }
 }
 

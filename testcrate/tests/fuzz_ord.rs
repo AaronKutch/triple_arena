@@ -20,11 +20,11 @@ const N: usize = if cfg!(miri) {
 };
 
 const STATS: (usize, u64, u128) = if cfg!(miri) {
-    (69, 1, 125)
+    (70, 1, 122)
 } else if cfg!(debug_assertions) {
-    (297, 112, 14550)
+    (239, 107, 14567)
 } else {
-    (409, 5036, 749722)
+    (418, 5049, 749771)
 };
 
 macro_rules! next_inx {
@@ -205,7 +205,7 @@ fn fuzz_ord() {
                 // remove
                 if len != 0 {
                     let t = list.swap_remove(next_inx!(rng, len));
-                    assert_eq!(a.remove(t.p).unwrap().t, (t.k, t.v));
+                    assert_eq!(a.remove(t.p).unwrap(), (t.k, t.v));
                     let set = b.get_mut(&t.k).unwrap();
                     assert_eq!(set.remove(&t.v).unwrap(), t);
                     if set.is_empty() {
@@ -281,7 +281,6 @@ fn fuzz_ord() {
                     assert_eq!(a.get_key(t.p).unwrap(), &t.k);
                     assert_eq!(a.get_val(t.p).unwrap(), &t.v);
                     let mut tmp = t.v;
-                    assert_eq!(a.get_link_mut(t.p).unwrap().t, (&t.k, &mut tmp));
                     assert_eq!(a.get_mut(t.p).unwrap(), (&t.k, &mut tmp));
                     assert_eq!(a.get_val_mut(t.p).unwrap(), &mut tmp);
                 } else {
@@ -290,28 +289,12 @@ fn fuzz_ord() {
                     assert!(a.get(invalid).is_none());
                     assert!(a.get_key(invalid).is_none());
                     assert!(a.get_val(invalid).is_none());
-                    assert!(a.get_link_mut(invalid).is_none());
                     assert!(a.get_mut(invalid).is_none());
                     assert!(a.get_val_mut(invalid).is_none());
                 }
             }
             420..=439 => {
-                // get2_link_mut, get2_val_mut
-                if len != 0 {
-                    let t0 = &list[next_inx!(rng, len)];
-                    let t1 = &list[next_inx!(rng, len)];
-                    if t0.p == t1.p {
-                        assert!(a.get2_link_mut(t0.p, t1.p).is_none())
-                    } else {
-                        let tmp = a.get2_link_mut(t0.p, t1.p).unwrap();
-                        let mut val0 = t0.v;
-                        assert_eq!(tmp.0.t, (&t0.k, &mut val0));
-                        let mut val1 = t1.v;
-                        assert_eq!(tmp.1.t, (&t1.k, &mut val1));
-                    }
-                } else {
-                    assert!(a.get2_link_mut(invalid, invalid).is_none())
-                }
+                // get2_val_mut
                 if len != 0 {
                     let t0 = &list[next_inx!(rng, len)];
                     let t1 = &list[next_inx!(rng, len)];
@@ -412,7 +395,23 @@ fn fuzz_ord() {
                     assert!(a.swap_vals(invalid, invalid).is_none())
                 }
             }
-            520..=994 => {
+            520..=549 => {
+                // find_with
+                let new_k = new_k();
+                if let Some(set) = b.get(&new_k) {
+                    let p = a
+                        .find_with(|p, k, v| {
+                            assert_eq!(a.get(p).unwrap(), (k, v));
+                            new_k.cmp(k)
+                        })
+                        .unwrap();
+                    let v = *a.get_val(p).unwrap();
+                    assert!(set.contains_key(&v));
+                } else {
+                    assert!(a.find_with(|_, k, _| new_k.cmp(k)).is_none());
+                }
+            }
+            550..=994 => {
                 // find_key with get_val
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {

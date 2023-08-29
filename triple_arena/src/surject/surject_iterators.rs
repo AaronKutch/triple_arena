@@ -6,16 +6,15 @@ use recasting::{Recast, Recaster};
 
 use crate::{
     arena_iterators::{self},
-    chain_iterators,
     surject::{Key, Val},
-    utils::PtrNoGen,
-    Advancer, Arena, Link, Ptr, SurjectArena,
+    utils::{chain_no_gen_iterators, LinkNoGen, PtrNoGen},
+    Advancer, Arena, Ptr, SurjectArena,
 };
 
 /// An advancer over the valid `P`s of a `SurjectArena`
 pub struct PtrAdvancer<P: Ptr, K, V> {
-    adv: chain_iterators::PtrAdvancer<P, Key<P, K>>,
-    _boo: PhantomData<V>,
+    adv: chain_no_gen_iterators::PtrAdvancer<P, Key<P, K>>,
+    _boo: PhantomData<fn() -> V>,
 }
 
 impl<P: Ptr, K, V> Advancer for PtrAdvancer<P, K, V> {
@@ -30,11 +29,11 @@ impl<P: Ptr, K, V> Advancer for PtrAdvancer<P, K, V> {
 /// An advancer over the valid `P`s of one surject in a `SurjectArena`
 pub struct SurjectPtrAdvancer<P: Ptr, K, V> {
     // same as for `ChainPtrAdvancer` except we get to assume the chain is cyclical
-    init: P,
-    ptr: Option<P>,
+    init: P::Inx,
+    ptr: Option<P::Inx>,
     // prevent infinite loops
     max_advances: usize,
-    _boo: PhantomData<(K, V)>,
+    _boo: PhantomData<fn() -> (K, V)>,
 }
 
 impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
@@ -48,7 +47,7 @@ impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
             self.max_advances = self.max_advances.wrapping_sub(1);
         }
         if let Some(ptr) = self.ptr {
-            if let Some(link) = collection.keys.get_link(ptr) {
+            if let Some((gen, link)) = collection.keys.get_no_gen(ptr) {
                 if let Some(next) = link.next() {
                     if next == self.init {
                         self.ptr = None;
@@ -59,7 +58,7 @@ impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
                     // could be unreachable under invalidation
                     self.ptr = None;
                 }
-                Some(ptr)
+                Some(Ptr::_from_raw(ptr, gen))
             } else {
                 self.ptr = None;
                 None
@@ -72,7 +71,7 @@ impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
 
 /// An iterator over the valid `P`s of a `SurjectArena`
 pub struct Ptrs<'a, P: Ptr, K> {
-    iter: arena_iterators::Ptrs<'a, P, Link<P, Key<P, K>>>,
+    iter: arena_iterators::Ptrs<'a, P, LinkNoGen<P, Key<P, K>>>,
 }
 
 impl<'a, P: Ptr, K> Iterator for Ptrs<'a, P, K> {
@@ -85,7 +84,7 @@ impl<'a, P: Ptr, K> Iterator for Ptrs<'a, P, K> {
 
 /// An iterator over `&K` in a `SurjectArena`
 pub struct Keys<'a, P: Ptr, K> {
-    iter: arena_iterators::Vals<'a, P, Link<P, Key<P, K>>>,
+    iter: arena_iterators::Vals<'a, P, LinkNoGen<P, Key<P, K>>>,
 }
 
 impl<'a, P: Ptr, K> Iterator for Keys<'a, P, K> {
@@ -111,7 +110,7 @@ impl<'a, P: Ptr, V> Iterator for Vals<'a, P, V> {
 
 /// A mutable iterator over `&mut K` in a `SurjectArena`
 pub struct KeysMut<'a, P: Ptr, K> {
-    iter_mut: chain_iterators::ValsLinkMut<'a, P, Key<P, K>>,
+    iter_mut: chain_no_gen_iterators::ValsLinkMut<'a, P, Key<P, K>>,
 }
 
 impl<'a, P: Ptr, K> Iterator for KeysMut<'a, P, K> {
@@ -137,7 +136,7 @@ impl<'a, P: Ptr, V> Iterator for ValsMut<'a, P, V> {
 
 /// An iterator over `(P, &K, &V)` in a `SurjectArena`
 pub struct Iter<'a, P: Ptr, K, V> {
-    iter: arena_iterators::Iter<'a, P, Link<P, Key<P, K>>>,
+    iter: arena_iterators::Iter<'a, P, LinkNoGen<P, Key<P, K>>>,
     vals: &'a Arena<PtrNoGen<P>, Val<V>>,
 }
 
@@ -205,8 +204,8 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// non-termination.
     pub fn advancer_surject(&self, p_init: P) -> SurjectPtrAdvancer<P, K, V> {
         SurjectPtrAdvancer {
-            init: p_init,
-            ptr: Some(p_init),
+            init: p_init.inx(),
+            ptr: Some(p_init.inx()),
             max_advances: self.len_keys(),
             _boo: PhantomData,
         }

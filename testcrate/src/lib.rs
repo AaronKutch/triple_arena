@@ -5,8 +5,14 @@ use std::{
     num::{NonZeroU128, NonZeroU32},
 };
 
-use rand_xoshiro::{rand_core::RngCore, Xoshiro128StarStar};
-use triple_arena::{ptr_struct, Ptr};
+use rand_xoshiro::{
+    rand_core::{RngCore, SeedableRng},
+    Xoshiro128StarStar,
+};
+use serde_derive::{Deserialize, Serialize};
+use triple_arena::{
+    ptr_struct, utils::ChainNoGenArena, Arena, ChainArena, OrdArena, Ptr, SurjectArena,
+};
 use triple_arena_render::*;
 
 #[cfg(miri)]
@@ -84,7 +90,7 @@ pub fn inc_cmp_count() {
 }
 
 /// Counts `Clone`s and comparisons
-#[derive(Debug, Eq)]
+#[derive(Debug, Eq, Serialize, Deserialize)]
 pub struct CKey {
     pub k: u64,
 }
@@ -109,6 +115,7 @@ impl PartialEq for CKey {
     }
 }
 
+#[allow(clippy::incorrect_partial_ord_impl_on_ord_type)]
 impl PartialOrd for CKey {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         inc_cmp_count();
@@ -124,7 +131,7 @@ impl Ord for CKey {
 }
 
 /// Counts `Clone`s
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CVal {
     pub v: u64,
 }
@@ -300,4 +307,159 @@ pub fn fuzz_fill_inst_bench(
     }
     assert_eq!(insts.len(), (insertions + removals) as usize);
     (insts, repr_sim)
+}
+
+pub fn std_arena() -> Arena<P1, (CKey, CVal)> {
+    let mut rng = Xoshiro128StarStar::seed_from_u64(0);
+
+    let mut a = Arena::<P1, (CKey, CVal)>::new();
+    let mut repr = vec![];
+    let mut repr_inxs = vec![];
+    let (mut insts, expected) = fuzz_fill_inst(&mut rng, &repr, 3 * A, A);
+    let tmp = fuzz_fill_inst(&mut rng, &expected, 2 * A, 3 * A);
+    insts.extend_from_slice(&tmp.0);
+    for inst in insts {
+        match inst {
+            Ok(pair) => {
+                repr.push((pair.0.clone_uncounting(), pair.1.clone_uncounting()));
+                repr_inxs.push(a.insert(pair));
+            }
+            Err(inx) => {
+                a.remove(repr_inxs.swap_remove(inx)).unwrap();
+                repr.swap_remove(inx);
+            }
+        }
+    }
+    // need empty entries
+    assert_eq!(a.len(), A as usize);
+    assert!(a.capacity() >= (2 * A as usize));
+    a
+}
+
+pub fn std_chain() -> ChainArena<P1, (CKey, CVal)> {
+    let mut rng = Xoshiro128StarStar::seed_from_u64(0);
+
+    let mut a = ChainArena::<P1, (CKey, CVal)>::new();
+    let mut repr = vec![];
+    let mut repr_inxs = vec![];
+    let (mut insts, expected) = fuzz_fill_inst(&mut rng, &repr, 3 * A, A);
+    let tmp = fuzz_fill_inst(&mut rng, &expected, 2 * A, 3 * A);
+    insts.extend_from_slice(&tmp.0);
+    for inst in insts {
+        match inst {
+            Ok(pair) => {
+                repr.push((pair.0.clone_uncounting(), pair.1.clone_uncounting()));
+                repr_inxs.push(a.insert_new_cyclic(pair));
+            }
+            Err(inx) => {
+                a.remove(repr_inxs.swap_remove(inx)).unwrap();
+                repr.swap_remove(inx);
+            }
+        }
+    }
+    let ptrs: Vec<P1> = a.ptrs().collect();
+    let len = ptrs.len();
+    // randomly connect
+    for _ in 0..A {
+        let p0 = ptrs[(rng.next_u64() as usize) % len];
+        let p1 = ptrs[(rng.next_u64() as usize) % len];
+        a.exchange_next(p0, p1).unwrap();
+    }
+    assert_eq!(a.len(), A as usize);
+    assert!(a.capacity() >= (2 * A as usize));
+    a
+}
+
+pub fn std_chain_no_gen() -> ChainNoGenArena<P1, (CKey, CVal)> {
+    let mut rng = Xoshiro128StarStar::seed_from_u64(0);
+
+    let mut a = ChainNoGenArena::<P1, (CKey, CVal)>::new();
+    let mut repr = vec![];
+    let mut repr_inxs = vec![];
+    let (mut insts, expected) = fuzz_fill_inst(&mut rng, &repr, 3 * A, A);
+    let tmp = fuzz_fill_inst(&mut rng, &expected, 2 * A, 3 * A);
+    insts.extend_from_slice(&tmp.0);
+    for inst in insts {
+        match inst {
+            Ok(pair) => {
+                repr.push((pair.0.clone_uncounting(), pair.1.clone_uncounting()));
+                repr_inxs.push(a.insert_new_cyclic(pair));
+            }
+            Err(inx) => {
+                a.remove(repr_inxs.swap_remove(inx)).unwrap();
+                repr.swap_remove(inx);
+            }
+        }
+    }
+    let ptrs: Vec<P1> = a.ptrs().collect();
+    let len = ptrs.len();
+    // randomly connect
+    for _ in 0..A {
+        let p0 = ptrs[(rng.next_u64() as usize) % len];
+        let p1 = ptrs[(rng.next_u64() as usize) % len];
+        a.exchange_next(p0, p1).unwrap();
+    }
+    assert_eq!(a.len(), A as usize);
+    assert!(a.capacity() >= (2 * A as usize));
+    a
+}
+
+pub fn std_surject() -> SurjectArena<P1, CKey, CVal> {
+    let mut rng = Xoshiro128StarStar::seed_from_u64(0);
+
+    let mut a = SurjectArena::<P1, CKey, CVal>::new();
+    let mut repr = vec![];
+    let mut repr_inxs = vec![];
+    let (mut insts, expected) = fuzz_fill_inst(&mut rng, &repr, 3 * A, A);
+    let tmp = fuzz_fill_inst(&mut rng, &expected, 2 * A, 3 * A);
+    insts.extend_from_slice(&tmp.0);
+    for inst in insts {
+        match inst {
+            Ok(pair) => {
+                repr.push((pair.0.clone_uncounting(), pair.1.clone_uncounting()));
+                repr_inxs.push(a.insert(pair.0, pair.1));
+            }
+            Err(inx) => {
+                a.remove(repr_inxs.swap_remove(inx)).unwrap();
+                repr.swap_remove(inx);
+            }
+        }
+    }
+    let ptrs: Vec<P1> = a.ptrs().collect();
+    let len = ptrs.len();
+    // randomly union, go for `A` rounds since a lot will go to the same set
+    for _ in 0..A {
+        let p0 = ptrs[(rng.next_u64() as usize) % len];
+        let p1 = ptrs[(rng.next_u64() as usize) % len];
+        let _ = a.union(p0, p1);
+    }
+    assert_eq!(a.len_keys(), A as usize);
+    assert!(a.capacity_keys() >= (2 * A as usize));
+    a
+}
+
+pub fn std_ord() -> OrdArena<P1, CKey, CVal> {
+    let mut rng = Xoshiro128StarStar::seed_from_u64(0);
+
+    let mut a = OrdArena::<P1, CKey, CVal>::new();
+    let mut repr = vec![];
+    let mut repr_inxs = vec![];
+    let (mut insts, expected) = fuzz_fill_inst(&mut rng, &repr, 3 * A, A);
+    let tmp = fuzz_fill_inst(&mut rng, &expected, 2 * A, 3 * A);
+    insts.extend_from_slice(&tmp.0);
+    for inst in insts {
+        match inst {
+            Ok(pair) => {
+                repr.push((pair.0.clone_uncounting(), pair.1.clone_uncounting()));
+                repr_inxs.push(a.insert(pair.0, pair.1).0);
+            }
+            Err(inx) => {
+                a.remove(repr_inxs.swap_remove(inx)).unwrap();
+                repr.swap_remove(inx);
+            }
+        }
+    }
+    assert_eq!(a.len(), A as usize);
+    assert!(a.capacity() >= (2 * A as usize));
+    a
 }

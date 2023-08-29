@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.12.0] - 2023-08-29
+### Crate
+- `recasting` 0.2.1
+
+### Additions
+- Added `serde_support`
+- Added `LinkNoGen` and `ChainNoGenArena` and made various performance improvements
+- Added `SurjectArena::get_link_no_gen`
+- Added `OrdArena::get_link_no_gen`
+- Added `with_capacity` to all arenas
+- Added `ChainArena::from_arena`
+- Added `OrdArena::insert_inx_manual_unwrap` and `OrdArena::find_with`
+
+### Changes
+- Renamed all `*_ignore_gen` functions to `*_no_gen`
+- Changed the signatures of various `OrdArena` functions
+
 ## [0.11.0] - 2023-08-20
 ### Fixes
 - Fixed that the `Clone::clone_from` specialization on `OrdArena` was broken

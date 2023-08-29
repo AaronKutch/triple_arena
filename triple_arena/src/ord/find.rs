@@ -1,18 +1,18 @@
 use core::cmp::{min, Ordering};
 
-use crate::{Advancer, ChainArena, OrdArena, Ptr};
+use crate::{utils::ChainNoGenArena, Advancer, OrdArena, Ptr};
 
 impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
         // needed because of special functions like `compress_and_shrink`
-        ChainArena::_check_invariants(&this.a)?;
+        ChainNoGenArena::_check_invariants(&this.a)?;
         if this.a.is_empty() {
             return Ok(())
         }
         // check the root
-        if let Some((_, root)) = this.a.get_ignore_gen(this.root) {
+        if let Some((_, root)) = this.a.get_no_gen(this.root) {
             if root.t.p_back.is_some() {
                 return Err("root node has a back pointer")
             }
@@ -22,16 +22,15 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         // first check the chain and ordering
         let mut count = 0usize;
         let mut prev: Option<P> = None;
-        let first_gen = if let Some((first_gen, link)) = this.a.get_ignore_gen(this.first) {
+        if let Some((_, link)) = this.a.get_no_gen(this.first) {
             if link.prev().is_some() {
                 return Err("this.first is broken")
             }
-            first_gen
         } else {
             return Err("this.first is broken")
-        };
+        }
 
-        let mut adv = this.a.advancer_chain(Ptr::_from_raw(this.first, first_gen));
+        let mut adv = this.a.advancer_chain(this.first);
         while let Some(p) = adv.advance(&this.a) {
             count = count.checked_add(1).unwrap();
             if !this.a.contains(p) {
@@ -39,8 +38,8 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             }
             if let Some(prev) = prev {
                 if Ord::cmp(
-                    &this.a.get_ignore_gen(prev.inx()).unwrap().1.t.k,
-                    &this.a.get_ignore_gen(p.inx()).unwrap().1.t.k,
+                    &this.a.get_no_gen(prev.inx()).unwrap().1.t.k,
+                    &this.a.get_no_gen(p.inx()).unwrap().1.t.k,
                 ) == Ordering::Greater
                 {
                     return Err("incorrect ordering")
@@ -61,7 +60,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         while let Some(p) = adv.advance(&this.a) {
             let node = &this.a.get(p).unwrap();
             if let Some(p_back) = node.p_back {
-                if let Some((_, parent)) = this.a.get_ignore_gen(p_back) {
+                if let Some((_, parent)) = this.a.get_no_gen(p_back) {
                     if (parent.t.p_tree0 != Some(p.inx())) && (parent.t.p_tree1 != Some(p.inx())) {
                         return Err("broken tree")
                     }
@@ -79,7 +78,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 if Some(p_tree0) == node.p_tree1 {
                     return Err("`p_tree0` and `p_tree1` are the same")
                 }
-                if let Some((_, child0)) = this.a.get_ignore_gen(p_tree0) {
+                if let Some((_, child0)) = this.a.get_no_gen(p_tree0) {
                     if child0.t.p_back != Some(p.inx()) {
                         return Err("broken tree")
                     }
@@ -91,7 +90,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 }
             }
             if let Some(p_tree1) = node.p_tree1 {
-                if let Some((_, child1)) = this.a.get_ignore_gen(p_tree1) {
+                if let Some((_, child1)) = this.a.get_no_gen(p_tree1) {
                     if child1.t.p_back != Some(p.inx()) {
                         return Err("broken tree")
                     }
@@ -143,7 +142,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
         let mut p = self.root;
         loop {
-            let (gen, link) = self.a.get_ignore_gen(p).unwrap();
+            let (gen, link) = self.a.get_no_gen(p).unwrap();
             let node = &link.t;
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => p = node.p_tree0?,
@@ -169,7 +168,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         let mut p = p_init.inx();
         let mut direction = None;
         for _ in 0..num {
-            let (gen, link) = self.a.get_ignore_gen(p).unwrap();
+            let (gen, link) = self.a.get_no_gen(p).unwrap();
             let node = &link.t;
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
@@ -178,7 +177,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     }
                     direction = Some(false);
                     if let Some(prev) = link.prev() {
-                        p = prev.inx();
+                        p = prev;
                     } else {
                         break
                     }
@@ -190,7 +189,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     }
                     direction = Some(true);
                     if let Some(next) = link.next() {
-                        p = next.inx();
+                        p = next;
                     } else {
                         break
                     }
@@ -215,7 +214,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
         let mut p = self.root;
         loop {
-            let (gen, link) = self.a.get_ignore_gen(p).unwrap();
+            let (gen, link) = self.a.get_no_gen(p).unwrap();
             let node = &link.t;
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
@@ -247,7 +246,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         let mut p = p_init.inx();
         let mut direction = None;
         for _ in 0..num {
-            let (gen, link) = self.a.get_ignore_gen(p).unwrap();
+            let (gen, link) = self.a.get_no_gen(p).unwrap();
             let node = &link.t;
             let p_with_gen = Ptr::_from_raw(p, gen);
             match Ord::cmp(k, &node.k) {
@@ -257,7 +256,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     }
                     direction = Some(false);
                     if let Some(prev) = link.prev() {
-                        p = prev.inx();
+                        p = prev;
                     } else {
                         return Some((p_with_gen, Ordering::Less))
                     }
@@ -269,7 +268,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     }
                     direction = Some(true);
                     if let Some(next) = link.next() {
-                        p = next.inx();
+                        p = next;
                     } else {
                         return Some((p_with_gen, Ordering::Greater))
                     }
@@ -277,6 +276,33 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             }
         }
         self.find_similar_key(k)
+    }
+}
+
+/// Does not require `K: Ord`
+impl<P: Ptr, K, V> OrdArena<P, K, V> {
+    /// Finds a `Ptr` through binary search with a user-provided function `f`.
+    /// `f` is provided a `P, &K, &V` triple of the node the binary search is
+    /// currently at. Will go in a `Ordering::Less` direction if `f` returns
+    /// that, or an `Ordering::Greater` direction if `f` returns that. Stops and
+    /// returns the `P` when `Ordering::Equal` is returned. Returns
+    /// `None` if `self.is_empty` or an `Ordering::Equal` case is not
+    /// encountered by the end of the binary search.
+    pub fn find_with<F: FnMut(P, &K, &V) -> Ordering>(&self, mut f: F) -> Option<P> {
+        if self.a.is_empty() {
+            return None
+        }
+        let mut p = self.root;
+        loop {
+            let (gen, link) = self.a.get_no_gen(p).unwrap();
+            let node = &link.t;
+            let p_with_gen = Ptr::_from_raw(p, gen);
+            match f(p_with_gen, &node.k, &node.v) {
+                Ordering::Less => p = node.p_tree0?,
+                Ordering::Equal => break Some(p_with_gen),
+                Ordering::Greater => p = node.p_tree1?,
+            }
+        }
     }
 }
 
@@ -348,7 +374,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().3 {
                 let gen = self
                     .a
-                    .get_ignore_gen(tmp.inx())
+                    .get_no_gen(tmp.inx())
                     .map(|x| x.0)
                     .unwrap_or(<P::Gen as crate::utils::PtrGen>::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), gen);
@@ -356,7 +382,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().4 {
                 let gen = self
                     .a
-                    .get_ignore_gen(tmp.inx())
+                    .get_no_gen(tmp.inx())
                     .map(|x| x.0)
                     .unwrap_or(<P::Gen as crate::utils::PtrGen>::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), gen);
@@ -364,7 +390,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().5 {
                 let gen = self
                     .a
-                    .get_ignore_gen(tmp.inx())
+                    .get_no_gen(tmp.inx())
                     .map(|x| x.0)
                     .unwrap_or(<P::Gen as crate::utils::PtrGen>::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), gen);
@@ -379,14 +405,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
         writeln!(s, "root: {:?}", self.root).unwrap();
         writeln!(s, "first: {:?}", self.first).unwrap();
         writeln!(s, "last: {:?}", self.last).unwrap();
-        let init = Ptr::_from_raw(
-            self.first,
-            self.a
-                .get_ignore_gen(self.first)
-                .map(|x| x.0)
-                .unwrap_or(<P::Gen as crate::utils::PtrGen>::one()),
-        );
-        let mut adv = self.a.advancer_chain(init);
+        let mut adv = self.a.advancer_chain(self.first);
         while let Some(p) = adv.advance(&self.a) {
             let n = self.a.get(p).unwrap();
             writeln!(
