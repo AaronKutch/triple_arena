@@ -1,3 +1,5 @@
+//! Note: there are "std" and "serde_support" feature flags
+
 #![no_std]
 // false positives
 #![allow(clippy::while_let_on_iterator)]

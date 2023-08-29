@@ -1,6 +1,9 @@
 # Changelog
 
-## [0.12.0] - TODO
+## [0.12.0] - 2023-08-29
+### Crate
+- `recasting` 0.2.0
+
 ### Additions
 - Added `serde_support`
 - Added `LinkNoGen` and `ChainNoGenArena` and made various performance improvements
