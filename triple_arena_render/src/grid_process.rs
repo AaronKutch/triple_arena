@@ -546,7 +546,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             dag[next].lineage_num = Some(lineage_num);
             // Record the leaf of this lineage
             lineage_leaves.push((lineage_num, next));
-            while let Some((next_zeroeth, ..)) = dag[next].sources.get(0) {
+            while let Some((next_zeroeth, ..)) = dag[next].sources.first() {
                 next = *next_zeroeth;
                 dag[next].lineage_num = Some(lineage_num);
             }
@@ -560,13 +560,13 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     for root in &roots {
         // go from root to leaf
         let mut next = *root;
-        while let Some((next_zeroeth, _)) = dag[next].sinks.get(0) {
+        while let Some((next_zeroeth, _)) = dag[next].sinks.first() {
             next = *next_zeroeth;
         }
         // overwrite from leaf back to root
         dag[next].lineage_num = Some(lineage_num);
         lineage_leaves.push((lineage_num, next));
-        while let Some((next_zeroeth, ..)) = dag[next].sources.get(0) {
+        while let Some((next_zeroeth, ..)) = dag[next].sources.first() {
             next = *next_zeroeth;
             dag[next].lineage_num = Some(lineage_num);
         }
@@ -588,7 +588,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     for (lineage_num, leaf) in lineage_leaves {
         let mut next = leaf;
         let mut lineage = vec![next];
-        while let Some((next_zeroeth, ..)) = dag[next].sources.get(0) {
+        while let Some((next_zeroeth, ..)) = dag[next].sources.first() {
             next = *next_zeroeth;
             if dag[next].lineage_num.unwrap() != lineage_num {
                 // another leaf will handle this

@@ -1,3 +1,8 @@
+/*
+
+NOTE: do not forget to update `ptr.rs` when updating this file
+
+*/
 use core::{
     fmt::Debug,
     hash::Hash,
@@ -335,7 +340,7 @@ macro_rules! ptr_struct {
             impl core::fmt::Debug for $struct_name {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                     f.write_fmt(format_args!(
-                        "{}[{:?}]({:?})",
+                        "{}[{:x?}]({:x?})",
                         <Self as $crate::Ptr>::name(),
                         $crate::Ptr::inx(*self),
                         $crate::Ptr::gen(*self),
@@ -351,13 +356,13 @@ macro_rules! ptr_struct {
 
             impl $crate::Recast<Self> for $struct_name {
                 fn recast<R: $crate::Recaster<Item = Self>>(&mut self, recaster: &R)
-                    -> Result<(), <R as $crate::Recaster>::Item> {
+                    -> core::result::Result<(), <R as $crate::Recaster>::Item> {
                     recaster.recast_item(self)
                 }
             }
 
             impl $crate::utils::serde::Serialize for $struct_name {
-                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
                 where
                     S: $crate::utils::serde::Serializer,
                 {
@@ -366,7 +371,7 @@ macro_rules! ptr_struct {
             }
 
             impl<'de> $crate::utils::serde::Deserialize<'de> for $struct_name {
-                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
                 where
                     D: $crate::utils::serde::Deserializer<'de>,
                 {
@@ -450,7 +455,7 @@ macro_rules! ptr_struct {
             impl core::fmt::Debug for $struct_name {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                     f.write_fmt(format_args!(
-                        "{}[{:?}]",
+                        "{}[{:x?}]",
                         <Self as $crate::Ptr>::name(),
                         $crate::Ptr::inx(*self),
                     ))
@@ -465,13 +470,13 @@ macro_rules! ptr_struct {
 
             impl $crate::Recast<Self> for $struct_name {
                 fn recast<R: $crate::Recaster<Item = Self>>(&mut self, recaster: &R)
-                    -> Result<(), <R as $crate::Recaster>::Item> {
+                    -> core::result::Result<(), <R as $crate::Recaster>::Item> {
                     recaster.recast_item(self)
                 }
             }
 
             impl $crate::utils::serde::Serialize for $struct_name {
-                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
                 where
                     S: $crate::utils::serde::Serializer,
                 {
@@ -480,7 +485,7 @@ macro_rules! ptr_struct {
             }
 
             impl<'de> $crate::utils::serde::Deserialize<'de> for $struct_name {
-                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
                 where
                     D: $crate::utils::serde::Deserializer<'de>,
                 {
@@ -591,7 +596,7 @@ impl<P: Ptr> core::default::Default for PtrNoGen<P> {
 
 impl<P: Ptr> core::fmt::Debug for PtrNoGen<P> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.write_fmt(format_args!("{}[{:?}]", Self::name(), Ptr::inx(*self),))
+        f.write_fmt(format_args!("{}[{:x?}]", Self::name(), Ptr::inx(*self),))
     }
 }
 

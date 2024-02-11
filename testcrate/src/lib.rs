@@ -53,10 +53,10 @@ ptr_struct!(P0[NonZeroU32](NonZeroU128));
 ptr_struct!(P1);
 
 thread_local! {
-    pub static CLONE_COUNT: RefCell<u64> = RefCell::new(0);
-    pub static CMP_COUNT: RefCell<u64> = RefCell::new(0);
-    pub static VAL_NUM: RefCell<u64> = RefCell::new(0);
-    pub static SEED: RefCell<u64> = RefCell::new(0);
+    pub static CLONE_COUNT: RefCell<u64> = const { RefCell::new(0) };
+    pub static CMP_COUNT: RefCell<u64> = const { RefCell::new(0) };
+    pub static VAL_NUM: RefCell<u64> = const { RefCell::new(0) };
+    pub static SEED: RefCell<u64> = const { RefCell::new(0) };
 }
 
 pub fn get_next_seed() -> u64 {
@@ -115,7 +115,7 @@ impl PartialEq for CKey {
     }
 }
 
-#[allow(clippy::incorrect_partial_ord_impl_on_ord_type)]
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for CKey {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         inc_cmp_count();

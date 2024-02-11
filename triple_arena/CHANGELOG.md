@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.2] - TODO
+### Fixes
+- Fixed more issues with `ptr_struct` collisions
+
+### Changes
+- The debug and display impls from `ptr_struct` and `PtrNoGen` now use hexadecimal.
+
 ## [0.12.1] - 2023-08-29
 ### Fixes
 - Fixed that `ptr_struct` did not write out the full `core::result::Result` which could lead to

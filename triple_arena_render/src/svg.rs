@@ -196,7 +196,6 @@ pub fn render_to_svg_file<P: Ptr, T: DebugNodeTrait<P>>(
     let s = render_to_svg(arena, error_on_invalid_ptr)?;
     drop(fs::remove_file(&out_file));
     let mut file = OpenOptions::new()
-        .write(true)
         .append(true)
         .create(true)
         .open(out_file)

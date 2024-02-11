@@ -971,11 +971,6 @@ impl<P: Ptr, T: Clone> Clone for Arena<P, T> {
     /// generation counter) with a clone of `source`. Has the validity cloning
     /// property of arena cloning, but now the capacity of `self` is reused.
     /// Allocations may happen if the capacity of `self` is not large enough.
-    ///
-    /// # Note
-    ///
-    /// `self` must be treated like an entirely new arena, and old pointers
-    /// should not be reused on it because of the generation counter overwrite.
     fn clone_from(&mut self, source: &Self) {
         // exponential growth mitigation factor, absolutely do not use `self.m.capacity`
         // in the extra freelist additions

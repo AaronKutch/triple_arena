@@ -1,3 +1,8 @@
+/*
+
+NOTE: do not forget to update `ptr_serde.rs` when updating this file
+
+*/
 use core::{
     fmt::Debug,
     hash::Hash,
@@ -330,7 +335,7 @@ macro_rules! ptr_struct {
             impl core::fmt::Debug for $struct_name {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                     f.write_fmt(format_args!(
-                        "{}[{:?}]({:?})",
+                        "{}[{:x?}]({:x?})",
                         <Self as $crate::Ptr>::name(),
                         $crate::Ptr::inx(*self),
                         $crate::Ptr::gen(*self),
@@ -422,7 +427,7 @@ macro_rules! ptr_struct {
             impl core::fmt::Debug for $struct_name {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                     f.write_fmt(format_args!(
-                        "{}[{:?}]",
+                        "{}[{:x?}]",
                         <Self as $crate::Ptr>::name(),
                         $crate::Ptr::inx(*self),
                     ))
@@ -543,7 +548,7 @@ impl<P: Ptr> core::default::Default for PtrNoGen<P> {
 
 impl<P: Ptr> core::fmt::Debug for PtrNoGen<P> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.write_fmt(format_args!("{}[{:?}]", Self::name(), Ptr::inx(*self),))
+        f.write_fmt(format_args!("{}[{:x?}]", Self::name(), Ptr::inx(*self),))
     }
 }
 

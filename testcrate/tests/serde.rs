@@ -1,3 +1,5 @@
+#![cfg(feature = "serde_support")]
+
 use serde::{de::DeserializeOwned, Serialize};
 use testcrate::{std_arena, std_chain, std_chain_no_gen, std_ord, std_surject};
 use triple_arena::{

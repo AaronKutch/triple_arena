@@ -9,5 +9,10 @@ postcard = { version = "1.0", features = ["alloc"] }
 rand_xoshiro = "0.6"
 serde = "1.0"
 serde_derive = "1.0"
-triple_arena = { path = "../triple_arena", features = ["expose_internal_utils", "serde_support"] }
+triple_arena = { path = "../triple_arena", features = ["expose_internal_utils"] }
 triple_arena_render = { path = "../triple_arena_render" }
+
+# separate feature because we need to test the `ptr_struct` macro both ways
+[features]
+default = ["serde_support"]
+serde_support = ["triple_arena/serde_support"]
