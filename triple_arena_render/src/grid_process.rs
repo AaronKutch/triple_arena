@@ -6,7 +6,7 @@ use std::{
     num::NonZeroU64,
 };
 
-use triple_arena::{Arena, Ptr};
+use triple_arena::{Advancer, Arena, Ptr};
 
 use crate::{render_grid::RenderGrid, DebugNodeTrait, RenderError};
 
@@ -28,6 +28,7 @@ pub struct ANode<P: Ptr> {
     pub color: Option<NonZeroU64>,
     // visitation number
     pub visit: u64,
+    pub new_visit: NonZeroU64,
 }
 
 impl<P: Ptr> Default for ANode<P> {
@@ -43,6 +44,7 @@ impl<P: Ptr> Default for ANode<P> {
             second_orders: vec![],
             color: None,
             visit: 0,
+            new_visit: NonZeroU64::new(1).unwrap(),
         }
     }
 }
@@ -184,6 +186,12 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         visit_counter = prev.checked_add(1).unwrap();
         (prev, visit_counter)
     };
+    let mut new_visit_counter = NonZeroU64::new(1).unwrap();
+    let mut new_next_visit = || {
+        new_visit_counter =
+            NonZeroU64::new(new_visit_counter.get().checked_add(1).unwrap()).unwrap();
+        new_visit_counter
+    };
     // this is not guaranteed to be a DAG yet but will become one
     let mut dag: Arena<P, ANode<P>> = Arena::new();
     dag.clone_from_with(arena, |p, t| {
@@ -200,29 +208,25 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         }
     });
 
-    // just do this because we add on `Ptr`s and iterate many times
-    let mut ptrs: Vec<P> = dag.ptrs().collect();
-
-    // TODO apply more of the up-to-date DFS style and use a struct for the source
-    // and sink assemblies
-
     // We need to unelide nonexistant sinks that have a corresponding source, and
     // vice versa. This also checks for invalid pointers.
-    let (prev_visit, this_visit) = next_visit();
-    for p0 in &ptrs {
-        if dag[p0].visit == prev_visit {
+    let unelide_visit = new_next_visit();
+    let mut adv = dag.advancer();
+    while let Some(p0) = adv.advance(&dag) {
+        if dag[p0].new_visit != unelide_visit {
             // check all sinks
             for i0 in 0..dag[p0].sinks.len() {
                 let p1 = dag[p0].sinks[i0].0;
                 // check for invalid pointers and if a source is elided
                 if let Some(node) = dag.get(p1) {
+                    // don't elide more than once if it is repeated
                     if !node
                         .sources
                         .iter()
-                        .any(|(o, _, inx)| (*o == *p0) && (*inx == Some(i0)))
+                        .any(|(o, _, inx)| (*o == p0) && (*inx == Some(i0)))
                     {
                         // unelide
-                        dag[p1].sources.push((*p0, String::new(), Some(i0)));
+                        dag[p1].sources.push((p0, String::new(), Some(i0)));
                     }
                 } else if error_on_invalid_ptr {
                     return Err(RenderError::InvalidPtr(p1))
@@ -233,37 +237,32 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                 let p1 = dag[p0].sources[i0].0;
                 // check for invalid pointers and if a sink is elided
                 if let Some(node) = dag.get(p1) {
-                    if !node.sinks.iter().any(|(o, _)| *o == *p0) {
+                    if !node.sinks.iter().any(|(o, _)| *o == p0) {
                         // unelide
                         dag[p0].sources[i0].2 = Some(node.sinks.len());
-                        dag[p1].sinks.push((*p0, String::new()));
+                        dag[p1].sinks.push((p0, String::new()));
                     }
                 } else if error_on_invalid_ptr {
                     return Err(RenderError::InvalidPtr(p1))
                 }
             }
-            dag[p0].visit = this_visit;
-        } else {
-            assert_eq!(dag[p0].visit, this_visit);
+            dag[p0].new_visit = unelide_visit;
         }
     }
 
     // fix invalid pointers
     if !error_on_invalid_ptr {
-        let original_len = ptrs.len();
-        for ptr_i in 0..original_len {
-            let p0 = ptrs[ptr_i];
+        let mut adv = dag.advancer();
+        while let Some(p0) = adv.advance(&dag) {
             for i0 in 0..dag[p0].sinks.len() {
                 let p1 = dag[p0].sinks[i0].0;
                 if !dag.contains(p1) {
                     let p1_prime = dag.insert(ANode {
                         sources: vec![(p0, String::new(), Some(i0))],
                         center: vec![format!("{:?}(invalid)", p1)],
-                        visit: this_visit,
                         ..Default::default()
                     });
                     dag[p0].sinks[i0].0 = p1_prime;
-                    ptrs.push(p1_prime);
                 }
             }
             for i0 in 0..dag[p0].sources.len() {
@@ -272,15 +271,15 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                     let p1_prime = dag.insert(ANode {
                         center: vec![format!("{:?}(invalid)", p1)],
                         sinks: vec![(p0, String::new())],
-                        visit: this_visit,
                         ..Default::default()
                     });
                     dag[p0].sources[i0].0 = p1_prime;
-                    ptrs.push(p1_prime);
                 }
             }
         }
     }
+
+    let mut ptrs: Vec<P> = dag.ptrs().collect();
 
     // nodes with no sources
     let mut roots = vec![];
@@ -296,7 +295,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     let mut path: Vec<(usize, P)> = vec![];
     for root in &roots {
         let root = *root;
-        if dag[root].visit == unelided_visit {
+        if dag[root].visit != root_reachable_visit {
             path.push((0, root));
             loop {
                 let current = path[path.len() - 1].1;
@@ -327,7 +326,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                 }
             }
         } else {
-            unreachable!()
+            //unreachable!()
         }
     }
 
