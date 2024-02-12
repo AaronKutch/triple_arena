@@ -20,11 +20,11 @@ const N: usize = if cfg!(miri) {
 };
 
 const STATS: (usize, u64, u128) = if cfg!(miri) {
-    (70, 1, 122)
+    (69, 1, 122)
 } else if cfg!(debug_assertions) {
-    (239, 107, 14567)
+    (223, 107, 14569)
 } else {
-    (418, 5049, 749771)
+    (420, 5049, 749789)
 };
 
 macro_rules! next_inx {
@@ -458,19 +458,30 @@ fn fuzz_ord() {
                 }
             }
             995 => {
-                // advancer, ptrs, iter, keys, keys_mut, vals, vals_mut
+                // advancer, ptrs, iter, keys, keys_mut, vals, vals_mut, advancer_starting_from
                 let mut adv = a.advancer();
                 let mut ptrs = a.ptrs();
                 let mut iter = a.iter();
                 let mut keys = a.keys();
                 let mut vals = a.vals();
+                let new_k = new_k();
+                let p_start = a.find_key(&new_k).unwrap_or(Ptr::invalid());
+                let mut adv_from = a.advancer_starting_from(p_start);
+                let mut adv_from_started = false;
                 while let Some(p) = adv.advance(&a) {
                     let (k, v) = a.get(p).unwrap();
                     assert_eq!(ptrs.next().unwrap(), p);
                     assert_eq!(iter.next().unwrap(), (p, k, v));
                     assert_eq!(*keys.next().unwrap(), *k);
                     assert_eq!(*vals.next().unwrap(), *v);
+                    if p_start == p {
+                        adv_from_started = true;
+                    }
+                    if adv_from_started {
+                        assert_eq!(adv_from.advance(&a).unwrap(), p);
+                    }
                 }
+                assert!(adv_from.advance(&a).is_none());
                 for v in a.vals_mut() {
                     black_box(v);
                 }

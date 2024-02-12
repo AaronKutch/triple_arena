@@ -6,6 +6,7 @@
 
 ### Additions
 - Added `OrdArena::find_similar_with`
+- Added `OrdArena::advancer_starting_from`
 
 ### Changes
 - The debug and display impls from `ptr_struct` and `PtrNoGen` now use hexadecimal.

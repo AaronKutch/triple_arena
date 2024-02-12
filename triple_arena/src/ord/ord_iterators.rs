@@ -208,6 +208,16 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         }
     }
 
+    /// Advances over valid `Ptr`s in `self` starting from `p_start`. If
+    /// `p_start` is invalid the advancer will return only `None`s. Invalidating
+    /// the next greater entry is _not_ supported during each advancement.
+    pub fn advancer_starting_from(&self, p_start: P) -> PtrAdvancer<P, K, V> {
+        PtrAdvancer {
+            ptr: Some(p_start.inx()),
+            _boo: PhantomData,
+        }
+    }
+
     /// Iteration over all valid `P` in the arena
     pub fn ptrs(&self) -> Ptrs<P, K, V> {
         Ptrs {
