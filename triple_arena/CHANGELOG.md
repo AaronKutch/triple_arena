@@ -1,8 +1,11 @@
 # Changelog
 
-## [0.12.2] - TODO
+## [0.13.0] - TODO
 ### Fixes
 - Fixed more issues with `ptr_struct` collisions
+
+### Additions
+- Added `OrdArena::find_similar_with`
 
 ### Changes
 - The debug and display impls from `ptr_struct` and `PtrNoGen` now use hexadecimal.

@@ -411,7 +411,42 @@ fn fuzz_ord() {
                     assert!(a.find_with(|_, k, _| new_k.cmp(k)).is_none());
                 }
             }
-            550..=994 => {
+            550..=579 => {
+                // find_similar_with
+                let new_k = new_k();
+                if let Some(set) = b.get(&new_k) {
+                    let (p, ord) = a
+                        .find_similar_with(|p, k, v| {
+                            assert_eq!(a.get(p).unwrap(), (k, v));
+                            new_k.cmp(k)
+                        })
+                        .unwrap();
+                    let v = *a.get_val(p).unwrap();
+                    assert!(set.contains_key(&v));
+                    assert_eq!(ord, Ordering::Equal);
+                } else if a.is_empty() {
+                    assert!(a.find_similar_with(|_, k, _| new_k.cmp(k)).is_none());
+                } else {
+                    let (p, ord) = a.find_similar_with(|_, k, _| new_k.cmp(k)).unwrap();
+                    let k = *a.get_key(p).unwrap();
+                    match ord {
+                        Ordering::Less => {
+                            if let Some(prev) = a.get_link(p).unwrap().prev() {
+                                assert!(*a.get_key(prev).unwrap() < new_k);
+                            }
+                            assert!(new_k < k);
+                        }
+                        Ordering::Equal => unreachable!(),
+                        Ordering::Greater => {
+                            if let Some(next) = a.get_link(p).unwrap().next() {
+                                assert!(new_k < *a.get_key(next).unwrap());
+                            }
+                            assert!(k < new_k);
+                        }
+                    }
+                }
+            }
+            580..=994 => {
                 // find_key with get_val
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {

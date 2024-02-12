@@ -304,6 +304,43 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             }
         }
     }
+
+    /// The same as [OrdArena::find_with], except that if `f` does not return
+    /// `Ordering::Equal` by the end of the binary search (and in which case the
+    /// returned ordering will be `Ordering::Equal`), it will instead return a
+    /// similar `Ptr` with the last `Ordering` returned by `f`. `None` is only
+    /// returned if `self.is_empty()`
+    pub fn find_similar_with<F: FnMut(P, &K, &V) -> Ordering>(
+        &self,
+        mut f: F,
+    ) -> Option<(P, Ordering)> {
+        if self.a.is_empty() {
+            return None
+        }
+        let mut p = self.root;
+        loop {
+            let (gen, link) = self.a.get_no_gen(p).unwrap();
+            let node = &link.t;
+            let p_with_gen = Ptr::_from_raw(p, gen);
+            match f(p_with_gen, &node.k, &node.v) {
+                Ordering::Less => {
+                    if let Some(tmp) = node.p_tree0 {
+                        p = tmp;
+                    } else {
+                        return Some((p_with_gen, Ordering::Less))
+                    }
+                }
+                Ordering::Equal => break Some((p_with_gen, Ordering::Equal)),
+                Ordering::Greater => {
+                    if let Some(tmp) = node.p_tree1 {
+                        p = tmp;
+                    } else {
+                        return Some((p_with_gen, Ordering::Greater))
+                    }
+                }
+            }
+        }
+    }
 }
 
 // example use of the below in debugging
