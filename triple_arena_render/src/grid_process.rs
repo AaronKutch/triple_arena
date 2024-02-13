@@ -7,7 +7,7 @@ use std::{
     num::NonZeroU64,
 };
 
-use triple_arena::{ptr_struct, Advancer, Arena, ChainArena, Link, OrdArena, Ptr};
+use triple_arena::{ptr_struct, Advancer, Arena, ArenaTrait, ChainArena, Link, OrdArena, Ptr};
 
 use crate::{render_grid::RenderGrid, DebugNodeTrait, RenderError};
 
@@ -30,7 +30,6 @@ pub struct ANode<P: Ptr> {
     pub center: Vec<String>,
     pub visit: NonZeroU64,
     pub grid_position: (usize, usize),
-    pub horizontal_i: usize,
 }
 
 impl<P: Ptr> Default for ANode<P> {
@@ -41,7 +40,6 @@ impl<P: Ptr> Default for ANode<P> {
             sinks: vec![],
             visit: NonZeroU64::new(1).unwrap(),
             grid_position: (0, 0),
-            horizontal_i: 0,
         }
     }
 }
@@ -112,7 +110,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                     dag[p0].sources[i0].i = Some(node.sinks.len());
                     dag[p1].sinks.push(Edge {
                         to: p0,
-                        i: None,
+                        i: Some(i0),
                         s: String::new(),
                     });
                 }
@@ -147,7 +145,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                     center: vec![format!("{:?}(invalid)", p1)],
                     sinks: vec![Edge {
                         to: p0,
-                        i: None,
+                        i: Some(i0),
                         s: String::new(),
                     }],
                     ..Default::default()
@@ -258,7 +256,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                                 center: vec![format!("{:?}", p0)],
                                 sinks: vec![Edge {
                                     to: p0,
-                                    i: None,
+                                    i: Some(path[len - 1].0),
                                     s: String::new(),
                                 }],
                                 visit: dfs_explored_visit,
@@ -525,7 +523,8 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     for Reverse((_, chain)) in chains {
         for p in chain {
             dag[p].grid_position.0 = i;
-            i += 1;
+            // give space for the next step
+            i += 2;
         }
     }
 
@@ -668,14 +667,14 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         grid_pos0: usize,
         p: P,
     }
-    let mut horizontals: Vec<Vec<HInfo<P>>> = vec![];
+    let mut horizontals: Vec<OrdArena<P, HInfo<P>, ()>> = vec![];
     let mut max_y = 0;
     let mut adv = dag.advancer();
     while let Some(p) = adv.advance(&dag) {
         max_y = max(max_y, dag[p].grid_position.1);
     }
     for _ in 0..(max_y + 1) {
-        horizontals.push(vec![]);
+        horizontals.push(OrdArena::new());
     }
     let mut adv = dag.advancer();
     while let Some(p) = adv.advance(&dag) {
@@ -700,17 +699,65 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                 .saturating_mul(node.sources.len() + node.sinks.len()),
             p,
         ));*/
-        horizontals[dag[p].grid_position.1].push(HInfo {
-            grid_pos0: dag[p].grid_position.0,
-            p,
-        });
+        let _ = horizontals[dag[p].grid_position.1].insert(
+            HInfo {
+                grid_pos0: dag[p].grid_position.0,
+                p,
+            },
+            (),
+        );
     }
-    for horizontal in &mut horizontals {
-        horizontal.sort();
-    }
-    for horizontal in &horizontals {
-        for (i, info) in horizontal.iter().enumerate() {
-            dag[info.p].horizontal_i = i;
+
+    // The transitive ordering is very good but the priority of the chain merging
+    // often leads to a situation where a node has all of its connections in one
+    // direction in a way that should obviously be reordered. This gets rid of
+    // crossovers immediate crossover reduction (the transitive ordering
+    // sometimes put nodes in an obviously bad place due to priority ordering
+    // turning out to be bad)
+    let mut adv = dag.advancer();
+    while let Some(p0) = adv.advance(&dag) {
+        // detect if all connections are towards one direction
+        let node0 = &dag[p0];
+        if (node0.sources.len() + node0.sinks.len()) <= 1 {
+            continue
+        }
+        let pos0 = node0.grid_position.0;
+        let mut min_pos1 = usize::MAX;
+        let mut max_pos1 = 0;
+        for edge0 in &node0.sources {
+            let p1 = edge0.to;
+            let node1 = &dag[p1];
+            let pos1 = node1.grid_position.0;
+            min_pos1 = min(min_pos1, pos1);
+            max_pos1 = max(max_pos1, pos1);
+        }
+        for edge0 in &node0.sinks {
+            let p1 = edge0.to;
+            let node1 = &dag[p1];
+            let pos1 = node1.grid_position.0;
+            min_pos1 = min(min_pos1, pos1);
+            max_pos1 = max(max_pos1, pos1);
+        }
+        let new_pos = if (min_pos1 > (pos0 + 2)) && (max_pos1 > pos0) {
+            min_pos1.saturating_add(1)
+        } else if (min_pos1 < pos0) && (max_pos1 < (pos0 - 2)) {
+            max_pos1.saturating_sub(1)
+        } else {
+            continue
+        };
+        // check the horizontal for collisions
+        let horizontal = &mut horizontals[node0.grid_position.1];
+        if horizontal
+            .find_with(|_, hinfo, _| new_pos.cmp(&hinfo.grid_pos0))
+            .is_none()
+        {
+            let p_h = horizontal
+                .find_with(|_, hinfo, _| dag[p0].grid_position.0.cmp(&hinfo.grid_pos0))
+                .unwrap();
+            let mut hinfo = horizontal.remove(p_h).unwrap().0;
+            dag[p0].grid_position.0 = new_pos;
+            hinfo.grid_pos0 = new_pos;
+            let _ = horizontal.insert(hinfo, ());
         }
     }
 
@@ -719,6 +766,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     // prioritize on the number of incidents a node has
 
     for _ in 0..8 {
+        // moving
         let mut adv = dag.advancer();
         while let Some(p) = adv.advance(&dag) {
             let node = &dag[p];
@@ -750,25 +798,33 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                 .unwrap_or(0);
             // check the horizontals if we can move
             let horizontal = &mut horizontals[dag[p].grid_position.1];
-            let i = dag[p].horizontal_i;
+            let pos = dag[p].grid_position.0;
+            let p_h = horizontal
+                .find_with(|_, hinfo, _| pos.cmp(&hinfo.grid_pos0))
+                .unwrap();
             let maximal_movement = wanted.clamp(
-                if i > 0 {
-                    horizontal[i - 1].grid_pos0 + 1
-                } else {
-                    0
+                {
+                    if let Some(p_h_sub1) = horizontal.get_link(p_h).unwrap().prev() {
+                        horizontal.get(p_h_sub1).unwrap().0.grid_pos0 + 1
+                    } else {
+                        0
+                    }
                 },
-                if i < (horizontal.len() - 1) {
-                    horizontal[i + 1].grid_pos0 - 1
-                } else {
-                    // there are probably weird setups that would want to walk to infinity
-                    horizontal[i].grid_pos0
+                {
+                    if let Some(p_h_add1) = horizontal.get_link(p_h).unwrap().next() {
+                        horizontal.get(p_h_add1).unwrap().0.grid_pos0 - 1
+                    } else {
+                        horizontal.get(p_h).unwrap().0.grid_pos0
+                    }
                 },
             );
             let current = dag[p].grid_position.0;
             if maximal_movement != current {
                 // move
                 dag[p].grid_position.0 = maximal_movement;
-                horizontal[i].grid_pos0 = maximal_movement;
+                let mut hinfo = horizontal.remove(p_h).unwrap().0;
+                hinfo.grid_pos0 = maximal_movement;
+                let _ = horizontal.insert(hinfo, ());
                 /*prioritize.push((
                     wanted
                         .abs_diff(current)
@@ -778,12 +834,22 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             }
         }
 
+        //
+
         // we also identify cross-horizontal blocks of empty space
 
         // FIXME we do need some kind of basic pushing mechanism for the
         // starlight example and basic uncrossing as can be seen for node 65 in
         // the render1 example
     }
+
+    /*
+    let mut adv = dag.advancer();
+    while let Some(p) = adv.advance(&dag) {
+        horizontals[dag[p].grid_position.1]
+        .find_with(|_, hinfo, _|dag[p].grid_position.0.cmp(&hinfo.grid_pos0)).unwrap();
+    }
+    */
 
     // TODO there are also a few cases where we should test for simple swaps to
     // reduce crossings
