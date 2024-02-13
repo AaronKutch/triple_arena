@@ -18,7 +18,7 @@ pub struct RenderGrid<P: Ptr> {
 
 impl<P: Ptr> RenderGrid<P> {
     /// Used by `grid_process`
-    pub fn new(dag: Arena<P, ANode<P>>, grid: Vec<Vec<(P, usize)>>) -> Self {
+    pub fn new(dag: Arena<P, ANode<P>>) -> Self {
         let mut rg = Self {
             dag,
             grid: vec![],
@@ -26,37 +26,35 @@ impl<P: Ptr> RenderGrid<P> {
             tot_wy: 0,
         };
 
-        // find maximum column and row widths, and cumulative positions
-        let mut max_y_nodes = 0;
-        for vert in &grid {
-            for slot in vert {
-                max_y_nodes = max(max_y_nodes, slot.1 + 1);
-            }
+        // overall max node dimensions
+        let mut grid_max = (0, 0);
+
+        for node in rg.dag.vals() {
+            grid_max.0 = max(grid_max.0, node.grid_position.0);
+            grid_max.1 = max(grid_max.1, node.grid_position.1);
         }
-        let mut grid_max_wx = vec![0; grid.len()];
-        let mut grid_max_wy = vec![0; max_y_nodes];
-        for _ in 0..grid_max_wx.len() {
-            let mut v = vec![];
-            for _ in 0..grid_max_wy.len() {
-                v.push(None);
+        grid_max.0 += 1;
+        grid_max.1 += 1;
+        for _ in 0..grid_max.0 {
+            let mut column = vec![];
+            for _ in 0..grid_max.1 {
+                column.push(None);
             }
-            rg.grid.push(v);
+            rg.grid.push(column);
         }
-        for (x_i, vertical) in grid.iter().enumerate() {
-            for (ptr, pos) in vertical {
-                let node = RenderNode::new(
-                    &rg.dag[ptr].sources,
-                    &rg.dag[ptr].center,
-                    &rg.dag[ptr].sinks,
-                    *ptr,
-                );
-                let tmp = grid_max_wx[x_i];
-                grid_max_wx[x_i] = max(tmp, node.wx);
-                // y is reversed to make the data flow downwards graphically
-                let tmp = grid_max_wy[max_y_nodes - 1 - *pos];
-                grid_max_wy[max_y_nodes - 1 - *pos] = max(tmp, node.wy);
-                rg.grid[x_i][max_y_nodes - 1 - *pos] = Some(node);
-            }
+        // max dimensions per column or row
+        let mut grid_max_wx = vec![0; grid_max.0];
+        let mut grid_max_wy = vec![0; grid_max.1];
+
+        for (p, node) in &rg.dag {
+            let render_node = RenderNode::new(&node.sources, &node.center, &node.sinks, p);
+            grid_max_wx[node.grid_position.0] =
+                max(grid_max_wx[node.grid_position.0], render_node.wx);
+            grid_max_wy[node.grid_position.1] =
+                max(grid_max_wy[node.grid_position.1], render_node.wy);
+            let place = &mut rg.grid[node.grid_position.0][node.grid_position.1];
+            assert!(place.is_none());
+            *place = Some(render_node);
         }
 
         // `rg.grid` is now completely rectangular and the `_max_` values are

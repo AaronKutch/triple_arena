@@ -1,7 +1,7 @@
 #![allow(clippy::needless_range_loop)]
 
 use std::{
-    cmp::{min, Ordering, Reverse},
+    cmp::{max, min, Ordering, Reverse},
     collections::BinaryHeap,
     mem,
     num::NonZeroU64,
@@ -28,9 +28,9 @@ pub struct ANode<P: Ptr> {
     pub sources: Vec<Edge<P>>,
     pub sinks: Vec<Edge<P>>,
     pub center: Vec<String>,
-    pub total_ordering: usize,
     pub visit: NonZeroU64,
     pub grid_position: (usize, usize),
+    pub horizontal_i: usize,
 }
 
 impl<P: Ptr> Default for ANode<P> {
@@ -39,9 +39,9 @@ impl<P: Ptr> Default for ANode<P> {
             sources: vec![],
             center: vec![],
             sinks: vec![],
-            total_ordering: 0,
             visit: NonZeroU64::new(1).unwrap(),
             grid_position: (0, 0),
+            horizontal_i: 0,
         }
     }
 }
@@ -195,6 +195,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                             break
                         }
                         // check next dependency
+                        let len = path.len();
                         path[len - 1].0 += 1;
                     }
                 }
@@ -289,12 +290,11 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                             break
                         }
                         // check next dependency
+                        let len = path.len();
                         path[len - 1].0 += 1;
                     }
                 }
             }
-        } else {
-            assert_eq!(dag[start].visit, dfs_explored_visit);
         }
     }
 
@@ -520,19 +520,273 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     }
     chains.sort();
 
-    // assign the final total orderings
+    // assign the final total orderings to the grid positions
     let mut i = 0;
     for Reverse((_, chain)) in chains {
         for p in chain {
-            dag[p].total_ordering = i;
-            i += 0;
+            dag[p].grid_position.0 = i;
+            i += 1;
         }
     }
 
-    // because we have a DAG with which we can get vertical positions and a total
-    // ordering from which we get horizontal positions, we can place the nodes and
-    // optimize from there
+    // get grid heights from the DAG
 
-    todo!()
-    //Ok(RenderGrid::new(dag, grid))
+    // for each disconnected part we want a full DFS through sinks and sources
+    let height_visit = next_visit();
+    let normalize_visit = next_visit();
+    let mut adv = dag.advancer();
+    while let Some(p) = adv.advance(&dag) {
+        if dag[p].visit != normalize_visit {
+            // set initial vertical to half of `usize::MAX`
+            let mut path = vec![];
+            path.push((false, 0, p, usize::MAX / 2));
+            let mut minimum_height = usize::MAX / 2;
+            loop {
+                let len = path.len();
+                let current = path[len - 1].2;
+                dag[current].visit = height_visit;
+
+                let current_height = path[len - 1].3;
+                if (!path[len - 1].0) && (path[len - 1].1 == 0) {
+                    dag[current].grid_position.1 = current_height;
+                    minimum_height = min(minimum_height, current_height);
+                }
+
+                if path[len - 1].0 {
+                    match dag[current].sinks.get(path[len - 1].1) {
+                        Some(edge) => {
+                            let p0 = edge.to;
+                            if dag[p0].visit != height_visit {
+                                // explore further
+                                path.push((false, 0, p0, current_height + 1));
+                            } else {
+                                // cross edge, check next
+                                path[len - 1].1 += 1;
+                            }
+                        }
+                        None => {
+                            // no more sinks, backtrack
+                            path.pop().unwrap();
+                            if path.is_empty() {
+                                break
+                            }
+                            // check next dependency
+                            let len = path.len();
+                            path[len - 1].1 += 1;
+                        }
+                    }
+                } else {
+                    match dag[current].sources.get(path[len - 1].1) {
+                        Some(edge) => {
+                            let p0 = edge.to;
+                            if dag[p0].visit != height_visit {
+                                // explore further
+                                path.push((false, 0, p0, current_height - 1));
+                            } else {
+                                // cross edge, check next
+                                path[len - 1].1 += 1;
+                            }
+                        }
+                        None => {
+                            // no more sources, change to sinks
+                            path[len - 1].0 = true;
+                            path[len - 1].1 = 0;
+                        }
+                    }
+                }
+            }
+            // go back over and subtract by the overall minimum height
+            let mut path = vec![];
+            path.push((false, 0, p));
+            loop {
+                let len = path.len();
+                let current = path[len - 1].2;
+                dag[current].visit = normalize_visit;
+
+                if (!path[len - 1].0) && (path[len - 1].1 == 0) {
+                    dag[current].grid_position.1 -= minimum_height;
+                }
+
+                if path[len - 1].0 {
+                    match dag[current].sinks.get(path[len - 1].1) {
+                        Some(edge) => {
+                            let p0 = edge.to;
+                            if dag[p0].visit != normalize_visit {
+                                // explore further
+                                path.push((false, 0, p0));
+                            } else {
+                                // cross edge, check next
+                                path[len - 1].1 += 1;
+                            }
+                        }
+                        None => {
+                            // no more sinks, backtrack
+                            path.pop().unwrap();
+                            if path.is_empty() {
+                                break
+                            }
+                            // check next dependency
+                            let len = path.len();
+                            path[len - 1].1 += 1;
+                        }
+                    }
+                } else {
+                    match dag[current].sources.get(path[len - 1].1) {
+                        Some(edge) => {
+                            let p0 = edge.to;
+                            if dag[p0].visit != normalize_visit {
+                                // explore further
+                                path.push((false, 0, p0));
+                            } else {
+                                // cross edge, check next
+                                path[len - 1].1 += 1;
+                            }
+                        }
+                        None => {
+                            // no more sources, change to sinks
+                            path[len - 1].0 = true;
+                            path[len - 1].1 = 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // everything has a grid position. Vertical positions are mostly good, but we
+    // want to compress horizontally. The idea is that every node has a desired
+    // location to be in, either the average horizontal positions of their sources
+    // and sinks or some median of them. If a node would collide with another if it
+    // would try to move, a "force" is propogated that says how many places it wants
+    // to travel and the intensity.
+
+    //let mut prioritize = BinaryHeap::<(usize, P)>::new();
+    // initialize horizontals
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+    struct HInfo<P: Ptr> {
+        // needs to be ordered by grid position
+        grid_pos0: usize,
+        p: P,
+    }
+    let mut horizontals: Vec<Vec<HInfo<P>>> = vec![];
+    let mut max_y = 0;
+    let mut adv = dag.advancer();
+    while let Some(p) = adv.advance(&dag) {
+        max_y = max(max_y, dag[p].grid_position.1);
+    }
+    for _ in 0..(max_y + 1) {
+        horizontals.push(vec![]);
+    }
+    let mut adv = dag.advancer();
+    while let Some(p) = adv.advance(&dag) {
+        /*positions.clear();
+        let node = &dag[p];
+        for edge in &node.sources {
+            positions.push(dag[edge.to].grid_position.0);
+        }
+        for edge in &node.sinks {
+            positions.push(dag[edge.to].grid_position.0);
+        }
+        positions.sort();
+        let wanted = if let Some(x_target) = positions.get(positions.len() / 2) {
+            *x_target
+        } else {
+            0
+        };
+        let current = dag[p].grid_position.0;
+        prioritize.push((
+            wanted
+                .abs_diff(current)
+                .saturating_mul(node.sources.len() + node.sinks.len()),
+            p,
+        ));*/
+        horizontals[dag[p].grid_position.1].push(HInfo {
+            grid_pos0: dag[p].grid_position.0,
+            p,
+        });
+    }
+    for horizontal in &mut horizontals {
+        horizontal.sort();
+    }
+    for horizontal in &horizontals {
+        for (i, info) in horizontal.iter().enumerate() {
+            dag[info.p].horizontal_i = i;
+        }
+    }
+
+    // TODO we could have something more sophisticated that can push other nodes out
+    // of the way, but for now we just iterate a fixed number of times and
+    // prioritize on the number of incidents a node has
+
+    for _ in 0..8 {
+        let mut adv = dag.advancer();
+        while let Some(p) = adv.advance(&dag) {
+            let node = &dag[p];
+            /* median
+            positions.clear();
+            for edge in &node.sources {
+                positions.push(dag[edge.to].grid_position.0);
+            }
+            for edge in &node.sinks {
+                positions.push(dag[edge.to].grid_position.0);
+            }
+            positions.sort();
+            let wanted = if let Some(x_target) = positions.get(positions.len() / 2) {
+                *x_target
+            } else {
+                0
+            };
+            */
+            // average actually seems to be better in most cases
+            let mut sum = 0usize;
+            for edge in &node.sources {
+                sum = sum.saturating_add(dag[edge.to].grid_position.0);
+            }
+            for edge in &node.sinks {
+                sum = sum.saturating_add(dag[edge.to].grid_position.0);
+            }
+            let wanted = sum
+                .checked_div(node.sources.len() + node.sinks.len())
+                .unwrap_or(0);
+            // check the horizontals if we can move
+            let horizontal = &mut horizontals[dag[p].grid_position.1];
+            let i = dag[p].horizontal_i;
+            let maximal_movement = wanted.clamp(
+                if i > 0 {
+                    horizontal[i - 1].grid_pos0 + 1
+                } else {
+                    0
+                },
+                if i < (horizontal.len() - 1) {
+                    horizontal[i + 1].grid_pos0 - 1
+                } else {
+                    // there are probably weird setups that would want to walk to infinity
+                    horizontal[i].grid_pos0
+                },
+            );
+            let current = dag[p].grid_position.0;
+            if maximal_movement != current {
+                // move
+                dag[p].grid_position.0 = maximal_movement;
+                horizontal[i].grid_pos0 = maximal_movement;
+                /*prioritize.push((
+                    wanted
+                        .abs_diff(current)
+                        .saturating_mul(node.sources.len() + node.sinks.len()),
+                    p,
+                ));*/
+            }
+        }
+
+        // we also identify cross-horizontal blocks of empty space
+
+        // FIXME we do need some kind of basic pushing mechanism for the
+        // starlight example and basic uncrossing as can be seen for node 65 in
+        // the render1 example
+    }
+
+    // TODO there are also a few cases where we should test for simple swaps to
+    // reduce crossings
+
+    Ok(RenderGrid::new(dag))
 }
