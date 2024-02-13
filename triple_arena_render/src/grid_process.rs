@@ -1,14 +1,33 @@
 #![allow(clippy::needless_range_loop)]
 
 use std::{
-    cmp::{min, Ordering},
+    cmp::{min, Ordering, Reverse},
     collections::BinaryHeap,
+    mem,
     num::NonZeroU64,
 };
 
-use triple_arena::{Advancer, Arena, Ptr};
+use triple_arena::{ptr_struct, Advancer, Arena, ChainArena, Link, OrdArena, Ptr};
 
 use crate::{render_grid::RenderGrid, DebugNodeTrait, RenderError};
+
+#[derive(Debug)]
+pub struct Edge<P: Ptr> {
+    // what the edge points to
+    pub to: P,
+    // for pointing to a specific part of the incident
+    pub i: Option<usize>,
+    // string associated with the edge
+    pub s: String,
+}
+
+#[derive(Debug)]
+pub struct BNode<P: Ptr> {
+    pub sources: Vec<Edge<P>>,
+    pub sinks: Vec<Edge<P>>,
+    pub center: Vec<String>,
+    pub new_visit: NonZeroU64,
+}
 
 /// Algorithmic node. Contains some additional information alongside the
 /// `DebugNode` information needed for fast processing
@@ -26,6 +45,7 @@ pub struct ANode<P: Ptr> {
     pub indep_num: Option<usize>,
     pub second_orders: Vec<isize>,
     pub color: Option<NonZeroU64>,
+    pub total_ordering: usize,
     // visitation number
     pub visit: u64,
     pub new_visit: NonZeroU64,
@@ -43,6 +63,7 @@ impl<P: Ptr> Default for ANode<P> {
             indep_num: None,
             second_orders: vec![],
             color: None,
+            total_ordering: 0,
             visit: 0,
             new_visit: NonZeroU64::new(1).unwrap(),
         }
@@ -276,6 +297,237 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                     dag[p0].sources[i0].0 = p1_prime;
                 }
             }
+        }
+    }
+
+    // We want to eliminate crossovers for trees and approximate such a case
+    // otherwise. When a node's sources or sinks specify a certain order, we can
+    // make a record in an `OrdArena` that adds weight to favor that ordering. We
+    // also consider the transitivity rule such that A < B and B < C implies more
+    // weight for A < C. We keep track of the weight in both directions so that we
+    // can measure the "conflict" between forces trying to push orderings both ways.
+
+    let neighboring_incidents_weight = 1;
+    let fork_incidents_weight = 1;
+
+    // the `(P, P)` tuple is ordered for uniqueness, the first weight indicates `<`
+    // preference and the second `>`.
+    let mut orderings = OrdArena::<P, (P, P), (u64, u64)>::new();
+    let mut f = |p0: P, p1: P, swap: bool, init_weight: u64| {
+        let (pair, mut weight) = match p0.cmp(&p1) {
+            Ordering::Less => ((p0, p1), (init_weight, 0)),
+            Ordering::Equal => ((p0, p1), (0, 0)),
+            Ordering::Greater => ((p1, p0), (0, init_weight)),
+        };
+        if swap {
+            mem::swap(&mut weight.0, &mut weight.1);
+        }
+        if weight != (0, 0) {
+            if let Some(p_ordering) = orderings.find_key(&pair) {
+                let tmp = orderings.get_val_mut(p_ordering).unwrap();
+                tmp.0 = tmp.0.saturating_add(weight.0);
+                tmp.1 = tmp.1.saturating_add(weight.1);
+            } else {
+                let _ = orderings.insert(pair, weight);
+            }
+        }
+    };
+    // initial source and sink weight contributions
+    let mut adv = dag.advancer();
+    while let Some(p) = adv.advance(&dag) {
+        for i in 1..dag[p].sources.len() {
+            let p0 = dag[p].sources[i - 1].0;
+            let p1 = dag[p].sources[i].0;
+            f(p0, p1, false, neighboring_incidents_weight);
+        }
+        for i in 0..dag[p].sources.len() {
+            f(
+                p,
+                dag[p].sources[i].0,
+                i > (dag[p].sources.len() / 2),
+                fork_incidents_weight,
+            );
+        }
+        for i in 1..dag[p].sinks.len() {
+            let p0 = dag[p].sinks[i - 1].0;
+            let p1 = dag[p].sinks[i].0;
+            f(p0, p1, false, neighboring_incidents_weight);
+        }
+        for i in 0..dag[p].sinks.len() {
+            f(
+                p,
+                dag[p].sinks[i].0,
+                i >= (dag[p].sinks.len() / 2),
+                fork_incidents_weight,
+            );
+        }
+    }
+
+    // now do the transitive propogations, for transitivity we do not need the
+    // reversed orderings
+    let mut buf = vec![];
+    for _ in 0..4 {
+        let mut adv = orderings.advancer();
+        while let Some(p_ordering) = adv.advance(&orderings) {
+            let ((p0, p1), weight) = orderings.get(p_ordering).unwrap();
+
+            // find the start of a region with `p1`
+            if let Some((p_region_start, ord)) =
+                orderings.find_similar_with(|_, (p, _), _| match p1.cmp(p) {
+                    Ordering::Less => Ordering::Less,
+                    Ordering::Equal => Ordering::Less,
+                    Ordering::Greater => Ordering::Greater,
+                })
+            {
+                let mut adv_region = orderings.advancer_starting_from(p_region_start);
+                if ord.is_gt() {
+                    // advance by one to get into the region
+                    adv_region.advance(&orderings);
+                }
+                while let Some(p_ordering) = adv_region.advance(&orderings) {
+                    let ((p2, p3), weight1) = orderings.get(p_ordering).unwrap();
+                    if *p2 != *p1 {
+                        // reached the end of the region
+                        break
+                    }
+                    let added_weight = (
+                        weight.0.saturating_add(weight1.0),
+                        weight.1.saturating_add(weight1.1),
+                    );
+                    if (added_weight != (0, 0)) && (*p0 != *p3) {
+                        buf.push((*p0, *p3, added_weight));
+                    }
+                }
+            }
+        }
+
+        for (p0, p1, weight) in buf.drain(..) {
+            let (p0, p1, weight) = if p0 < p1 {
+                (p0, p1, (weight.0, weight.1))
+            } else {
+                (p1, p0, (weight.1, weight.0))
+            };
+            if let Some(p_ordering) = orderings.find_key(&(p0, p1)) {
+                let tmp = orderings.get_val_mut(p_ordering).unwrap();
+                tmp.0 = tmp.0.saturating_add(weight.0);
+                tmp.1 = tmp.1.saturating_add(weight.1);
+            } else {
+                let _ = orderings.insert((p0, p1), weight);
+            }
+        }
+    }
+
+    // Now we will construct the total ordering. We want immediate relations to be
+    // ordered close together primarily. What we will do is use a chain arena, and
+    // when finding a relation A < B, the end of the chain containing A will be
+    // attached to the start of the chain containing B. We will use the conflict of
+    // the weights such that orderings with no conflicts are prioritized first.
+
+    let mut prioritize = BinaryHeap::<Reverse<(u64, P, P)>>::new();
+    let mut f = |p0: P, p1: P| {
+        let (p0, p1) = if p0 < p1 { (p0, p1) } else { (p1, p0) };
+        if let Some(p_ordering) = orderings.find_key(&(p0, p1)) {
+            let weight = orderings.get_val(p_ordering).unwrap();
+            if weight.0 < weight.1 {
+                prioritize.push(Reverse((min(weight.0, weight.1), p1, p0)));
+            } else {
+                prioritize.push(Reverse((min(weight.0, weight.1), p0, p1)));
+            }
+        } else {
+            prioritize.push(Reverse((0, p0, p1)));
+        }
+    };
+    let mut adv = dag.advancer();
+    while let Some(p) = adv.advance(&dag) {
+        for i in 1..dag[p].sources.len() {
+            let p0 = dag[p].sources[i - 1].0;
+            let p1 = dag[p].sources[i].0;
+            f(p0, p1);
+        }
+        for i in 0..dag[p].sources.len() {
+            f(p, dag[p].sources[i].0);
+        }
+        for i in 1..dag[p].sinks.len() {
+            let p0 = dag[p].sinks[i - 1].0;
+            let p1 = dag[p].sinks[i].0;
+            f(p0, p1);
+        }
+        for i in 0..dag[p].sinks.len() {
+            f(p, dag[p].sinks[i].0);
+        }
+    }
+
+    // we are using a kind of acyclic surject arena here, the `Q` in the links are
+    // colors and they point to sizes of the chains and are used to detect if `p0`
+    // and `p1` are already part of the same chain
+
+    ptr_struct!(Q());
+    let mut chain_lens = Arena::<Q, usize>::new();
+    let mut tmp = Arena::<P, Link<P, Q>>::new();
+    tmp.clone_from_with(&dag, |_, _| Link::new((None, None), chain_lens.insert(0)));
+    let mut total_ordering = ChainArena::<P, Q>::from_arena(tmp).unwrap();
+    while let Some(Reverse((_, p0, p1))) = prioritize.pop() {
+        let q0 = *total_ordering.get(p0).unwrap();
+        let q1 = *total_ordering.get(p1).unwrap();
+        if q0 != q1 {
+            // find end of `q0` chain
+            let mut p0_end = p0;
+            while let Some(next) = total_ordering.get_link(p0_end).unwrap().next() {
+                p0_end = next;
+            }
+            // find start of `q1` chain but also recolor
+            let mut p1_start = Ptr::invalid();
+            let mut adv = total_ordering.advancer_chain(p1);
+            while let Some(p) = adv.advance(&total_ordering) {
+                let link = total_ordering.get_link_mut(p).unwrap();
+                if link.prev().is_none() {
+                    p1_start = p;
+                }
+                *link.t = q0;
+            }
+            total_ordering.connect(p0_end, p1_start).unwrap();
+            let q1_len = *chain_lens.get(q1).unwrap();
+            // q1 is erased, but need to update the length of q0
+            *chain_lens.get_mut(q0).unwrap() += q1_len;
+            chain_lens.remove(q1).unwrap();
+        }
+    }
+
+    // by the end, disconnected graphs will be in different chains, order from
+    // biggest to smallest since in practices there are insignificant single node
+    // subgraphs and stuff
+    let mut chains = Vec::<Reverse<(usize, Vec<P>)>>::new();
+    let mut adv = total_ordering.advancer();
+    while let Some(mut p) = adv.advance(&total_ordering) {
+        // move to the start of a chain as we encounter one
+        while let Some(prev) = total_ordering.get_link(p).unwrap().prev() {
+            p = prev;
+        }
+        // remove the chain and record it in order
+        let mut chain = vec![];
+        loop {
+            if let Some(next) = total_ordering.get_link(p).unwrap().next() {
+                chain.push(p);
+                total_ordering.remove(p).unwrap();
+                p = next;
+            } else {
+                chain.push(p);
+                total_ordering.remove(p).unwrap();
+                break
+            }
+        }
+        chains.push(Reverse((chain.len(), chain)));
+    }
+    chains.sort();
+
+    dbg!(&chains);
+
+    // assign the final total orderings
+    let mut i = 0;
+    for Reverse((_, chain)) in chains {
+        for p in chain {
+            dag[p].total_ordering = i;
+            i += 0;
         }
     }
 
@@ -670,6 +922,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     // stable sort horizontally so that the lineage numbers are monotonically
     // increasing, followed in priority by the second_orders
     lineages.sort_by(|lhs, rhs| {
+        //dag[lhs[0]].total_ordering.cmp(&dag[rhs[0]].total_ordering)
         let lhs0 = dag[lhs[0]].indep_num.unwrap();
         let rhs0 = dag[rhs[0]].indep_num.unwrap();
         match lhs0.cmp(&rhs0) {
