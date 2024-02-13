@@ -4,6 +4,7 @@ use std::cmp::max;
 
 use triple_arena::Ptr;
 
+use self::grid_process::Edge;
 use crate::*;
 
 /// Graphics for a single node
@@ -28,19 +29,14 @@ pub struct RenderNode<P: Ptr> {
 impl<P: Ptr> RenderNode<P> {
     /// Generates a `RenderNode` from the parts of a `DebugNode`. `ptr` is the
     /// node itself.
-    pub fn new(
-        sources: &[(P, String, Option<usize>)],
-        center: &[String],
-        sinks: &[(P, String)],
-        ptr: P,
-    ) -> Self {
+    pub fn new(sources: &[Edge<P>], center: &[String], sinks: &[Edge<P>], ptr: P) -> Self {
         let mut rects = vec![];
         let mut text = vec![];
         let mut input_points = vec![];
         let mut output_points = vec![];
 
-        let total_source_len: i32 = sources.iter().map(|(_, s, _)| s.len() as i32).sum();
-        let total_sink_len: i32 = sinks.iter().map(|(_, s)| s.len() as i32).sum();
+        let total_source_len: i32 = sources.iter().map(|edge| edge.s.len() as i32).sum();
+        let total_sink_len: i32 = sinks.iter().map(|edge| edge.s.len() as i32).sum();
         let max_center_xlen: i32 = center.iter().map(|s| s.len() as i32).max().unwrap_or(0);
 
         let total_source_wx =
@@ -69,26 +65,26 @@ impl<P: Ptr> RenderNode<P> {
                 .unwrap_or(0)
         };
         let mut x_progression = PAD;
-        for (p, s, inx) in sources {
+        for edge in sources {
             if sources.len() == 1 {
                 x_progression += separation;
             }
-            if !s.is_empty() {
+            if !edge.s.is_empty() {
                 text.push((
                     (x_progression, wy + INPUT_FONT_WY + INPUT_FONT_ADJUST_Y),
                     INPUT_FONT_SIZE,
-                    INPUT_FONT_WX * (s.len() as i32),
-                    (*s).clone(),
+                    INPUT_FONT_WX * (edge.s.len() as i32),
+                    edge.s.clone(),
                 ));
             }
-            let this_wx = INPUT_FONT_WX * (s.len() as i32);
+            let this_wx = INPUT_FONT_WX * (edge.s.len() as i32);
             let center_x = x_progression + (this_wx / 2);
-            input_points.push(((center_x, wy), *p, *inx));
+            input_points.push(((center_x, wy), edge.to, edge.i));
             x_progression += this_wx + separation;
         }
         // we need `center_x` for the input points, but do not need any height if all
         // the strings are empty
-        if sources.iter().any(|(_, s, _)| !s.is_empty()) {
+        if sources.iter().any(|edge| !edge.s.is_empty()) {
             wy += INPUT_FONT_WY;
         }
 
@@ -110,7 +106,7 @@ impl<P: Ptr> RenderNode<P> {
         }
 
         // generate outputs
-        if sinks.iter().any(|(_, s)| !s.is_empty()) {
+        if sinks.iter().any(|edge| !edge.s.is_empty()) {
             wy += INPUT_FONT_WY;
         }
         let separation = if sinks.len() < 2 {
@@ -121,21 +117,21 @@ impl<P: Ptr> RenderNode<P> {
                 .unwrap_or(0)
         };
         let mut x_progression = PAD;
-        for (p, s) in sinks {
+        for edge in sinks {
             if sinks.len() == 1 {
                 x_progression += separation;
             }
-            if !s.is_empty() {
+            if !edge.s.is_empty() {
                 text.push((
                     (x_progression, wy + INPUT_FONT_ADJUST_Y),
                     INPUT_FONT_SIZE,
-                    INPUT_FONT_WX * (s.len() as i32),
-                    (*s).clone(),
+                    INPUT_FONT_WX * (edge.s.len() as i32),
+                    edge.s.clone(),
                 ));
             }
-            let this_wx = INPUT_FONT_WX * (s.len() as i32);
+            let this_wx = INPUT_FONT_WX * (edge.s.len() as i32);
             let center_x = x_progression + (this_wx / 2);
-            output_points.push(((center_x, wy), *p));
+            output_points.push(((center_x, wy), edge.to));
             x_progression += this_wx + separation;
         }
 
