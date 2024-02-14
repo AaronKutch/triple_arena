@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0] - TODO
+### Crate
+- `triple_arena` 0.13
+
+### Changes
+- updated the grid processing algorithm to better handle complicated graphs
+
 ## [0.12.0] - 2023-08-29
 ### Crate
 - `triple_arena` 0.12

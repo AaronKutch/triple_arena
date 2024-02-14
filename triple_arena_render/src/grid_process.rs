@@ -298,7 +298,9 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         }
     }
 
-    // `dag` is now actually a DAG
+    // `dag` is now actually a DAG and we will no longer add any nodes, so a pointer
+    // list can be made in case the arena is sparse
+    let ptrs: Vec<P> = dag.ptrs().collect();
 
     // We want to eliminate crossovers for trees and approximate such a case
     // otherwise. When a node's sources or sinks specify a certain order, we can
@@ -334,8 +336,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         }
     };
     // initial source and sink weight contributions
-    let mut adv = dag.advancer();
-    while let Some(p) = adv.advance(&dag) {
+    for p in ptrs.iter().copied() {
         for i in 1..dag[p].sources.len() {
             let p0 = dag[p].sources[i - 1].to;
             let p1 = dag[p].sources[i].to;
@@ -443,8 +444,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             prioritize.push(Reverse((0, p0, p1)));
         }
     };
-    let mut adv = dag.advancer();
-    while let Some(p) = adv.advance(&dag) {
+    for p in ptrs.iter().copied() {
         for i in 1..dag[p].sources.len() {
             let p0 = dag[p].sources[i - 1].to;
             let p1 = dag[p].sources[i].to;
@@ -542,8 +542,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     // for each disconnected part we want a full DFS through sinks and sources
     let height_visit = next_visit();
     let normalize_visit = next_visit();
-    let mut adv = dag.advancer();
-    while let Some(p) = adv.advance(&dag) {
+    for p in ptrs.iter().copied() {
         if dag[p].visit != normalize_visit {
             // set initial vertical to half of `usize::MAX`
             let mut path = vec![];
@@ -678,15 +677,13 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     }
     let mut horizontals: Vec<OrdArena<P, HInfo<P>, ()>> = vec![];
     let mut max_y = 0;
-    let mut adv = dag.advancer();
-    while let Some(p) = adv.advance(&dag) {
+    for p in ptrs.iter().copied() {
         max_y = max(max_y, dag[p].grid_position.1);
     }
     for _ in 0..(max_y + 1) {
         horizontals.push(OrdArena::new());
     }
-    let mut adv = dag.advancer();
-    while let Some(p) = adv.advance(&dag) {
+    for p in ptrs.iter().copied() {
         let _ = horizontals[dag[p].grid_position.1].insert(
             HInfo {
                 grid_pos0: dag[p].grid_position.0,
@@ -702,8 +699,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     // crossovers immediate crossover reduction (the transitive ordering
     // sometimes put nodes in an obviously bad place due to priority ordering
     // turning out to be bad)
-    let mut adv = dag.advancer();
-    while let Some(p0) = adv.advance(&dag) {
+    for p0 in ptrs.iter().copied() {
         // detect if all connections are towards one direction
         let node0 = &dag[p0];
         if (node0.sources.len() + node0.sinks.len()) <= 1 {
@@ -809,8 +805,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         f(true);
 
         // average moving
-        let mut adv = dag.advancer();
-        while let Some(p) = adv.advance(&dag) {
+        for p in ptrs.iter().copied() {
             let node = &dag[p];
             // average seems to be better than median
             let mut sum = 0usize;
@@ -863,8 +858,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     }
 
     /*
-    let mut adv = dag.advancer();
-    while let Some(p) = adv.advance(&dag) {
+    for p in ptrs.iter().copied() {
         horizontals[dag[p].grid_position.1]
         .find_with(|_, hinfo, _|dag[p].grid_position.0.cmp(&hinfo.grid_pos0)).unwrap();
     }

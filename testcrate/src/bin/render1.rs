@@ -5,7 +5,7 @@ use rand_xoshiro::{
     Xoshiro128StarStar,
 };
 use testcrate::*;
-use triple_arena::{Arena, Ptr};
+use triple_arena::Arena;
 use triple_arena_render::*;
 
 fn main() {
