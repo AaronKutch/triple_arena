@@ -1,4 +1,5 @@
 mod ord_arena;
+#[allow(unused)]
 pub use ord_arena::{Node, OrdArena};
 mod find;
 mod insert;
