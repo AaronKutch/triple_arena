@@ -7,7 +7,7 @@ use std::{
     num::NonZeroU64,
 };
 
-use triple_arena::{ptr_struct, Advancer, Arena, ArenaTrait, ChainArena, Link, OrdArena, Ptr};
+use triple_arena::{ptr_struct, Advancer, Arena, ChainArena, Link, OrdArena, Ptr};
 
 use crate::{render_grid::RenderGrid, DebugNodeTrait, RenderError};
 
@@ -43,6 +43,8 @@ impl<P: Ptr> Default for ANode<P> {
         }
     }
 }
+
+// TODO this code could be improved and cleaned up more
 
 /// Processes an `Arena<P, T>` into a `RenderGrid<P>`
 pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
@@ -309,8 +311,9 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     let fork_incidents_weight = 1;
 
     // the `(P, P)` tuple is ordered for uniqueness, the first weight indicates `<`
-    // preference and the second `>`.
-    let mut orderings = OrdArena::<P, (P, P), (u64, u64)>::new();
+    // preference and the second `>`. The bool allows only one extra layer of new
+    // transitives to be made.
+    let mut orderings = OrdArena::<P, (P, P), (u64, u64, bool)>::new();
     let mut f = |p0: P, p1: P, swap: bool, init_weight: u64| {
         let (pair, mut weight) = match p0.cmp(&p1) {
             Ordering::Less => ((p0, p1), (init_weight, 0)),
@@ -326,7 +329,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                 tmp.0 = tmp.0.saturating_add(weight.0);
                 tmp.1 = tmp.1.saturating_add(weight.1);
             } else {
-                let _ = orderings.insert(pair, weight);
+                let _ = orderings.insert(pair, (weight.0, weight.1, true));
             }
         }
     };
@@ -364,7 +367,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     // now do the transitive propogations, for transitivity we do not need the
     // reversed orderings
     let mut buf = vec![];
-    for _ in 0..4 {
+    for _ in 0..2 {
         let mut adv = orderings.advancer();
         while let Some(p_ordering) = adv.advance(&orderings) {
             let ((p0, p1), weight) = orderings.get(p_ordering).unwrap();
@@ -393,25 +396,30 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                         weight.1.saturating_add(weight1.1),
                     );
                     if (added_weight != (0, 0)) && (*p0 != *p3) {
-                        buf.push((*p0, *p3, added_weight));
+                        buf.push((
+                            *p0,
+                            *p3,
+                            (added_weight.0, added_weight.1, weight.2 && weight1.2),
+                        ));
                     }
                 }
             }
         }
 
-        for (p0, p1, weight) in buf.drain(..) {
+        for (p0, p1, weight0) in buf.drain(..) {
             let (p0, p1, weight) = if p0 < p1 {
-                (p0, p1, (weight.0, weight.1))
+                (p0, p1, (weight0.0, weight0.1))
             } else {
-                (p1, p0, (weight.1, weight.0))
+                (p1, p0, (weight0.1, weight0.0))
             };
             if let Some(p_ordering) = orderings.find_key(&(p0, p1)) {
                 let tmp = orderings.get_val_mut(p_ordering).unwrap();
                 tmp.0 = tmp.0.saturating_add(weight.0);
                 tmp.1 = tmp.1.saturating_add(weight.1);
-            } else {
-                let _ = orderings.insert((p0, p1), weight);
+            } else if weight0.2 {
+                let _ = orderings.insert((p0, p1), (weight.0, weight.1, false));
             }
+            // else do not create new transitive edges
         }
     }
 
@@ -527,6 +535,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             i += 2;
         }
     }
+    let max_x = i;
 
     // get grid heights from the DAG
 
@@ -678,27 +687,6 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     }
     let mut adv = dag.advancer();
     while let Some(p) = adv.advance(&dag) {
-        /*positions.clear();
-        let node = &dag[p];
-        for edge in &node.sources {
-            positions.push(dag[edge.to].grid_position.0);
-        }
-        for edge in &node.sinks {
-            positions.push(dag[edge.to].grid_position.0);
-        }
-        positions.sort();
-        let wanted = if let Some(x_target) = positions.get(positions.len() / 2) {
-            *x_target
-        } else {
-            0
-        };
-        let current = dag[p].grid_position.0;
-        prioritize.push((
-            wanted
-                .abs_diff(current)
-                .saturating_mul(node.sources.len() + node.sinks.len()),
-            p,
-        ));*/
         let _ = horizontals[dag[p].grid_position.1].insert(
             HInfo {
                 grid_pos0: dag[p].grid_position.0,
@@ -766,26 +754,65 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     // prioritize on the number of incidents a node has
 
     for _ in 0..8 {
-        // moving
+        // this won't entirely compress large graphs, but for large graphs we want to
+        // purposely leave some extra space
+
+        // bulk moving, if a single compression of a column can happen without any
+        // collision then it should happen
+        let mut f = |offset: bool| {
+            let mut cumulative = vec![];
+            if offset {
+                cumulative.push(0);
+            }
+            let mut x = if offset { 1 } else { 0 };
+            let mut shift = x;
+            loop {
+                if x >= max_x {
+                    break
+                }
+                let mut collision = false;
+                for horizontal in &horizontals {
+                    if horizontal
+                        .find_with(|_, hinfo, _| x.cmp(&hinfo.grid_pos0))
+                        .is_some()
+                        && horizontal
+                            .find_with(|_, hinfo, _| (x + 1).cmp(&hinfo.grid_pos0))
+                            .is_some()
+                    {
+                        collision = true;
+                        break
+                    }
+                }
+                cumulative.push(shift);
+                if collision {
+                    shift += 1;
+                }
+                cumulative.push(shift);
+                shift += 1;
+                x += 2;
+            }
+            // apply shifts
+            let mut new = vec![];
+            for horizontal in &mut horizontals {
+                for (_, mut hinfo, _) in horizontal.drain() {
+                    hinfo.grid_pos0 = cumulative[hinfo.grid_pos0];
+                    dag[hinfo.p].grid_position.0 = hinfo.grid_pos0;
+                    new.push(hinfo);
+                }
+                for hinfo in new.drain(..) {
+                    let _ = horizontal.insert(hinfo, ());
+                }
+            }
+        };
+        // have to alternate
+        f(false);
+        f(true);
+
+        // average moving
         let mut adv = dag.advancer();
         while let Some(p) = adv.advance(&dag) {
             let node = &dag[p];
-            /* median
-            positions.clear();
-            for edge in &node.sources {
-                positions.push(dag[edge.to].grid_position.0);
-            }
-            for edge in &node.sinks {
-                positions.push(dag[edge.to].grid_position.0);
-            }
-            positions.sort();
-            let wanted = if let Some(x_target) = positions.get(positions.len() / 2) {
-                *x_target
-            } else {
-                0
-            };
-            */
-            // average actually seems to be better in most cases
+            // average seems to be better than median
             let mut sum = 0usize;
             for edge in &node.sources {
                 sum = sum.saturating_add(dag[edge.to].grid_position.0);
@@ -833,14 +860,6 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                 ));*/
             }
         }
-
-        //
-
-        // we also identify cross-horizontal blocks of empty space
-
-        // FIXME we do need some kind of basic pushing mechanism for the
-        // starlight example and basic uncrossing as can be seen for node 65 in
-        // the render1 example
     }
 
     /*
@@ -850,9 +869,6 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         .find_with(|_, hinfo, _|dag[p].grid_position.0.cmp(&hinfo.grid_pos0)).unwrap();
     }
     */
-
-    // TODO there are also a few cases where we should test for simple swaps to
-    // reduce crossings
 
     Ok(RenderGrid::new(dag))
 }
