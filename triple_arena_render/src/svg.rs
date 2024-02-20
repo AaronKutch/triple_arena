@@ -172,8 +172,6 @@ pub(crate) fn gen_svg<P: Ptr>(rg: &RenderGrid<P>) -> String {
 // TODO when associated type bounds become stable, use something like
 // `A: ArenaTrait<E: DebugNodeTrait<P>>`
 
-// TODO rework the algorithm so that trees are guaranteed to not have crossings
-
 /// Renders an SVG graph representation of `arena` in a top-down order from
 /// sources to sinks. Cycles are broken up by inserting `Ptr` reference nodes.
 /// If `error_on_invalid_ptr` then this will return an error if an invalid

@@ -4,7 +4,7 @@ use triple_arena::{Arena, Ptr};
 
 use crate::{
     internal::{ANode, RenderNode},
-    *,
+    NODE_PAD_X, NODE_PAD_Y, PAD,
 };
 
 /// Final grid of `RenderNodes`
