@@ -2,8 +2,8 @@
 
 use core::{
     borrow::Borrow,
-    fmt,
-    fmt::Debug,
+    cmp::Ordering,
+    fmt::{self, Debug},
     mem,
     num::NonZeroUsize,
     ops::{Index, IndexMut},
@@ -104,8 +104,8 @@ pub struct Node<P: Ptr, K, V> {
 /// let p60 = a.insert(60, ()).0;
 /// let p10 = a.insert(10, ()).0;
 ///
-/// assert_eq!(a.min().unwrap(), p10);
-/// assert_eq!(a.max().unwrap(), p70);
+/// assert_eq!(a.first().unwrap(), p10);
+/// assert_eq!(a.last().unwrap(), p70);
 ///
 /// // note that this is `O(1)` because we are using a `Ptr` to directly
 /// // index
@@ -192,7 +192,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// Returns the `Ptr` to the minimum key. Runs in `O(1)` time. Returns
     /// `None` if `self.is_empty()`.
     #[must_use]
-    pub fn min(&self) -> Option<P> {
+    pub fn first(&self) -> Option<P> {
         if self.is_empty() {
             None
         } else {
@@ -204,7 +204,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// Returns the `Ptr` to the maximum key. Runs in `O(1)` time. Returns
     /// `None` if `self.is_empty()`.
     #[must_use]
-    pub fn max(&self) -> Option<P> {
+    pub fn last(&self) -> Option<P> {
         if self.is_empty() {
             None
         } else {
@@ -380,7 +380,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// on every `(P, &K, &mut V, P)` with the first `P` being the old `Ptr` and
     /// the last `P` being the new `Ptr`.
     pub fn compress_and_shrink_with<F: FnMut(P, &K, &mut V, P)>(&mut self, mut map: F) {
-        if let Some(min) = self.min() {
+        if let Some(min) = self.first() {
             self.a
                 .compress_and_shrink_acyclic_chain_with(min, |p, node, q| {
                     // handles partially exterior nodes for later
@@ -561,7 +561,6 @@ impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<OrdArena<P, K, V>> for OrdAre
     /// nonhereditary ordering, but does not compare pointers, generations,
     /// arena capacities, internal tree configuration, or `self.gen()`.
     fn eq(&self, other: &OrdArena<P, K, V>) -> bool {
-        // first the keys
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
@@ -584,4 +583,68 @@ impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<OrdArena<P, K, V>> for OrdAre
 
 impl<P: Ptr, K: Eq, V: Eq> Eq for OrdArena<P, K, V> {}
 
-// TODO PartialOrd
+impl<P: Ptr, K: PartialOrd, V: PartialOrd> PartialOrd<OrdArena<P, K, V>> for OrdArena<P, K, V> {
+    /// Orders as if the arena were a `Vec<(K, V)>` in order, returning early if
+    /// the prefix had a difference, checking the key before the value in the
+    /// pair, and returning based on which is longer. This is sensitive to
+    /// nonhereditary ordering, but does not compare pointers, generations,
+    /// arena capacities, internal tree configuration, or `self.gen()`.
+    fn partial_cmp(&self, other: &OrdArena<P, K, V>) -> Option<Ordering> {
+        let mut adv0 = self.advancer();
+        let mut adv1 = other.advancer();
+        while let Some(p0) = adv0.advance(self) {
+            if let Some(p1) = adv1.advance(other) {
+                let node0 = self.a.get_inx_unwrap(p0.inx());
+                let node1 = self.a.get_inx_unwrap(p1.inx());
+                match node0.t.k.partial_cmp(&node1.t.k) {
+                    Some(Ordering::Equal) => (),
+                    ord => return ord,
+                }
+                match node0.t.v.partial_cmp(&node1.t.v) {
+                    Some(Ordering::Equal) => (),
+                    ord => return ord,
+                }
+            } else {
+                return Some(Ordering::Greater)
+            }
+        }
+        if adv1.advance(other).is_none() {
+            Some(Ordering::Equal)
+        } else {
+            Some(Ordering::Less)
+        }
+    }
+}
+
+impl<P: Ptr, K: Ord, V: Ord> Ord for OrdArena<P, K, V> {
+    /// Orders as if the arena were a `Vec<(K, V)>` in order, returning early if
+    /// the prefix had a difference, checking the key before the value in the
+    /// pair, and returning based on which is longer. This is sensitive to
+    /// nonhereditary ordering, but does not compare pointers, generations,
+    /// arena capacities, internal tree configuration, or `self.gen()`.
+    fn cmp(&self, other: &OrdArena<P, K, V>) -> Ordering {
+        let mut adv0 = self.advancer();
+        let mut adv1 = other.advancer();
+        while let Some(p0) = adv0.advance(self) {
+            if let Some(p1) = adv1.advance(other) {
+                let node0 = self.a.get_inx_unwrap(p0.inx());
+                let node1 = self.a.get_inx_unwrap(p1.inx());
+                match node0.t.k.cmp(&node1.t.k) {
+                    Ordering::Equal => (),
+                    ord => return ord,
+                }
+                match node0.t.v.cmp(&node1.t.v) {
+                    Ordering::Equal => (),
+                    ord => return ord,
+                }
+            } else {
+                return Ordering::Greater
+            }
+        }
+        if adv1.advance(other).is_none() {
+            Ordering::Equal
+        } else {
+            Ordering::Less
+        }
+    }
+}

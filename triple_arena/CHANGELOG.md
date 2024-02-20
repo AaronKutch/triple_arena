@@ -7,8 +7,10 @@
 ### Additions
 - Added `OrdArena::find_similar_with`
 - Added `OrdArena::advancer_starting_from`
+- Added `PartialOrd` and `Ord` impls for `OrdArena`
 
 ### Changes
+- Changed `OrdArena::min` and `max` to `first` and `last` to prevent a conflict with the `Ord` trait
 - The debug and display impls from `ptr_struct` and `PtrNoGen` now use hexadecimal.
 
 ## [0.12.1] - 2023-08-29

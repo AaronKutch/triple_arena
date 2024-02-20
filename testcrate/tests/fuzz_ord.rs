@@ -487,23 +487,23 @@ fn fuzz_ord() {
                 }
             }
             996 => {
-                // min
+                // first
                 if len != 0 {
                     let set = b.first_entry().unwrap();
-                    let v = a.get_val(a.min().unwrap()).unwrap();
+                    let v = a.get_val(a.first().unwrap()).unwrap();
                     assert!(set.get().contains_key(v));
                 } else {
-                    assert!(a.min().is_none());
+                    assert!(a.first().is_none());
                 }
             }
             997 => {
-                // max
+                // last
                 if len != 0 {
                     let set = b.last_entry().unwrap();
-                    let v = a.get_val(a.max().unwrap()).unwrap();
+                    let v = a.get_val(a.last().unwrap()).unwrap();
                     assert!(set.get().contains_key(v));
                 } else {
-                    assert!(a.max().is_none());
+                    assert!(a.last().is_none());
                 }
             }
             998 => {

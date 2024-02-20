@@ -203,7 +203,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// entry is _not_ supported during each advancement.
     pub fn advancer(&self) -> PtrAdvancer<P, K, V> {
         PtrAdvancer {
-            ptr: self.min().map(|p| p.inx()),
+            ptr: self.first().map(|p| p.inx()),
             _boo: PhantomData,
         }
     }
