@@ -30,7 +30,7 @@ fn ord_arena_count() {
             }
         }
     }
-    assert_eq!(get_cmp_count(), if cfg!(miri) { 7272 } else { 83611 });
+    assert_eq!(get_cmp_count(), if cfg!(miri) { 208 } else { 83611 });
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn ord_arena_find_to_remove_count() {
             }
         }
     }
-    assert_eq!(get_cmp_count(), if cfg!(miri) { 13810 } else { 159913 });
+    assert_eq!(get_cmp_count(), if cfg!(miri) { 395 } else { 159913 });
 }
 
 // in case the implementation of `BTreeMap` changes, do not want to break CI or

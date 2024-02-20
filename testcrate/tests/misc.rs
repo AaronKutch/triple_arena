@@ -1,7 +1,11 @@
 use std::num::{NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize};
 
 use testcrate::P0;
-use triple_arena::{utils::PtrInx, Advancer, Arena};
+use triple_arena::{
+    ptr_struct,
+    utils::{PtrInx, PtrNoGen},
+    Advancer, Arena, Ptr,
+};
 
 #[test]
 fn ptrs() {
@@ -34,6 +38,24 @@ fn ptrs() {
     let x: NonZeroU128 = PtrInx::new(max);
     assert_eq!(x.get(), usize::MAX as u128);
     assert_eq!(PtrInx::get(x).get(), usize::MAX);
+}
+
+#[test]
+fn ptr_display() {
+    ptr_struct!(P1[NonZeroU128](NonZeroU8));
+    ptr_struct!(P2[NonZeroU128]());
+    assert_eq!(
+        &format!("{}", P1::_from_raw(NonZeroU128::MAX, NonZeroU8::MAX)),
+        "P1[ffffffffffffffffffffffffffffffff](ff)"
+    );
+    assert_eq!(
+        &format!("{}", P2::_from_raw(NonZeroU128::MAX, ())),
+        "P2[ffffffffffffffffffffffffffffffff]"
+    );
+    assert_eq!(
+        &format!("{}", PtrNoGen::<P1>::_from_raw(NonZeroU128::MAX, ())),
+        "P1[ffffffffffffffffffffffffffffffff]"
+    );
 }
 
 // this is a hard coded test, there is a section in the fuzz test and in the

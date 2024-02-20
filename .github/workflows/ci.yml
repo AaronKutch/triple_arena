@@ -20,6 +20,7 @@ jobs:
       - name: Run test suite
         # The `riscv32i` build is needed to actually detect if the crate is no_std.
         # The `-p triple_arena` builds are so that the testcrate isn't always activating flags
+        # Note that the test crate has a serde_support flag
         run: |
           cargo b --target=riscv32i-unknown-none-elf -p no_std_test
           cargo b --no-default-features -p triple_arena
@@ -27,11 +28,44 @@ jobs:
           cargo b --no-default-features --features=expose_internal_utils -p triple_arena
           cargo b --no-default-features
           cargo b --all-features
+          cargo t --no-default-features
           cargo t --all-features
           cargo t --release --all-features
           cargo r --bin render0
           cargo r --bin render1
           cargo r --example equation
+
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    # note: we have turned on this Miri flag
+    env:
+      RUSTFLAGS: -D warnings
+      MIRIFLAGS: -Zmiri-tree-borrows -Zmiri-strict-provenance
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install most recent Miri
+        run: |
+          rustup set profile minimal
+          rustup default "nightly-$(curl -s https://rust-lang.github.io/rustup-components-history/x86_64-unknown-linux-gnu/miri)"
+          rustup component add miri
+      - name: Run test suite with Miri
+        run: |
+          cargo miri test
+
+  msrv_test_suite:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust components
+        run: |
+          rustup set profile minimal
+          rustup install nightly-2023-04-14
+      - name: Run test suite
+        run: |
+          cargo build --no-default-features
 
   rustfmt:
     name: Rustfmt
@@ -62,3 +96,4 @@ jobs:
       - name: Run `cargo clippy`
         run: |
           cargo clippy --all --all-targets --all-features -- -D clippy::all
+          cargo clippy --all --all-targets --no-default-features -- -D clippy::all

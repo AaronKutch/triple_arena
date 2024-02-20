@@ -5,11 +5,6 @@
 #![allow(clippy::while_let_on_iterator)]
 #![allow(clippy::comparison_chain)]
 
-// TODO all places where we have an internal .get_..().unwrap() need to have
-// .get_inx_unwrap() (removes both the return and generation input wastage) do
-// this after OrdArena is settled
-// check all `get_inx_mut_unwrap` to see if we can replace with the _t variant
-
 mod arena;
 pub use arena::arena_iterators;
 mod chain;

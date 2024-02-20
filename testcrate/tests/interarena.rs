@@ -1,4 +1,7 @@
-use rand_xoshiro::{rand_core::SeedableRng, Xoshiro128StarStar};
+use rand_xoshiro::{
+    rand_core::{RngCore, SeedableRng},
+    Xoshiro128StarStar,
+};
 use testcrate::{
     fuzz_fill_inst, std_arena, std_chain, std_chain_no_gen, std_ord, std_surject, CKey, CVal, A, P1,
 };
@@ -157,4 +160,40 @@ fn clone_from_to_recast() {
     a0.clone_to_arena(&mut a2, |p, key, val| {
         assert_eq!(a1.get(p).unwrap(), (key, val));
     });
+}
+
+// also retests a bunch of misc stuff
+#[test]
+fn ord_arena_order() {
+    let mut rng = Xoshiro128StarStar::seed_from_u64(0);
+    let mut set_of_vecs = vec![];
+    for _ in 0..A {
+        let mut v = vec![];
+        for _ in 0..(rng.next_u32() % 16) {
+            v.push((rng.next_u32() % 16, rng.next_u64() % 16));
+        }
+        v.sort();
+        v.dedup_by(|(k0, _), (k1, _)| k0 == k1);
+        set_of_vecs.push(v);
+    }
+    let mut set_of_arenas: Vec<OrdArena<P1, u32, u64>> = vec![];
+    for v in &set_of_vecs {
+        set_of_arenas.push(OrdArena::from_iter(v.iter().copied()))
+    }
+    set_of_vecs.sort();
+    // first use `PartialOrd`
+    let mut tmp = set_of_arenas.clone();
+    tmp.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let res: Vec<Vec<(u32, u64)>> = tmp
+        .iter()
+        .map(|a| a.iter().map(|(_, k, v)| (*k, *v)).collect())
+        .collect();
+    assert_eq!(set_of_vecs, res);
+    // use `Ord`
+    set_of_arenas.sort();
+    let res: Vec<Vec<(u32, u64)>> = set_of_arenas
+        .iter()
+        .map(|a| a.iter().map(|(_, k, v)| (*k, *v)).collect())
+        .collect();
+    assert_eq!(set_of_vecs, res);
 }

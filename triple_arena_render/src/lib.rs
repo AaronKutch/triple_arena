@@ -32,7 +32,9 @@ pub(crate) const INPUT_FONT_WY: i32 = 256;
 pub(crate) const INPUT_FONT_SIZE: i32 = 256 - 24;
 pub(crate) const INPUT_FONT_ADJUST_Y: i32 = -48;
 pub(crate) const RELATION_WIDTH: i32 = 48;
-pub(crate) const NODE_PAD: i32 = 1024;
+pub(crate) const NODE_PAD_X: i32 = 1024;
+pub(crate) const NODE_PAD_Y: i32 = 2048;
+
 // Quaternion VScode color theme
 pub(crate) const COLORS: [&str; 7] = [
     // the green-yellow clash is problematic, so remove green

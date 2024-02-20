@@ -5,4 +5,4 @@ mod nonzero_inx_vec;
 //use safe_nonzero_inx_vec as nonzero_inx_vec;
 
 pub use base_arena::{Arena, InternalEntry};
-pub use nonzero_inx_vec::{nzusize_unchecked, NonZeroInxVec, NonZeroUsizeIterator, NZONE};
+pub use nonzero_inx_vec::{nzusize_unchecked, NonZeroInxVec};

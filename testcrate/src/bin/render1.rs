@@ -12,39 +12,42 @@ fn main() {
     let mut rng = Xoshiro128StarStar::seed_from_u64(1);
     let mut a: Arena<P0, MyNode<P0>> = Arena::new();
     let mut ptrs = vec![];
-    for i in 0..100 {
-        let mut node = MyNode::new(vec![], vec![], vec![]);
-        if (rng.next_u32() % 8) != 0 {
-            node.center.push(format!("n{}", i))
-        }
-        loop {
-            if (rng.next_u32() % 8) == 0 {
-                node.center.push("center".to_string());
-            } else {
-                break
+    for _ in 0..100 {
+        a.insert_with(|p| {
+            let mut node = MyNode::new(vec![], vec![], vec![]);
+            if (rng.next_u32() % 8) != 0 {
+                node.center.push(format!("{}", p))
             }
-        }
-        loop {
-            if (rng.next_u32() % 4) == 0 {
-                if !ptrs.is_empty() {
-                    let inx = (rng.next_u32() as usize) % ptrs.len();
-                    node.sources.push((ptrs[inx], format!("p{}", inx)));
+            loop {
+                if (rng.next_u32() % 8) == 0 {
+                    node.center.push("center".to_string());
+                } else {
+                    break
                 }
-            } else {
-                break
             }
-        }
-        loop {
-            if (rng.next_u32() % 4) == 0 {
-                if !ptrs.is_empty() {
-                    let inx = (rng.next_u32() as usize) % ptrs.len();
-                    node.sinks.push((ptrs[inx], format!("p{}", inx)));
+            loop {
+                if (rng.next_u32() % 4) == 0 {
+                    if !ptrs.is_empty() {
+                        let inx = (rng.next_u32() as usize) % ptrs.len();
+                        node.sources.push((ptrs[inx], format!("p{}", inx)));
+                    }
+                } else {
+                    break
                 }
-            } else {
-                break
             }
-        }
-        ptrs.push(a.insert(node))
+            loop {
+                if (rng.next_u32() % 4) == 0 {
+                    if !ptrs.is_empty() {
+                        let inx = (rng.next_u32() as usize) % ptrs.len();
+                        node.sinks.push((ptrs[inx], format!("p{}", inx)));
+                    }
+                } else {
+                    break
+                }
+            }
+            ptrs.push(p);
+            node
+        });
     }
 
     render_to_svg_file(

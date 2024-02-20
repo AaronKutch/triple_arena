@@ -5,10 +5,12 @@ use std::{
     path::PathBuf,
 };
 
-use internal::{grid_process, RenderGrid};
-use triple_arena::Arena;
+use triple_arena::{Arena, Ptr};
 
-use crate::*;
+use crate::{
+    grid_process::grid_process, render_grid::RenderGrid, DebugNodeTrait, RenderError, COLORS,
+    FONT_FAMILY, NODE_FILL, NODE_PAD_Y, PAD, RELATION_WIDTH, TEXT_COLOR,
+};
 
 /// create the SVG code
 pub(crate) fn gen_svg<P: Ptr>(rg: &RenderGrid<P>) -> String {
@@ -85,7 +87,7 @@ pub(crate) fn gen_svg<P: Ptr>(rg: &RenderGrid<P>) -> String {
                     let (o_i, o_j) = rg.dag[ptr].grid_position;
                     let color = COLORS[o_i % COLORS.len()];
                     let o = rg.grid[o_i][o_j].as_ref().unwrap().output_points[inx.unwrap_or(0)].0;
-                    let p = NODE_PAD / 2;
+                    let p = NODE_PAD_Y / 2;
                     writeln!(
                         s,
                         "<path stroke=\"#{}\" stroke-width=\"{}\" fill=\"#0000\" d=\"M {},{} C \
@@ -172,8 +174,6 @@ pub(crate) fn gen_svg<P: Ptr>(rg: &RenderGrid<P>) -> String {
 // TODO when associated type bounds become stable, use something like
 // `A: ArenaTrait<E: DebugNodeTrait<P>>`
 
-// TODO rework the algorithm so that trees are guaranteed to not have crossings
-
 /// Renders an SVG graph representation of `arena` in a top-down order from
 /// sources to sinks. Cycles are broken up by inserting `Ptr` reference nodes.
 /// If `error_on_invalid_ptr` then this will return an error if an invalid
@@ -196,7 +196,6 @@ pub fn render_to_svg_file<P: Ptr, T: DebugNodeTrait<P>>(
     let s = render_to_svg(arena, error_on_invalid_ptr)?;
     drop(fs::remove_file(&out_file));
     let mut file = OpenOptions::new()
-        .write(true)
         .append(true)
         .create(true)
         .open(out_file)
