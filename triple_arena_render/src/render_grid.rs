@@ -76,7 +76,7 @@ impl<P: Ptr> RenderGrid<P> {
             cumulative_x.push(rg.tot_wx);
             rg.tot_wx += wx;
             if i != (grid_max_wx.len() - 1) {
-                rg.tot_wx += NODE_PAD;
+                rg.tot_wx += NODE_PAD_X;
             }
         }
         rg.tot_wx += PAD;
@@ -86,7 +86,7 @@ impl<P: Ptr> RenderGrid<P> {
             cumulative_y.push(rg.tot_wy);
             rg.tot_wy += wy;
             if i != (grid_max_wy.len() - 1) {
-                rg.tot_wy += NODE_PAD;
+                rg.tot_wy += NODE_PAD_Y;
             }
         }
         rg.tot_wy += PAD;

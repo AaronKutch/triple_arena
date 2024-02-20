@@ -85,7 +85,7 @@ pub(crate) fn gen_svg<P: Ptr>(rg: &RenderGrid<P>) -> String {
                     let (o_i, o_j) = rg.dag[ptr].grid_position;
                     let color = COLORS[o_i % COLORS.len()];
                     let o = rg.grid[o_i][o_j].as_ref().unwrap().output_points[inx.unwrap_or(0)].0;
-                    let p = NODE_PAD / 2;
+                    let p = NODE_PAD_Y / 2;
                     writeln!(
                         s,
                         "<path stroke=\"#{}\" stroke-width=\"{}\" fill=\"#0000\" d=\"M {},{} C \
