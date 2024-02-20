@@ -2,7 +2,8 @@
 
 ## [0.13.0] - TODO
 ### Fixes
-- Fixed more issues with `ptr_struct` collisions
+- Fixed that the `PartialEq` impl of `OrdArena` was indexing the wrong way and could cause panics
+- Fixed more issues with `ptr_struct` import collisions
 
 ### Additions
 - Added `OrdArena::find_similar_with`

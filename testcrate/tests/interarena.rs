@@ -172,6 +172,8 @@ fn ord_arena_order() {
         for _ in 0..(rng.next_u32() % 16) {
             v.push((rng.next_u32() % 16, rng.next_u64() % 16));
         }
+        v.sort();
+        v.dedup_by(|(k0, _), (k1, _)| k0 == k1);
         set_of_vecs.push(v);
     }
     let mut set_of_arenas: Vec<OrdArena<P1, u32, u64>> = vec![];
@@ -180,14 +182,14 @@ fn ord_arena_order() {
     }
     set_of_vecs.sort();
     // first use `PartialOrd`
-    set_of_arenas
-        .clone()
-        .sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let res: Vec<Vec<(u32, u64)>> = set_of_arenas
+    let mut tmp = set_of_arenas.clone();
+    tmp.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let res: Vec<Vec<(u32, u64)>> = tmp
         .iter()
         .map(|a| a.iter().map(|(_, k, v)| (*k, *v)).collect())
         .collect();
     assert_eq!(set_of_vecs, res);
+    // use `Ord`
     set_of_arenas.sort();
     let res: Vec<Vec<(u32, u64)>> = set_of_arenas
         .iter()
