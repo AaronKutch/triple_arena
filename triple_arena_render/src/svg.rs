@@ -5,10 +5,12 @@ use std::{
     path::PathBuf,
 };
 
-use internal::{grid_process, RenderGrid};
-use triple_arena::Arena;
+use triple_arena::{Arena, Ptr};
 
-use crate::*;
+use crate::{
+    grid_process::grid_process, render_grid::RenderGrid, DebugNodeTrait, RenderError, COLORS,
+    FONT_FAMILY, NODE_FILL, NODE_PAD_Y, PAD, RELATION_WIDTH, TEXT_COLOR,
+};
 
 /// create the SVG code
 pub(crate) fn gen_svg<P: Ptr>(rg: &RenderGrid<P>) -> String {

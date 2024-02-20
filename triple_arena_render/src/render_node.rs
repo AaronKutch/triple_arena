@@ -4,8 +4,10 @@ use std::cmp::max;
 
 use triple_arena::Ptr;
 
-use self::grid_process::Edge;
-use crate::*;
+use crate::{
+    grid_process::Edge, FONT_ADJUST_Y, FONT_SIZE, FONT_WX, FONT_WY, INPUT_FONT_ADJUST_Y,
+    INPUT_FONT_SIZE, INPUT_FONT_WX, INPUT_FONT_WY, INPUT_PAD, PAD,
+};
 
 /// Graphics for a single node
 #[derive(Debug, Clone)]
