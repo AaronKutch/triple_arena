@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.13.0] - TODO
+## [0.13.0] - 2024-02-20
 ### Fixes
 - Fixed that the `PartialEq` impl of `OrdArena` was indexing the wrong way and could cause panics
 - Fixed more issues with `ptr_struct` import collisions

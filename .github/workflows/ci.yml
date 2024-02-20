@@ -35,6 +35,20 @@ jobs:
           cargo r --bin render1
           cargo r --example equation
 
+  msrv_test_suite:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust components
+        run: |
+          rustup set profile minimal
+          rustup install nightly-2023-04-14
+      - name: Run test suite
+        run: |
+          cargo build --no-default-features
+
   rustfmt:
     name: Rustfmt
     runs-on: ubuntu-latest
