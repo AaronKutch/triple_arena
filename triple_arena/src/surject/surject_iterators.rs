@@ -47,7 +47,7 @@ impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
             self.max_advances = self.max_advances.wrapping_sub(1);
         }
         if let Some(ptr) = self.ptr {
-            if let Some((gen, link)) = collection.keys.get_no_gen(ptr) {
+            if let Some((generation, link)) = collection.keys.get_no_gen(ptr) {
                 if let Some(next) = link.next() {
                     if next == self.init {
                         self.ptr = None;
@@ -58,7 +58,7 @@ impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
                     // could be unreachable under invalidation
                     self.ptr = None;
                 }
-                Some(Ptr::_from_raw(ptr, gen))
+                Some(Ptr::_from_raw(ptr, generation))
             } else {
                 self.ptr = None;
                 None

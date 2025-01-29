@@ -62,14 +62,14 @@ fn fuzz_surject() {
     let mut list: Vec<Val> = vec![];
 
     let mut a: SurjectArena<P0, Key, Val> = SurjectArena::new();
-    let mut gen = 2;
+    let mut generation = 2;
     let mut b: HashMap<Val, Vec<Pair>> = HashMap::new();
 
     let invalid = a.insert(Key::MAX, Val { v: u64::MAX });
     a.remove_key(invalid).unwrap();
-    gen += 1;
+    generation += 1;
     a.clear_and_shrink();
-    gen += 1;
+    generation += 1;
     let mut op_inx = u32::MAX;
     // makes sure there is not some problem with the test harness itself or
     // determinism
@@ -81,11 +81,11 @@ fn fuzz_surject() {
         assert_eq!(a.len_vals(), list.len());
         assert_eq!(a.len_vals(), b.len());
         let len = list.len();
-        if a.gen().get() != gen {
-            dbg!(a.gen().get(), gen, op_inx);
+        if a.generation().get() != generation {
+            dbg!(a.generation().get(), generation, op_inx);
             panic!();
         }
-        assert_eq!(a.gen().get(), gen);
+        assert_eq!(a.generation().get(), generation);
         assert_eq!(a.is_empty(), list.is_empty());
         if !cfg!(miri) {
             let mut len_keys = 0;
@@ -170,7 +170,7 @@ fn fuzz_surject() {
                     let set_len = set.len();
                     let removed = a.remove(set[next_inx!(rng, set_len)].p).unwrap();
                     assert_eq!(removed, v);
-                    gen += 1;
+                    generation += 1;
                 } else {
                     assert!(a.remove(invalid).is_none());
                 }
@@ -185,7 +185,7 @@ fn fuzz_surject() {
                     let i_set = next_inx!(rng, set_len);
                     let pair = set[i_set];
                     let res = a.remove_key(pair.p);
-                    gen += 1;
+                    generation += 1;
                     if set_len == 1 {
                         list.swap_remove(i);
                         b.remove(&v).unwrap();
@@ -431,7 +431,7 @@ fn fuzz_surject() {
                     let i_set = next_inx!(rng, set_len);
                     let pair = set[i_set];
                     let p_new = a.invalidate(pair.p).unwrap();
-                    gen += 1;
+                    generation += 1;
                     // keep key value
                     b.get_mut(&v).unwrap()[i_set] = Pair {
                         p: p_new,
@@ -504,14 +504,14 @@ fn fuzz_surject() {
                 // self.compress_and_shrink_with(|_, _, _| ())
 
                 let mut tmp: HashMap<Val, HashMap<Key, P0>> = HashMap::new();
-                let q_gen = PtrGen::increment(a.gen());
+                let q_gen = PtrGen::increment(a.generation());
                 a.compress_and_shrink_with(|p, key, val, q| {
                     for pair in b.get(val).unwrap() {
                         if pair.k == *key {
                             assert_eq!(pair.p, p);
                         }
                     }
-                    assert_eq!(q_gen, q.gen());
+                    assert_eq!(q_gen, q.generation());
                     if let Some(set) = tmp.get_mut(val) {
                         set.insert(*key, q);
                     } else {
@@ -523,7 +523,7 @@ fn fuzz_surject() {
                 assert_eq!(tmp.len(), a.len_vals());
                 assert_eq!(a.capacity_keys(), a.len_keys());
                 assert_eq!(a.capacity_vals(), a.len_vals());
-                gen += 1;
+                generation += 1;
                 let mut total_keys = 0;
                 for (val, set) in &tmp {
                     for (key, q) in set {
@@ -634,7 +634,7 @@ fn fuzz_surject() {
                 assert_eq!(a.capacity_keys(), prev_cap_keys);
                 assert_eq!(a.capacity_vals(), prev_cap_vals);
                 b.clear();
-                gen += 1;
+                generation += 1;
                 list.clear();
             }
             999 => {
@@ -643,7 +643,7 @@ fn fuzz_surject() {
                 assert_eq!(a.capacity_keys(), 0);
                 assert_eq!(a.capacity_vals(), 0);
                 b.clear();
-                gen += 1;
+                generation += 1;
                 list.clear();
                 iters999 += 1;
             }
@@ -652,5 +652,5 @@ fn fuzz_surject() {
         max_key_len = max(max_key_len, a.len_keys());
         max_val_len = max(max_val_len, a.len_vals());
     }
-    assert_eq!((max_key_len, max_val_len, iters999, a.gen().get()), STATS);
+    assert_eq!((max_key_len, max_val_len, iters999, a.generation().get()), STATS);
 }

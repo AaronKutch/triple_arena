@@ -51,7 +51,7 @@ impl<P: Ptr, T> Advancer for ChainPtrAdvancer<P, T> {
         }
         if let Some(ptr) = self.ptr {
             if self.switch {
-                if let Some((gen, link)) = collection.a.get_no_gen(ptr) {
+                if let Some((generation, link)) = collection.a.get_no_gen(ptr) {
                     if let Some(prev) = link.prev() {
                         self.ptr = Some(prev);
                     } else {
@@ -59,12 +59,12 @@ impl<P: Ptr, T> Advancer for ChainPtrAdvancer<P, T> {
                     }
                     // note how we also get to implicitly check the validity of the original
                     // `self.ptr` without incurring extra lookups.
-                    Some(Ptr::_from_raw(ptr, gen))
+                    Some(Ptr::_from_raw(ptr, generation))
                 } else {
                     self.ptr = None;
                     None
                 }
-            } else if let Some((gen, link)) = collection.a.get_no_gen(ptr) {
+            } else if let Some((generation, link)) = collection.a.get_no_gen(ptr) {
                 if let Some(next) = link.next() {
                     if next == self.init {
                         // cyclical
@@ -82,7 +82,7 @@ impl<P: Ptr, T> Advancer for ChainPtrAdvancer<P, T> {
                         self.ptr = None;
                     }
                 }
-                Some(Ptr::_from_raw(ptr, gen))
+                Some(Ptr::_from_raw(ptr, generation))
             } else {
                 self.ptr = None;
                 None

@@ -20,14 +20,14 @@ impl<P: Ptr, K, V> Advancer for PtrAdvancer<P, K, V> {
 
     fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
         if let Some(ptr) = self.ptr {
-            if let Some((gen, link)) = collection.a.get_no_gen(ptr) {
+            if let Some((generation, link)) = collection.a.get_no_gen(ptr) {
                 if let Some(next) = link.next() {
                     self.ptr = Some(next);
                 } else {
                     // could be unreachable under invalidation
                     self.ptr = None;
                 }
-                Some(Ptr::_from_raw(ptr, gen))
+                Some(Ptr::_from_raw(ptr, generation))
             } else {
                 self.ptr = None;
                 None

@@ -12,7 +12,7 @@ use crate::{Advancer, Arena, ChainArena, Link, Ptr};
 /// The same as [crate::Link] except that the interlinks do not have a
 /// generation counter
 pub struct LinkNoGen<P: Ptr, T> {
-    // I think the code gen should be overall better if this is done
+    // I think the code generation should be overall better if this is done
     pub(crate) prev_next: (Option<P::Inx>, Option<P::Inx>),
     pub t: T,
 }
@@ -160,9 +160,9 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
         self.a.capacity()
     }
 
-    /// Follows [Arena::gen]
-    pub fn gen(&self) -> P::Gen {
-        self.a.gen()
+    /// Follows [Arena::generation]
+    pub fn generation(&self) -> P::Gen {
+        self.a.generation()
     }
 
     /// Follows [Arena::reserve]
@@ -716,9 +716,9 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
         // because it has the added benefit of bringing in order links together in
         // memory.
         self.a.inc_gen();
-        let gen = self.gen();
+        let generation = self.generation();
         let mut new = Arena::<P, LinkNoGen<P, T>>::with_capacity(self.len());
-        new.set_gen(gen);
+        new.set_gen(generation);
         let mut adv = self.a.advancer();
         'outer: while let Some(p_init) = adv.advance(&self.a) {
             // an initial prelude is absolutely required to link up cyclic chains and handle
@@ -801,9 +801,9 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
         mut map: F,
     ) {
         self.a.inc_gen();
-        let gen = self.gen();
+        let generation = self.generation();
         let mut new = Arena::<P, LinkNoGen<P, T>>::with_capacity(self.len());
-        new.set_gen(gen);
+        new.set_gen(generation);
         let p_init = first_link;
         let link = self.a.remove(p_init).unwrap();
         let mut p_next = link.next();
@@ -860,14 +860,14 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
     ) {
         chain_arena.a.clone_from_with(&self.a, |p, link| {
             let prev = if let Some(prev) = link.prev() {
-                let (gen, _) = self.a.get_no_gen(prev).unwrap();
-                Some(Ptr::_from_raw(prev, gen))
+                let (generation, _) = self.a.get_no_gen(prev).unwrap();
+                Some(Ptr::_from_raw(prev, generation))
             } else {
                 None
             };
             let next = if let Some(next) = link.next() {
-                let (gen, _) = self.a.get_no_gen(next).unwrap();
-                Some(Ptr::_from_raw(next, gen))
+                let (generation, _) = self.a.get_no_gen(next).unwrap();
+                Some(Ptr::_from_raw(next, generation))
             } else {
                 None
             };
@@ -899,7 +899,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
     pub fn get_no_gen_mut(&mut self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &mut T>)> {
         self.a
             .get_no_gen_mut(p)
-            .map(|(gen, link)| (gen, LinkNoGen::new(link.prev_next(), &mut link.t)))
+            .map(|(generation, link)| (generation, LinkNoGen::new(link.prev_next(), &mut link.t)))
     }
 
     /// Like [ChainNoGenArena::get], except generation counters are ignored and
@@ -1046,7 +1046,7 @@ impl<P: Ptr, T> Default for ChainNoGenArena<P, T> {
 impl<P: Ptr, T: PartialEq> PartialEq<ChainNoGenArena<P, T>> for ChainNoGenArena<P, T> {
     /// Checks if all `(P, LinkNoGen<P, T>)` pairs are equal. This is sensitive
     /// to `Ptr` indexes and generation counters, but does not compare arena
-    /// capacities or `self.gen()`.
+    /// capacities or `self.generation()`.
     fn eq(&self, other: &ChainNoGenArena<P, T>) -> bool {
         self.a == other.a
     }

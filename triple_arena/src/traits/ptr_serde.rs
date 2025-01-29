@@ -219,10 +219,10 @@ pub unsafe trait Ptr:
     fn inx(self) -> Self::Inx;
 
     /// Returns the generation of this `Ptr`.
-    fn gen(self) -> Self::Gen;
+    fn generation(self) -> Self::Gen;
 
     /// Do not use this unless you are manually managing internal details
-    fn _from_raw(inx: Self::Inx, gen: Self::Gen) -> Self;
+    fn _from_raw(inx: Self::Inx, generation: Self::Gen) -> Self;
 }
 
 /// Convenience macro for quickly making new structs that implement `Ptr`. The
@@ -314,7 +314,7 @@ macro_rules! ptr_struct {
                 }
 
                 #[inline]
-                fn gen(self) -> Self::Gen {
+                fn generation(self) -> Self::Gen {
                     self._internal_gen
                 }
 
@@ -343,7 +343,7 @@ macro_rules! ptr_struct {
                         "{}[{:x?}]({:x?})",
                         <Self as $crate::Ptr>::name(),
                         $crate::Ptr::inx(*self),
-                        $crate::Ptr::gen(*self),
+                        $crate::Ptr::generation(*self),
                     ))
                 }
             }
@@ -429,7 +429,7 @@ macro_rules! ptr_struct {
                 }
 
                 #[inline]
-                fn gen(self) -> Self::Gen {
+                fn generation(self) -> Self::Gen {
                     self._internal_gen
                 }
 
@@ -573,7 +573,7 @@ unsafe impl<P: Ptr> Ptr for PtrNoGen<P> {
     }
 
     #[inline]
-    fn gen(self) -> Self::Gen {
+    fn generation(self) -> Self::Gen {
         self._internal_gen
     }
 

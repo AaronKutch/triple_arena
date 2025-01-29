@@ -43,7 +43,7 @@ fn fuzz_arena() {
     let mut a1: Arena<P0, u64> = Arena::new();
     let mut b1: HashMap<u64, P0> = HashMap::new();
     let mut list1: Vec<u64> = vec![];
-    let mut gen = 2;
+    let mut generation = 2;
 
     let mut op_inx;
     // makes sure there is not some problem with the test harness itself or
@@ -54,14 +54,14 @@ fn fuzz_arena() {
     // get invalid `Ptr` (from 0th index and not `Ptr::invalid()`)
     let invalid = a.insert(0);
     a.remove(invalid).unwrap();
-    gen += 1;
+    generation += 1;
     a.clear_and_shrink();
-    gen += 1;
+    generation += 1;
 
     for _ in 0..N {
         assert_eq!(b.len(), list.len());
         assert_eq!(a.len(), b.len());
-        assert_eq!(a.gen().get(), gen);
+        assert_eq!(a.generation().get(), generation);
         let len = list.len();
         assert_eq!(a.is_empty(), b.is_empty());
         if !cfg!(miri) {
@@ -133,7 +133,7 @@ fn fuzz_arena() {
                     let t = list.swap_remove(next_inx!(rng, len));
                     let ptr = b.remove(&t).unwrap();
                     assert_eq!(t, a.remove(ptr).unwrap());
-                    gen += 1;
+                    generation += 1;
                 } else {
                     assert!(a.remove(invalid).is_none());
                 }
@@ -144,7 +144,7 @@ fn fuzz_arena() {
                     let t = list[next_inx!(rng, len)];
                     let ptr = b.remove(&t).unwrap();
                     let new_ptr = a.invalidate(ptr).unwrap();
-                    gen += 1;
+                    generation += 1;
                     b.insert(t, new_ptr);
                     assert_eq!(t, a[new_ptr]);
                 } else {
@@ -175,7 +175,7 @@ fn fuzz_arena() {
                     let t1 = new_t();
                     let old_ptr = b.remove(&t0).unwrap();
                     let (output_t, new_ptr) = a.replace_and_update_gen(old_ptr, t1).unwrap();
-                    gen += 1;
+                    generation += 1;
                     assert_eq!(t0, output_t);
                     list.push(t1);
                     b.insert(t1, new_ptr);
@@ -308,7 +308,7 @@ fn fuzz_arena() {
                         let t = list.swap_remove(rand_remove_i);
                         let ptr = b.remove(&t).unwrap();
                         assert_eq!(t, a.remove(ptr).unwrap());
-                        gen += 1;
+                        generation += 1;
                     }
                     i += 1;
                 }
@@ -328,7 +328,7 @@ fn fuzz_arena() {
                 // compress_and_shrink
                 a.compress_and_shrink();
                 assert_eq!(a.capacity(), a.len());
-                gen += 1;
+                generation += 1;
                 // for this base test, manually recast `Ptr`s
                 for (p, t) in a.iter() {
                     *b.get_mut(t).unwrap() = p;
@@ -337,21 +337,21 @@ fn fuzz_arena() {
             993 => {
                 // compress_and_shrink_with
                 let mut tmp = HashMap::new();
-                let q_gen = PtrGen::increment(a.gen());
+                let q_gen = PtrGen::increment(a.generation());
                 a.compress_and_shrink_with(|p, t, q| {
                     assert_eq!(b[t], p);
-                    assert_eq!(q_gen, q.gen());
+                    assert_eq!(q_gen, q.generation());
                     tmp.insert(*t, q);
                 });
                 assert_eq!(tmp.len(), a.len());
                 assert_eq!(a.capacity(), a.len());
-                gen += 1;
+                generation += 1;
                 for (t, p) in tmp {
                     assert_eq!(t, a[p]);
                 }
                 // for this base test, manually recast `Ptr`s
                 for (p, t) in a.iter() {
-                    assert_eq!(q_gen, p.gen());
+                    assert_eq!(q_gen, p.generation());
                     *b.get_mut(t).unwrap() = p;
                 }
             }
@@ -362,7 +362,7 @@ fn fuzz_arena() {
                 match rng.next_u32() % 4 {
                     0 => {
                         a.clone_from(&a1);
-                        gen = a1.gen().get();
+                        generation = a1.generation().get();
                         b.clone_from(&b1);
                         list.clone_from(&list1);
                     }
@@ -371,7 +371,7 @@ fn fuzz_arena() {
                             assert_eq!(b1[u], p);
                             *u
                         });
-                        gen = a1.gen().get();
+                        generation = a1.generation().get();
                         b.clone_from(&b1);
                         list.clone_from(&list1);
                     }
@@ -421,7 +421,7 @@ fn fuzz_arena() {
                         assert_eq!(a_clone, a);
                         assert_eq!(a, a_clone);
                     }
-                    gen += 1;
+                    generation += 1;
                     assert!(remove.is_empty());
                 }
             }
@@ -441,14 +441,14 @@ fn fuzz_arena() {
                 for (ptr, t) in a.drain() {
                     assert_eq!(b.remove(&t).unwrap(), ptr);
                 }
-                gen += 1;
+                generation += 1;
                 list.clear();
                 assert_eq!(a.capacity(), prev_cap);
             }
             998 => {
                 // clear
                 a.clear();
-                gen += 1;
+                generation += 1;
                 list.clear();
                 b.clear();
             }
@@ -456,7 +456,7 @@ fn fuzz_arena() {
                 // clear_and_shrink
                 a.clear_and_shrink();
                 assert_eq!(a.capacity(), 0);
-                gen += 1;
+                generation += 1;
                 list.clear();
                 b.clear();
                 iters999 += 1;
@@ -467,7 +467,7 @@ fn fuzz_arena() {
     }
     // I may need a custom allocator, because some of the determinism is dependent
     // on the interactions between `reserve` and `try_insert`
-    assert_eq!((iters999, max_len, a.gen().get()), STATS);
+    assert_eq!((iters999, max_len, a.generation().get()), STATS);
 }
 
 const M: usize = if cfg!(miri) { 1000 } else { 100_000 };
@@ -480,14 +480,14 @@ fn fuzz_multi_arena() {
     fn inner(
         rng: &mut Xoshiro128StarStar,
         a: &mut Arena<P0, u64>,
-        gen: &mut u128,
+        generation: &mut u128,
         b: &mut HashMap<u64, P0>,
         list: &mut Vec<u64>,
         new_t: &mut dyn FnMut() -> u64,
     ) {
         assert_eq!(b.len(), list.len());
         assert_eq!(a.len(), b.len());
-        assert_eq!(a.gen().get(), *gen);
+        assert_eq!(a.generation().get(), *generation);
         assert_eq!(a.is_empty(), b.is_empty());
         if !cfg!(miri) {
             Arena::_check_invariants(a).unwrap();
@@ -507,7 +507,7 @@ fn fuzz_multi_arena() {
                     let t = list.swap_remove(next_inx!(rng, len));
                     let ptr = b.remove(&t).unwrap();
                     assert_eq!(t, a.remove(ptr).unwrap());
-                    *gen += 1;
+                    *generation += 1;
                 }
             }
             998 => {
@@ -515,7 +515,7 @@ fn fuzz_multi_arena() {
                 let prev_cap = a.capacity();
                 a.clear();
                 assert_eq!(a.capacity(), prev_cap);
-                *gen += 1;
+                *generation += 1;
                 list.clear();
                 b.clear();
             }
@@ -523,7 +523,7 @@ fn fuzz_multi_arena() {
                 // clear_and_shrink
                 a.clear_and_shrink();
                 assert_eq!(a.capacity(), 0);
-                *gen += 1;
+                *generation += 1;
                 list.clear();
                 b.clear();
             }
@@ -604,5 +604,5 @@ fn fuzz_multi_arena() {
             _ => unreachable!(),
         }
     }
-    assert_eq!((max_len0, a0.gen().get()), STATS_2);
+    assert_eq!((max_len0, a0.generation().get()), STATS_2);
 }

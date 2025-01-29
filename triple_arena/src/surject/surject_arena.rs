@@ -275,9 +275,9 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         self.vals.capacity()
     }
 
-    /// Follows [Arena::gen]
-    pub fn gen(&self) -> P::Gen {
-        self.keys.gen()
+    /// Follows [Arena::generation]
+    pub fn generation(&self) -> P::Gen {
+        self.keys.generation()
     }
 
     /// Follows [Arena::reserve] just for keys
@@ -838,7 +838,7 @@ impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<SurjectArena<P, K, V>>
 {
     /// Checks if all `(P, K, V)` pairs are equal. This is sensitive to
     /// `Ptr` indexes, generation counters, and some hidden key set relations,
-    /// but does not compare arena capacities, `self.gen()`, or hidden value
+    /// but does not compare arena capacities, `self.generation()`, or hidden value
     /// pointers.
     fn eq(&self, other: &SurjectArena<P, K, V>) -> bool {
         // first the keys

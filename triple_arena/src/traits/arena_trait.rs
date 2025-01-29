@@ -21,7 +21,7 @@ pub trait ArenaTrait {
 
     fn new() -> Self;
     fn capacity(&self) -> usize;
-    fn gen(&self) -> <<Self as ArenaTrait>::P as Ptr>::Gen;
+    fn generation(&self) -> <<Self as ArenaTrait>::P as Ptr>::Gen;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
     fn insert(&mut self, e: Self::E) -> Self::P;
@@ -49,8 +49,8 @@ impl<P: Ptr, T> ArenaTrait for Arena<P, T> {
         self.capacity()
     }
 
-    fn gen(&self) -> P::Gen {
-        self.gen()
+    fn generation(&self) -> P::Gen {
+        self.generation()
     }
 
     fn len(&self) -> usize {
@@ -109,8 +109,8 @@ impl<P: Ptr, T> ArenaTrait for ChainArena<P, T> {
         self.capacity()
     }
 
-    fn gen(&self) -> P::Gen {
-        self.gen()
+    fn generation(&self) -> P::Gen {
+        self.generation()
     }
 
     fn len(&self) -> usize {
@@ -174,8 +174,8 @@ impl<P: Ptr, T> ArenaTrait for ChainNoGenArena<P, T> {
         self.capacity()
     }
 
-    fn gen(&self) -> P::Gen {
-        self.gen()
+    fn generation(&self) -> P::Gen {
+        self.generation()
     }
 
     fn len(&self) -> usize {
@@ -239,8 +239,8 @@ impl<P: Ptr, K> ArenaTrait for SurjectArena<P, K, ()> {
         self.capacity_keys()
     }
 
-    fn gen(&self) -> P::Gen {
-        self.gen()
+    fn generation(&self) -> P::Gen {
+        self.generation()
     }
 
     fn len(&self) -> usize {
@@ -299,8 +299,8 @@ impl<P: Ptr, K: Ord, V> ArenaTrait for OrdArena<P, K, V> {
         self.capacity()
     }
 
-    fn gen(&self) -> P::Gen {
-        self.gen()
+    fn generation(&self) -> P::Gen {
+        self.generation()
     }
 
     fn len(&self) -> usize {

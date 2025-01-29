@@ -71,14 +71,14 @@ fn fuzz_ord() {
     let mut list: Vec<Triple> = vec![];
 
     let mut a: OrdArena<P0, Key, Val> = OrdArena::new();
-    let mut gen = 2;
+    let mut generation = 2;
     // the tricky part is that we need to handle nonhereditary cases
     let mut b: BTreeMap<Key, BTreeMap<Val, Triple>> = BTreeMap::new();
 
     let invalid = a.insert_nonhereditary(Key { k: 0 }, Val { v: 0 });
     assert!(a.insert_empty(Key { k: 0 }, Val { v: 0 }).is_none());
     a.clear_and_shrink();
-    gen += 1;
+    generation += 1;
     let mut op_inx;
     // makes sure there is not some problem with the test harness itself or
     // determinism
@@ -92,7 +92,7 @@ fn fuzz_ord() {
             true_len += set.len();
         }
         assert_eq!(true_len, a.len());
-        assert_eq!(a.gen().get(), gen);
+        assert_eq!(a.generation().get(), generation);
         assert_eq!(a.is_empty(), list.is_empty());
         let len = list.len();
         if !cfg!(miri) {
@@ -211,7 +211,7 @@ fn fuzz_ord() {
                     if set.is_empty() {
                         b.remove(&t.k);
                     }
-                    gen += 1;
+                    generation += 1;
                 } else {
                     assert!(a.remove(invalid).is_none());
                 }
@@ -344,7 +344,7 @@ fn fuzz_ord() {
                     });
                     t.p = new_p;
                     t.v = v;
-                    gen += 1;
+                    generation += 1;
                 } else {
                     assert_eq!(
                         a.replace_val_and_update_gen(invalid, Val { v: 0 }),
@@ -360,7 +360,7 @@ fn fuzz_ord() {
                     let set = b.get_mut(&t.k).unwrap();
                     set.get_mut(&t.v).unwrap().p = new_p;
                     t.p = new_p;
-                    gen += 1;
+                    generation += 1;
                 } else {
                     assert!(a.invalidate(invalid).is_none());
                 }
@@ -512,11 +512,11 @@ fn fuzz_ord() {
                 // self.compress_and_shrink_with(|_, _, _| ())
 
                 let mut tmp: HashMap<Val, Triple> = HashMap::new();
-                let q_gen = PtrGen::increment(a.gen());
+                let q_gen = PtrGen::increment(a.generation());
                 a.compress_and_shrink_with(|p, key, val, q| {
                     let set = &b[key];
                     assert_eq!(set[val].p, p);
-                    assert_eq!(q_gen, q.gen());
+                    assert_eq!(q_gen, q.generation());
                     tmp.insert(*val, Triple {
                         p: q,
                         k: *key,
@@ -525,7 +525,7 @@ fn fuzz_ord() {
                 });
                 assert_eq!(tmp.len(), a.len());
                 assert_eq!(a.capacity(), a.len());
-                gen += 1;
+                generation += 1;
                 for (val, triple) in &tmp {
                     assert_eq!(val, a.get_val(triple.p).unwrap());
                     assert_eq!(triple.k, *a.get_key(triple.p).unwrap());
@@ -554,19 +554,19 @@ fn fuzz_ord() {
                         // clear_and_shrink
                         a.clear_and_shrink();
                         assert_eq!(a.capacity(), 0);
-                        gen += 1;
+                        generation += 1;
                     }
                     1 => {
                         // clear
                         let prev_cap = a.capacity();
                         a.clear();
                         assert_eq!(a.capacity(), prev_cap);
-                        gen += 1;
+                        generation += 1;
                     }
                     2 => {
                         // drain
                         // TODO improve
-                        gen += a.len() as u128;
+                        generation += a.len() as u128;
                         let prev_cap = a.capacity();
                         for (p, k, v) in a.drain() {
                             black_box((p, k, v));
@@ -579,7 +579,7 @@ fn fuzz_ord() {
                             black_box((p, k, v));
                         }
                         a.clear();
-                        gen += 1;
+                        generation += 1;
                     }
                     _ => unreachable!(),
                 }
@@ -591,5 +591,5 @@ fn fuzz_ord() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), STATS);
+    assert_eq!((max_len, iters999, a.generation().get()), STATS);
 }
