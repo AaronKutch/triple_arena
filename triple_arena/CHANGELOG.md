@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.14.0] - TODO
+## [0.14.0] - 2025-02-10
 ### Changes
 - Changed all `gen` to `generation` since it is reserved in edition 2024
 

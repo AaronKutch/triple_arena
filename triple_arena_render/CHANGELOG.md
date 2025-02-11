@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.14.0] - 2025-02-10
+### Crate
+- `triple_arena` 0.14
+
 ## [0.13.0] - 2024-02-20
 ### Crate
 - `triple_arena` 0.13
