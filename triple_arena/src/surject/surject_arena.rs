@@ -838,8 +838,8 @@ impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<SurjectArena<P, K, V>>
 {
     /// Checks if all `(P, K, V)` pairs are equal. This is sensitive to
     /// `Ptr` indexes, generation counters, and some hidden key set relations,
-    /// but does not compare arena capacities, `self.generation()`, or hidden value
-    /// pointers.
+    /// but does not compare arena capacities, `self.generation()`, or hidden
+    /// value pointers.
     fn eq(&self, other: &SurjectArena<P, K, V>) -> bool {
         // first the keys
         let mut adv0 = self.advancer();

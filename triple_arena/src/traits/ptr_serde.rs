@@ -161,9 +161,7 @@ impl_ptr_inx!(
 ///
 /// `x` must not be 0 and must be within the `PtrInx` limits
 pub unsafe fn ptrinx_unchecked<P: PtrInx>(x: usize) -> P {
-    unsafe {
-        PtrInx::new(nzusize_unchecked(x))
-    }
+    unsafe { PtrInx::new(nzusize_unchecked(x)) }
 }
 
 /// A trait containing index and generation information for the `Arena` type.

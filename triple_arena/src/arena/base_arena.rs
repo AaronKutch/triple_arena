@@ -167,10 +167,10 @@ pub struct Arena<P: Ptr, T> {
     ///   in a single linked list with the start being pointed to by
     ///   `freelist_root` and the end pointing to itself
     /// - If there are no free entries, `freelist_root` is `None`
-    /// - During an invalidation operation, the arena `generation` is incremented _and_
-    ///   the allocation in question is turned into a `Free` or has its
-    ///   generation updated to equal the arena's `generation`. Newer allocations must
-    ///   use the new `generation` value.
+    /// - During an invalidation operation, the arena `generation` is
+    ///   incremented _and_ the allocation in question is turned into a `Free`
+    ///   or has its generation updated to equal the arena's `generation`. Newer
+    ///   allocations must use the new `generation` value.
     pub(crate) m: NonZeroInxVec<InternalEntry<P, T>>,
     pub(crate) len: usize,
     /// Points to the root of the chain of freelist nodes
@@ -201,8 +201,8 @@ pub struct Arena<P: Ptr, T> {
 /// memory exhaustion should be a concern on all platforms, but if smaller types
 /// are used then panics can realistically happen under these conditions: If
 /// `Arena::len() == P::Inx::max()` and an insertion function is called, a
-/// panic occurs. If `Arena::generation()` is the maximum value of its type and an
-/// invalidation occurs, a panic occurs.
+/// panic occurs. If `Arena::generation()` is the maximum value of its type and
+/// an invalidation occurs, a panic occurs.
 impl<P: Ptr, T> Arena<P, T> {
     /// Used by tests
     #[doc(hidden)]
@@ -852,7 +852,10 @@ impl<P: Ptr, T> Arena<P, T> {
                 // copy `source` freelist
                 Free(inx) => Free(*inx),
                 // map `source` allocated
-                Allocated(generation, u) => Allocated(*generation, map(P::_from_raw(P::Inx::new(i), *generation), u)),
+                Allocated(generation, u) => Allocated(
+                    *generation,
+                    map(P::_from_raw(P::Inx::new(i), *generation), u),
+                ),
             };
             self.m.push(new);
         }

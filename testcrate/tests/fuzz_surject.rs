@@ -652,5 +652,8 @@ fn fuzz_surject() {
         max_key_len = max(max_key_len, a.len_keys());
         max_val_len = max(max_val_len, a.len_vals());
     }
-    assert_eq!((max_key_len, max_val_len, iters999, a.generation().get()), STATS);
+    assert_eq!(
+        (max_key_len, max_val_len, iters999, a.generation().get()),
+        STATS
+    );
 }
