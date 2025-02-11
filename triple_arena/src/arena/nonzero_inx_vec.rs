@@ -437,3 +437,9 @@ pub const fn nzusize_iter(start: NonZeroUsize, end_inclusive: usize) -> IntoNonZ
         end_inclusive: end,
     })
 }
+
+impl<T> Default for NonZeroInxVec<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}

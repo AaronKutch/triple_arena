@@ -74,7 +74,7 @@ pub struct Ptrs<'a, P: Ptr, K> {
     iter: arena_iterators::Ptrs<'a, P, LinkNoGen<P, Key<P, K>>>,
 }
 
-impl<'a, P: Ptr, K> Iterator for Ptrs<'a, P, K> {
+impl<P: Ptr, K> Iterator for Ptrs<'_, P, K> {
     type Item = P;
 
     fn next(&mut self) -> Option<Self::Item> {
