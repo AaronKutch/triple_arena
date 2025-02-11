@@ -20,14 +20,14 @@ impl<P: Ptr, K, V> Advancer for PtrAdvancer<P, K, V> {
 
     fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
         if let Some(ptr) = self.ptr {
-            if let Some((gen, link)) = collection.a.get_no_gen(ptr) {
+            if let Some((generation, link)) = collection.a.get_no_gen(ptr) {
                 if let Some(next) = link.next() {
                     self.ptr = Some(next);
                 } else {
                     // could be unreachable under invalidation
                     self.ptr = None;
                 }
-                Some(Ptr::_from_raw(ptr, gen))
+                Some(Ptr::_from_raw(ptr, generation))
             } else {
                 self.ptr = None;
                 None
@@ -44,7 +44,7 @@ pub struct Ptrs<'a, P: Ptr, K, V> {
     adv: PtrAdvancer<P, K, V>,
 }
 
-impl<'a, P: Ptr, K, V> Iterator for Ptrs<'a, P, K, V> {
+impl<P: Ptr, K, V> Iterator for Ptrs<'_, P, K, V> {
     type Item = P;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -127,7 +127,7 @@ pub struct Drain<'a, P: Ptr, K, V> {
     adv: PtrAdvancer<P, K, V>,
 }
 
-impl<'a, P: Ptr, K, V> Drop for Drain<'a, P, K, V> {
+impl<P: Ptr, K, V> Drop for Drain<'_, P, K, V> {
     fn drop(&mut self) {
         if !self.arena.is_empty() {
             self.arena.clear();
@@ -136,7 +136,7 @@ impl<'a, P: Ptr, K, V> Drop for Drain<'a, P, K, V> {
     }
 }
 
-impl<'a, P: Ptr, K, V> Iterator for Drain<'a, P, K, V> {
+impl<P: Ptr, K, V> Iterator for Drain<'_, P, K, V> {
     type Item = (P, K, V);
 
     fn next(&mut self) -> Option<Self::Item> {

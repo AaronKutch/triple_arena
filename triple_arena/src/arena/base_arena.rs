@@ -23,8 +23,8 @@ pub enum InternalEntry<P: Ptr, T> {
 
 impl<P: Ptr, T> InternalEntry<P, T> {
     #[inline]
-    pub fn replace_free_with_allocated(&mut self, gen: P::Gen, t: T) -> Option<P::Inx> {
-        let free = mem::replace(self, Allocated(gen, t));
+    pub fn replace_free_with_allocated(&mut self, generation: P::Gen, t: T) -> Option<P::Inx> {
+        let free = mem::replace(self, Allocated(generation, t));
         if let Free(free) = free {
             Some(free)
         } else {
@@ -167,15 +167,15 @@ pub struct Arena<P: Ptr, T> {
     ///   in a single linked list with the start being pointed to by
     ///   `freelist_root` and the end pointing to itself
     /// - If there are no free entries, `freelist_root` is `None`
-    /// - During an invalidation operation, the arena `gen` is incremented _and_
-    ///   the allocation in question is turned into a `Free` or has its
-    ///   generation updated to equal the arena's `gen`. Newer allocations must
-    ///   use the new `gen` value.
+    /// - During an invalidation operation, the arena `generation` is
+    ///   incremented _and_ the allocation in question is turned into a `Free`
+    ///   or has its generation updated to equal the arena's `generation`. Newer
+    ///   allocations must use the new `generation` value.
     pub(crate) m: NonZeroInxVec<InternalEntry<P, T>>,
     pub(crate) len: usize,
     /// Points to the root of the chain of freelist nodes
     pub(crate) freelist_root: Option<P::Inx>,
-    gen: P::Gen,
+    generation: P::Gen,
 }
 
 /// # Note
@@ -201,13 +201,13 @@ pub struct Arena<P: Ptr, T> {
 /// memory exhaustion should be a concern on all platforms, but if smaller types
 /// are used then panics can realistically happen under these conditions: If
 /// `Arena::len() == P::Inx::max()` and an insertion function is called, a
-/// panic occurs. If `Arena::gen()` is the maximum value of its type and an
-/// invalidation occurs, a panic occurs.
+/// panic occurs. If `Arena::generation()` is the maximum value of its type and
+/// an invalidation occurs, a panic occurs.
 impl<P: Ptr, T> Arena<P, T> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
-        if this.gen() < P::Gen::two() {
+        if this.generation() < P::Gen::two() {
             return Err("bad generation")
         }
         if this.capacity() != this.m.len() {
@@ -257,7 +257,7 @@ impl<P: Ptr, T> Arena<P, T> {
             len: 0,
             m: NonZeroInxVec::new(),
             freelist_root: None,
-            gen: PtrGen::two(),
+            generation: PtrGen::two(),
         }
     }
 
@@ -289,20 +289,20 @@ impl<P: Ptr, T> Arena<P, T> {
     }
 
     pub(crate) fn set_gen(&mut self, new_gen: P::Gen) {
-        self.gen = new_gen;
+        self.generation = new_gen;
     }
 
     /// Return the arena generation counter (unless `P::Gen` is `()` in which
     /// case there is no generation counting), which is equal to the number of
     /// invalidation operations performed on this arena plus 2
     #[inline]
-    pub fn gen(&self) -> P::Gen {
-        self.gen
+    pub fn generation(&self) -> P::Gen {
+        self.generation
     }
 
     #[inline]
     pub(crate) fn inc_gen(&mut self) {
-        self.gen = PtrGen::increment(self.gen);
+        self.generation = PtrGen::increment(self.generation);
     }
 
     /// Reserves capacity such that `self.capacity()` becomes at least
@@ -381,11 +381,11 @@ impl<P: Ptr, T> Arena<P, T> {
 
     /// Panics if index `inx` does not point to a `Free` entry.
     #[inline]
-    fn unwrap_replace_free(&mut self, inx: P::Inx, gen: P::Gen, t: T) {
+    fn unwrap_replace_free(&mut self, inx: P::Inx, generation: P::Gen, t: T) {
         let next = self
             .m_get_mut(inx)
             .unwrap()
-            .replace_free_with_allocated(gen, t)
+            .replace_free_with_allocated(generation, t)
             .unwrap();
         if next == inx {
             // end of freelist
@@ -404,9 +404,9 @@ impl<P: Ptr, T> Arena<P, T> {
     /// in the arena.
     pub fn try_insert(&mut self, t: T) -> Result<P, T> {
         if let Some(inx) = self.freelist_root {
-            self.unwrap_replace_free(inx, self.gen(), t);
+            self.unwrap_replace_free(inx, self.generation(), t);
             self.len = self.len.wrapping_add(1);
-            Ok(Ptr::_from_raw(inx, self.gen()))
+            Ok(Ptr::_from_raw(inx, self.generation()))
         } else {
             Err(t)
         }
@@ -422,8 +422,8 @@ impl<P: Ptr, T> Arena<P, T> {
     /// unallocated entries in the arena.
     pub fn try_insert_with<F: FnOnce(P) -> T>(&mut self, create: F) -> Result<P, F> {
         if let Some(inx) = self.freelist_root {
-            let ptr = P::_from_raw(inx, self.gen());
-            self.unwrap_replace_free(inx, self.gen(), create(ptr));
+            let ptr = P::_from_raw(inx, self.generation());
+            self.unwrap_replace_free(inx, self.generation(), create(ptr));
             self.len = self.len.wrapping_add(1);
             Ok(ptr)
         } else {
@@ -480,8 +480,8 @@ impl<P: Ptr, T> Arena<P, T> {
             self.reserve(additional);
             self.freelist_root.unwrap()
         };
-        let ptr = P::_from_raw(inx, self.gen());
-        self.unwrap_replace_free(inx, self.gen(), create(ptr));
+        let ptr = P::_from_raw(inx, self.generation());
+        self.unwrap_replace_free(inx, self.generation(), create(ptr));
         self.len = self.len.wrapping_add(1);
         ptr
     }
@@ -489,7 +489,7 @@ impl<P: Ptr, T> Arena<P, T> {
     /// Returns if `p` is a valid `Ptr`
     pub fn contains(&self, p: P) -> bool {
         match self.m_get(p.inx()) {
-            Some(Allocated(gen, _)) => *gen == p.gen(),
+            Some(Allocated(generation, _)) => *generation == p.generation(),
             _ => false,
         }
     }
@@ -499,8 +499,8 @@ impl<P: Ptr, T> Arena<P, T> {
     #[must_use]
     pub fn get(&self, p: P) -> Option<&T> {
         match self.m_get(p.inx()) {
-            Some(Allocated(gen, t)) => {
-                if *gen == p.gen() {
+            Some(Allocated(generation, t)) => {
+                if *generation == p.generation() {
                     Some(t)
                 } else {
                     None
@@ -515,8 +515,8 @@ impl<P: Ptr, T> Arena<P, T> {
     #[must_use]
     pub fn get_mut(&mut self, p: P) -> Option<&mut T> {
         match self.m_get_mut(p.inx()) {
-            Some(Allocated(gen, t)) => {
-                if *gen == p.gen() {
+            Some(Allocated(generation, t)) => {
+                if *generation == p.generation() {
                     Some(t)
                 } else {
                     None
@@ -535,7 +535,7 @@ impl<P: Ptr, T> Arena<P, T> {
             .get2_mut(P::Inx::get(p0.inx()), P::Inx::get(p1.inx()))
         {
             if let (Allocated(gen0, t0), Allocated(gen1, t1)) = (n0, n1) {
-                if (*gen0 == p0.gen()) && (*gen1 == p1.gen()) {
+                if (*gen0 == p0.generation()) && (*gen1 == p1.generation()) {
                     Some((t0, t1))
                 } else {
                     None
@@ -566,10 +566,10 @@ impl<P: Ptr, T> Arena<P, T> {
                 *allocation = Free(old_free);
                 None
             }
-            Allocated(gen, old_t) => {
-                if gen != p.gen() {
+            Allocated(generation, old_t) => {
+                if generation != p.generation() {
                     // undo
-                    *allocation = Allocated(gen, old_t);
+                    *allocation = Allocated(generation, old_t);
                     None
                 } else {
                     // in both cases the new root is the entry we just removed
@@ -627,8 +627,8 @@ impl<P: Ptr, T> Arena<P, T> {
         for inx in self.m.nziter() {
             let entry = self.m.get_mut(inx).unwrap();
             let inx = P::Inx::new(inx);
-            if let Allocated(gen, t) = entry {
-                if pred(P::_from_raw(inx, *gen), t) {
+            if let Allocated(generation, t) = entry {
+                if pred(P::_from_raw(inx, *generation), t) {
                     self.len = self.len.wrapping_sub(1);
                     if let Some(free) = self.freelist_root {
                         // point to previous root
@@ -651,8 +651,8 @@ impl<P: Ptr, T> Arena<P, T> {
     #[must_use]
     pub fn invalidate(&mut self, p: P) -> Option<P> {
         match self.m_get(p.inx()) {
-            Some(Allocated(gen, _)) => {
-                if *gen != p.gen() {
+            Some(Allocated(generation, _)) => {
+                if *generation != p.generation() {
                     return None
                 }
             }
@@ -660,11 +660,11 @@ impl<P: Ptr, T> Arena<P, T> {
         }
         // redo to get around borrowing issues
         self.inc_gen();
-        let new_gen = self.gen();
+        let new_gen = self.generation();
         match self.m_get_mut(p.inx()) {
-            Some(Allocated(gen, _)) => {
-                *gen = new_gen;
-                Some(P::_from_raw(p.inx(), self.gen()))
+            Some(Allocated(generation, _)) => {
+                *generation = new_gen;
+                Some(P::_from_raw(p.inx(), self.generation()))
             }
             _ => unreachable!(),
         }
@@ -679,11 +679,11 @@ impl<P: Ptr, T> Arena<P, T> {
     /// Returns ownership of `new` instead if `p` is invalid
     pub fn replace_and_keep_gen(&mut self, p: P, new: T) -> Result<T, T> {
         let old_gen = match self.m_get(p.inx()) {
-            Some(Allocated(gen, _)) => {
-                if *gen != p.gen() {
+            Some(Allocated(generation, _)) => {
+                if *generation != p.generation() {
                     return Err(new)
                 }
-                *gen
+                *generation
             }
             _ => return Err(new),
         };
@@ -703,15 +703,15 @@ impl<P: Ptr, T> Arena<P, T> {
     /// Does no invalidation and returns ownership of `new` if `p` is invalid
     pub fn replace_and_update_gen(&mut self, p: P, new: T) -> Result<(T, P), T> {
         match self.m_get(p.inx()) {
-            Some(Allocated(gen, _)) => {
-                if *gen != p.gen() {
+            Some(Allocated(generation, _)) => {
+                if *generation != p.generation() {
                     return Err(new)
                 }
             }
             _ => return Err(new),
         }
         self.inc_gen();
-        let new_gen = self.gen();
+        let new_gen = self.generation();
         let old = mem::replace(self.m_get_mut(p.inx()).unwrap(), Allocated(new_gen, new));
         match old {
             Allocated(_, old) => Ok((old, P::_from_raw(p.inx(), new_gen))),
@@ -735,7 +735,7 @@ impl<P: Ptr, T> Arena<P, T> {
             .get2_mut(P::Inx::get(p0.inx()), P::Inx::get(p1.inx()))
         {
             if let (Allocated(gen0, t0), Allocated(gen1, t1)) = (n0, n1) {
-                if (*gen0 == p0.gen()) && (*gen1 == p1.gen()) {
+                if (*gen0 == p0.generation()) && (*gen1 == p1.generation()) {
                     mem::swap(t0, t1);
                     Some(())
                 } else {
@@ -806,7 +806,7 @@ impl<P: Ptr, T> Arena<P, T> {
     /// `P` being the new `Ptr`.
     pub fn compress_and_shrink_with<F: FnMut(P, &mut T, P)>(&mut self, mut map: F) {
         self.inc_gen();
-        let gen = self.gen();
+        let generation = self.generation();
         let mut new_m = NonZeroInxVec::<InternalEntry<P, T>>::new();
         new_m.reserve(self.len());
         let mut j = 1;
@@ -819,9 +819,9 @@ impl<P: Ptr, T> Arena<P, T> {
                 map(
                     Ptr::_from_raw(PtrInx::new(i), old_gen),
                     &mut t,
-                    Ptr::_from_raw(PtrInx::new(NonZeroUsize::new(j).unwrap()), gen),
+                    Ptr::_from_raw(PtrInx::new(NonZeroUsize::new(j).unwrap()), generation),
                 );
-                new_m.push(Allocated(gen, t));
+                new_m.push(Allocated(generation, t));
                 j = j.wrapping_add(1);
             }
         }
@@ -838,7 +838,7 @@ impl<P: Ptr, T> Arena<P, T> {
         // exponential growth mitigation factor, absolutely do not use `self.m.capacity`
         // in the extra freelist additions
         let old_virt_cap = self.m.len();
-        self.gen = source.gen;
+        self.generation = source.generation;
         self.len = source.len;
         // Invariants are temporarily broken, use only methods on `m`.
         // clearing first makes `self.m.reserve` cheaper by not needing to copy
@@ -852,7 +852,10 @@ impl<P: Ptr, T> Arena<P, T> {
                 // copy `source` freelist
                 Free(inx) => Free(*inx),
                 // map `source` allocated
-                Allocated(gen, u) => Allocated(*gen, map(P::_from_raw(P::Inx::new(i), *gen), u)),
+                Allocated(generation, u) => Allocated(
+                    *generation,
+                    map(P::_from_raw(P::Inx::new(i), *generation), u),
+                ),
             };
             self.m.push(new);
         }
@@ -883,7 +886,7 @@ impl<P: Ptr, T> Arena<P, T> {
     #[doc(hidden)]
     pub fn get_no_gen(&self, p: P::Inx) -> Option<(P::Gen, &T)> {
         match self.m_get(p) {
-            Some(Allocated(gen, t)) => Some((*gen, t)),
+            Some(Allocated(generation, t)) => Some((*generation, t)),
             _ => None,
         }
     }
@@ -893,7 +896,7 @@ impl<P: Ptr, T> Arena<P, T> {
     #[doc(hidden)]
     pub fn get_no_gen_mut(&mut self, p: P::Inx) -> Option<(P::Gen, &mut T)> {
         match self.m_get_mut(p) {
-            Some(Allocated(gen, t)) => Some((*gen, t)),
+            Some(Allocated(generation, t)) => Some((*generation, t)),
             _ => None,
         }
     }
@@ -963,7 +966,7 @@ impl<P: Ptr, T: Clone> Clone for Arena<P, T> {
             len: self.len,
             m: self.m.clone(),
             freelist_root: self.freelist_root,
-            gen: self.gen,
+            generation: self.generation,
         }
     }
 
@@ -975,7 +978,7 @@ impl<P: Ptr, T: Clone> Clone for Arena<P, T> {
         // exponential growth mitigation factor, absolutely do not use `self.m.capacity`
         // in the extra freelist additions
         let old_virt_cap = self.m.len();
-        self.gen = source.gen;
+        self.generation = source.generation;
         self.len = source.len;
         // Invariants are temporarily broken, use only methods on `m`.
         // clearing first makes `self.m.reserve` cheaper by not needing to copy
@@ -1013,7 +1016,7 @@ impl<P: Ptr, T: Clone> Clone for Arena<P, T> {
 impl<P: Ptr, T: PartialEq> PartialEq<Arena<P, T>> for Arena<P, T> {
     /// Checks if all `(P, T)` pairs are equal. This is sensitive to `Ptr`
     /// indexes and generation counters, but does not compare arena capacities
-    /// or `self.gen()`.
+    /// or `self.generation()`.
     fn eq(&self, other: &Arena<P, T>) -> bool {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();

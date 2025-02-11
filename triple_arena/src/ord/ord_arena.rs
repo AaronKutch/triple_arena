@@ -179,9 +179,9 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         self.a.capacity()
     }
 
-    /// Follows [Arena::gen]
-    pub fn gen(&self) -> P::Gen {
-        self.a.gen()
+    /// Follows [Arena::generation]
+    pub fn generation(&self) -> P::Gen {
+        self.a.generation()
     }
 
     /// Follows [Arena::reserve]
@@ -196,8 +196,8 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         if self.is_empty() {
             None
         } else {
-            let gen = self.a.get_no_gen(self.first).unwrap().0;
-            Some(Ptr::_from_raw(self.first, gen))
+            let generation = self.a.get_no_gen(self.first).unwrap().0;
+            Some(Ptr::_from_raw(self.first, generation))
         }
     }
 
@@ -208,8 +208,8 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         if self.is_empty() {
             None
         } else {
-            let gen = self.a.get_no_gen(self.last).unwrap().0;
-            Some(Ptr::_from_raw(self.last, gen))
+            let generation = self.a.get_no_gen(self.last).unwrap().0;
+            Some(Ptr::_from_raw(self.last, generation))
         }
     }
 
@@ -255,14 +255,14 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     pub fn get_link(&self, p: P) -> Option<Link<P, (&K, &V)>> {
         self.a.get_link(p).map(|link| {
             let prev = if let Some(prev) = link.prev() {
-                let (gen, _) = self.a.get_no_gen(prev).unwrap();
-                Some(Ptr::_from_raw(prev, gen))
+                let (generation, _) = self.a.get_no_gen(prev).unwrap();
+                Some(Ptr::_from_raw(prev, generation))
             } else {
                 None
             };
             let next = if let Some(next) = link.next() {
-                let (gen, _) = self.a.get_no_gen(next).unwrap();
-                Some(Ptr::_from_raw(next, gen))
+                let (generation, _) = self.a.get_no_gen(next).unwrap();
+                Some(Ptr::_from_raw(next, generation))
             } else {
                 None
             };
@@ -273,9 +273,9 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// Returns the generation associated with `p` and a `LinkNoGen<P, &K>`, the
     /// interlinks of which point to neighboring pairs.
     pub fn get_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, (&K, &V)>)> {
-        self.a.get_no_gen(p).map(|(gen, link)| {
+        self.a.get_no_gen(p).map(|(generation, link)| {
             (
-                gen,
+                generation,
                 LinkNoGen::new(link.prev_next(), (&link.t.k, &link.t.v)),
             )
         })
@@ -559,7 +559,7 @@ impl<P: Ptr, K: Debug, V: Debug> Debug for OrdArena<P, K, V> {
 impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<OrdArena<P, K, V>> for OrdArena<P, K, V> {
     /// Checks if all `(K, V)` pairs are equal. This is sensitive to
     /// nonhereditary ordering, but does not compare pointers, generations,
-    /// arena capacities, internal tree configuration, or `self.gen()`.
+    /// arena capacities, internal tree configuration, or `self.generation()`.
     fn eq(&self, other: &OrdArena<P, K, V>) -> bool {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
@@ -588,7 +588,7 @@ impl<P: Ptr, K: PartialOrd, V: PartialOrd> PartialOrd<OrdArena<P, K, V>> for Ord
     /// the prefix had a difference, checking the key before the value in the
     /// pair, and returning based on which is longer. This is sensitive to
     /// nonhereditary ordering, but does not compare pointers, generations,
-    /// arena capacities, internal tree configuration, or `self.gen()`.
+    /// arena capacities, internal tree configuration, or `self.generation()`.
     fn partial_cmp(&self, other: &OrdArena<P, K, V>) -> Option<Ordering> {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
@@ -621,7 +621,7 @@ impl<P: Ptr, K: Ord, V: Ord> Ord for OrdArena<P, K, V> {
     /// the prefix had a difference, checking the key before the value in the
     /// pair, and returning based on which is longer. This is sensitive to
     /// nonhereditary ordering, but does not compare pointers, generations,
-    /// arena capacities, internal tree configuration, or `self.gen()`.
+    /// arena capacities, internal tree configuration, or `self.generation()`.
     fn cmp(&self, other: &OrdArena<P, K, V>) -> Ordering {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();

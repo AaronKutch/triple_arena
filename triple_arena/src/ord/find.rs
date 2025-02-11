@@ -142,11 +142,11 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
         let mut p = self.root;
         loop {
-            let (gen, link) = self.a.get_no_gen(p).unwrap();
+            let (generation, link) = self.a.get_no_gen(p).unwrap();
             let node = &link.t;
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => p = node.p_tree0?,
-                Ordering::Equal => break Some(Ptr::_from_raw(p, gen)),
+                Ordering::Equal => break Some(Ptr::_from_raw(p, generation)),
                 Ordering::Greater => p = node.p_tree1?,
             }
         }
@@ -168,7 +168,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         let mut p = p_init.inx();
         let mut direction = None;
         for _ in 0..num {
-            let (gen, link) = self.a.get_no_gen(p).unwrap();
+            let (generation, link) = self.a.get_no_gen(p).unwrap();
             let node = &link.t;
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
@@ -182,7 +182,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                         break
                     }
                 }
-                Ordering::Equal => return Some(Ptr::_from_raw(p, gen)),
+                Ordering::Equal => return Some(Ptr::_from_raw(p, generation)),
                 Ordering::Greater => {
                     if direction == Some(false) {
                         break
@@ -214,22 +214,22 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         }
         let mut p = self.root;
         loop {
-            let (gen, link) = self.a.get_no_gen(p).unwrap();
+            let (generation, link) = self.a.get_no_gen(p).unwrap();
             let node = &link.t;
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
                     if let Some(p_tree0) = node.p_tree0 {
                         p = p_tree0;
                     } else {
-                        break Some((Ptr::_from_raw(p, gen), Ordering::Less))
+                        break Some((Ptr::_from_raw(p, generation), Ordering::Less))
                     }
                 }
-                Ordering::Equal => break Some((Ptr::_from_raw(p, gen), Ordering::Equal)),
+                Ordering::Equal => break Some((Ptr::_from_raw(p, generation), Ordering::Equal)),
                 Ordering::Greater => {
                     if let Some(p_tree1) = node.p_tree1 {
                         p = p_tree1;
                     } else {
-                        break Some((Ptr::_from_raw(p, gen), Ordering::Greater))
+                        break Some((Ptr::_from_raw(p, generation), Ordering::Greater))
                     }
                 }
             }
@@ -246,9 +246,9 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         let mut p = p_init.inx();
         let mut direction = None;
         for _ in 0..num {
-            let (gen, link) = self.a.get_no_gen(p).unwrap();
+            let (generation, link) = self.a.get_no_gen(p).unwrap();
             let node = &link.t;
-            let p_with_gen = Ptr::_from_raw(p, gen);
+            let p_with_gen = Ptr::_from_raw(p, generation);
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
                     if direction == Some(true) {
@@ -294,9 +294,9 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         }
         let mut p = self.root;
         loop {
-            let (gen, link) = self.a.get_no_gen(p).unwrap();
+            let (generation, link) = self.a.get_no_gen(p).unwrap();
             let node = &link.t;
-            let p_with_gen = Ptr::_from_raw(p, gen);
+            let p_with_gen = Ptr::_from_raw(p, generation);
             match f(p_with_gen, &node.k, &node.v) {
                 Ordering::Less => p = node.p_tree0?,
                 Ordering::Equal => break Some(p_with_gen),
@@ -319,9 +319,9 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         }
         let mut p = self.root;
         loop {
-            let (gen, link) = self.a.get_no_gen(p).unwrap();
+            let (generation, link) = self.a.get_no_gen(p).unwrap();
             let node = &link.t;
-            let p_with_gen = Ptr::_from_raw(p, gen);
+            let p_with_gen = Ptr::_from_raw(p, generation);
             match f(p_with_gen, &node.k, &node.v) {
                 Ordering::Less => {
                     if let Some(tmp) = node.p_tree0 {
@@ -409,28 +409,28 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
         let mut adv = res.advancer();
         while let Some(p) = adv.advance(&res) {
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().3 {
-                let gen = self
+                let generation = self
                     .a
                     .get_no_gen(tmp.inx())
                     .map(|x| x.0)
                     .unwrap_or(<P::Gen as crate::utils::PtrGen>::one());
-                *tmp = Ptr::_from_raw(tmp.inx(), gen);
+                *tmp = Ptr::_from_raw(tmp.inx(), generation);
             }
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().4 {
-                let gen = self
+                let generation = self
                     .a
                     .get_no_gen(tmp.inx())
                     .map(|x| x.0)
                     .unwrap_or(<P::Gen as crate::utils::PtrGen>::one());
-                *tmp = Ptr::_from_raw(tmp.inx(), gen);
+                *tmp = Ptr::_from_raw(tmp.inx(), generation);
             }
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().5 {
-                let gen = self
+                let generation = self
                     .a
                     .get_no_gen(tmp.inx())
                     .map(|x| x.0)
                     .unwrap_or(<P::Gen as crate::utils::PtrGen>::one());
-                *tmp = Ptr::_from_raw(tmp.inx(), gen);
+                *tmp = Ptr::_from_raw(tmp.inx(), generation);
             }
         }
         res

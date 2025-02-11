@@ -21,7 +21,7 @@ pub trait ArenaTrait {
 
     fn new() -> Self;
     fn capacity(&self) -> usize;
-    fn gen(&self) -> <<Self as ArenaTrait>::P as Ptr>::Gen;
+    fn generation(&self) -> <<Self as ArenaTrait>::P as Ptr>::Gen;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
     fn insert(&mut self, e: Self::E) -> Self::P;
@@ -37,8 +37,14 @@ pub trait ArenaTrait {
 impl<P: Ptr, T> ArenaTrait for Arena<P, T> {
     type Adv = arena_iterators::PtrAdvancer<P, T>;
     type E = T;
-    type GetMutRes<'a> = &'a mut Self::E where Self: 'a;
-    type GetRes<'a> = &'a Self::E where Self: 'a;
+    type GetMutRes<'a>
+        = &'a mut Self::E
+    where
+        Self: 'a;
+    type GetRes<'a>
+        = &'a Self::E
+    where
+        Self: 'a;
     type P = P;
 
     fn new() -> Self {
@@ -49,8 +55,8 @@ impl<P: Ptr, T> ArenaTrait for Arena<P, T> {
         self.capacity()
     }
 
-    fn gen(&self) -> P::Gen {
-        self.gen()
+    fn generation(&self) -> P::Gen {
+        self.generation()
     }
 
     fn len(&self) -> usize {
@@ -97,8 +103,14 @@ impl<P: Ptr, T> ArenaTrait for Arena<P, T> {
 impl<P: Ptr, T> ArenaTrait for ChainArena<P, T> {
     type Adv = chain_iterators::PtrAdvancer<P, T>;
     type E = Link<P, T>;
-    type GetMutRes<'a> = Link<P, &'a mut T> where Self: 'a;
-    type GetRes<'a> = &'a Self::E where Self: 'a;
+    type GetMutRes<'a>
+        = Link<P, &'a mut T>
+    where
+        Self: 'a;
+    type GetRes<'a>
+        = &'a Self::E
+    where
+        Self: 'a;
     type P = P;
 
     fn new() -> Self {
@@ -109,8 +121,8 @@ impl<P: Ptr, T> ArenaTrait for ChainArena<P, T> {
         self.capacity()
     }
 
-    fn gen(&self) -> P::Gen {
-        self.gen()
+    fn generation(&self) -> P::Gen {
+        self.generation()
     }
 
     fn len(&self) -> usize {
@@ -162,8 +174,14 @@ impl<P: Ptr, T> ArenaTrait for ChainArena<P, T> {
 impl<P: Ptr, T> ArenaTrait for ChainNoGenArena<P, T> {
     type Adv = chain_no_gen_iterators::PtrAdvancer<P, T>;
     type E = LinkNoGen<P, T>;
-    type GetMutRes<'a> = LinkNoGen<P, &'a mut T> where Self: 'a;
-    type GetRes<'a> = &'a Self::E where Self: 'a;
+    type GetMutRes<'a>
+        = LinkNoGen<P, &'a mut T>
+    where
+        Self: 'a;
+    type GetRes<'a>
+        = &'a Self::E
+    where
+        Self: 'a;
     type P = P;
 
     fn new() -> Self {
@@ -174,8 +192,8 @@ impl<P: Ptr, T> ArenaTrait for ChainNoGenArena<P, T> {
         self.capacity()
     }
 
-    fn gen(&self) -> P::Gen {
-        self.gen()
+    fn generation(&self) -> P::Gen {
+        self.generation()
     }
 
     fn len(&self) -> usize {
@@ -227,8 +245,14 @@ impl<P: Ptr, T> ArenaTrait for ChainNoGenArena<P, T> {
 impl<P: Ptr, K> ArenaTrait for SurjectArena<P, K, ()> {
     type Adv = surject_iterators::PtrAdvancer<P, K, ()>;
     type E = K;
-    type GetMutRes<'a> = &'a mut Self::E where Self: 'a;
-    type GetRes<'a> = &'a Self::E where Self: 'a;
+    type GetMutRes<'a>
+        = &'a mut Self::E
+    where
+        Self: 'a;
+    type GetRes<'a>
+        = &'a Self::E
+    where
+        Self: 'a;
     type P = P;
 
     fn new() -> Self {
@@ -239,8 +263,8 @@ impl<P: Ptr, K> ArenaTrait for SurjectArena<P, K, ()> {
         self.capacity_keys()
     }
 
-    fn gen(&self) -> P::Gen {
-        self.gen()
+    fn generation(&self) -> P::Gen {
+        self.generation()
     }
 
     fn len(&self) -> usize {
@@ -287,8 +311,14 @@ impl<P: Ptr, K> ArenaTrait for SurjectArena<P, K, ()> {
 impl<P: Ptr, K: Ord, V> ArenaTrait for OrdArena<P, K, V> {
     type Adv = ord_iterators::PtrAdvancer<P, K, V>;
     type E = (K, V);
-    type GetMutRes<'a> = (&'a K, &'a mut V) where Self: 'a;
-    type GetRes<'a> = (&'a K, &'a V) where Self: 'a;
+    type GetMutRes<'a>
+        = (&'a K, &'a mut V)
+    where
+        Self: 'a;
+    type GetRes<'a>
+        = (&'a K, &'a V)
+    where
+        Self: 'a;
     type P = P;
 
     fn new() -> Self {
@@ -299,8 +329,8 @@ impl<P: Ptr, K: Ord, V> ArenaTrait for OrdArena<P, K, V> {
         self.capacity()
     }
 
-    fn gen(&self) -> P::Gen {
-        self.gen()
+    fn generation(&self) -> P::Gen {
+        self.generation()
     }
 
     fn len(&self) -> usize {

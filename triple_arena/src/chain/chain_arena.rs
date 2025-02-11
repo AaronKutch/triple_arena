@@ -245,9 +245,9 @@ impl<P: Ptr, T> ChainArena<P, T> {
         self.a.capacity()
     }
 
-    /// Follows [Arena::gen]
-    pub fn gen(&self) -> P::Gen {
-        self.a.gen()
+    /// Follows [Arena::generation]
+    pub fn generation(&self) -> P::Gen {
+        self.a.generation()
     }
 
     /// Follows [Arena::reserve]
@@ -760,9 +760,9 @@ impl<P: Ptr, T> ChainArena<P, T> {
         // because it has the added benefit of bringing in order links together in
         // memory.
         self.a.inc_gen();
-        let gen = self.gen();
+        let generation = self.generation();
         let mut new = Arena::<P, Link<P, T>>::with_capacity(self.len());
-        new.set_gen(gen);
+        new.set_gen(generation);
         let mut adv = self.a.advancer();
         'outer: while let Some(p_init) = adv.advance(&self.a) {
             // an initial prelude is absolutely required to link up cyclic chains and handle
@@ -880,7 +880,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
     pub fn get_no_gen_mut(&mut self, p: P::Inx) -> Option<(P::Gen, Link<P, &mut T>)> {
         self.a
             .get_no_gen_mut(p)
-            .map(|(gen, link)| (gen, Link::new(link.prev_next(), &mut link.t)))
+            .map(|(generation, link)| (generation, Link::new(link.prev_next(), &mut link.t)))
     }
 
     /// Like [ChainArena::get], except generation counters are ignored and the
@@ -1027,7 +1027,7 @@ impl<P: Ptr, T> Default for ChainArena<P, T> {
 impl<P: Ptr, T: PartialEq> PartialEq<ChainArena<P, T>> for ChainArena<P, T> {
     /// Checks if all `(P, Link<P, T>)` pairs are equal. This is sensitive to
     /// `Ptr` indexes and generation counters, but does not compare arena
-    /// capacities or `self.gen()`.
+    /// capacities or `self.generation()`.
     fn eq(&self, other: &ChainArena<P, T>) -> bool {
         self.a == other.a
     }

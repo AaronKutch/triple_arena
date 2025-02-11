@@ -36,14 +36,14 @@ fn fuzz_chain() {
     let mut list: Vec<u64> = vec![];
 
     let mut a: ChainArena<P0, u64> = ChainArena::new();
-    let mut gen = 2;
+    let mut generation = 2;
     let mut b: HashMap<u64, (P0, (Option<u64>, Option<u64>))> = HashMap::new();
 
     let invalid = a.insert_new(u64::MAX);
     a.remove(invalid).unwrap();
-    gen += 1;
+    generation += 1;
     a.clear_and_shrink();
-    gen += 1;
+    generation += 1;
     let mut op_inx;
     // makes sure there is not some problem with the test harness itself or
     // determinism
@@ -53,7 +53,7 @@ fn fuzz_chain() {
     for _ in 0..N {
         assert_eq!(a.len(), list.len());
         assert_eq!(b.len(), a.len());
-        assert_eq!(a.gen().get(), gen);
+        assert_eq!(a.generation().get(), generation);
         assert_eq!(a.is_empty(), list.is_empty());
         let len = list.len();
         if !cfg!(miri) {
@@ -351,7 +351,7 @@ fn fuzz_chain() {
                         }
                     }
                     assert_eq!(a.remove(p).unwrap().t, t);
-                    gen += 1;
+                    generation += 1;
                     b.remove(&t);
                 } else {
                     assert!(a.remove(invalid).is_none());
@@ -462,7 +462,7 @@ fn fuzz_chain() {
                     let t = list[next_inx!(rng, len)];
                     let (ptr, interlink) = b.remove(&t).unwrap();
                     let new_ptr = a.invalidate(ptr).unwrap();
-                    gen += 1;
+                    generation += 1;
                     // preserve interlink on node that was invalidated, the incident interlinks
                     // do not need to be updated because we are looking up based on the `t` value
                     // which is unchanged. This includes single link cyclic chains
@@ -552,7 +552,7 @@ fn fuzz_chain() {
                     }
                     let (ptr, interlink) = b.remove(&t).unwrap();
                     let (t_old, ptr_new) = a.replace_and_update_gen(ptr, t_new).unwrap();
-                    gen += 1;
+                    generation += 1;
                     assert_eq!(t, t_old);
                     b.insert(t_new, (ptr_new, interlink));
                 } else {
@@ -632,29 +632,29 @@ fn fuzz_chain() {
 
                 let mut tmp = HashMap::new();
                 let mut tmp2 = HashMap::new();
-                let q_gen = PtrGen::increment(a.gen());
+                let q_gen = PtrGen::increment(a.generation());
                 a.compress_and_shrink_with(|p, t, q| {
                     assert_eq!(b[t].0, p);
-                    assert_eq!(q_gen, q.gen());
+                    assert_eq!(q_gen, q.generation());
                     tmp.insert(*t, q);
                     tmp2.insert(q, p);
                 });
                 assert_eq!(tmp.len(), a.len());
                 assert_eq!(a.capacity(), a.len());
-                gen += 1;
+                generation += 1;
                 for (t, q) in &tmp {
                     assert_eq!(*t, a[q]);
                 }
                 for (q, link) in a.iter() {
-                    assert_eq!(q_gen, q.gen());
+                    assert_eq!(q_gen, q.generation());
                     // make sure the modified interlinks agree with the `tmp2` mapping
                     if let Some(prev) = link.prev() {
-                        assert_eq!(q_gen, prev.gen());
+                        assert_eq!(q_gen, prev.generation());
                         let p_prev = b[&link.t].1 .0.unwrap();
                         assert_eq!(tmp2[&prev], b[&p_prev].0);
                     }
                     if let Some(next) = link.next() {
-                        assert_eq!(q_gen, next.gen());
+                        assert_eq!(q_gen, next.generation());
                         let p_next = b[&link.t].1 .1.unwrap();
                         assert_eq!(tmp2[&next], b[&p_next].0);
                     }
@@ -744,7 +744,7 @@ fn fuzz_chain() {
                     let mut t_to_remove = HashSet::new();
                     t_to_remove.insert(t);
                     let claim_num_removed = a.remove_chain(b[&t].0).unwrap();
-                    gen += 1;
+                    generation += 1;
                     let init = b.remove(&t).unwrap();
                     let mut num_removed = 1;
                     let mut tmp = init.1 .1;
@@ -805,7 +805,7 @@ fn fuzz_chain() {
                 }
                 assert_eq!(a.capacity(), prev_cap);
                 b.clear();
-                gen += 1;
+                generation += 1;
                 list.clear();
             }
             997 => {
@@ -821,7 +821,7 @@ fn fuzz_chain() {
                 a.clear();
                 assert_eq!(a.capacity(), prev_cap);
                 b.clear();
-                gen += 1;
+                generation += 1;
                 list.clear();
             }
             999 => {
@@ -829,7 +829,7 @@ fn fuzz_chain() {
                 a.clear_and_shrink();
                 assert_eq!(a.capacity(), 0);
                 b.clear();
-                gen += 1;
+                generation += 1;
                 list.clear();
                 iters999 += 1;
             }
@@ -837,5 +837,5 @@ fn fuzz_chain() {
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.gen().get()), STATS);
+    assert_eq!((max_len, iters999, a.generation().get()), STATS);
 }

@@ -47,7 +47,7 @@ pub struct Ptrs<'a, P: Ptr, T> {
     adv: PtrAdvancer<P, T>,
 }
 
-impl<'a, P: Ptr, T> Iterator for Ptrs<'a, P, T> {
+impl<P: Ptr, T> Iterator for Ptrs<'_, P, T> {
     type Item = P;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -133,7 +133,7 @@ pub struct Drain<'a, P: Ptr, T> {
     adv: PtrAdvancer<P, T>,
 }
 
-impl<'a, P: Ptr, T> Drop for Drain<'a, P, T> {
+impl<P: Ptr, T> Drop for Drain<'_, P, T> {
     fn drop(&mut self) {
         if !self.arena.is_empty() {
             self.arena.clear();
@@ -142,7 +142,7 @@ impl<'a, P: Ptr, T> Drop for Drain<'a, P, T> {
     }
 }
 
-impl<'a, P: Ptr, T> Iterator for Drain<'a, P, T> {
+impl<P: Ptr, T> Iterator for Drain<'_, P, T> {
     type Item = (P, T);
 
     fn next(&mut self) -> Option<Self::Item> {
