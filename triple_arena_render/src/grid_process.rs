@@ -1,5 +1,3 @@
-#![allow(clippy::needless_range_loop)]
-
 use std::{
     cmp::{Ordering, Reverse, max, min},
     collections::BinaryHeap,
