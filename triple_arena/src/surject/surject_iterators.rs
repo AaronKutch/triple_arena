@@ -212,35 +212,35 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     }
 
     /// Iteration over all valid `P` in the arena
-    pub fn ptrs(&self) -> Ptrs<P, K> {
+    pub fn ptrs(&self) -> Ptrs<'_, P, K> {
         Ptrs {
             iter: self.keys.ptrs(),
         }
     }
 
     /// Iteration over `&K`
-    pub fn keys(&self) -> Keys<P, K> {
+    pub fn keys(&self) -> Keys<'_, P, K> {
         Keys {
             iter: self.keys.vals(),
         }
     }
 
     /// Iteration over `&V`
-    pub fn vals(&self) -> Vals<P, V> {
+    pub fn vals(&self) -> Vals<'_, P, V> {
         Vals {
             iter: self.vals.vals(),
         }
     }
 
     /// Mutable iteration over `&mut K`
-    pub fn keys_mut(&mut self) -> KeysMut<P, K> {
+    pub fn keys_mut(&mut self) -> KeysMut<'_, P, K> {
         KeysMut {
             iter_mut: self.keys.vals_mut(),
         }
     }
 
     /// Mutable iteration over `&mut V`
-    pub fn vals_mut(&mut self) -> ValsMut<P, V> {
+    pub fn vals_mut(&mut self) -> ValsMut<'_, P, V> {
         ValsMut {
             iter_mut: self.vals.vals_mut(),
         }
@@ -249,7 +249,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// Iteration over `(P, &K, &V)` tuples. For each surject with multiple `P`
     /// pointing to the same `V`, the same reference to the `V` is returned
     /// multiple times
-    pub fn iter(&self) -> Iter<P, K, V> {
+    pub fn iter(&self) -> Iter<'_, P, K, V> {
         Iter {
             iter: self.keys.iter(),
             vals: &self.vals,
@@ -258,7 +258,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
 
     /// Iteration over `(P, &K, &V)` tuples in the surject that contains
     /// `p_init`. The same `&V` reference is used for all iterations.
-    pub fn iter_surject(&self, p_init: P) -> IterSurject<P, K, V> {
+    pub fn iter_surject(&self, p_init: P) -> IterSurject<'_, P, K, V> {
         IterSurject {
             arena: self,
             adv: self.advancer_surject(p_init),

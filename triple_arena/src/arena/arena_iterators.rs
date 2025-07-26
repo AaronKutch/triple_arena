@@ -224,7 +224,7 @@ impl<P: Ptr, T> Arena<P, T> {
     }
 
     /// Iteration over all valid `P` in the arena
-    pub fn ptrs(&self) -> Ptrs<P, T> {
+    pub fn ptrs(&self) -> Ptrs<'_, P, T> {
         Ptrs {
             arena: self,
             adv: self.advancer(),
@@ -232,7 +232,7 @@ impl<P: Ptr, T> Arena<P, T> {
     }
 
     /// Iteration over `&T`
-    pub fn vals(&self) -> Vals<P, T> {
+    pub fn vals(&self) -> Vals<'_, P, T> {
         Vals {
             arena: self,
             adv: self.advancer(),
@@ -240,13 +240,13 @@ impl<P: Ptr, T> Arena<P, T> {
     }
 
     /// Mutable iteration over `&mut T`
-    pub fn vals_mut(&mut self) -> ValsMut<P, T> {
+    pub fn vals_mut(&mut self) -> ValsMut<'_, P, T> {
         let adv = self.advancer();
         ValsMut { arena: self, adv }
     }
 
     /// Iteration over `(P, &T)` tuples
-    pub fn iter(&self) -> Iter<P, T> {
+    pub fn iter(&self) -> Iter<'_, P, T> {
         Iter {
             arena: self,
             adv: self.advancer(),
@@ -254,7 +254,7 @@ impl<P: Ptr, T> Arena<P, T> {
     }
 
     /// Mutable iteration over `(P, &mut T)` tuples
-    pub fn iter_mut(&mut self) -> IterMut<P, T> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, P, T> {
         let adv = self.advancer();
         IterMut { arena: self, adv }
     }
@@ -265,7 +265,7 @@ impl<P: Ptr, T> Arena<P, T> {
     /// Note: When the `Drain` struct is dropped, any remaining iterations will
     /// be consumed and dropped like normal. If the `Drain` struct is leaked
     /// (such as with [core::mem::forget]), unspecified behavior will result.
-    pub fn drain(&mut self) -> Drain<P, T> {
+    pub fn drain(&mut self) -> Drain<'_, P, T> {
         // NOTE: I have not thought fully about how our new invariants interact with
         // leaking the `Drain` struct, just use a normal advancer
 

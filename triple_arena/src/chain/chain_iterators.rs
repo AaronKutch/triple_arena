@@ -212,44 +212,44 @@ impl<P: Ptr, T> ChainArena<P, T> {
     }
 
     /// Iteration over all valid `P`s in the arena
-    pub fn ptrs(&self) -> Ptrs<P, Link<P, T>> {
+    pub fn ptrs(&self) -> Ptrs<'_, P, Link<P, T>> {
         self.a.ptrs()
     }
 
     /// Iteration over `&Link<P, T>`
-    pub fn vals(&self) -> Vals<P, Link<P, T>> {
+    pub fn vals(&self) -> Vals<'_, P, Link<P, T>> {
         self.a.vals()
     }
 
     /// Mutable iteration over `Link<P, &mut T>`
-    pub fn vals_mut(&mut self) -> ValsLinkMut<P, T> {
+    pub fn vals_mut(&mut self) -> ValsLinkMut<'_, P, T> {
         ValsLinkMut {
             iter_mut: self.a.vals_mut(),
         }
     }
 
     /// Iteration over `(P, &Link<P, T>)` tuples
-    pub fn iter(&self) -> Iter<P, Link<P, T>> {
+    pub fn iter(&self) -> Iter<'_, P, Link<P, T>> {
         self.a.iter()
     }
 
     /// Iteration over `(P, &Link<P, T>)` tuples corresponding to all
     /// links in the chain that `p_init` is connected to, according to the order
     /// of [ChainArena::advancer_chain]
-    pub fn iter_chain(&self, p_init: P) -> IterChain<P, T> {
+    pub fn iter_chain(&self, p_init: P) -> IterChain<'_, P, T> {
         let adv = self.advancer_chain(p_init);
         IterChain { arena: self, adv }
     }
 
     /// Mutable iteration over `(P, Link<P, &mut T>)` tuples
-    pub fn iter_mut(&mut self) -> IterLinkMut<P, T> {
+    pub fn iter_mut(&mut self) -> IterLinkMut<'_, P, T> {
         IterLinkMut {
             iter_mut: self.a.iter_mut(),
         }
     }
 
     /// Same as [crate::Arena::drain]
-    pub fn drain(&mut self) -> Drain<P, Link<P, T>> {
+    pub fn drain(&mut self) -> Drain<'_, P, Link<P, T>> {
         self.a.drain()
     }
 
