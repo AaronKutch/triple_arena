@@ -2,7 +2,8 @@
 name = "triple_arena"
 # change the dependency used by `triple_arena_render` when the minor version or higher is changed
 version = "0.14.0"
-edition = "2021"
+edition = "2024"
+rust-version = "1.85"
 authors = ["Aaron Kutch <aaronkutch@att.net>"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
@@ -11,7 +12,6 @@ documentation = "https://docs.rs/triple_arena"
 description = "Regular, Chain, Surjection, and Ordered Arenas supporting non-Clone types, deletion, and more"
 keywords = ["arena", "generation", "no_std"]
 categories = ["memory-management", "data-structures", "no-std"]
-rust-version = "1.70"
 
 [features]
 default = []
