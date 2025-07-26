@@ -4,6 +4,8 @@
 // false positives
 #![allow(clippy::while_let_on_iterator)]
 #![allow(clippy::comparison_chain)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(mismatched_lifetime_syntaxes)]
 
 mod arena;
 pub use arena::arena_iterators;

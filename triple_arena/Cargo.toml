@@ -13,6 +13,13 @@ keywords = ["arena", "generation", "no_std"]
 categories = ["memory-management", "data-structures", "no-std"]
 rust-version = "1.70"
 
+[features]
+default = []
+std = ["recasting/std"]
+serde_support = ["serde"]
+# this is only for testing purposes
+expose_internal_utils = []
+
 [dependencies]
 #recasting = { path = "../../recasting", default-features = false, features = ["alloc"] }
 recasting = { version = "0.2", default-features = false, features = ["alloc"] }
@@ -20,10 +27,3 @@ serde = { version = "1.0", default-features = false, optional = true }
 
 [dev-dependencies]
 ron = "0.8"
-
-[features]
-default = []
-std = ["recasting/std"]
-serde_support = ["serde"]
-# this is only for testing purposes
-expose_internal_utils = []

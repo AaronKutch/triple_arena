@@ -49,7 +49,7 @@ impl<P: Ptr> DebugNodeTrait<P> for MyNode<P> {
                     sources: v
                         .iter()
                         .enumerate()
-                        .map(|(i, p)| (*p, format!("in{}", i)))
+                        .map(|(i, p)| (*p, format!("in{i}")))
                         .collect(),
                     center: vec!["+".to_owned()],
                     sinks: vec![],

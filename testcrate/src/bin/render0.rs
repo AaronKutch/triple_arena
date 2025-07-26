@@ -61,14 +61,14 @@ fn main() {
         .map(|i| {
             (
                 a.insert(MyNode::new(vec![], vec![], vec![])),
-                format!("i{}", i),
+                format!("i{i}"),
             )
         })
         .collect();
     let sinks: Vec<(P0, String)> = (0..9)
         .map(|i| {
             (
-                a.insert(MyNode::new(vec![], vec![format!("o{}", i)], vec![])),
+                a.insert(MyNode::new(vec![], vec![format!("o{i}")], vec![])),
                 String::new(),
             )
         })
@@ -83,14 +83,14 @@ fn main() {
         .map(|i| {
             (
                 a.insert(MyNode::new(vec![], vec![], vec![])),
-                format!("i{}", i),
+                format!("i{i}"),
             )
         })
         .collect();
     let sinks: Vec<(P0, String)> = (0..1)
         .map(|i| {
             (
-                a.insert(MyNode::new(vec![], vec![format!("o{}", i)], vec![])),
+                a.insert(MyNode::new(vec![], vec![format!("o{i}")], vec![])),
                 String::new(),
             )
         })
