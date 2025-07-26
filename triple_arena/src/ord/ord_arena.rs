@@ -10,9 +10,9 @@ use core::{
 };
 
 use crate::{
+    Advancer, Arena, ChainArena, Link, Ptr,
     chain::LinkNoGen,
     utils::{ChainNoGenArena, PtrInx},
-    Advancer, Arena, ChainArena, Link, Ptr,
 };
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
@@ -93,7 +93,7 @@ pub struct Node<P: Ptr, K, V> {
 /// ```
 /// use core::cmp::Ordering;
 ///
-/// use triple_arena::{ptr_struct, OrdArena};
+/// use triple_arena::{OrdArena, ptr_struct};
 ///
 /// ptr_struct!(P0);
 /// let mut a: OrdArena<P0, u64, ()> = OrdArena::new();
@@ -340,11 +340,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     pub fn swap_vals(&mut self, p0: P, p1: P) -> Option<()> {
         if p0 == p1 {
             // still need to check for containment
-            if self.contains(p0) {
-                Some(())
-            } else {
-                None
-            }
+            if self.contains(p0) { Some(()) } else { None }
         } else {
             let (lhs, rhs) = self.a.get2_mut(p0, p1)?;
             // be careful to swap only the inner `V` values

@@ -1,11 +1,11 @@
 use rand_xoshiro::{
-    rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
+    rand_core::{RngCore, SeedableRng},
 };
 use testcrate::{
-    fuzz_fill_inst, std_arena, std_chain, std_chain_no_gen, std_ord, std_surject, CKey, CVal, A, P1,
+    A, CKey, CVal, P1, fuzz_fill_inst, std_arena, std_chain, std_chain_no_gen, std_ord, std_surject,
 };
-use triple_arena::{utils::ChainNoGenArena, Arena, ChainArena, OrdArena, SurjectArena};
+use triple_arena::{Arena, ChainArena, OrdArena, SurjectArena, utils::ChainNoGenArena};
 
 #[test]
 fn test_inst_framework() {

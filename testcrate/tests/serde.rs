@@ -1,10 +1,10 @@
 #![cfg(feature = "serde_support")]
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use testcrate::{std_arena, std_chain, std_chain_no_gen, std_ord, std_surject};
 use triple_arena::{
-    utils::{ChainNoGenArena, PtrGen},
     Arena, ChainArena, OrdArena, Ptr, SurjectArena,
+    utils::{ChainNoGenArena, PtrGen},
 };
 
 // RON version for debug

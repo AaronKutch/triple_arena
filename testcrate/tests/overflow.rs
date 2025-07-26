@@ -1,6 +1,6 @@
 use std::num::NonZeroU8;
 
-use triple_arena::{ptr_struct, Advancer, Arena};
+use triple_arena::{Advancer, Arena, ptr_struct};
 
 ptr_struct!(P0[NonZeroU8]);
 ptr_struct!(P1(NonZeroU8));

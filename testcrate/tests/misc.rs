@@ -1,10 +1,9 @@
-use std::num::{NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize};
+use std::num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZeroUsize};
 
 use testcrate::P0;
 use triple_arena::{
-    ptr_struct,
+    Advancer, Arena, Ptr, ptr_struct,
     utils::{PtrInx, PtrNoGen},
-    Advancer, Arena, Ptr,
 };
 
 #[test]

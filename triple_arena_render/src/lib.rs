@@ -10,7 +10,7 @@ use triple_arena::{Link, Ptr};
 /// Internal structs and functions for experimenting with new rendering backends
 pub mod internal {
     pub use crate::{
-        grid_process::{grid_process, ANode},
+        grid_process::{ANode, grid_process},
         render_grid::RenderGrid,
         render_node::RenderNode,
     };

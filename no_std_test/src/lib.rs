@@ -11,7 +11,7 @@ use core::num::NonZeroUsize;
 extern crate alloc;
 use alloc::vec::Vec;
 
-use triple_arena::{ptr_struct, utils::NonZeroInxVec, Arena};
+use triple_arena::{Arena, ptr_struct, utils::NonZeroInxVec};
 
 ptr_struct!(P0());
 ptr_struct!(P1);

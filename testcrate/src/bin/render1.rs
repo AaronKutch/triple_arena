@@ -1,8 +1,8 @@
 //! basic fuzzing
 
 use rand_xoshiro::{
-    rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
+    rand_core::{RngCore, SeedableRng},
 };
 use testcrate::*;
 use triple_arena::Arena;

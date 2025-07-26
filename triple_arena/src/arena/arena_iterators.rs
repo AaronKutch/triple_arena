@@ -2,13 +2,13 @@
 
 use core::{marker::PhantomData, num::NonZeroUsize};
 
-use recasting::{Recast, Recaster};
 use InternalEntry::*;
+use recasting::{Recast, Recaster};
 
 use crate::{
-    arena::InternalEntry,
-    utils::{nzusize_unchecked, PtrInx},
     Advancer, Arena, Ptr,
+    arena::InternalEntry,
+    utils::{PtrInx, nzusize_unchecked},
 };
 
 /// An advancer over the valid `P`s of an `Arena`

@@ -4,9 +4,8 @@ use std::{
 };
 
 use triple_arena::{
-    ptr_struct,
+    Link, Ptr, ptr_struct,
     utils::{InternalEntry, LinkNoGen, Node, PtrNoGen},
-    Link, Ptr,
 };
 
 ptr_struct!(P0);

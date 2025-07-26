@@ -6,7 +6,7 @@ NOTE: do not forget to update `ptr_serde.rs` when updating this file
 use core::{
     fmt::Debug,
     hash::Hash,
-    num::{NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize},
+    num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZeroUsize},
     panic::{RefUnwindSafe, UnwindSafe},
 };
 

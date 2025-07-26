@@ -4,9 +4,9 @@ use core::{mem, num::NonZeroUsize};
 use fmt::Debug;
 
 use crate::{
+    Advancer, Arena, ChainArena, Ptr,
     arena::InternalEntry,
     utils::{ChainNoGenArena, LinkNoGen, PtrInx, PtrNoGen},
-    Advancer, Arena, ChainArena, Ptr,
 };
 
 #[derive(Clone)]
@@ -49,7 +49,7 @@ pub(crate) struct Val<V> {
 /// reference counting or epoch-like structures.
 ///
 /// ```
-/// use triple_arena::{ptr_struct, SurjectArena};
+/// use triple_arena::{SurjectArena, ptr_struct};
 ///
 /// ptr_struct!(P0);
 /// let mut a: SurjectArena<P0, String, String> = SurjectArena::new();
@@ -598,11 +598,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     pub fn swap_keys(&mut self, p0: P, p1: P) -> Option<()> {
         if p0 == p1 {
             // still need to check for containment
-            if self.contains(p0) {
-                Some(())
-            } else {
-                None
-            }
+            if self.contains(p0) { Some(()) } else { None }
         } else {
             let (lhs, rhs) = self.keys.get2_mut(p0, p1)?;
             // be careful to swap only the inner `K` values and not the `p_val`s

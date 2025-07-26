@@ -5,11 +5,11 @@ use std::{
 };
 
 use rand_xoshiro::{
-    rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
+    rand_core::{RngCore, SeedableRng},
 };
 use testcrate::P0;
-use triple_arena::{utils::PtrGen, Advancer, OrdArena, Ptr};
+use triple_arena::{Advancer, OrdArena, Ptr, utils::PtrGen};
 
 const N: usize = if cfg!(miri) {
     1000
@@ -95,43 +95,43 @@ fn fuzz_ord() {
         assert_eq!(a.generation().get(), generation);
         assert_eq!(a.is_empty(), list.is_empty());
         let len = list.len();
-        if !cfg!(miri) {
-            if let Err(e) = OrdArena::_check_invariants(&a) {
-                //if i == 9 {
-                /*let debug0 = a.debug_arena();
-                let mut debug1 = triple_arena::Arena::new();
-                debug1.clone_from_with(&debug0, |p, t| triple_arena_render::DebugNode {
-                    sources: if let Some(tmp) = t.4 {
-                        vec![(tmp, String::new())]
-                    } else {
-                        vec![]
-                    },
-                    center: vec![
-                        format!("p: {:?}", p),
-                        format!("rank: {:?}", t.0),
-                        format!("k: {:?}", t.1),
-                        format!("v: {:?}", t.2),
-                    ],
-                    sinks: {
-                        let mut v = vec![];
-                        if let Some(tmp) = t.3 {
-                            v.push((tmp, "0".to_owned()))
-                        }
-                        if let Some(tmp) = t.5 {
-                            v.push((tmp, "1".to_owned()))
-                        }
-                        v
-                    },
-                });
-                triple_arena_render::render_to_svg_file(
-                    &debug1,
-                    false,
-                    std::path::PathBuf::from("./debug.svg"),
-                )
-                .unwrap();
-                println!("{}", a.debug());*/
-                panic!("{e}");
-            }
+        if !cfg!(miri)
+            && let Err(e) = OrdArena::_check_invariants(&a)
+        {
+            //if i == 9 {
+            /*let debug0 = a.debug_arena();
+            let mut debug1 = triple_arena::Arena::new();
+            debug1.clone_from_with(&debug0, |p, t| triple_arena_render::DebugNode {
+                sources: if let Some(tmp) = t.4 {
+                    vec![(tmp, String::new())]
+                } else {
+                    vec![]
+                },
+                center: vec![
+                    format!("p: {:?}", p),
+                    format!("rank: {:?}", t.0),
+                    format!("k: {:?}", t.1),
+                    format!("v: {:?}", t.2),
+                ],
+                sinks: {
+                    let mut v = vec![];
+                    if let Some(tmp) = t.3 {
+                        v.push((tmp, "0".to_owned()))
+                    }
+                    if let Some(tmp) = t.5 {
+                        v.push((tmp, "1".to_owned()))
+                    }
+                    v
+                },
+            });
+            triple_arena_render::render_to_svg_file(
+                &debug1,
+                false,
+                std::path::PathBuf::from("./debug.svg"),
+            )
+            .unwrap();
+            println!("{}", a.debug());*/
+            panic!("{e}");
         }
         //println!("i: {i}");
 
@@ -266,9 +266,10 @@ fn fuzz_ord() {
                 } else if len == 0 {
                     assert!(a.find_key_linear(invalid, 4, &new_k).is_none());
                 } else {
-                    assert!(a
-                        .find_key_linear(list[next_inx!(rng, len)].p, 4, &new_k)
-                        .is_none());
+                    assert!(
+                        a.find_key_linear(list[next_inx!(rng, len)].p, 4, &new_k)
+                            .is_none()
+                    );
                 }
             }
             400..=419 => {

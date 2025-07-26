@@ -6,9 +6,9 @@
 extern crate test;
 use std::{collections::BTreeMap, hint::black_box};
 
-use rand_xoshiro::{rand_core::SeedableRng, Xoshiro128StarStar};
+use rand_xoshiro::{Xoshiro128StarStar, rand_core::SeedableRng};
 use test::Bencher;
-use testcrate::{fuzz_fill_inst_bench, get_next_seed, A, P1};
+use testcrate::{A, P1, fuzz_fill_inst_bench, get_next_seed};
 use triple_arena::{Arena, OrdArena};
 
 fn get_std_bench_insts(seed: u64) -> Vec<Result<(u128, u128), usize>> {

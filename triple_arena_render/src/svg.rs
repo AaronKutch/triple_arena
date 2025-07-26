@@ -8,8 +8,8 @@ use std::{
 use triple_arena::{Arena, Ptr};
 
 use crate::{
-    grid_process::grid_process, render_grid::RenderGrid, DebugNodeTrait, RenderError, COLORS,
-    FONT_FAMILY, NODE_FILL, NODE_PAD_Y, PAD, RELATION_WIDTH, TEXT_COLOR,
+    COLORS, DebugNodeTrait, FONT_FAMILY, NODE_FILL, NODE_PAD_Y, PAD, RELATION_WIDTH, RenderError,
+    TEXT_COLOR, grid_process::grid_process, render_grid::RenderGrid,
 };
 
 /// create the SVG code
@@ -140,7 +140,7 @@ pub(crate) fn gen_svg<P: Ptr>(rg: &RenderGrid<P>) -> String {
                     s,
                     "<text fill=\"#{}\" font-size=\"{}\" font-family=\"{}\" x=\"{}\" y=\"{}\" \
                      textLength=\"{}\">{}</text>",
-                    TEXT_COLOR, size, FONT_FAMILY, tmp.0 .0, tmp.0 .1, tmp.2, final_text
+                    TEXT_COLOR, size, FONT_FAMILY, tmp.0.0, tmp.0.1, tmp.2, final_text
                 )
                 .unwrap();
                 /*write!(

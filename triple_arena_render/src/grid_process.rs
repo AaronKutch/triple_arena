@@ -1,15 +1,15 @@
 #![allow(clippy::needless_range_loop)]
 
 use std::{
-    cmp::{max, min, Ordering, Reverse},
+    cmp::{Ordering, Reverse, max, min},
     collections::BinaryHeap,
     mem,
     num::NonZeroU64,
 };
 
-use triple_arena::{ptr_struct, Advancer, Arena, ChainArena, Link, OrdArena, Ptr};
+use triple_arena::{Advancer, Arena, ChainArena, Link, OrdArena, Ptr, ptr_struct};
 
-use crate::{render_grid::RenderGrid, DebugNodeTrait, RenderError};
+use crate::{DebugNodeTrait, RenderError, render_grid::RenderGrid};
 
 #[derive(Debug)]
 pub struct Edge<P: Ptr> {

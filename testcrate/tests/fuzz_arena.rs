@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
 use rand_xoshiro::{
-    rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
+    rand_core::{RngCore, SeedableRng},
 };
 use testcrate::P0;
-use triple_arena::{utils::PtrGen, Advancer, Arena, Ptr};
+use triple_arena::{Advancer, Arena, Ptr, utils::PtrGen};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 

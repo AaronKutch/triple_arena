@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
 use rand_xoshiro::{
-    rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
+    rand_core::{RngCore, SeedableRng},
 };
 use testcrate::P0;
-use triple_arena::{utils::PtrGen, Advancer, ChainArena, Ptr};
+use triple_arena::{Advancer, ChainArena, Ptr, utils::PtrGen};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
@@ -56,10 +56,10 @@ fn fuzz_chain() {
         assert_eq!(a.generation().get(), generation);
         assert_eq!(a.is_empty(), list.is_empty());
         let len = list.len();
-        if !cfg!(miri) {
-            if let Err(e) = ChainArena::_check_invariants(&a) {
-                panic!("{e}");
-            }
+        if !cfg!(miri)
+            && let Err(e) = ChainArena::_check_invariants(&a)
+        {
+            panic!("{e}");
         }
         op_inx = rng.next_u32() % 1000;
         match op_inx {
@@ -116,24 +116,24 @@ fn fuzz_chain() {
                     1 => {
                         let t0 = list[next_inx!(rng, len)];
                         let p = a.insert((Some(b[&t0].0), None), t).unwrap();
-                        if let Some(t1) = b[&t0].1 .1 {
-                            b.get_mut(&t0).unwrap().1 .1 = Some(t);
-                            b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                        if let Some(t1) = b[&t0].1.1 {
+                            b.get_mut(&t0).unwrap().1.1 = Some(t);
+                            b.get_mut(&t1).unwrap().1.0 = Some(t);
                             b.insert(t, (p, (Some(t0), Some(t1))));
                         } else {
-                            b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                            b.get_mut(&t0).unwrap().1.1 = Some(t);
                             b.insert(t, (p, (Some(t0), None)));
                         }
                     }
                     2 => {
                         let t1 = list[next_inx!(rng, len)];
                         let p = a.insert((None, Some(b[&t1].0)), t).unwrap();
-                        if let Some(t0) = b[&t1].1 .0 {
-                            b.get_mut(&t0).unwrap().1 .1 = Some(t);
-                            b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                        if let Some(t0) = b[&t1].1.0 {
+                            b.get_mut(&t0).unwrap().1.1 = Some(t);
+                            b.get_mut(&t1).unwrap().1.0 = Some(t);
                             b.insert(t, (p, (Some(t0), Some(t1))));
                         } else {
-                            b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                            b.get_mut(&t1).unwrap().1.0 = Some(t);
                             b.insert(t, (p, (None, Some(t1))));
                         }
                     }
@@ -141,18 +141,18 @@ fn fuzz_chain() {
                         let t0 = list[next_inx!(rng, len)];
                         let t1 = list[next_inx!(rng, len)];
                         if let Ok(p) = a.insert((Some(b[&t0].0), Some(b[&t1].0)), t) {
-                            if let Some(t1) = b[&t0].1 .1 {
-                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
-                                b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                            if let Some(t1) = b[&t0].1.1 {
+                                b.get_mut(&t0).unwrap().1.1 = Some(t);
+                                b.get_mut(&t1).unwrap().1.0 = Some(t);
                                 b.insert(t, (p, (Some(t0), Some(t1))));
                             } else {
-                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                                b.get_mut(&t0).unwrap().1.1 = Some(t);
                                 b.insert(t, (p, (Some(t0), None)));
                             }
                         } else {
                             // check that the failure is expected
-                            assert_ne!(b[&t0].1 .1, Some(t1));
-                            assert_ne!(b[&t1].1 .0, Some(t0));
+                            assert_ne!(b[&t0].1.1, Some(t1));
+                            assert_ne!(b[&t1].1.0, Some(t0));
                             // undo
                             list.pop().unwrap();
                         }
@@ -161,18 +161,18 @@ fn fuzz_chain() {
                         // test double sided insertion for single link cyclical chains
                         let t0 = list[next_inx!(rng, len)];
                         if let Ok(p) = a.insert((Some(b[&t0].0), Some(b[&t0].0)), t) {
-                            if let Some(t1) = b[&t0].1 .1 {
-                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
-                                b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                            if let Some(t1) = b[&t0].1.1 {
+                                b.get_mut(&t0).unwrap().1.1 = Some(t);
+                                b.get_mut(&t1).unwrap().1.0 = Some(t);
                                 b.insert(t, (p, (Some(t0), Some(t1))));
                             } else {
-                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                                b.get_mut(&t0).unwrap().1.1 = Some(t);
                                 b.insert(t, (p, (Some(t0), None)));
                             }
                         } else {
                             // check that the failure is expected
-                            assert_ne!(b[&t0].1 .1, Some(t0));
-                            assert_ne!(b[&t0].1 .0, Some(t0));
+                            assert_ne!(b[&t0].1.1, Some(t0));
+                            assert_ne!(b[&t0].1.0, Some(t0));
                             // undo
                             list.pop().unwrap();
                         }
@@ -207,12 +207,12 @@ fn fuzz_chain() {
                             })
                             .unwrap();
                         assert_eq!(inner_p.unwrap(), p);
-                        if let Some(t1) = b[&t0].1 .1 {
-                            b.get_mut(&t0).unwrap().1 .1 = Some(t);
-                            b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                        if let Some(t1) = b[&t0].1.1 {
+                            b.get_mut(&t0).unwrap().1.1 = Some(t);
+                            b.get_mut(&t1).unwrap().1.0 = Some(t);
                             b.insert(t, (p, (Some(t0), Some(t1))));
                         } else {
-                            b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                            b.get_mut(&t0).unwrap().1.1 = Some(t);
                             b.insert(t, (p, (Some(t0), None)));
                         }
                     }
@@ -226,12 +226,12 @@ fn fuzz_chain() {
                             })
                             .unwrap();
                         assert_eq!(inner_p.unwrap(), p);
-                        if let Some(t0) = b[&t1].1 .0 {
-                            b.get_mut(&t0).unwrap().1 .1 = Some(t);
-                            b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                        if let Some(t0) = b[&t1].1.0 {
+                            b.get_mut(&t0).unwrap().1.1 = Some(t);
+                            b.get_mut(&t1).unwrap().1.0 = Some(t);
                             b.insert(t, (p, (Some(t0), Some(t1))));
                         } else {
-                            b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                            b.get_mut(&t1).unwrap().1.0 = Some(t);
                             b.insert(t, (p, (None, Some(t1))));
                         }
                     }
@@ -244,19 +244,19 @@ fn fuzz_chain() {
                             t
                         }) {
                             assert_eq!(inner_p.unwrap(), p);
-                            if let Some(t1) = b[&t0].1 .1 {
-                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
-                                b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                            if let Some(t1) = b[&t0].1.1 {
+                                b.get_mut(&t0).unwrap().1.1 = Some(t);
+                                b.get_mut(&t1).unwrap().1.0 = Some(t);
                                 b.insert(t, (p, (Some(t0), Some(t1))));
                             } else {
-                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                                b.get_mut(&t0).unwrap().1.1 = Some(t);
                                 b.insert(t, (p, (Some(t0), None)));
                             }
                         } else {
                             assert!(inner_p.is_none());
                             // check that the failure is expected
-                            assert_ne!(b[&t0].1 .1, Some(t1));
-                            assert_ne!(b[&t1].1 .0, Some(t0));
+                            assert_ne!(b[&t0].1.1, Some(t1));
+                            assert_ne!(b[&t1].1.0, Some(t0));
                             // undo
                             list.pop().unwrap();
                         }
@@ -270,19 +270,19 @@ fn fuzz_chain() {
                             t
                         }) {
                             assert_eq!(inner_p.unwrap(), p);
-                            if let Some(t1) = b[&t0].1 .1 {
-                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
-                                b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                            if let Some(t1) = b[&t0].1.1 {
+                                b.get_mut(&t0).unwrap().1.1 = Some(t);
+                                b.get_mut(&t1).unwrap().1.0 = Some(t);
                                 b.insert(t, (p, (Some(t0), Some(t1))));
                             } else {
-                                b.get_mut(&t0).unwrap().1 .1 = Some(t);
+                                b.get_mut(&t0).unwrap().1.1 = Some(t);
                                 b.insert(t, (p, (Some(t0), None)));
                             }
                         } else {
                             assert!(inner_p.is_none());
                             // check that the failure is expected
-                            assert_ne!(b[&t0].1 .1, Some(t0));
-                            assert_ne!(b[&t0].1 .0, Some(t0));
+                            assert_ne!(b[&t0].1.1, Some(t0));
+                            assert_ne!(b[&t0].1.0, Some(t0));
                             // undo
                             list.pop().unwrap();
                         }
@@ -301,30 +301,30 @@ fn fuzz_chain() {
                             if (rng.next_u32() & 1) == 0 {
                                 let p = a.insert_start(b[&t_mid].0, t).unwrap();
                                 b.insert(t, (p, (None, Some(t_mid))));
-                                b.get_mut(&t_mid).unwrap().1 .0 = Some(t);
+                                b.get_mut(&t_mid).unwrap().1.0 = Some(t);
                             } else {
                                 let p = a.insert_end(b[&t_mid].0, t).unwrap();
                                 b.insert(t, (p, (Some(t_mid), None)));
-                                b.get_mut(&t_mid).unwrap().1 .1 = Some(t);
+                                b.get_mut(&t_mid).unwrap().1.1 = Some(t);
                             }
                         }
                         (None, Some(_)) => {
                             let p = a.insert_start(b[&t_mid].0, t).unwrap();
                             b.insert(t, (p, (None, Some(t_mid))));
-                            b.get_mut(&t_mid).unwrap().1 .0 = Some(t);
+                            b.get_mut(&t_mid).unwrap().1.0 = Some(t);
                         }
                         (Some(_), None) => {
                             let p = a.insert_end(b[&t_mid].0, t).unwrap();
                             b.insert(t, (p, (Some(t_mid), None)));
-                            b.get_mut(&t_mid).unwrap().1 .1 = Some(t);
+                            b.get_mut(&t_mid).unwrap().1.1 = Some(t);
                         }
                         (Some(_), Some(t1)) => {
                             // can't use `insert_end` or `insert_start`, use `insert` with both
                             // `Some`
                             let p = a.insert((Some(b[&t_mid].0), Some(b[&t1].0)), t).unwrap();
                             b.insert(t, (p, (Some(t_mid), Some(t1))));
-                            b.get_mut(&t_mid).unwrap().1 .1 = Some(t);
-                            b.get_mut(&t1).unwrap().1 .0 = Some(t);
+                            b.get_mut(&t_mid).unwrap().1.1 = Some(t);
+                            b.get_mut(&t1).unwrap().1.0 = Some(t);
                         }
                     }
                 } else {
@@ -340,14 +340,14 @@ fn fuzz_chain() {
                     match b[&t].1 {
                         (None, None) => (),
                         (None, Some(t1)) => {
-                            b.get_mut(&t1).unwrap().1 .0 = None;
+                            b.get_mut(&t1).unwrap().1.0 = None;
                         }
                         (Some(t0), None) => {
-                            b.get_mut(&t0).unwrap().1 .1 = None;
+                            b.get_mut(&t0).unwrap().1.1 = None;
                         }
                         (Some(t0), Some(t1)) => {
-                            b.get_mut(&t0).unwrap().1 .1 = Some(t1);
-                            b.get_mut(&t1).unwrap().1 .0 = Some(t0);
+                            b.get_mut(&t0).unwrap().1.1 = Some(t1);
+                            b.get_mut(&t1).unwrap().1.0 = Some(t0);
                         }
                     }
                     assert_eq!(a.remove(p).unwrap().t, t);
@@ -362,15 +362,15 @@ fn fuzz_chain() {
                 if len != 0 {
                     let t0 = list[next_inx!(rng, len)];
                     let t1 = list[next_inx!(rng, len)];
-                    if b[&t0].1 .1.is_none() && b[&t1].1 .0.is_none() {
+                    if b[&t0].1.1.is_none() && b[&t1].1.0.is_none() {
                         a.connect(b[&t0].0, b[&t1].0).unwrap();
-                        b.get_mut(&t0).unwrap().1 .1 = Some(t1);
-                        b.get_mut(&t1).unwrap().1 .0 = Some(t0);
-                    } else if b[&t0].1 .0.is_none() && b[&t0].1 .1.is_none() {
+                        b.get_mut(&t0).unwrap().1.1 = Some(t1);
+                        b.get_mut(&t1).unwrap().1.0 = Some(t0);
+                    } else if b[&t0].1.0.is_none() && b[&t0].1.1.is_none() {
                         // connecting for single link cyclical chain case instead
                         a.connect(b[&t0].0, b[&t0].0).unwrap();
-                        b.get_mut(&t0).unwrap().1 .0 = Some(t0);
-                        b.get_mut(&t0).unwrap().1 .1 = Some(t0);
+                        b.get_mut(&t0).unwrap().1.0 = Some(t0);
+                        b.get_mut(&t0).unwrap().1.1 = Some(t0);
                     }
                 } else {
                     assert!(a.connect(invalid, invalid).is_none());
@@ -381,9 +381,9 @@ fn fuzz_chain() {
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
                     if a.break_prev(b[&t].0).is_some() {
-                        let u = b.get_mut(&t).unwrap().1 .0.unwrap();
-                        b.get_mut(&u).unwrap().1 .1 = None;
-                        b.get_mut(&t).unwrap().1 .0 = None;
+                        let u = b.get_mut(&t).unwrap().1.0.unwrap();
+                        b.get_mut(&u).unwrap().1.1 = None;
+                        b.get_mut(&t).unwrap().1.0 = None;
                     }
                 } else {
                     assert!(a.break_prev(invalid).is_none());
@@ -394,9 +394,9 @@ fn fuzz_chain() {
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
                     if a.break_next(b[&t].0).is_some() {
-                        let d = b.get_mut(&t).unwrap().1 .1.unwrap();
-                        b.get_mut(&d).unwrap().1 .0 = None;
-                        b.get_mut(&t).unwrap().1 .1 = None;
+                        let d = b.get_mut(&t).unwrap().1.1.unwrap();
+                        b.get_mut(&d).unwrap().1.0 = None;
+                        b.get_mut(&t).unwrap().1.1 = None;
                     }
                 } else {
                     assert!(a.break_prev(invalid).is_none());
@@ -408,14 +408,14 @@ fn fuzz_chain() {
                     let t0 = list[next_inx!(rng, len)];
                     let t1 = list[next_inx!(rng, len)];
                     if a.exchange_next(b[&t0].0, b[&t1].0).is_some() {
-                        let d0 = b.get_mut(&t0).unwrap().1 .1.unwrap();
-                        let d1 = b.get_mut(&t1).unwrap().1 .1.unwrap();
-                        b.get_mut(&t0).unwrap().1 .1 = Some(d1);
-                        b.get_mut(&t1).unwrap().1 .1 = Some(d0);
-                        b.get_mut(&d0).unwrap().1 .0 = Some(t1);
-                        b.get_mut(&d1).unwrap().1 .0 = Some(t0);
+                        let d0 = b.get_mut(&t0).unwrap().1.1.unwrap();
+                        let d1 = b.get_mut(&t1).unwrap().1.1.unwrap();
+                        b.get_mut(&t0).unwrap().1.1 = Some(d1);
+                        b.get_mut(&t1).unwrap().1.1 = Some(d0);
+                        b.get_mut(&d0).unwrap().1.0 = Some(t1);
+                        b.get_mut(&d1).unwrap().1.0 = Some(t0);
                     } else {
-                        assert!(b[&t0].1 .1.is_none() || b[&t1].1 .1.is_none());
+                        assert!(b[&t0].1.1.is_none() || b[&t1].1.1.is_none());
                     }
                 } else {
                     assert!(a.exchange_next(invalid, invalid).is_none());
@@ -426,7 +426,7 @@ fn fuzz_chain() {
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
                     if a.exchange_next(b[&t].0, b[&t].0).is_none() {
-                        assert!(b[&t].1 .1.is_none());
+                        assert!(b[&t].1.1.is_none());
                     }
                 } else {
                     assert!(a.exchange_next(invalid, invalid).is_none());
@@ -483,28 +483,28 @@ fn fuzz_chain() {
                     // have to special case cyclical chains
                     if let Some(interlink) = interlink.0 {
                         let tmp = b.get_mut(&interlink).unwrap();
-                        if let Some(ref mut tmp) = tmp.1 .0 {
-                            if *tmp == t {
-                                *tmp = t_new;
-                            }
+                        if let Some(ref mut tmp) = tmp.1.0
+                            && *tmp == t
+                        {
+                            *tmp = t_new;
                         }
-                        if let Some(ref mut tmp) = tmp.1 .1 {
-                            if *tmp == t {
-                                *tmp = t_new;
-                            }
+                        if let Some(ref mut tmp) = tmp.1.1
+                            && *tmp == t
+                        {
+                            *tmp = t_new;
                         }
                     }
                     if let Some(interlink) = interlink.1 {
                         let tmp = b.get_mut(&interlink).unwrap();
-                        if let Some(ref mut tmp) = tmp.1 .0 {
-                            if *tmp == t {
-                                *tmp = t_new;
-                            }
+                        if let Some(ref mut tmp) = tmp.1.0
+                            && *tmp == t
+                        {
+                            *tmp = t_new;
                         }
-                        if let Some(ref mut tmp) = tmp.1 .1 {
-                            if *tmp == t {
-                                *tmp = t_new;
-                            }
+                        if let Some(ref mut tmp) = tmp.1.1
+                            && *tmp == t
+                        {
+                            *tmp = t_new;
                         }
                     }
                     let (ptr, interlink) = b.remove(&t).unwrap();
@@ -526,28 +526,28 @@ fn fuzz_chain() {
                     // have to special case cyclical chains
                     if let Some(interlink) = interlink.0 {
                         let tmp = b.get_mut(&interlink).unwrap();
-                        if let Some(ref mut tmp) = tmp.1 .0 {
-                            if *tmp == t {
-                                *tmp = t_new;
-                            }
+                        if let Some(ref mut tmp) = tmp.1.0
+                            && *tmp == t
+                        {
+                            *tmp = t_new;
                         }
-                        if let Some(ref mut tmp) = tmp.1 .1 {
-                            if *tmp == t {
-                                *tmp = t_new;
-                            }
+                        if let Some(ref mut tmp) = tmp.1.1
+                            && *tmp == t
+                        {
+                            *tmp = t_new;
                         }
                     }
                     if let Some(interlink) = interlink.1 {
                         let tmp = b.get_mut(&interlink).unwrap();
-                        if let Some(ref mut tmp) = tmp.1 .0 {
-                            if *tmp == t {
-                                *tmp = t_new;
-                            }
+                        if let Some(ref mut tmp) = tmp.1.0
+                            && *tmp == t
+                        {
+                            *tmp = t_new;
                         }
-                        if let Some(ref mut tmp) = tmp.1 .1 {
-                            if *tmp == t {
-                                *tmp = t_new;
-                            }
+                        if let Some(ref mut tmp) = tmp.1.1
+                            && *tmp == t
+                        {
+                            *tmp = t_new;
                         }
                     }
                     let (ptr, interlink) = b.remove(&t).unwrap();
@@ -573,17 +573,17 @@ fn fuzz_chain() {
                         let tmp1 = b[&t1];
                         a.swap(tmp0.0, tmp1.0).unwrap();
                         // because we are using reverse lookups other nodes need to be rerouted
-                        if let Some(prev) = tmp0.1 .0 {
-                            b.get_mut(&prev).unwrap().1 .1 = Some(t1);
+                        if let Some(prev) = tmp0.1.0 {
+                            b.get_mut(&prev).unwrap().1.1 = Some(t1);
                         }
-                        if let Some(next) = tmp0.1 .1 {
-                            b.get_mut(&next).unwrap().1 .0 = Some(t1);
+                        if let Some(next) = tmp0.1.1 {
+                            b.get_mut(&next).unwrap().1.0 = Some(t1);
                         }
-                        if let Some(prev) = tmp1.1 .0 {
-                            b.get_mut(&prev).unwrap().1 .1 = Some(t0);
+                        if let Some(prev) = tmp1.1.0 {
+                            b.get_mut(&prev).unwrap().1.1 = Some(t0);
                         }
-                        if let Some(next) = tmp1.1 .1 {
-                            b.get_mut(&next).unwrap().1 .0 = Some(t0);
+                        if let Some(next) = tmp1.1.1 {
+                            b.get_mut(&next).unwrap().1.0 = Some(t0);
                         }
                         let tmp0 = b[&t0];
                         let tmp1 = b[&t1];
@@ -600,11 +600,11 @@ fn fuzz_chain() {
                     let t0 = list[next_inx!(rng, len)];
                     let t1 = list[next_inx!(rng, len)];
                     if a.are_neighbors(b[&t0].0, b[&t1].0) {
-                        assert_eq!(b[&t0].1 .1, Some(t1));
-                        assert_eq!(b[&t1].1 .0, Some(t0));
+                        assert_eq!(b[&t0].1.1, Some(t1));
+                        assert_eq!(b[&t1].1.0, Some(t0));
                     } else {
-                        assert_ne!(b[&t0].1 .1, Some(t1));
-                        assert_ne!(b[&t1].1 .0, Some(t0));
+                        assert_ne!(b[&t0].1.1, Some(t1));
+                        assert_ne!(b[&t1].1.0, Some(t0));
                     }
                 } else {
                     assert!(!a.are_neighbors(invalid, invalid));
@@ -650,12 +650,12 @@ fn fuzz_chain() {
                     // make sure the modified interlinks agree with the `tmp2` mapping
                     if let Some(prev) = link.prev() {
                         assert_eq!(q_gen, prev.generation());
-                        let p_prev = b[&link.t].1 .0.unwrap();
+                        let p_prev = b[&link.t].1.0.unwrap();
                         assert_eq!(tmp2[&prev], b[&p_prev].0);
                     }
                     if let Some(next) = link.next() {
                         assert_eq!(q_gen, next.generation());
-                        let p_next = b[&link.t].1 .1.unwrap();
+                        let p_next = b[&link.t].1.1.unwrap();
                         assert_eq!(tmp2[&next], b[&p_next].0);
                     }
                 }
@@ -698,7 +698,7 @@ fn fuzz_chain() {
                     assert_eq!(t_to_explore.len(), iters);
 
                     let init = b[&t];
-                    let mut tmp = init.1 .1;
+                    let mut tmp = init.1.1;
                     let mut cyclical = false;
                     t_to_explore.remove(&t);
                     while let Some(next) = tmp {
@@ -707,13 +707,13 @@ fn fuzz_chain() {
                             break
                         }
                         assert!(t_to_explore.remove(&next));
-                        tmp = b[&next].1 .1;
+                        tmp = b[&next].1.1;
                     }
                     if !cyclical {
-                        let mut tmp = init.1 .0;
+                        let mut tmp = init.1.0;
                         while let Some(prev) = tmp {
                             assert!(t_to_explore.remove(&prev));
-                            tmp = b[&prev].1 .0;
+                            tmp = b[&prev].1.0;
                         }
                     }
                     assert!(t_to_explore.is_empty());
@@ -747,7 +747,7 @@ fn fuzz_chain() {
                     generation += 1;
                     let init = b.remove(&t).unwrap();
                     let mut num_removed = 1;
-                    let mut tmp = init.1 .1;
+                    let mut tmp = init.1.1;
                     let mut cyclical = false;
                     while let Some(next) = tmp {
                         if next == t {
@@ -755,14 +755,14 @@ fn fuzz_chain() {
                             break
                         }
                         t_to_remove.insert(next);
-                        tmp = b.remove(&next).unwrap().1 .1;
+                        tmp = b.remove(&next).unwrap().1.1;
                         num_removed += 1;
                     }
                     if !cyclical {
-                        let mut tmp = init.1 .0;
+                        let mut tmp = init.1.0;
                         while let Some(prev) = tmp {
                             t_to_remove.insert(prev);
-                            tmp = b.remove(&prev).unwrap().1 .0;
+                            tmp = b.remove(&prev).unwrap().1.0;
                             num_removed += 1;
                         }
                     }

@@ -1,7 +1,7 @@
 use crate::{
-    arena_iterators, chain_iterators, ord_iterators, surject_iterators,
-    utils::{chain_no_gen_iterators, ChainNoGenArena, LinkNoGen},
-    Advancer, Arena, ChainArena, Link, OrdArena, Ptr, SurjectArena,
+    Advancer, Arena, ChainArena, Link, OrdArena, Ptr, SurjectArena, arena_iterators,
+    chain_iterators, ord_iterators, surject_iterators,
+    utils::{ChainNoGenArena, LinkNoGen, chain_no_gen_iterators},
 };
 
 /// A trait that encapsulates some common functions across the different arena

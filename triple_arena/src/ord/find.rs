@@ -1,6 +1,6 @@
-use core::cmp::{min, Ordering};
+use core::cmp::{Ordering, min};
 
-use crate::{utils::ChainNoGenArena, Advancer, OrdArena, Ptr};
+use crate::{Advancer, OrdArena, Ptr, utils::ChainNoGenArena};
 
 impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// Used by tests

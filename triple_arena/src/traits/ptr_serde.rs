@@ -6,12 +6,12 @@ NOTE: do not forget to update `ptr.rs` when updating this file
 use core::{
     fmt::Debug,
     hash::Hash,
-    num::{NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize},
+    num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZeroUsize},
     panic::{RefUnwindSafe, UnwindSafe},
 };
 
 use recasting::{Recast, Recaster};
-use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned};
 
 use crate::utils::nzusize_unchecked;
 

@@ -1,5 +1,5 @@
-use rand_xoshiro::{rand_core::SeedableRng, Xoshiro128StarStar};
-use testcrate::{fuzz_fill_inst, get_cmp_count, CKey, CVal, A, P1};
+use rand_xoshiro::{Xoshiro128StarStar, rand_core::SeedableRng};
+use testcrate::{A, CKey, CVal, P1, fuzz_fill_inst, get_cmp_count};
 use triple_arena::OrdArena;
 
 fn get_std_insts() -> Vec<Result<(CKey, CVal), usize>> {

@@ -6,8 +6,8 @@ use core::{
 };
 
 use crate::{
-    utils::{nzusize_unchecked, ptrinx_unchecked, NonZeroInxVec, PtrGen, PtrInx},
     Advancer, Ptr,
+    utils::{NonZeroInxVec, PtrGen, PtrInx, nzusize_unchecked, ptrinx_unchecked},
 };
 
 /// Internal entry for an `Arena`.
@@ -49,7 +49,7 @@ use InternalEntry::*;
 /// pointers from one arena in another. The arena will use generation counters
 /// to check for invalidated pointers if `P` has a generation counter.
 /// ```
-/// use triple_arena::{ptr_struct, Arena, Ptr};
+/// use triple_arena::{Arena, Ptr, ptr_struct};
 ///
 /// // In implementations that always use valid indexes and only want the
 /// // generation counter in debug mode, we can use `cfg`s like this:

@@ -11,7 +11,7 @@
 //! ```
 //! // Example using the `ron` crate
 //! use ron::{from_str, to_string};
-//! use triple_arena::{ptr_struct, Arena, Recast, Recaster};
+//! use triple_arena::{Arena, Recast, Recaster, ptr_struct};
 //!
 //! ptr_struct!(P0);
 //!
@@ -94,17 +94,17 @@ use alloc::fmt;
 use core::{marker::PhantomData, num::NonZeroUsize};
 
 use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
     de::{Error, MapAccess, Visitor},
     ser::{SerializeMap, SerializeTuple},
-    Deserialize, Deserializer, Serialize, Serializer,
 };
 
 use crate::{
+    Arena, ChainArena, Link, OrdArena, Ptr, SurjectArena,
     arena::InternalEntry,
     ord::Node,
     surject::{Key, Val},
     utils::{ChainNoGenArena, LinkNoGen, PtrGen, PtrInx, PtrNoGen},
-    Arena, ChainArena, Link, OrdArena, Ptr, SurjectArena,
 };
 
 impl<P: Ptr, T: Serialize> Serialize for Arena<P, T> {

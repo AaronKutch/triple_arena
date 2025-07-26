@@ -5,7 +5,7 @@ use core::marker::PhantomData;
 use recasting::{Recast, Recaster};
 
 pub use crate::arena_iterators::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
-use crate::{arena_iterators, Advancer, ChainArena, Link, Ptr};
+use crate::{Advancer, ChainArena, Link, Ptr, arena_iterators};
 
 /// An advancer over the valid `P`s of a `ChainArena`
 pub struct PtrAdvancer<P: Ptr, T> {

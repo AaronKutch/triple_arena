@@ -10,6 +10,6 @@ pub mod serde;
 pub use advancer::Advancer;
 pub use arena_trait::ArenaTrait;
 #[cfg(not(feature = "serde_support"))]
-pub use ptr::{ptrinx_unchecked, Ptr, PtrGen, PtrInx, PtrNoGen};
+pub use ptr::{Ptr, PtrGen, PtrInx, PtrNoGen, ptrinx_unchecked};
 #[cfg(feature = "serde_support")]
-pub use ptr_serde::{ptrinx_unchecked, Ptr, PtrGen, PtrInx, PtrNoGen};
+pub use ptr_serde::{Ptr, PtrGen, PtrInx, PtrNoGen, ptrinx_unchecked};

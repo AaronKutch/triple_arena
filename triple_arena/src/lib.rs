@@ -12,7 +12,7 @@ pub use arena::arena_iterators;
 mod chain;
 mod ord;
 mod traits;
-pub use chain::{chain_iterators, ChainArena, Link};
+pub use chain::{ChainArena, Link, chain_iterators};
 // always keep this for the serde documentation
 #[cfg(feature = "serde_support")]
 pub use traits::serde;
@@ -20,9 +20,9 @@ pub use traits::{Advancer, ArenaTrait, Ptr};
 mod surject;
 // reexport for the macros to use
 pub use arena::Arena;
-pub use ord::{ord_iterators, OrdArena};
+pub use ord::{OrdArena, ord_iterators};
 pub use recasting::{Recast, Recaster};
-pub use surject::{surject_iterators, SurjectArena};
+pub use surject::{SurjectArena, surject_iterators};
 /// Special utilities for advanced usage
 pub mod utils {
     #[cfg(feature = "expose_internal_utils")]
@@ -36,7 +36,7 @@ pub mod utils {
     pub use crate::ord::Node;
     pub(crate) use crate::{arena::nzusize_unchecked, traits::ptrinx_unchecked};
     pub use crate::{
-        chain::{chain_no_gen_iterators, ChainNoGenArena, LinkNoGen},
+        chain::{ChainNoGenArena, LinkNoGen, chain_no_gen_iterators},
         traits::{PtrGen, PtrInx, PtrNoGen},
     };
     /// A reexport used by the macros

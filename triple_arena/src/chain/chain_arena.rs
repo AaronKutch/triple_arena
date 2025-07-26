@@ -47,7 +47,7 @@ impl<P: Ptr, T> Link<P, T> {
 /// chains are supported.
 ///
 /// ```
-/// use triple_arena::{ptr_struct, ChainArena, Link};
+/// use triple_arena::{ChainArena, Link, ptr_struct};
 ///
 /// ptr_struct!(P0);
 /// let mut a: ChainArena<P0, String> = ChainArena::new();

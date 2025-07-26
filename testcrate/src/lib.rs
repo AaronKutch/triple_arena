@@ -2,16 +2,16 @@
 
 use std::{
     cell::RefCell,
-    num::{NonZeroU128, NonZeroU32},
+    num::{NonZeroU32, NonZeroU128},
 };
 
 use rand_xoshiro::{
-    rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
+    rand_core::{RngCore, SeedableRng},
 };
 use serde_derive::{Deserialize, Serialize};
 use triple_arena::{
-    ptr_struct, utils::ChainNoGenArena, Arena, ChainArena, OrdArena, Ptr, SurjectArena,
+    Arena, ChainArena, OrdArena, Ptr, SurjectArena, ptr_struct, utils::ChainNoGenArena,
 };
 use triple_arena_render::*;
 

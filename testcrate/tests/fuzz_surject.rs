@@ -5,11 +5,11 @@ use std::{
 };
 
 use rand_xoshiro::{
-    rand_core::{RngCore, SeedableRng},
     Xoshiro128StarStar,
+    rand_core::{RngCore, SeedableRng},
 };
 use testcrate::P0;
-use triple_arena::{utils::PtrGen, Advancer, Ptr, SurjectArena};
+use triple_arena::{Advancer, Ptr, SurjectArena, utils::PtrGen};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
@@ -319,10 +319,10 @@ fn fuzz_surject() {
                         assert!(a.get2_mut(pair0.p, pair1.p).is_none());
                     } else {
                         let tmp = a.get2_mut(pair0.p, pair1.p).unwrap();
-                        assert_eq!(*tmp.0 .0, pair0.k);
-                        assert_eq!(*tmp.1 .0, pair1.k);
-                        assert_eq!(*tmp.0 .1, v0);
-                        assert_eq!(*tmp.1 .1, v1);
+                        assert_eq!(*tmp.0.0, pair0.k);
+                        assert_eq!(*tmp.1.0, pair1.k);
+                        assert_eq!(*tmp.0.1, v0);
+                        assert_eq!(*tmp.1.1, v1);
                     }
                 } else {
                     assert!(a.get2_mut(invalid, invalid).is_none());

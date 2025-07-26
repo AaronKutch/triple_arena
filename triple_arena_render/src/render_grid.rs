@@ -3,8 +3,8 @@ use std::cmp::max;
 use triple_arena::{Arena, Ptr};
 
 use crate::{
-    internal::{ANode, RenderNode},
     NODE_PAD_X, NODE_PAD_Y, PAD,
+    internal::{ANode, RenderNode},
 };
 
 /// Final grid of `RenderNodes`

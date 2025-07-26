@@ -5,10 +5,10 @@ use core::marker::PhantomData;
 use recasting::{Recast, Recaster};
 
 use crate::{
+    Advancer, Arena, Ptr, SurjectArena,
     arena_iterators::{self},
     surject::{Key, Val},
-    utils::{chain_no_gen_iterators, LinkNoGen, PtrNoGen},
-    Advancer, Arena, Ptr, SurjectArena,
+    utils::{LinkNoGen, PtrNoGen, chain_no_gen_iterators},
 };
 
 /// An advancer over the valid `P`s of a `SurjectArena`
