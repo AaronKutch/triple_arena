@@ -180,18 +180,18 @@ impl<P: Ptr, T> ChainArena<P, T> {
                 if let Some(prev) = this.a.get(prev) {
                     if let Some(next) = prev.next() {
                         if p != next {
-                            return err
+                            return err;
                         }
                     } else {
-                        return err
+                        return err;
                     }
                 } else {
-                    return err
+                    return err;
                 }
                 if p == prev {
                     // should be a single link cyclic chain
                     if link.next() != Some(p) {
-                        return err
+                        return err;
                     }
                 }
             }
@@ -201,18 +201,18 @@ impl<P: Ptr, T> ChainArena<P, T> {
                 if let Some(next) = this.a.get(next) {
                     if let Some(prev) = next.prev() {
                         if p != prev {
-                            return err
+                            return err;
                         }
                     } else {
-                        return err
+                        return err;
                     }
                 } else {
-                    return err
+                    return err;
                 }
                 if p == next {
                     // should be a single link cyclic chain
                     if link.prev() != Some(p) {
-                        return err
+                        return err;
                     }
                 }
             }
@@ -312,7 +312,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
             (Some(p0), Some(p1)) => {
                 // check for existence and that the nodes are neighbors
                 if !self.are_neighbors(p0, p1) {
-                    return Err(t)
+                    return Err(t);
                 }
                 let res = self.a.insert(Link::new((Some(p0), Some(p1)), t));
                 self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
@@ -380,7 +380,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
             (Some(p0), Some(p1)) => {
                 // check for existence and that the nodes are neighbors
                 if !self.are_neighbors(p0, p1) {
-                    return None
+                    return None;
                 }
                 let res = self
                     .a
@@ -570,7 +570,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
         while let Some(next) = tmp {
             if next.inx() == p.inx() {
                 // cyclical
-                return Some(len)
+                return Some(len);
             }
             tmp = self.a.remove_internal_inx_unwrap(next.inx(), false).next();
             len = len.wrapping_add(1);
@@ -777,7 +777,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
                     // SLCC
                     let q = new.insert_with(|q| Link::new((Some(q), Some(q)), link.t));
                     map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
-                    continue 'outer
+                    continue 'outer;
                 } else {
                     let q = new.insert(Link::new((None, None), link.t));
                     p_init_prev = Some(prev.inx());
@@ -801,7 +801,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
                         map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
                         new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q);
                         new.get_inx_mut_unwrap(q_init.inx()).prev_next.0 = Some(q);
-                        continue 'outer
+                        continue 'outer;
                     }
                     let q = new.insert(Link::new((Some(q_prev), None), t));
                     map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
@@ -810,7 +810,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
                     tmp_next
                 } else {
                     // reached end of chain, next loop will handle starting from `p_init_prev`
-                    break
+                    break;
                 };
             }
             let mut p_prev = p_init_prev;
@@ -828,7 +828,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
                     q_next = q;
                     tmp_prev
                 } else {
-                    break
+                    break;
                 };
             }
         }

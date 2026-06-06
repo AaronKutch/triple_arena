@@ -704,7 +704,7 @@ fn fuzz_chain() {
                     while let Some(next) = tmp {
                         if next == t {
                             cyclical = true;
-                            break
+                            break;
                         }
                         assert!(t_to_explore.remove(&next));
                         tmp = b[&next].1.1;
@@ -752,7 +752,7 @@ fn fuzz_chain() {
                     while let Some(next) = tmp {
                         if next == t {
                             cyclical = true;
-                            break
+                            break;
                         }
                         t_to_remove.insert(next);
                         tmp = b.remove(&next).unwrap().1.1;

@@ -182,7 +182,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         }
         for (p_val, n) in &count {
             if this.vals.get(p_val).unwrap().key_count.get() != *n {
-                return Err("key count does not match actual")
+                return Err("key count does not match actual");
             }
         }
 
@@ -198,22 +198,22 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
                 let mut tmp = p.inx();
                 loop {
                     if c == 0 {
-                        return Err("did not reach end of key chain in expected time")
+                        return Err("did not reach end of key chain in expected time");
                     }
                     c = c.checked_sub(1).unwrap();
                     let (_, link) = this.keys.get_no_gen(tmp).unwrap();
                     if let Some(next) = link.next() {
                         tmp = next;
                     } else {
-                        return Err("key chain is not cyclic")
+                        return Err("key chain is not cyclic");
                     }
                     // have the test after the match so that we check for single node cyclics
                     if tmp == p.inx() {
                         if c != 0 {
-                            return Err("key chain did not have all keys associated with value")
+                            return Err("key chain did not have all keys associated with value");
                         }
                         *count.get_mut(this.keys.get(p).unwrap().p_val).unwrap() = 0;
-                        break
+                        break;
                     }
                 }
             }
@@ -516,7 +516,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         let mut p_val1 = self.keys.get(p1)?.p_val;
         if p_val0 == p_val1 {
             // corresponds to same set
-            return None
+            return None;
         }
         let len0 = self.vals.get_inx_unwrap(p_val0.inx()).key_count.get();
         let len1 = self.vals.get_inx_unwrap(p_val1.inx()).key_count.get();
@@ -530,7 +530,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
             self.keys.get_inx_mut_unwrap_t(tmp).p_val = p_val0;
             tmp = self.keys.get_inx_unwrap(tmp).next().unwrap();
             if tmp == p1.inx() {
-                break
+                break;
             }
         }
         // combine chains cheaply, this is why they need to be cyclic because exchanging
@@ -665,7 +665,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
                 InternalEntry::Free(_)
             ) {
                 first_unallocated = Some(i);
-                break
+                break;
             }
         }
 
@@ -689,7 +689,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
                         loop {
                             if j > self.vals.m.len() {
                                 first_unallocated = None;
-                                break
+                                break;
                             }
                             let j_nz = NonZeroUsize::new(j).unwrap();
                             if matches!(
@@ -697,7 +697,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
                                 InternalEntry::Free(_)
                             ) {
                                 first_unallocated = Some(j_nz);
-                                break
+                                break;
                             }
                             j = j.wrapping_add(1);
                         }
@@ -727,7 +727,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
             if let Some(InternalEntry::Free(_)) = self.vals.m.get(i) {
                 self.vals.m.pop().unwrap();
             } else {
-                break
+                break;
             }
         }
         self.vals.freelist_root = None;
@@ -843,26 +843,26 @@ impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<SurjectArena<P, K, V>>
         while let Some(p0) = adv0.advance(self) {
             if let Some(p1) = adv1.advance(other) {
                 if p0 != p1 {
-                    return false
+                    return false;
                 }
                 let key0 = self.keys.get_inx_unwrap(p0.inx());
                 let key1 = self.keys.get_inx_unwrap(p1.inx());
                 // make sure not to depend on `p_val`
                 if key0.prev_next() != key1.prev_next() {
-                    return false
+                    return false;
                 }
                 if key0.t.k != key1.t.k {
-                    return false
+                    return false;
                 }
                 // the surject composition is implicitly checked by the `prev_next`
                 // checks
                 if self.vals.get_inx_unwrap(key0.t.p_val.inx()).v
                     != other.vals.get_inx_unwrap(key1.t.p_val.inx()).v
                 {
-                    return false
+                    return false;
                 }
             } else {
-                return false
+                return false;
             }
         }
         adv1.advance(other).is_none()

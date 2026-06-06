@@ -47,7 +47,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         if self.a.is_empty() {
             // last node to be removed, our invariants require that `self.a.is_empty` be
             // checked to determine whether or not `self.first`, etc are valid.
-            return res
+            return res;
         }
         let mut use_next = false;
         let mut p1 = d_back;
@@ -135,7 +135,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     p1 = d_back;
                 }
             } else {
-                break
+                break;
             }
         }
         let mut p0 = None;
@@ -177,7 +177,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             if let Some(p_s0) = p_s0 {
                 if rank0.wrapping_add(2) >= rank1 {
                     // no violation
-                    break
+                    break;
                 }
                 let s0 = self.a.get_inx_unwrap(p_s0);
                 let rank_s0 = s0.t.rank;
@@ -201,9 +201,9 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                         // convey
                         p0 = Some(p1);
                         p1 = p2;
-                        continue
+                        continue;
                     } else {
-                        break
+                        break;
                     }
                 }
 
@@ -301,7 +301,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                         self.root = p_s0;
                     }
                     // all invariants resolved
-                    break
+                    break;
                 }
 
                 //     n1 (r+3)
@@ -338,9 +338,9 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                         // convey
                         p0 = Some(p1);
                         p1 = p2;
-                        continue
+                        continue;
                     } else {
-                        break
+                        break;
                     }
                 }
 
@@ -422,7 +422,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                 } else {
                     self.root = p_a;
                 }
-                break
+                break;
             } else {
                 // only possible at exterior of the tree with this case
 
@@ -437,9 +437,9 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     // convey
                     p0 = Some(p1);
                     p1 = p2;
-                    continue
+                    continue;
                 } else {
-                    break
+                    break;
                 }
             }
         }

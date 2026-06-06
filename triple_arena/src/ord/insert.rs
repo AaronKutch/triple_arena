@@ -124,7 +124,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                 return (
                     Ptr::_from_raw(p, self.a.get_no_gen(p).unwrap().0),
                     Some((k, old_v)),
-                )
+                );
             }
             Ordering::Greater => {
                 let link = self.a.get_inx_unwrap(p);
@@ -219,7 +219,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
 
                 // this isn't just an optimization, later branches need to make sure that the
                 // rank of `s0` has a rank difference of 2 below `n1`
-                return
+                return;
             } else {
                 //      ? (2,3)
                 //        /
@@ -243,7 +243,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             // correct
 
             // n0 (1)
-            return
+            return;
         };
         let mut d01 = n1.t.p_tree1 == Some(p0);
         let (n2, mut p2) = if let Some(p2) = n1.t.p_back {
@@ -262,7 +262,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             //    /    \
             //   /      \
             // n0 (1)  s0 (0)
-            return
+            return;
         };
         let mut d12 = n2.t.p_tree1 == Some(p1);
         loop {
@@ -295,7 +295,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                 //    /     \
                 //   /       \
                 // n0 (r)   s0 (r-1)
-                break
+                break;
             }
             //           ? (r+2,r+3)
             //             /
@@ -379,7 +379,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     p2 = p3;
                     d01 = d12;
                     d12 = self.a.get_inx_unwrap(p2).t.p_tree1 == Some(p1);
-                    continue
+                    continue;
                 } else {
                     // n2 was the root, the rest of the tree is ok
 
@@ -390,7 +390,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     //    /     \
                     //   /       \
                     // n0 (r)   s0 (r-1)
-                    break
+                    break;
                 }
             }
 
@@ -545,7 +545,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             // The previous branches all result in the next higher rank difference not being
             // violated, so we can just return. This also implies that we only need at most
             // one restructure.
-            break
+            break;
         }
     }
 }

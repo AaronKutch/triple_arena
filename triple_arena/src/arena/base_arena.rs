@@ -208,10 +208,10 @@ impl<P: Ptr, T> Arena<P, T> {
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
         if this.generation() < P::Gen::two() {
-            return Err("bad generation")
+            return Err("bad generation");
         }
         if this.capacity() != this.m.len() {
-            return Err("virtual capacity != m_len")
+            return Err("virtual capacity != m_len");
         }
         let mut n_allocated = 0usize;
         for i in this.m.nziter() {
@@ -221,7 +221,7 @@ impl<P: Ptr, T> Arena<P, T> {
         }
         let n_free = this.m.len() - n_allocated;
         if this.len() != n_allocated {
-            return Err("len != n_allocated")
+            return Err("len != n_allocated");
         }
         // checking freelist integrity
         let mut freelist_len = 0usize;
@@ -233,19 +233,19 @@ impl<P: Ptr, T> Arena<P, T> {
                     freelist_len = freelist_len.checked_add(1).unwrap();
                     if *inx == tmp_inx {
                         // last one
-                        break
+                        break;
                     }
                     tmp_inx = *inx;
                 } else {
-                    return Err("bad freelist node")
+                    return Err("bad freelist node");
                 }
                 if i > this.m.len() {
-                    return Err("endless loop")
+                    return Err("endless loop");
                 }
             }
         }
         if freelist_len != n_free {
-            return Err("freelist discontinuous")
+            return Err("freelist discontinuous");
         }
         Ok(())
     }
@@ -653,7 +653,7 @@ impl<P: Ptr, T> Arena<P, T> {
         match self.m_get(p.inx()) {
             Some(Allocated(generation, _)) => {
                 if *generation != p.generation() {
-                    return None
+                    return None;
                 }
             }
             _ => return None,
@@ -681,7 +681,7 @@ impl<P: Ptr, T> Arena<P, T> {
         let old_gen = match self.m_get(p.inx()) {
             Some(Allocated(generation, _)) => {
                 if *generation != p.generation() {
-                    return Err(new)
+                    return Err(new);
                 }
                 *generation
             }
@@ -705,7 +705,7 @@ impl<P: Ptr, T> Arena<P, T> {
         match self.m_get(p.inx()) {
             Some(Allocated(generation, _)) => {
                 if *generation != p.generation() {
-                    return Err(new)
+                    return Err(new);
                 }
             }
             _ => return Err(new),
@@ -1023,13 +1023,13 @@ impl<P: Ptr, T: PartialEq> PartialEq<Arena<P, T>> for Arena<P, T> {
         while let Some(p0) = adv0.advance(self) {
             if let Some(p1) = adv1.advance(other) {
                 if p0 != p1 {
-                    return false
+                    return false;
                 }
                 if self.get_inx_unwrap(p0.inx()) != other.get_inx_unwrap(p1.inx()) {
-                    return false
+                    return false;
                 }
             } else {
-                return false
+                return false;
             }
         }
         adv1.advance(other).is_none()

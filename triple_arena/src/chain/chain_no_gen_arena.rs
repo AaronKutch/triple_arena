@@ -95,18 +95,18 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
                 if let Some((_, prev)) = this.a.get_no_gen(prev) {
                     if let Some(next) = prev.next() {
                         if p.inx() != next {
-                            return err
+                            return err;
                         }
                     } else {
-                        return err
+                        return err;
                     }
                 } else {
-                    return err
+                    return err;
                 }
                 if p.inx() == prev {
                     // should be a single link cyclic chain
                     if link.next() != Some(p.inx()) {
-                        return err
+                        return err;
                     }
                 }
             }
@@ -116,18 +116,18 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
                 if let Some((_, next)) = this.a.get_no_gen(next) {
                     if let Some(prev) = next.prev() {
                         if p.inx() != prev {
-                            return err
+                            return err;
                         }
                     } else {
-                        return err
+                        return err;
                     }
                 } else {
-                    return err
+                    return err;
                 }
                 if p.inx() == next {
                     // should be a single link cyclic chain
                     if link.prev() != Some(p.inx()) {
-                        return err
+                        return err;
                     }
                 }
             }
@@ -227,7 +227,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
             (Some(p0), Some(p1)) => {
                 // check for existence and that the nodes are neighbors
                 if !self.are_neighbors_inx(p0, p1) {
-                    return Err(t)
+                    return Err(t);
                 }
                 let res = self.a.insert(LinkNoGen::new((Some(p0), Some(p1)), t));
                 self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(res.inx());
@@ -299,7 +299,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
             (Some(p0), Some(p1)) => {
                 // check for existence and that the nodes are neighbors
                 if !self.are_neighbors_inx(p0, p1) {
-                    return None
+                    return None;
                 }
                 let res = self
                     .a
@@ -525,7 +525,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
         while let Some(next) = tmp {
             if next == p.inx() {
                 // cyclical
-                return Some(len)
+                return Some(len);
             }
             tmp = self.a.remove_internal_inx_unwrap(next, false).next();
             len = len.wrapping_add(1);
@@ -734,7 +734,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
                     let q =
                         new.insert_with(|q| LinkNoGen::new((Some(q.inx()), Some(q.inx())), link.t));
                     map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
-                    continue 'outer
+                    continue 'outer;
                 } else {
                     let q = new.insert(LinkNoGen::new((None, None), link.t));
                     p_init_prev = Some(prev);
@@ -759,7 +759,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
                         map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
                         new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q.inx());
                         new.get_inx_mut_unwrap(q_init.inx()).prev_next.0 = Some(q.inx());
-                        continue 'outer
+                        continue 'outer;
                     }
                     let q = new.insert(LinkNoGen::new((Some(q_prev.inx()), None), t));
                     map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
@@ -768,7 +768,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
                     tmp_next
                 } else {
                     // reached end of chain, next loop will handle starting from `p_init_prev`
-                    break
+                    break;
                 };
             }
             let mut p_prev = p_init_prev;
@@ -786,7 +786,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
                     q_next = q;
                     tmp_prev
                 } else {
-                    break
+                    break;
                 };
             }
         }
@@ -822,7 +822,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
                 q_prev = q;
                 tmp_next
             } else {
-                break
+                break;
             };
         }
         self.a = new;

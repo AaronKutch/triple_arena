@@ -185,7 +185,7 @@ impl<T> NonZeroInxVec<T> {
             let bumped = minimum.next_power_of_two();
             if bumped <= self.capacity() {
                 // already have the needed capacity
-                return
+                return;
             }
             bumped
         };
@@ -349,13 +349,13 @@ impl<T> NonZeroInxVec<T> {
 
         if new_cap == self.capacity() {
             // Don't do anything
-            return
+            return;
         }
 
         if new_cap == 0 {
             // this is all we have to do, capacity is set to 0 by this function
             self.clear_and_shrink();
-            return
+            return;
         }
 
         let new_layout = Layout::array::<T>(new_cap).unwrap();

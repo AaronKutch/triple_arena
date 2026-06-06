@@ -442,7 +442,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                         node.p_back = None;
                         self.root = p;
                     }
-                    break
+                    break;
                 } else if i.get() < subtree_mid {
                     subtree_last = subtree_mid.wrapping_sub(1);
                 } else {
@@ -454,7 +454,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             i = if let Some(prev) = NonZeroUsize::new(i.get().wrapping_sub(1)) {
                 prev
             } else {
-                break
+                break;
             }
         }
     }
@@ -564,13 +564,13 @@ impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<OrdArena<P, K, V>> for OrdAre
                 let node0 = self.a.get_inx_unwrap(p0.inx());
                 let node1 = other.a.get_inx_unwrap(p1.inx());
                 if node0.t.k != node1.t.k {
-                    return false
+                    return false;
                 }
                 if node0.t.v != node1.t.v {
-                    return false
+                    return false;
                 }
             } else {
-                return false
+                return false;
             }
         }
         adv1.advance(other).is_none()
@@ -601,7 +601,7 @@ impl<P: Ptr, K: PartialOrd, V: PartialOrd> PartialOrd<OrdArena<P, K, V>> for Ord
                     ord => return ord,
                 }
             } else {
-                return Some(Ordering::Greater)
+                return Some(Ordering::Greater);
             }
         }
         if adv1.advance(other).is_none() {
@@ -634,7 +634,7 @@ impl<P: Ptr, K: Ord, V: Ord> Ord for OrdArena<P, K, V> {
                     ord => return ord,
                 }
             } else {
-                return Ordering::Greater
+                return Ordering::Greater;
             }
         }
         if adv1.advance(other).is_none() {

@@ -219,7 +219,7 @@ impl<P: Ptr, K: Serialize, V: Serialize> Serialize for OrdArena<P, K, V> {
                 return Err(serde::ser::Error::custom(
                     "Tried to serialize an uncompressed `OrdArena` (use one of the \
                      `compress_and_shrink_*` functions)",
-                ))
+                ));
             }
             s.serialize_entry(k, v)?;
             last = Some(p.inx());
@@ -269,7 +269,7 @@ where
                     return Err(Error::custom(
                         "when deserializing a `triple_arena` arena, encountered duplicate pointer \
                          index keys",
-                    ))
+                    ));
                 }
             }
         }

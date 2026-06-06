@@ -22,7 +22,7 @@ fn main() {
                 if rng.next_u32().is_multiple_of(8) {
                     node.center.push("center".to_string());
                 } else {
-                    break
+                    break;
                 }
             }
             loop {
@@ -32,7 +32,7 @@ fn main() {
                         node.sources.push((ptrs[inx], format!("p{inx}")));
                     }
                 } else {
-                    break
+                    break;
                 }
             }
             loop {
@@ -42,7 +42,7 @@ fn main() {
                         node.sinks.push((ptrs[inx], format!("p{inx}")));
                     }
                 } else {
-                    break
+                    break;
                 }
             }
             ptrs.push(p);

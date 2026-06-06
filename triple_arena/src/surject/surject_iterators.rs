@@ -42,7 +42,7 @@ impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
 
     fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
         if self.max_advances == 0 {
-            return None
+            return None;
         } else {
             self.max_advances = self.max_advances.wrapping_sub(1);
         }

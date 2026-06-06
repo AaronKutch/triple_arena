@@ -9,32 +9,32 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
         // needed because of special functions like `compress_and_shrink`
         ChainNoGenArena::_check_invariants(&this.a)?;
         if this.a.is_empty() {
-            return Ok(())
+            return Ok(());
         }
         // check the root
         if let Some((_, root)) = this.a.get_no_gen(this.root) {
             if root.t.p_back.is_some() {
-                return Err("root node has a back pointer")
+                return Err("root node has a back pointer");
             }
         } else {
-            return Err("this.root is broken")
+            return Err("this.root is broken");
         };
         // first check the chain and ordering
         let mut count = 0usize;
         let mut prev: Option<P> = None;
         if let Some((_, link)) = this.a.get_no_gen(this.first) {
             if link.prev().is_some() {
-                return Err("this.first is broken")
+                return Err("this.first is broken");
             }
         } else {
-            return Err("this.first is broken")
+            return Err("this.first is broken");
         }
 
         let mut adv = this.a.advancer_chain(this.first);
         while let Some(p) = adv.advance(&this.a) {
             count = count.checked_add(1).unwrap();
             if !this.a.contains(p) {
-                return Err("invalid Ptr")
+                return Err("invalid Ptr");
             }
             if let Some(prev) = prev {
                 if Ord::cmp(
@@ -42,18 +42,18 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     &this.a.get_no_gen(p.inx()).unwrap().1.t.k,
                 ) == Ordering::Greater
                 {
-                    return Err("incorrect ordering")
+                    return Err("incorrect ordering");
                 }
             }
             prev = Some(p);
         }
         if let Some(prev) = prev {
             if prev.inx() != this.last {
-                return Err("this.last is not correct")
+                return Err("this.last is not correct");
             }
         }
         if count != this.a.len() {
-            return Err("multiple chains")
+            return Err("multiple chains");
         }
         // after the linear checks, check the tree
         let mut adv = this.a.advancer();
@@ -62,43 +62,43 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             if let Some(p_back) = node.p_back {
                 if let Some((_, parent)) = this.a.get_no_gen(p_back) {
                     if (parent.t.p_tree0 != Some(p.inx())) && (parent.t.p_tree1 != Some(p.inx())) {
-                        return Err("broken tree")
+                        return Err("broken tree");
                     }
                 } else {
-                    return Err("broken tree")
+                    return Err("broken tree");
                 }
             } else {
                 // should be root, if this passes it implies there is only one common root
                 if p.inx() != this.root {
-                    return Err("more than one root node")
+                    return Err("more than one root node");
                 }
             }
             if let Some(p_tree0) = node.p_tree0 {
                 // prevent some unbalanced cases that the rank checks would not catch
                 if Some(p_tree0) == node.p_tree1 {
-                    return Err("`p_tree0` and `p_tree1` are the same")
+                    return Err("`p_tree0` and `p_tree1` are the same");
                 }
                 if let Some((_, child0)) = this.a.get_no_gen(p_tree0) {
                     if child0.t.p_back != Some(p.inx()) {
-                        return Err("broken tree")
+                        return Err("broken tree");
                     }
                     if child0.t.p_back == Some(p_tree0) {
-                        return Err("cycle")
+                        return Err("cycle");
                     }
                 } else {
-                    return Err("broken tree")
+                    return Err("broken tree");
                 }
             }
             if let Some(p_tree1) = node.p_tree1 {
                 if let Some((_, child1)) = this.a.get_no_gen(p_tree1) {
                     if child1.t.p_back != Some(p.inx()) {
-                        return Err("broken tree")
+                        return Err("broken tree");
                     }
                     if child1.t.p_back == Some(p_tree1) {
-                        return Err("cycle")
+                        return Err("cycle");
                     }
                 } else {
-                    return Err("broken tree")
+                    return Err("broken tree");
                 }
             }
         }
@@ -113,7 +113,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 0
             };
             if node.rank <= rank0 {
-                return Err("rank difference is zero or negative")
+                return Err("rank difference is zero or negative");
             }
             let rank1 = if let Some(p_tree1) = node.p_tree1 {
                 this.a.get_inx_unwrap(p_tree1).t.rank
@@ -121,13 +121,13 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                 0
             };
             if node.rank <= rank1 {
-                return Err("rank difference is zero or negative")
+                return Err("rank difference is zero or negative");
             }
             if node.rank > min(rank0, rank1).wrapping_add(2) {
-                return Err("rank difference is greater than 2")
+                return Err("rank difference is greater than 2");
             }
             if node.p_tree0.is_none() && node.p_tree1.is_none() && (node.rank != 1) {
-                return Err("leaf node is not rank 1")
+                return Err("leaf node is not rank 1");
             }
         }
         Ok(())
@@ -138,7 +138,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     #[must_use]
     pub fn find_key(&self, k: &K) -> Option<P> {
         if self.a.is_empty() {
-            return None
+            return None;
         }
         let mut p = self.root;
         loop {
@@ -159,7 +159,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     #[must_use]
     pub fn find_key_linear(&self, p_init: P, num: usize, k: &K) -> Option<P> {
         if !self.a.contains(p_init) {
-            return self.find_key(k)
+            return self.find_key(k);
         }
         // we settled on the model of trying `num` linear comparisons, because any kind
         // of search starting from the leaves of the tree runs into the problem that
@@ -173,25 +173,25 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
                     if direction == Some(true) {
-                        break
+                        break;
                     }
                     direction = Some(false);
                     if let Some(prev) = link.prev() {
                         p = prev;
                     } else {
-                        break
+                        break;
                     }
                 }
                 Ordering::Equal => return Some(Ptr::_from_raw(p, generation)),
                 Ordering::Greater => {
                     if direction == Some(false) {
-                        break
+                        break;
                     }
                     direction = Some(true);
                     if let Some(next) = link.next() {
                         p = next;
                     } else {
-                        break
+                        break;
                     }
                 }
             }
@@ -210,7 +210,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     #[must_use]
     pub fn find_similar_key(&self, k: &K) -> Option<(P, Ordering)> {
         if self.a.is_empty() {
-            return None
+            return None;
         }
         let mut p = self.root;
         loop {
@@ -221,7 +221,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     if let Some(p_tree0) = node.p_tree0 {
                         p = p_tree0;
                     } else {
-                        break Some((Ptr::_from_raw(p, generation), Ordering::Less))
+                        break Some((Ptr::_from_raw(p, generation), Ordering::Less));
                     }
                 }
                 Ordering::Equal => break Some((Ptr::_from_raw(p, generation), Ordering::Equal)),
@@ -229,7 +229,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
                     if let Some(p_tree1) = node.p_tree1 {
                         p = p_tree1;
                     } else {
-                        break Some((Ptr::_from_raw(p, generation), Ordering::Greater))
+                        break Some((Ptr::_from_raw(p, generation), Ordering::Greater));
                     }
                 }
             }
@@ -241,7 +241,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     #[must_use]
     pub fn find_similar_key_linear(&self, p_init: P, num: usize, k: &K) -> Option<(P, Ordering)> {
         if !self.a.contains(p_init) {
-            return self.find_similar_key(k)
+            return self.find_similar_key(k);
         }
         let mut p = p_init.inx();
         let mut direction = None;
@@ -252,25 +252,25 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
                     if direction == Some(true) {
-                        return Some((p_with_gen, Ordering::Less))
+                        return Some((p_with_gen, Ordering::Less));
                     }
                     direction = Some(false);
                     if let Some(prev) = link.prev() {
                         p = prev;
                     } else {
-                        return Some((p_with_gen, Ordering::Less))
+                        return Some((p_with_gen, Ordering::Less));
                     }
                 }
                 Ordering::Equal => return Some((p_with_gen, Ordering::Equal)),
                 Ordering::Greater => {
                     if direction == Some(false) {
-                        return Some((p_with_gen, Ordering::Greater))
+                        return Some((p_with_gen, Ordering::Greater));
                     }
                     direction = Some(true);
                     if let Some(next) = link.next() {
                         p = next;
                     } else {
-                        return Some((p_with_gen, Ordering::Greater))
+                        return Some((p_with_gen, Ordering::Greater));
                     }
                 }
             }
@@ -290,7 +290,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// encountered by the end of the binary search.
     pub fn find_with<F: FnMut(P, &K, &V) -> Ordering>(&self, mut f: F) -> Option<P> {
         if self.a.is_empty() {
-            return None
+            return None;
         }
         let mut p = self.root;
         loop {
@@ -315,7 +315,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         mut f: F,
     ) -> Option<(P, Ordering)> {
         if self.a.is_empty() {
-            return None
+            return None;
         }
         let mut p = self.root;
         loop {
@@ -327,7 +327,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     if let Some(tmp) = node.p_tree0 {
                         p = tmp;
                     } else {
-                        return Some((p_with_gen, Ordering::Less))
+                        return Some((p_with_gen, Ordering::Less));
                     }
                 }
                 Ordering::Equal => break Some((p_with_gen, Ordering::Equal)),
@@ -335,7 +335,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     if let Some(tmp) = node.p_tree1 {
                         p = tmp;
                     } else {
-                        return Some((p_with_gen, Ordering::Greater))
+                        return Some((p_with_gen, Ordering::Greater));
                     }
                 }
             }

@@ -118,7 +118,7 @@ pub(crate) fn gen_svg<P: Ptr>(rg: &RenderGrid<P>) -> String {
                     .unwrap();*/
                 }
             } else {
-                continue
+                continue;
             };
         }
     }

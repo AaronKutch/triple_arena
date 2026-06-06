@@ -196,7 +196,7 @@ pub fn fuzz_fill_inst(
                 if blank_insts[j] {
                     blank_insts.swap(i, j);
                     found = true;
-                    break
+                    break;
                 }
             }
             if !found {
@@ -267,7 +267,7 @@ pub fn fuzz_fill_inst_bench(
                 if blank_insts[j] {
                     blank_insts.swap(i, j);
                     found = true;
-                    break
+                    break;
                 }
             }
             if !found {

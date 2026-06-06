@@ -536,7 +536,7 @@ fn fuzz_ord() {
                     for set_part in b.get_mut(&triple.k).unwrap() {
                         if set_part.0 == val {
                             set_part.1.p = triple.p;
-                            break
+                            break;
                         }
                     }
                 }
@@ -544,7 +544,7 @@ fn fuzz_ord() {
                     for set_part in &b[&triple.k] {
                         if *set_part.0 == triple.v {
                             triple.p = set_part.1.p;
-                            break
+                            break;
                         }
                     }
                 }

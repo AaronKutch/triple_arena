@@ -97,7 +97,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                     });
                 }
             } else if error_on_invalid_ptr {
-                return Err(RenderError::InvalidPtr(p1))
+                return Err(RenderError::InvalidPtr(p1));
             }
         }
         // check all sources
@@ -115,7 +115,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                     });
                 }
             } else if error_on_invalid_ptr {
-                return Err(RenderError::InvalidPtr(p1))
+                return Err(RenderError::InvalidPtr(p1));
             }
         }
     }
@@ -190,7 +190,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                         // no more sinks, backtrack
                         path.pop().unwrap();
                         if path.is_empty() {
-                            break
+                            break;
                         }
                         // check next dependency
                         let len = path.len();
@@ -285,7 +285,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                         dag[current].visit = dfs_explored_visit;
                         path.pop().unwrap();
                         if path.is_empty() {
-                            break
+                            break;
                         }
                         // check next dependency
                         let len = path.len();
@@ -388,7 +388,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                     let ((p2, p3), weight1) = orderings.get(p_ordering).unwrap();
                     if *p2 != *p1 {
                         // reached the end of the region
-                        break
+                        break;
                     }
                     let added_weight = (
                         weight.0.saturating_add(weight1.0),
@@ -517,7 +517,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             } else {
                 chain.push(p);
                 total_ordering.remove(p).unwrap();
-                break
+                break;
             }
         }
         chains.push(Reverse((chain.len(), chain)));
@@ -573,7 +573,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                             // no more sinks, backtrack
                             path.pop().unwrap();
                             if path.is_empty() {
-                                break
+                                break;
                             }
                             // check next dependency
                             let len = path.len();
@@ -628,7 +628,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                             // no more sinks, backtrack
                             path.pop().unwrap();
                             if path.is_empty() {
-                                break
+                                break;
                             }
                             // check next dependency
                             let len = path.len();
@@ -701,7 +701,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         // detect if all connections are towards one direction
         let node0 = &dag[p0];
         if (node0.sources.len() + node0.sinks.len()) <= 1 {
-            continue
+            continue;
         }
         let pos0 = node0.grid_position.0;
         let mut min_pos1 = usize::MAX;
@@ -725,7 +725,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         } else if (min_pos1 < pos0) && (max_pos1 < (pos0 - 2)) {
             max_pos1.saturating_sub(1)
         } else {
-            continue
+            continue;
         };
         // check the horizontal for collisions
         let horizontal = &mut horizontals[node0.grid_position.1];
@@ -762,7 +762,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             let mut shift = x;
             loop {
                 if x >= max_x {
-                    break
+                    break;
                 }
                 let mut collision = false;
                 for horizontal in &horizontals {
@@ -774,7 +774,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                             .is_some()
                     {
                         collision = true;
-                        break
+                        break;
                     }
                 }
                 cumulative.push(shift);

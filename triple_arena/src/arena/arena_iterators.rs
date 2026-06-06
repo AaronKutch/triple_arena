@@ -32,10 +32,10 @@ impl<P: Ptr, T> Advancer for PtrAdvancer<P, T> {
                     self.inx = nzusize_unchecked(old_inx.get().wrapping_add(1));
                 }
                 if let Allocated(g, _) = allocation {
-                    return Some(P::_from_raw(P::Inx::new(old_inx), *g))
+                    return Some(P::_from_raw(P::Inx::new(old_inx), *g));
                 }
             } else {
-                return None
+                return None;
             }
         }
     }
