@@ -352,10 +352,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// not called and `None` is returned if `p` is invalid.
     #[must_use]
     pub fn insert_key_with<F: FnOnce(P) -> K>(&mut self, p: P, create_k: F) -> Option<P> {
-        let p_val = match self.keys.get(p) {
-            None => return None,
-            Some(key) => key.p_val,
-        };
+        let p_val = self.keys.get(p)?.p_val;
         self.vals[p_val].key_count = NonZeroUsize::new(
             self.vals
                 .get_inx_unwrap(p_val.inx())
