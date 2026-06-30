@@ -7,7 +7,7 @@ use core::{
 
 use crate::{
     Advancer, Ptr,
-    utils::{NonZeroInxVec, PtrGen, PtrInx, nzusize_unchecked, ptrinx_unchecked},
+    utils::{NonZeroInxVec, PtrGen, PtrInx, ptrinx_unchecked},
 };
 
 /// Internal entry for an `Arena`.
@@ -764,7 +764,7 @@ impl<P: Ptr, T> Arena<P, T> {
             // the last freelist node points to itself
             // Safety: `isize::MAX` guarantee, and `!self.m.is_empty()`
             unsafe {
-                let last = nzusize_unchecked(self.m.len());
+                let last = NonZeroUsize::new_unchecked(self.m.len());
                 *self.m.get_mut(last).unwrap() = Free(P::Inx::new(last));
                 self.freelist_root = Some(ptrinx_unchecked(1));
             }

@@ -12,8 +12,6 @@ use core::{
 
 use recasting::{Recast, Recaster};
 
-use crate::utils::nzusize_unchecked;
-
 /// Pointer generation information type
 ///
 /// Users should never have to implement this, it is implemented only for the
@@ -152,13 +150,13 @@ impl_ptr_inx!(
     NonZeroU128 u128;
 );
 
-/// Shorthand for `PtrInx::new(nzusize_unchecked(x))`.
+/// Shorthand for `PtrInx::new(NonZeroUsize::new_unchecked(x))`.
 ///
 /// # Safety
 ///
 /// `x` must not be 0 and must be within the `PtrInx` limits
 pub unsafe fn ptrinx_unchecked<P: PtrInx>(x: usize) -> P {
-    PtrInx::new(unsafe { nzusize_unchecked(x) })
+    PtrInx::new(unsafe { NonZeroUsize::new_unchecked(x) })
 }
 
 /// A trait containing index and generation information for the `Arena` type.

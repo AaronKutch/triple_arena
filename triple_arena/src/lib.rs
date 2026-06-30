@@ -29,7 +29,7 @@ pub mod utils {
     // only intended for size_of tests and such
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::ord::Node;
-    pub(crate) use crate::{arena::nzusize_unchecked, traits::ptrinx_unchecked};
+    pub(crate) use crate::traits::ptrinx_unchecked;
     pub use crate::{
         chain::{ChainNoGenArena, LinkNoGen, chain_no_gen_iterators},
         traits::{PtrGen, PtrInx, PtrNoGen},

@@ -1,19 +1,6 @@
 use alloc::alloc;
 use core::{alloc::Layout, cmp::max, mem, num::NonZeroUsize, ptr};
 
-/// Shorthand for `NonZeroUsize::new_unchecked(x)`, and has a debug assertion
-/// that the input is not zero.
-///
-/// # Safety
-///
-/// `x` must not be 0
-pub const unsafe fn nzusize_unchecked(x: usize) -> NonZeroUsize {
-    debug_assert!(x != 0);
-    unsafe { NonZeroUsize::new_unchecked(x) }
-}
-
-pub const NZONE: NonZeroUsize = unsafe { nzusize_unchecked(1) };
-
 // The field accesses are especially unsafe such that we want only a minimal
 // subset accessing them
 mod guard {
@@ -378,7 +365,7 @@ impl<T> NonZeroInxVec<T> {
 
     #[inline]
     pub const fn nziter(&self) -> IntoNonZeroUsizeIterator {
-        nzusize_iter(NZONE, self.len())
+        nzusize_iter(unsafe { NonZeroUsize::new_unchecked(1) }, self.len())
     }
 }
 

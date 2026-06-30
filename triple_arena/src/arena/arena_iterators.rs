@@ -5,11 +5,7 @@ use core::{marker::PhantomData, num::NonZeroUsize};
 use InternalEntry::*;
 use recasting::{Recast, Recaster};
 
-use crate::{
-    Advancer, Arena, Ptr,
-    arena::InternalEntry,
-    utils::{PtrInx, nzusize_unchecked},
-};
+use crate::{Advancer, Arena, Ptr, arena::InternalEntry, utils::PtrInx};
 
 /// An advancer over the valid `P`s of an `Arena`
 pub struct PtrAdvancer<P: Ptr, T> {
@@ -29,7 +25,7 @@ impl<P: Ptr, T> Advancer for PtrAdvancer<P, T> {
             let old_inx = self.inx;
             let allocation = collection.m.get(old_inx)?;
             unsafe {
-                self.inx = nzusize_unchecked(old_inx.get().wrapping_add(1));
+                self.inx = NonZeroUsize::new_unchecked(old_inx.get().wrapping_add(1));
             }
             if let Allocated(g, _) = allocation {
                 return Some(P::_from_raw(P::Inx::new(old_inx), *g));

@@ -1,22 +1,6 @@
 use alloc::vec::Vec;
 use core::num::NonZeroUsize;
 
-/// Shorthand for `NonZeroUsize::new_unchecked(x)`, and has a debug assertion
-/// that the input is not zero.
-///
-/// # Safety
-///
-/// `x` must not be 0
-pub const unsafe fn nzusize_unchecked(x: usize) -> NonZeroUsize {
-    if let Some(nz) = NonZeroUsize::new(x) {
-        nz
-    } else {
-        panic!();
-    }
-}
-
-pub const NZONE: NonZeroUsize = unsafe { nzusize_unchecked(1) };
-
 #[derive(Clone)]
 pub struct NonZeroInxVec<T> {
     v: Vec<T>,
@@ -90,7 +74,7 @@ impl<T> NonZeroInxVec<T> {
     }
 
     pub fn nziter(&self) -> IntoNonZeroUsizeIterator {
-        nzusize_iter(NZONE, self.len())
+        nzusize_iter(unsafe { NonZeroUsize::new_unchecked(1) }, self.len())
     }
 }
 
