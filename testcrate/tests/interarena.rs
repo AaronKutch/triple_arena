@@ -1,6 +1,6 @@
 use rand_xoshiro::{
     Xoshiro128StarStar,
-    rand_core::{RngCore, SeedableRng},
+    rand_core::{Rng, SeedableRng},
 };
 use testcrate::{
     A, CKey, CVal, P1, fuzz_fill_inst, std_arena, std_chain, std_chain_no_gen, std_ord, std_surject,

@@ -7,7 +7,7 @@ use std::{
 
 use rand_xoshiro::{
     Xoshiro128StarStar,
-    rand_core::{RngCore, SeedableRng},
+    rand_core::{Rng, SeedableRng},
 };
 use serde_derive::{Deserialize, Serialize};
 use triple_arena::{

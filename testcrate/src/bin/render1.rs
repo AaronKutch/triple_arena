@@ -2,7 +2,7 @@
 
 use rand_xoshiro::{
     Xoshiro128StarStar,
-    rand_core::{RngCore, SeedableRng},
+    rand_core::{Rng, SeedableRng},
 };
 use testcrate::*;
 use triple_arena::Arena;

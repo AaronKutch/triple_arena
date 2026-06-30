@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use rand_xoshiro::{
     Xoshiro128StarStar,
-    rand_core::{RngCore, SeedableRng},
+    rand_core::{Rng, SeedableRng},
 };
 use testcrate::P0;
 use triple_arena::{Advancer, Arena, Ptr, utils::PtrGen};
