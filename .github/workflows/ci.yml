@@ -11,11 +11,11 @@ jobs:
     name: Test suite
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       - name: Install Rust components
         run: |
           rustup set profile minimal
-          rustup default stable
+          rustup default nightly
           rustup target add riscv32i-unknown-none-elf
       - name: Run test suite
         # The `riscv32i` build is needed to actually detect if the crate is no_std.
@@ -38,12 +38,11 @@ jobs:
   miri:
     name: Miri
     runs-on: ubuntu-latest
-    # note: we have turned on this Miri flag
+    # note: we have turned on these Miri flags
     env:
-      RUSTFLAGS: -D warnings
       MIRIFLAGS: -Zmiri-tree-borrows -Zmiri-strict-provenance
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       - name: Install most recent Miri
         run: |
           rustup set profile minimal
@@ -55,15 +54,13 @@ jobs:
 
   msrv_test_suite:
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -D warnings
     steps:
-      - uses: actions/checkout@v2
-      - name: Install Rust components
+      - uses: actions/checkout@v7
+      - name: Install MSRV
         run: |
           rustup set profile minimal
-          rustup install nightly-2023-04-14
-      - name: Run test suite
+          rustup default 1.85
+      - name: Check that the crate builds on its MSRV
         run: |
           cargo build --no-default-features
 
@@ -71,7 +68,7 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       # Acquire the most recent nightly with a rustfmt component
       - name: Install most recent Rustfmt
         run: |
@@ -86,7 +83,7 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       # Acquire the most recent nightly with a clippy component
       - name: Install most recent Clippy
         run: |

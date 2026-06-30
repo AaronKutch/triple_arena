@@ -1,8 +1,3 @@
 [workspace]
-resolver = "2"
-members = [
-    "no_std_test",
-    "testcrate",
-    "triple_arena",
-    "triple_arena_render",
-]
+resolver = "3"
+members = ["no_std_test", "testcrate", "triple_arena", "triple_arena_render"]
