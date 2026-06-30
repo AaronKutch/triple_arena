@@ -75,14 +75,13 @@ impl<T> NonZeroInxVec<T> {
         } else {
             let i0 = inx0.get().wrapping_sub(1);
             let i1 = inx1.get().wrapping_sub(1);
-            let res = if i0 < i1 {
+            if i0 < i1 {
                 let (lhs, rhs) = self.v.split_at_mut(i1);
                 Some((&mut lhs[i0], &mut rhs[0]))
             } else {
                 let (lhs, rhs) = self.v.split_at_mut(i0);
                 Some((&mut rhs[0], &mut lhs[i1]))
-            };
-            res
+            }
         }
     }
 
@@ -151,4 +150,10 @@ pub const fn nzusize_iter(start: NonZeroUsize, end_inclusive: usize) -> IntoNonZ
         current: start,
         end_inclusive: end,
     })
+}
+
+impl<T> Default for NonZeroInxVec<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }

@@ -14,8 +14,8 @@ quick:
   {{cargo}} fmt
   {{cargo}} clippy --all --all-targets --all-features -- -D clippy::all
 
-fix:
-  {{cargo}} clippy --fix --all --all-targets --all-features -- -D clippy::all
+fix *ARGS:
+  {{cargo}} clippy --fix --all --all-targets --all-features {{ARGS}} -- -D clippy::all
 
 fmt:
   {{cargo}} sort -w
