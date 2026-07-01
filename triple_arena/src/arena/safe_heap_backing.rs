@@ -1,6 +1,8 @@
 use alloc::vec::Vec;
 use core::num::NonZeroUsize;
 
+use crate::utils::{AllocError, NonZeroInxGenericStack};
+
 #[derive(Clone)]
 pub struct NonZeroInxVec<T> {
     v: Vec<T>,
@@ -11,70 +13,70 @@ impl<T> NonZeroInxVec<T> {
         Self { v: Vec::new() }
     }
 
-    pub fn capacity(&self) -> usize {
-        self.v.capacity()
+    pub fn nziter(&self) -> IntoNonZeroUsizeIterator {
+        nzusize_iter(unsafe { NonZeroUsize::new_unchecked(1) }, self.len())
     }
+}
 
-    pub fn len(&self) -> usize {
+// Safety: we use safe ops internally and follow the requirements of the trait
+unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
+    fn len(&self) -> usize {
         self.v.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.v.is_empty()
+    fn capacity(&self) -> usize {
+        self.v.capacity()
     }
 
-    pub fn reserve(&mut self, additional: usize) {
-        self.v.reserve(additional)
+    fn capacity_limit(&self) -> Option<usize> {
+        None
     }
 
-    pub fn clear(&mut self) {
-        self.v.clear()
+    fn ensure_capacity(&mut self, min_capacity: usize) -> Result<(), AllocError> {
+        if min_capacity > self.capacity() {
+            self.v.try_reserve(min_capacity - self.len()).map_err(|_| AllocError)?;
+        } else if min_capacity < self.capacity() {
+            // TODO change when `try_shrink_to` is stabilized
+
+            // the only stable way to do it
+            let mut v = Vec::new();
+            v.try_reserve(min_capacity).map_err(|_| AllocError)?;
+            v.extend(self.v.drain(..));
+            self.v = v;
+        }
+        Ok(())
     }
 
-    pub fn clear_and_shrink(&mut self) {
-        self.v.clear();
-        self.v.shrink_to_fit();
-    }
-
-    pub fn push(&mut self, t: T) {
+    fn push(&mut self, t: T) {
         self.v.push(t)
     }
 
-    #[allow(dead_code)]
-    pub fn pop(&mut self) -> Option<T> {
+    unsafe fn get_unchecked(&self, inx: NonZeroUsize) -> &T {
+        unsafe {self.v.get_unchecked(inx.get().wrapping_sub(1))}
+    }
+
+    unsafe fn get_unchecked_mut(&mut self, inx: NonZeroUsize) -> &mut T {
+        unsafe {self.v.get_unchecked_mut(inx.get().wrapping_sub(1))}
+    }
+
+    unsafe fn get_disjoint_unchecked_mut<const N: usize>(
+        &mut self,
+        indices: [NonZeroUsize; N],
+    ) -> [&mut T; N] {
+        unsafe {self.v.get_disjoint_unchecked_mut(indices.map(|inx|inx.get().wrapping_sub(1)))}
+    }
+
+    fn pop(&mut self) -> Option<T> {
         self.v.pop()
     }
 
-    pub fn get(&self, inx: NonZeroUsize) -> Option<&T> {
-        self.v.get(inx.get().wrapping_sub(1))
+    fn clear(&mut self) {
+        self.v.clear()
     }
 
-    pub fn get_mut(&mut self, inx: NonZeroUsize) -> Option<&mut T> {
-        self.v.get_mut(inx.get().wrapping_sub(1))
-    }
-
-    pub fn get2_mut(&mut self, inx0: NonZeroUsize, inx1: NonZeroUsize) -> Option<(&mut T, &mut T)> {
-        if (inx0 == inx1) || (inx0.get() > self.len()) || (inx1.get() > self.len()) {
-            None
-        } else {
-            let i0 = inx0.get().wrapping_sub(1);
-            let i1 = inx1.get().wrapping_sub(1);
-            if i0 < i1 {
-                let (lhs, rhs) = self.v.split_at_mut(i1);
-                Some((&mut lhs[i0], &mut rhs[0]))
-            } else {
-                let (lhs, rhs) = self.v.split_at_mut(i0);
-                Some((&mut rhs[0], &mut lhs[i1]))
-            }
-        }
-    }
-
-    pub fn shrink_to_fit(&mut self) {
+    fn clear_and_shrink(&mut self) {
+        self.v.clear();
         self.v.shrink_to_fit();
-    }
-
-    pub fn nziter(&self) -> IntoNonZeroUsizeIterator {
-        nzusize_iter(unsafe { NonZeroUsize::new_unchecked(1) }, self.len())
     }
 }
 

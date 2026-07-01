@@ -25,6 +25,7 @@ use crate::fundamental::{AllocError, GetDisjointMutError};
 /// - `self.len() <= self.capacity()`
 /// - After calling `ensure_capacity` and getting Ok, `self.capacity() >=
 ///   min_capacity`
+/// - Must act consistently as a stack should with regards to pushes, pops, and accesses
 ///
 /// `self.capacity_limit` is a hint with respect to downstream assumptions and
 /// can be anything (because of the potential to modify limits with some
