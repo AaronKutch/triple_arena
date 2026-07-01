@@ -5,6 +5,7 @@
 # - rustup: `just toolchain=nightly check` (or `toolchain=1.85`, etc.)
 toolchain := ""
 cargo := if toolchain == "" { "cargo" } else { "cargo +" + toolchain }
+rustc := if toolchain == "" { "rustc" } else { "rustc +" + toolchain }
 
 alias c := check
 alias t := test
@@ -52,6 +53,9 @@ bench *ARGS:
 run *ARGS:
   {{cargo}} r --bin {{ARGS}}
 
+doc *ARGS:
+  {{cargo}} doc --open {{ARGS}}
+
 clean:
   {{cargo}} clean
 
@@ -59,3 +63,7 @@ clean:
 # `"rust-analyzer.cargo.extraEnv": {"NIX_PROFILES": "/nix/var/nix/profiles/default ${userHome}/.nix-profile", "PATH": "..."},`
 ra_path:
   nix develop .#nightly --command printenv PATH
+
+# equivalent to `rustup doc`
+std_doc:
+  xdg-open "$({{rustc}} --print sysroot)/share/doc/rust/html/index.html"
