@@ -1,7 +1,7 @@
 //! For manual inspection of SVG output
 
 use testcrate::*;
-use triple_arena::{Arena, Ptr};
+use triple_arena::{Arena, traits::*};
 use triple_arena_render::*;
 
 fn main() {

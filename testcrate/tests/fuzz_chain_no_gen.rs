@@ -6,7 +6,7 @@ use rand_xoshiro::{
 };
 use testcrate::P0;
 use triple_arena::{
-    Advancer, Ptr,
+    traits::*,
     utils::{ChainNoGenArena, PtrGen},
 };
 

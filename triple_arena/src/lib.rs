@@ -2,22 +2,25 @@
 
 #![no_std]
 
+extern crate alloc;
+
 mod arena;
-pub use arena::arena_iterators;
 mod chain;
 mod ord;
-mod traits;
+// this would have directly been the `traits` module, but things had to be so
+// selective that we synthesize the `utils` and `traits` modules instead
+mod fundamental;
+mod surject;
+
+// reexport for the macros to use
+pub use arena::{Arena, arena_iterators};
 pub use chain::{ChainArena, Link, chain_iterators};
 // always keep this for the serde documentation
 #[cfg(feature = "serde_support")]
-pub use traits::serde;
-pub use traits::{Advancer, ArenaTrait, Ptr};
-mod surject;
-// reexport for the macros to use
-pub use arena::Arena;
+pub use fundamental::serde_docs;
 pub use ord::{OrdArena, ord_iterators};
-pub use recasting::{Recast, Recaster};
 pub use surject::{SurjectArena, surject_iterators};
+
 /// Special utilities for advanced usage
 pub mod utils {
     #[cfg(feature = "expose_internal_utils")]
@@ -29,16 +32,24 @@ pub mod utils {
     // only intended for size_of tests and such
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::ord::Node;
-    pub(crate) use crate::traits::ptrinx_unchecked;
     pub use crate::{
         chain::{ChainNoGenArena, LinkNoGen, chain_no_gen_iterators},
-        traits::{PtrGen, PtrInx, PtrNoGen},
+        fundamental::{PtrGen, PtrInx, PtrNoGen},
     };
     /// A reexport used by the macros
     #[cfg(feature = "serde_support")]
     pub mod serde {
         pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
     }
+
+    pub use crate::fundamental::{
+        AllocError, GetDisjointMutError, NonZeroInxGenericStack, ptrinx_unchecked,
+    };
 }
 
-extern crate alloc;
+/// All the main traits, this can be glob imported
+pub mod traits {
+    pub use recasting::{Recast, Recaster};
+
+    pub use crate::fundamental::{Advancer, ArenaTrait, Ptr};
+}

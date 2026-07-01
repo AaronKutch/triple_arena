@@ -7,7 +7,10 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use crate::{Advancer, Arena, Ptr};
+use crate::{
+    Arena,
+    traits::{Advancer, Ptr},
+};
 
 /// This represents a link in a `ChainArena` that has a public `t: T` field and
 /// `Option<Ptr<P>>` interlinks to the previous and next links.

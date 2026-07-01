@@ -7,7 +7,10 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use crate::{Advancer, Arena, ChainArena, Link, Ptr};
+use crate::{
+    Arena, ChainArena, Link,
+    traits::{Advancer, Ptr},
+};
 
 /// The same as [crate::Link] except that the interlinks do not have a
 /// generation counter

@@ -1,6 +1,6 @@
 // note: for README version keep limit at 70 characters and change `out_file`
 
-use triple_arena::{Arena, Ptr, ptr_struct};
+use triple_arena::{Arena, ptr_struct, traits::*};
 use triple_arena_render::{DebugNode, DebugNodeTrait, render_to_svg_file};
 
 // Suppose we are storing an equation evaluation tree in an arena

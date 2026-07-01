@@ -9,7 +9,7 @@ use rand_xoshiro::{
     rand_core::{Rng, SeedableRng},
 };
 use testcrate::P0;
-use triple_arena::{Advancer, Ptr, SurjectArena, utils::PtrGen};
+use triple_arena::{SurjectArena, traits::*, utils::PtrGen};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 

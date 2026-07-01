@@ -6,7 +6,7 @@ use core::{
 };
 
 use crate::{
-    Advancer, Ptr,
+    traits::{Advancer, Ptr},
     utils::{NonZeroInxVec, PtrGen, PtrInx, ptrinx_unchecked},
 };
 

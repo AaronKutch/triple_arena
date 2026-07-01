@@ -11,7 +11,7 @@ use rand_xoshiro::{
 };
 use serde_derive::{Deserialize, Serialize};
 use triple_arena::{
-    Arena, ChainArena, OrdArena, Ptr, SurjectArena, ptr_struct, utils::ChainNoGenArena,
+    Arena, ChainArena, OrdArena, SurjectArena, ptr_struct, traits::Ptr, utils::ChainNoGenArena,
 };
 use triple_arena_render::*;
 

@@ -1,4 +1,4 @@
-use crate::{OrdArena, Ptr};
+use crate::{OrdArena, traits::Ptr};
 
 impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// Removes the key-value pair at `p`. Returns `None` if `p` is invalid.

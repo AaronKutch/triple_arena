@@ -2,7 +2,7 @@
 
 condense_wildcard_suffixes = true # better
 edition = "2024" # for bare rustfmt
-error_on_line_overflow = true # be more strict
+error_on_line_overflow = false # unchanged, I would change this but some macro cases are annoying
 error_on_unformatted = true # be more strict
 format_code_in_doc_comments = true # needed
 format_macro_bodies = true # changed

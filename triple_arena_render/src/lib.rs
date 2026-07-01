@@ -5,7 +5,7 @@ mod svg;
 use std::fmt::Debug;
 
 pub use svg::{render_to_svg, render_to_svg_file};
-use triple_arena::{Link, Ptr};
+use triple_arena::{Link, traits::Ptr};
 
 /// Internal structs and functions for experimenting with new rendering backends
 pub mod internal {

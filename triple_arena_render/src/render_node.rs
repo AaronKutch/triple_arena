@@ -2,7 +2,7 @@
 
 use std::cmp::max;
 
-use triple_arena::Ptr;
+use triple_arena::traits::Ptr;
 
 use crate::{
     FONT_ADJUST_Y, FONT_SIZE, FONT_WX, FONT_WY, INPUT_FONT_ADJUST_Y, INPUT_FONT_SIZE,

@@ -6,7 +6,8 @@ use recasting::{Recast, Recaster};
 
 pub use crate::arena_iterators::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
 use crate::{
-    Advancer, Ptr, arena_iterators,
+    arena_iterators,
+    traits::{Advancer, Ptr},
     utils::{ChainNoGenArena, LinkNoGen},
 };
 

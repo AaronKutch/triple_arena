@@ -1,6 +1,10 @@
 use core::cmp::{Ordering, min};
 
-use crate::{Advancer, OrdArena, Ptr, utils::ChainNoGenArena};
+use crate::{
+    OrdArena,
+    traits::{Advancer, Ptr},
+    utils::ChainNoGenArena,
+};
 
 impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
     /// Used by tests
@@ -387,6 +391,8 @@ res.unwrap();
 #[allow(clippy::type_complexity)]
 impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> OrdArena<P, K, V> {
     pub fn debug_arena(&self) -> crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>)> {
+        use crate::utils::PtrGen;
+
         let mut res: crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>)> =
             crate::Arena::new();
         self.a.clone_to_arena(&mut res, |_, link| {
@@ -394,15 +400,9 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
                 link.t.rank,
                 link.t.k.clone(),
                 link.t.v.clone(),
-                link.t
-                    .p_tree0
-                    .map(|inx| Ptr::_from_raw(inx, crate::utils::PtrGen::one())),
-                link.t
-                    .p_back
-                    .map(|inx| Ptr::_from_raw(inx, crate::utils::PtrGen::one())),
-                link.t
-                    .p_tree1
-                    .map(|inx| Ptr::_from_raw(inx, crate::utils::PtrGen::one())),
+                link.t.p_tree0.map(|inx| Ptr::_from_raw(inx, PtrGen::one())),
+                link.t.p_back.map(|inx| Ptr::_from_raw(inx, PtrGen::one())),
+                link.t.p_tree1.map(|inx| Ptr::_from_raw(inx, PtrGen::one())),
             )
         });
         // fix the generations
@@ -413,7 +413,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
                     .a
                     .get_no_gen(tmp.inx())
                     .map(|x| x.0)
-                    .unwrap_or(<P::Gen as crate::utils::PtrGen>::one());
+                    .unwrap_or(<P::Gen as PtrGen>::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), generation);
             }
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().4 {
@@ -421,7 +421,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
                     .a
                     .get_no_gen(tmp.inx())
                     .map(|x| x.0)
-                    .unwrap_or(<P::Gen as crate::utils::PtrGen>::one());
+                    .unwrap_or(<P::Gen as PtrGen>::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), generation);
             }
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().5 {
@@ -429,7 +429,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> O
                     .a
                     .get_no_gen(tmp.inx())
                     .map(|x| x.0)
-                    .unwrap_or(<P::Gen as crate::utils::PtrGen>::one());
+                    .unwrap_or(<P::Gen as PtrGen>::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), generation);
             }
         }

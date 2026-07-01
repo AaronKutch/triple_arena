@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 
-use triple_arena::{Arena, Ptr};
+use triple_arena::{Arena, traits::Ptr};
 
 use crate::{
     COLORS, DebugNodeTrait, FONT_FAMILY, NODE_FILL, NODE_PAD_Y, PAD, RELATION_WIDTH, RenderError,

@@ -1,6 +1,6 @@
 use std::cmp::max;
 
-use triple_arena::{Arena, Ptr};
+use triple_arena::{Arena, traits::Ptr};
 
 use crate::{
     NODE_PAD_X, NODE_PAD_Y, PAD,

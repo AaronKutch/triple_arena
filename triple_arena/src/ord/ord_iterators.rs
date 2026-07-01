@@ -4,7 +4,10 @@ use core::marker::PhantomData;
 
 use recasting::{Recast, Recaster};
 
-use crate::{Advancer, OrdArena, Ptr};
+use crate::{
+    OrdArena,
+    traits::{Advancer, Ptr},
+};
 
 /// An advancer over the valid `P`s of an `OrdArena`
 pub struct PtrAdvancer<P: Ptr, K, V> {

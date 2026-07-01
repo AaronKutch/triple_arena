@@ -10,8 +10,9 @@ use core::{
 };
 
 use crate::{
-    Advancer, Arena, ChainArena, Link, Ptr,
+    Arena, ChainArena, Link,
     chain::LinkNoGen,
+    traits::{Advancer, Ptr},
     utils::{ChainNoGenArena, PtrInx},
 };
 

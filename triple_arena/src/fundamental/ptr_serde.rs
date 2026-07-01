@@ -153,15 +153,6 @@ impl_ptr_inx!(
     NonZeroU128 u128;
 );
 
-/// Shorthand for `PtrInx::new(NonZeroUsize::new_unchecked(x))`.
-///
-/// # Safety
-///
-/// `x` must not be 0 and must be within the `PtrInx` limits
-pub unsafe fn ptrinx_unchecked<P: PtrInx>(x: usize) -> P {
-    PtrInx::new(unsafe { NonZeroUsize::new_unchecked(x) })
-}
-
 /// A trait containing index and generation information for the `Arena` type.
 ///
 /// Users should never have to manually implement this, use the `ptr_trait`
@@ -288,7 +279,7 @@ macro_rules! ptr_struct {
                 _internal_gen: $gen_type,
             }
 
-            unsafe impl $crate::Ptr for $struct_name {
+            unsafe impl $crate::traits::Ptr for $struct_name {
                 type Inx = $inx_type;
                 type Gen = $gen_type;
 
@@ -329,7 +320,7 @@ macro_rules! ptr_struct {
             impl core::default::Default for $struct_name {
                 #[inline]
                 fn default() -> Self {
-                    $crate::Ptr::invalid()
+                    $crate::traits::Ptr::invalid()
                 }
             }
 
@@ -339,9 +330,9 @@ macro_rules! ptr_struct {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                     f.write_fmt(format_args!(
                         "{}[{:x?}]({:x?})",
-                        <Self as $crate::Ptr>::name(),
-                        $crate::Ptr::inx(*self),
-                        $crate::Ptr::generation(*self),
+                        <Self as $crate::traits::Ptr>::name(),
+                        $crate::traits::Ptr::inx(*self),
+                        $crate::traits::Ptr::generation(*self),
                     ))
                 }
             }
@@ -352,9 +343,9 @@ macro_rules! ptr_struct {
                 }
             }
 
-            impl $crate::Recast<Self> for $struct_name {
-                fn recast<R: $crate::Recaster<Item = Self>>(&mut self, recaster: &R)
-                    -> core::result::Result<(), <R as $crate::Recaster>::Item> {
+            impl $crate::traits::Recast<Self> for $struct_name {
+                fn recast<R: $crate::traits::Recaster<Item = Self>>(&mut self, recaster: &R)
+                    -> core::result::Result<(), <R as $crate::traits::Recaster>::Item> {
                     recaster.recast_item(self)
                 }
             }
@@ -364,7 +355,7 @@ macro_rules! ptr_struct {
                 where
                     S: $crate::utils::serde::Serializer,
                 {
-                    <Self as $crate::Ptr>::inx(*self).serialize(serializer)
+                    <Self as $crate::traits::Ptr>::inx(*self).serialize(serializer)
                 }
             }
 
@@ -373,11 +364,11 @@ macro_rules! ptr_struct {
                 where
                     D: $crate::utils::serde::Deserializer<'de>,
                 {
-                    let p = <<Self as $crate::Ptr>::Inx as $crate::utils::serde::Deserialize>
+                    let p = <<Self as $crate::traits::Ptr>::Inx as $crate::utils::serde::Deserialize>
                         ::deserialize(deserializer)?;
-                    Ok(<Self as $crate::Ptr>::_from_raw(
+                    Ok(<Self as $crate::traits::Ptr>::_from_raw(
                         p,
-                        <<Self as $crate::Ptr>::Gen as $crate::utils::PtrGen>::two()
+                        <<Self as $crate::traits::Ptr>::Gen as $crate::utils::PtrGen>::two()
                     ))
                 }
             }
@@ -403,7 +394,7 @@ macro_rules! ptr_struct {
                 _internal_gen: (),
             }
 
-            unsafe impl $crate::Ptr for $struct_name {
+            unsafe impl $crate::traits::Ptr for $struct_name {
                 type Inx = $inx_type;
                 type Gen = ();
 
@@ -444,7 +435,7 @@ macro_rules! ptr_struct {
             impl core::default::Default for $struct_name {
                 #[inline]
                 fn default() -> Self {
-                    $crate::Ptr::invalid()
+                    $crate::traits::Ptr::invalid()
                 }
             }
 
@@ -454,8 +445,8 @@ macro_rules! ptr_struct {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                     f.write_fmt(format_args!(
                         "{}[{:x?}]",
-                        <Self as $crate::Ptr>::name(),
-                        $crate::Ptr::inx(*self),
+                        <Self as $crate::traits::Ptr>::name(),
+                        $crate::traits::Ptr::inx(*self),
                     ))
                 }
             }
@@ -466,9 +457,9 @@ macro_rules! ptr_struct {
                 }
             }
 
-            impl $crate::Recast<Self> for $struct_name {
-                fn recast<R: $crate::Recaster<Item = Self>>(&mut self, recaster: &R)
-                    -> core::result::Result<(), <R as $crate::Recaster>::Item> {
+            impl $crate::traits::Recast<Self> for $struct_name {
+                fn recast<R: $crate::traits::Recaster<Item = Self>>(&mut self, recaster: &R)
+                    -> core::result::Result<(), <R as $crate::traits::Recaster>::Item> {
                     recaster.recast_item(self)
                 }
             }
@@ -478,7 +469,7 @@ macro_rules! ptr_struct {
                 where
                     S: $crate::utils::serde::Serializer,
                 {
-                    <Self as $crate::Ptr>::inx(*self).serialize(serializer)
+                    <Self as $crate::traits::Ptr>::inx(*self).serialize(serializer)
                 }
             }
 
@@ -487,9 +478,9 @@ macro_rules! ptr_struct {
                 where
                     D: $crate::utils::serde::Deserializer<'de>,
                 {
-                    let p = <<Self as $crate::Ptr>::Inx as $crate::utils::serde::Deserialize>
+                    let p = <<Self as $crate::traits::Ptr>::Inx as $crate::utils::serde::Deserialize>
                         ::deserialize(deserializer)?;
-                    Ok(<Self as $crate::Ptr>::_from_raw(p, ()))
+                    Ok(<Self as $crate::traits::Ptr>::_from_raw(p, ()))
                 }
             }
         )*

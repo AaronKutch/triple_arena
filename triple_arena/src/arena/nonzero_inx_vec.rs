@@ -6,15 +6,12 @@ use core::{alloc::Layout, cmp::max, mem, num::NonZeroUsize, ptr};
 mod guard {
     use core::{marker::PhantomData, mem, ptr};
 
-    /// This is intended for the backing of arena-like data structures that pass
-    /// out independent indexes. It is important that these indexes can be a
-    /// `NonZero` integer for memory optimization purposes. This structure is
-    /// not ever intended to support slices and zero indexing like a normal
-    /// `Vec`. It includes optimizations such as pre-offsetting the allocation
-    /// pointer so that `get`s and `get_mut`s only need a single addition in
-    /// machine code to arrive at the destination address, rather than there
-    /// being an unused allocation at the beginning or there being decrement
-    /// penalties for every access.
+    /// See [NonZeroInxGenericStack]. This allocating implementation includes
+    /// optimizations such as pre-offsetting the allocation pointer so that
+    /// `get`s and `get_mut`s only need a single addition in machine code to
+    /// arrive at the destination address, rather than there being an unused
+    /// allocation at the beginning or there being decrement penalties for
+    /// every access.
     pub struct NonZeroInxVec<T> {
         /// When `_cap != 0`, this is offset by `pointer::wrapping_offset(-1)`
         /// from the allocation

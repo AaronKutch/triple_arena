@@ -4,8 +4,9 @@ use core::{mem, num::NonZeroUsize};
 use fmt::Debug;
 
 use crate::{
-    Advancer, Arena, ChainArena, Ptr,
+    Arena, ChainArena,
     arena::InternalEntry,
+    traits::{Advancer, Ptr},
     utils::{ChainNoGenArena, LinkNoGen, PtrInx, PtrNoGen},
 };
 

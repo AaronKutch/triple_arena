@@ -5,7 +5,12 @@ use core::{marker::PhantomData, num::NonZeroUsize};
 use InternalEntry::*;
 use recasting::{Recast, Recaster};
 
-use crate::{Advancer, Arena, Ptr, arena::InternalEntry, utils::PtrInx};
+use crate::{
+    Arena,
+    arena::InternalEntry,
+    traits::{Advancer, Ptr},
+    utils::PtrInx,
+};
 
 /// An advancer over the valid `P`s of an `Arena`
 pub struct PtrAdvancer<P: Ptr, T> {
