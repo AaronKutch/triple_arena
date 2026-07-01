@@ -28,8 +28,6 @@ pub mod utils {
     pub use crate::arena::InternalEntry;
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::arena::NonZeroInxVec;
-    #[cfg(not(feature = "expose_internal_utils"))]
-    pub(crate) use crate::arena::NonZeroInxVec;
     // only intended for size_of tests and such
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::ord::Node;

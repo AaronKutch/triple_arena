@@ -159,7 +159,7 @@ where
     {
         let mut a = Arena::<P, T, B>::new();
         if let Some(hint) = access.size_hint() {
-            a.m.ensure_capacity(hint);
+            let _ = a.m.ensure_capacity(hint);
         }
 
         while let Some((p, t)) = access.next_entry::<P::Inx, T>()? {
@@ -353,7 +353,7 @@ where
     {
         let mut a: Arena<P, LinkNoGen<P, Node<P, K, V>>, B> = Arena::new();
         if let Some(hint) = access.size_hint() {
-            a.m.ensure_capacity(hint);
+            let _ = a.m.ensure_capacity(hint);
         }
 
         let mut i = 1usize;

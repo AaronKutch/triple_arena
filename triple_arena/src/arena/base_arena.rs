@@ -357,7 +357,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         // check for greater than zero, `reserve(0)` can trigger allocation and thus
         // exponential growth problems
         if reserve_amt > 0 {
-            self.m.ensure_capacity(target);
+            let _ = self.m.ensure_capacity(target);
         }
         // Get to `target` virtual capacity and no more, do not go all way to
         // `self.m.capacity()`. Nonoverflowing since `target` is a checked add on
@@ -832,7 +832,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         self.inc_gen();
         let generation = self.generation();
         let mut new_m = B::Stack::<InternalEntry<P, T>>::new();
-        new_m.ensure_capacity(self.len());
+        let _ = new_m.ensure_capacity(self.len());
         let mut j = 1;
         for i in self.nziter() {
             let entry = mem::replace(
@@ -991,7 +991,7 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for Arena<P, T, B> {
     /// with respect to the different arenas can diverge.
     fn clone(&self) -> Self {
         let mut m = B::Stack::new();
-        m.ensure_capacity(self.m.len());
+        let _ = m.ensure_capacity(self.m.len());
         for i in self.nziter() {
             m.push(self.m.get(i).unwrap().clone());
         }

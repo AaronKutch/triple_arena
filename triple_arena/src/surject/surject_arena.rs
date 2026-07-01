@@ -732,7 +732,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             }
         }
         self.vals.freelist_root = None;
-        self.vals.m.ensure_capacity(0);
+        let _ = self.vals.m.ensure_capacity(0);
     }
 
     /// Has the same properties of [Arena::clone_from_with]
