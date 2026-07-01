@@ -6,23 +6,20 @@ use InternalEntry::*;
 use recasting::{Recast, Recaster};
 
 use crate::{
-    Arena,
-    arena::InternalEntry,
-    traits::{Advancer, Ptr},
-    utils::PtrInx,
+    Arena, arena::{InternalEntry, base_arena::ArenaBacking}, traits::{Advancer, Ptr}, utils::{NonZeroInxGenericStack, PtrInx},
 };
 
 /// An advancer over the valid `P`s of an `Arena`
-pub struct PtrAdvancer<P: Ptr, T> {
+pub struct PtrAdvancer<P: Ptr, T, B: ArenaBacking> {
     // If we used `P::Inx`, we would be widening and truncating on every advance, and running into
     // needing a boolean to tell if we advanced past the last entry where `P::Inx::max` is a valid
     // entry
     inx: NonZeroUsize,
-    _boo: PhantomData<fn() -> (P, T)>,
+    _boo: PhantomData<fn() -> (P, T, B)>,
 }
 
-impl<P: Ptr, T> Advancer for PtrAdvancer<P, T> {
-    type Collection = Arena<P, T>;
+impl<P: Ptr, T, B: ArenaBacking> Advancer for PtrAdvancer<P, T, B> {
+    type Collection = Arena<P, T, B>;
     type Item = P;
 
     fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
@@ -40,12 +37,12 @@ impl<P: Ptr, T> Advancer for PtrAdvancer<P, T> {
 }
 
 /// An iterator over the valid `P`s of an `Arena`
-pub struct Ptrs<'a, P: Ptr, T> {
-    arena: &'a Arena<P, T>,
-    adv: PtrAdvancer<P, T>,
+pub struct Ptrs<'a, P: Ptr, T, B: ArenaBacking> {
+    arena: &'a Arena<P, T, B>,
+    adv: PtrAdvancer<P, T, B>,
 }
 
-impl<P: Ptr, T> Iterator for Ptrs<'_, P, T> {
+impl<P: Ptr, T, B: ArenaBacking> Iterator for Ptrs<'_, P, T, B> {
     type Item = P;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -54,12 +51,12 @@ impl<P: Ptr, T> Iterator for Ptrs<'_, P, T> {
 }
 
 /// An iterator over `&T` in an `Arena`
-pub struct Vals<'a, P: Ptr, T> {
-    arena: &'a Arena<P, T>,
-    adv: PtrAdvancer<P, T>,
+pub struct Vals<'a, P: Ptr, T, B: ArenaBacking> {
+    arena: &'a Arena<P, T, B>,
+    adv: PtrAdvancer<P, T, B>,
 }
 
-impl<'a, P: Ptr, T> Iterator for Vals<'a, P, T> {
+impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for Vals<'a, P, T, B> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -70,12 +67,12 @@ impl<'a, P: Ptr, T> Iterator for Vals<'a, P, T> {
 }
 
 /// A mutable iterator over `&mut T` in an `Arena`
-pub struct ValsMut<'a, P: Ptr, T> {
-    arena: &'a mut Arena<P, T>,
-    adv: PtrAdvancer<P, T>,
+pub struct ValsMut<'a, P: Ptr, T, B: ArenaBacking> {
+    arena: &'a mut Arena<P, T, B>,
+    adv: PtrAdvancer<P, T, B>,
 }
 
-impl<'a, P: Ptr, T> Iterator for ValsMut<'a, P, T> {
+impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for ValsMut<'a, P, T, B> {
     type Item = &'a mut T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -90,12 +87,12 @@ impl<'a, P: Ptr, T> Iterator for ValsMut<'a, P, T> {
 }
 
 /// An iterator over `(P, &T)` in an `Arena`
-pub struct Iter<'a, P: Ptr, T> {
-    arena: &'a Arena<P, T>,
-    adv: PtrAdvancer<P, T>,
+pub struct Iter<'a, P: Ptr, T, B: ArenaBacking> {
+    arena: &'a Arena<P, T, B>,
+    adv: PtrAdvancer<P, T, B>,
 }
 
-impl<'a, P: Ptr, T> Iterator for Iter<'a, P, T> {
+impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for Iter<'a, P, T, B> {
     type Item = (P, &'a T);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -106,12 +103,12 @@ impl<'a, P: Ptr, T> Iterator for Iter<'a, P, T> {
 }
 
 /// A mutable iterator over `(P, &mut T)` in an `Arena`
-pub struct IterMut<'a, P: Ptr, T> {
-    arena: &'a mut Arena<P, T>,
-    adv: PtrAdvancer<P, T>,
+pub struct IterMut<'a, P: Ptr, T, B: ArenaBacking> {
+    arena: &'a mut Arena<P, T, B>,
+    adv: PtrAdvancer<P, T, B>,
 }
 
-impl<'a, P: Ptr, T> Iterator for IterMut<'a, P, T> {
+impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterMut<'a, P, T, B> {
     type Item = (P, &'a mut T);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -126,12 +123,12 @@ impl<'a, P: Ptr, T> Iterator for IterMut<'a, P, T> {
 }
 
 /// A draining iterator over `(P, T)` in an `Arena`
-pub struct Drain<'a, P: Ptr, T> {
-    arena: &'a mut Arena<P, T>,
-    adv: PtrAdvancer<P, T>,
+pub struct Drain<'a, P: Ptr, T, B: ArenaBacking> {
+    arena: &'a mut Arena<P, T, B>,
+    adv: PtrAdvancer<P, T, B>,
 }
 
-impl<P: Ptr, T> Drop for Drain<'_, P, T> {
+impl<P: Ptr, T, B: ArenaBacking> Drop for Drain<'_, P, T, B> {
     fn drop(&mut self) {
         if !self.arena.is_empty() {
             self.arena.clear();
@@ -140,7 +137,7 @@ impl<P: Ptr, T> Drop for Drain<'_, P, T> {
     }
 }
 
-impl<P: Ptr, T> Iterator for Drain<'_, P, T> {
+impl<P: Ptr, T, B: ArenaBacking> Iterator for Drain<'_, P, T, B> {
     type Item = (P, T);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -153,12 +150,12 @@ impl<P: Ptr, T> Iterator for Drain<'_, P, T> {
 }
 
 /// A capacity draining iterator over `(P, T)` in an `Arena`
-pub struct CapacityDrain<P: Ptr, T> {
-    arena: Arena<P, T>,
-    adv: PtrAdvancer<P, T>,
+pub struct CapacityDrain<P: Ptr, T, B: ArenaBacking> {
+    arena: Arena<P, T, B>,
+    adv: PtrAdvancer<P, T, B>,
 }
 
-impl<P: Ptr, T> Iterator for CapacityDrain<P, T> {
+impl<P: Ptr, T, B: ArenaBacking> Iterator for CapacityDrain<P, T, B> {
     type Item = (P, T);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -168,8 +165,8 @@ impl<P: Ptr, T> Iterator for CapacityDrain<P, T> {
     }
 }
 
-impl<P: Ptr, T> IntoIterator for Arena<P, T> {
-    type IntoIter = CapacityDrain<P, T>;
+impl<P: Ptr, T, B: ArenaBacking> IntoIterator for Arena<P, T, B> {
+    type IntoIter = CapacityDrain<P, T, B>;
     type Item = (P, T);
 
     fn into_iter(self) -> Self::IntoIter {
@@ -177,8 +174,8 @@ impl<P: Ptr, T> IntoIterator for Arena<P, T> {
     }
 }
 
-impl<'a, P: Ptr, T> IntoIterator for &'a Arena<P, T> {
-    type IntoIter = Iter<'a, P, T>;
+impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a Arena<P, T, B> {
+    type IntoIter = Iter<'a, P, T, B>;
     type Item = (P, &'a T);
 
     fn into_iter(self) -> Self::IntoIter {
@@ -186,8 +183,8 @@ impl<'a, P: Ptr, T> IntoIterator for &'a Arena<P, T> {
     }
 }
 
-impl<'a, P: Ptr, T> IntoIterator for &'a mut Arena<P, T> {
-    type IntoIter = IterMut<'a, P, T>;
+impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a mut Arena<P, T, B> {
+    type IntoIter = IterMut<'a, P, T, B>;
     type Item = (P, &'a mut T);
 
     /// This returns an `IterMut`. Use `Arena::drain` for by-value consumption.
@@ -196,7 +193,7 @@ impl<'a, P: Ptr, T> IntoIterator for &'a mut Arena<P, T> {
     }
 }
 
-impl<P: Ptr, T> FromIterator<T> for Arena<P, T> {
+impl<P: Ptr, T, B: ArenaBacking> FromIterator<T> for Arena<P, T, B> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let mut a = Arena::new();
         for t in iter {
@@ -207,14 +204,14 @@ impl<P: Ptr, T> FromIterator<T> for Arena<P, T> {
 }
 
 /// All the iterators here can return values in arbitrary order
-impl<P: Ptr, T> Arena<P, T> {
+impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     /// Advances over every valid `Ptr` in `self`.
     ///
     /// When using the correct loop structure, every `Ptr` valid from before the
     /// loop began will be witnessed as long as it is kept valid during the
     /// loop. The `Ptr`s of insertions that occur during the loop can both be
     /// witnessed or not witnessed before the loop terminates.
-    pub fn advancer(&self) -> PtrAdvancer<P, T> {
+    pub fn advancer(&self) -> PtrAdvancer<P, T, B> {
         PtrAdvancer {
             inx: NonZeroUsize::new(1).unwrap(),
             _boo: PhantomData,
@@ -222,7 +219,7 @@ impl<P: Ptr, T> Arena<P, T> {
     }
 
     /// Iteration over all valid `P` in the arena
-    pub fn ptrs(&self) -> Ptrs<'_, P, T> {
+    pub fn ptrs(&self) -> Ptrs<'_, P, T, B> {
         Ptrs {
             arena: self,
             adv: self.advancer(),
@@ -230,7 +227,7 @@ impl<P: Ptr, T> Arena<P, T> {
     }
 
     /// Iteration over `&T`
-    pub fn vals(&self) -> Vals<'_, P, T> {
+    pub fn vals(&self) -> Vals<'_, P, T, B> {
         Vals {
             arena: self,
             adv: self.advancer(),
@@ -238,13 +235,13 @@ impl<P: Ptr, T> Arena<P, T> {
     }
 
     /// Mutable iteration over `&mut T`
-    pub fn vals_mut(&mut self) -> ValsMut<'_, P, T> {
+    pub fn vals_mut(&mut self) -> ValsMut<'_, P, T, B> {
         let adv = self.advancer();
         ValsMut { arena: self, adv }
     }
 
     /// Iteration over `(P, &T)` tuples
-    pub fn iter(&self) -> Iter<'_, P, T> {
+    pub fn iter(&self) -> Iter<'_, P, T, B> {
         Iter {
             arena: self,
             adv: self.advancer(),
@@ -252,7 +249,7 @@ impl<P: Ptr, T> Arena<P, T> {
     }
 
     /// Mutable iteration over `(P, &mut T)` tuples
-    pub fn iter_mut(&mut self) -> IterMut<'_, P, T> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, P, T, B> {
         let adv = self.advancer();
         IterMut { arena: self, adv }
     }
@@ -263,7 +260,7 @@ impl<P: Ptr, T> Arena<P, T> {
     /// Note: When the `Drain` struct is dropped, any remaining iterations will
     /// be consumed and dropped like normal. If the `Drain` struct is leaked
     /// (such as with [core::mem::forget]), unspecified behavior will result.
-    pub fn drain(&mut self) -> Drain<'_, P, T> {
+    pub fn drain(&mut self) -> Drain<'_, P, T, B> {
         // NOTE: I have not thought fully about how our new invariants interact with
         // leaking the `Drain` struct, just use a normal advancer
 
@@ -276,22 +273,22 @@ impl<P: Ptr, T> Arena<P, T> {
 
     /// By-value iteration with `(P, T)` tuples. Consumes all `T` and
     /// capacity.
-    pub fn capacity_drain(self) -> CapacityDrain<P, T> {
+    pub fn capacity_drain(self) -> CapacityDrain<P, T, B> {
         let adv = self.advancer();
         CapacityDrain { arena: self, adv }
     }
 
     /// Performs [Arena::compress_and_shrink] and returns an `Arena<P, P>` that
     /// can be used for [Recast]ing
-    pub fn compress_and_shrink_recaster(&mut self) -> Arena<P, P> {
-        let mut res = Arena::<P, P>::new();
+    pub fn compress_and_shrink_recaster(&mut self) -> Arena<P, P, B> {
+        let mut res = Arena::<P, P, B>::new();
         res.clone_from_with(self, |_, _| P::invalid());
         self.compress_and_shrink_with(|p, _, q| *res.get_mut(p).unwrap() = q);
         res
     }
 }
 
-impl<P: Ptr> Recaster for Arena<P, P> {
+impl<P: Ptr, B: ArenaBacking> Recaster for Arena<P, P, B> {
     type Item = P;
 
     fn recast_item(&self, item: &mut Self::Item) -> Result<(), Self::Item> {
@@ -304,7 +301,7 @@ impl<P: Ptr> Recaster for Arena<P, P> {
     }
 }
 
-impl<P: Ptr, I, T: Recast<I>> Recast<I> for Arena<P, T> {
+impl<P: Ptr, B: ArenaBacking, I, T: Recast<I>> Recast<I> for Arena<P, T, B> {
     fn recast<R: Recaster<Item = I>>(&mut self, recaster: &R) -> Result<(), <R as Recaster>::Item> {
         for val in self.vals_mut() {
             val.recast(recaster)?;

@@ -8,18 +8,12 @@ pub struct NonZeroInxVec<T> {
     v: Vec<T>,
 }
 
-impl<T> NonZeroInxVec<T> {
-    pub const fn new() -> Self {
+// Safety: we use safe ops internally and follow the requirements of the trait
+unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
+    fn new() -> Self {
         Self { v: Vec::new() }
     }
 
-    pub fn nziter(&self) -> IntoNonZeroUsizeIterator {
-        nzusize_iter(unsafe { NonZeroUsize::new_unchecked(1) }, self.len())
-    }
-}
-
-// Safety: we use safe ops internally and follow the requirements of the trait
-unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
     fn len(&self) -> usize {
         self.v.len()
     }
@@ -120,26 +114,11 @@ impl IntoIterator for IntoNonZeroUsizeIterator {
     }
 }
 
+/// Starts from 1
 #[inline]
-pub const fn nzusize_iter(start: NonZeroUsize, end_inclusive: usize) -> IntoNonZeroUsizeIterator {
-    // we do it this way for better branching
-    let end = if start.get() > end_inclusive {
-        None
-    } else {
-        // Safety: if `start` is `NonZeroUsize`, and `start <= end_inclusive`, then
-        // `end_inclusive` must be at least 1
-        let tmp = NonZeroUsize::new(end_inclusive);
-        assert!(tmp.is_some());
-        tmp
-    };
+pub fn nzusize_iter(end_inclusive: Option<NonZeroUsize>) -> IntoNonZeroUsizeIterator {
     IntoNonZeroUsizeIterator(NonZeroUsizeIterator {
-        current: start,
-        end_inclusive: end,
+        current: NonZeroUsize::new(1).unwrap(),
+        end_inclusive,
     })
-}
-
-impl<T> Default for NonZeroInxVec<T> {
-    fn default() -> Self {
-        Self::new()
-    }
 }

@@ -31,6 +31,8 @@ use crate::fundamental::{AllocError, GetDisjointMutError};
 /// can be anything (because of the potential to modify limits with some
 /// implementations, but they should try to be sane)
 pub unsafe trait NonZeroInxGenericStack<T> {
+    fn new() -> Self;
+
     /// The number of elements in the stack
     fn len(&self) -> usize;
 
