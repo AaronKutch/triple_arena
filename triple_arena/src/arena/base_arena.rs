@@ -6,7 +6,9 @@ use core::{
 };
 
 use crate::{
-    arena::{NonZeroInxVec, safe_heap_backing::{IntoNonZeroUsizeIterator}}, traits::{Advancer, Ptr, }, utils::{NonZeroInxGenericStack, PtrGen, PtrInx, ptrinx_unchecked},
+    arena::{NonZeroInxVec, safe_heap_backing::IntoNonZeroUsizeIterator},
+    traits::{Advancer, Ptr},
+    utils::{NonZeroInxGenericStack, PtrGen, PtrInx, ptrinx_unchecked},
 };
 
 pub trait ArenaBacking {
@@ -65,7 +67,7 @@ use InternalEntry::*;
 /// pointers from one arena in another. The arena will use generation counters
 /// to check for invalidated pointers if `P` has a generation counter.
 /// ```
-/// use triple_arena::{Arena, Ptr, ptr_struct};
+/// use triple_arena::{Arena, ptr_struct, traits::Ptr};
 ///
 /// // In implementations that always use valid indexes and only want the
 /// // generation counter in debug mode, we can use `cfg`s like this:
@@ -146,7 +148,7 @@ use InternalEntry::*;
 ///
 /// Note: See the `triple_arena_render` crate for a trait-based way to visualize
 /// graph structures in `Arena`s
-pub struct Arena<P: Ptr, T, B: ArenaBacking> {
+pub struct Arena<P: Ptr, T, B: ArenaBacking = HeapBacking> {
     /// The main memory of entries.
     ///
     /// # Capacity
@@ -220,7 +222,7 @@ pub struct Arena<P: Ptr, T, B: ArenaBacking> {
 /// panic occurs. If `Arena::generation()` is the maximum value of its type and
 /// an invalidation occurs, a panic occurs.
 impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
-    fn nziter(&self) -> IntoNonZeroUsizeIterator {
+    pub(crate) fn nziter(&self) -> IntoNonZeroUsizeIterator {
         super::safe_heap_backing::nzusize_iter(NonZeroUsize::new(self.m.len()))
     }
 
@@ -851,14 +853,20 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         self.freelist_root = None;
     }
 
-    // FIXME there are no default type parameters yet, need to have a separate function for cloning to arenas with different backing (or maybe use `ArenaTrait` level source generics?)
+    // FIXME there are no default type parameters yet, need to have a separate
+    // function for cloning to arenas with different backing (or maybe use
+    // `ArenaTrait` level source generics?)
 
     /// Like [Arena::clone_from] except the `Clone` bound is not required
     /// and `source` can have arbitrary `U`. For every `U`, the `P` pointing to
     /// that `U` and a reference to itself is passed to `map` to generate
     /// the corresponding `T` in `self`. Validity is cloned with a `P`
     /// being able to reference `U` in the `source` arena and `T` in `self`.
-    pub fn clone_from_with<U, F: FnMut(P, &U) -> T>(&mut self, source: &Arena<P, U, B>, mut map: F) {
+    pub fn clone_from_with<U, F: FnMut(P, &U) -> T>(
+        &mut self,
+        source: &Arena<P, U, B>,
+        mut map: F,
+    ) {
         // exponential growth mitigation factor, absolutely do not use `self.m.capacity`
         // in the extra freelist additions
         let old_virt_cap = self.m.len();

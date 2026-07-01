@@ -6,7 +6,10 @@ use InternalEntry::*;
 use recasting::{Recast, Recaster};
 
 use crate::{
-    Arena, arena::{InternalEntry, base_arena::ArenaBacking}, traits::{Advancer, Ptr}, utils::{NonZeroInxGenericStack, PtrInx},
+    Arena,
+    arena::{InternalEntry, base_arena::ArenaBacking},
+    traits::{Advancer, Ptr},
+    utils::{NonZeroInxGenericStack, PtrInx},
 };
 
 /// An advancer over the valid `P`s of an `Arena`

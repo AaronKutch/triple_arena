@@ -59,7 +59,7 @@ jobs:
       - name: Install MSRV
         run: |
           rustup set profile minimal
-          rustup default 1.85
+          rustup default 1.86
       - name: Check that the crate builds on its MSRV
         run: |
           cargo build --no-default-features

@@ -2,11 +2,12 @@ use core::cmp::{Ordering, min};
 
 use crate::{
     OrdArena,
+    arena::ArenaBacking,
     traits::{Advancer, Ptr},
     utils::ChainNoGenArena,
 };
 
-impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
+impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
@@ -284,7 +285,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 }
 
 /// Does not require `K: Ord`
-impl<P: Ptr, K, V> OrdArena<P, K, V> {
+impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Finds a `Ptr` through binary search with a user-provided function `f`.
     /// `f` is provided a `P, &K, &V` triple of the node the binary search is
     /// currently at. Will go in a `Ordering::Less` direction if `f` returns
@@ -389,11 +390,13 @@ res.unwrap();
 /// Used for development debugging only, see find.rs for example
 #[cfg(feature = "expose_internal_utils")]
 #[allow(clippy::type_complexity)]
-impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug> OrdArena<P, K, V> {
-    pub fn debug_arena(&self) -> crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>)> {
+impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug, B: ArenaBacking>
+    OrdArena<P, K, V, B>
+{
+    pub fn debug_arena(&self) -> crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>), B> {
         use crate::utils::PtrGen;
 
-        let mut res: crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>)> =
+        let mut res: crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>), B> =
             crate::Arena::new();
         self.a.clone_to_arena(&mut res, |_, link| {
             (

@@ -13,7 +13,7 @@ use crate::{
     Arena, ChainArena, Link,
     chain::LinkNoGen,
     traits::{Advancer, Ptr},
-    utils::{ChainNoGenArena, PtrInx},
+    utils::{ArenaBacking, ChainNoGenArena, HeapBacking, PtrInx},
 };
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
@@ -141,14 +141,14 @@ pub struct Node<P: Ptr, K, V> {
 /// version will find a way to fix this, however it should still be faster in
 /// many cases if `Ptr`s can be reused multiple times. Try to minimize
 /// the points where `find_key` is required.
-pub struct OrdArena<P: Ptr, K, V> {
+pub struct OrdArena<P: Ptr, K, V, B: ArenaBacking = HeapBacking> {
     pub(crate) root: P::Inx,
     pub(crate) first: P::Inx,
     pub(crate) last: P::Inx,
-    pub(crate) a: ChainNoGenArena<P, Node<P, K, V>>,
+    pub(crate) a: ChainNoGenArena<P, Node<P, K, V>, B>,
 }
 
-impl<P: Ptr, K, V> OrdArena<P, K, V> {
+impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     pub fn new() -> Self {
         Self {
             root: P::Inx::new(NonZeroUsize::new(1).unwrap()),
@@ -466,7 +466,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// ([next](crate::Link::next) points to the next greater entry)
     pub fn clone_to_chain_arena<U, F: FnMut(P, &K, &V) -> U>(
         &self,
-        chain_arena: &mut ChainArena<P, U>,
+        chain_arena: &mut ChainArena<P, U, B>,
         mut map: F,
     ) {
         self.a
@@ -476,16 +476,20 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
     /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
     /// `self`
-    pub fn clone_to_arena<U, F: FnMut(P, &K, &V) -> U>(&self, arena: &mut Arena<P, U>, mut map: F) {
+    pub fn clone_to_arena<U, F: FnMut(P, &K, &V) -> U>(
+        &self,
+        arena: &mut Arena<P, U, B>,
+        mut map: F,
+    ) {
         arena.clone_from_with(&self.a.a, |p, link| map(p, &link.t.k, &link.t.v));
     }
 }
 
-impl<P: Ptr, K: Clone, V0> OrdArena<P, K, V0> {
+impl<P: Ptr, K: Clone, V0, B: ArenaBacking> OrdArena<P, K, V0, B> {
     /// Has the same properties of [Arena::clone_from_with]. Clones the keys.
     pub fn clone_from_with<V1, F: FnMut(P, &V1) -> V0>(
         &mut self,
-        source: &OrdArena<P, K, V1>,
+        source: &OrdArena<P, K, V1, B>,
         mut map: F,
     ) {
         self.a.clone_from_with(&source.a, |p, link| Node {
@@ -500,7 +504,7 @@ impl<P: Ptr, K: Clone, V0> OrdArena<P, K, V0> {
 }
 
 /// Implemented if `K: Clone` and `V: Clone`.
-impl<P: Ptr, K: Clone, V: Clone> Clone for OrdArena<P, K, V> {
+impl<P: Ptr, K: Clone, V: Clone, B: ArenaBacking> Clone for OrdArena<P, K, V, B> {
     /// Has the `Ptr` preserving properties of [Arena::clone]
     fn clone(&self) -> Self {
         Self {
@@ -520,31 +524,31 @@ impl<P: Ptr, K: Clone, V: Clone> Clone for OrdArena<P, K, V> {
     }
 }
 
-impl<P: Ptr, K, V> Default for OrdArena<P, K, V> {
+impl<P: Ptr, K, V, B: ArenaBacking> Default for OrdArena<P, K, V, B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<P: Ptr, K, V, B: Borrow<P>> Index<B> for OrdArena<P, K, V> {
+impl<P: Ptr, K, V, B: ArenaBacking, Q: Borrow<P>> Index<Q> for OrdArena<P, K, V, B> {
     type Output = V;
 
-    fn index(&self, inx: B) -> &V {
+    fn index(&self, inx: Q) -> &V {
         let p: P = *inx.borrow();
         self.get_val(p)
             .expect("indexed `OrdArena` with invalidated `Ptr`")
     }
 }
 
-impl<P: Ptr, K, V, B: Borrow<P>> IndexMut<B> for OrdArena<P, K, V> {
-    fn index_mut(&mut self, inx: B) -> &mut V {
+impl<P: Ptr, K, V, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for OrdArena<P, K, V, B> {
+    fn index_mut(&mut self, inx: Q) -> &mut V {
         let p: P = *inx.borrow();
         self.get_val_mut(p)
             .expect("indexed `OrdArena` with invalidated `Ptr`")
     }
 }
 
-impl<P: Ptr, K: Debug, V: Debug> Debug for OrdArena<P, K, V> {
+impl<P: Ptr, K: Debug, V: Debug, B: ArenaBacking> Debug for OrdArena<P, K, V, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO here and in other triple `Debug`s we need a flat triple
         f.debug_map()
@@ -553,11 +557,13 @@ impl<P: Ptr, K: Debug, V: Debug> Debug for OrdArena<P, K, V> {
     }
 }
 
-impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<OrdArena<P, K, V>> for OrdArena<P, K, V> {
+impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> PartialEq<OrdArena<P, K, V, B>>
+    for OrdArena<P, K, V, B>
+{
     /// Checks if all `(K, V)` pairs are equal. This is sensitive to
     /// nonhereditary ordering, but does not compare pointers, generations,
     /// arena capacities, internal tree configuration, or `self.generation()`.
-    fn eq(&self, other: &OrdArena<P, K, V>) -> bool {
+    fn eq(&self, other: &OrdArena<P, K, V, B>) -> bool {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
@@ -578,15 +584,17 @@ impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<OrdArena<P, K, V>> for OrdAre
     }
 }
 
-impl<P: Ptr, K: Eq, V: Eq> Eq for OrdArena<P, K, V> {}
+impl<P: Ptr, K: Eq, V: Eq, B: ArenaBacking> Eq for OrdArena<P, K, V, B> {}
 
-impl<P: Ptr, K: PartialOrd, V: PartialOrd> PartialOrd<OrdArena<P, K, V>> for OrdArena<P, K, V> {
+impl<P: Ptr, K: PartialOrd, V: PartialOrd, B: ArenaBacking> PartialOrd<OrdArena<P, K, V, B>>
+    for OrdArena<P, K, V, B>
+{
     /// Orders as if the arena were a `Vec<(K, V)>` in order, returning early if
     /// the prefix had a difference, checking the key before the value in the
     /// pair, and returning based on which is longer. This is sensitive to
     /// nonhereditary ordering, but does not compare pointers, generations,
     /// arena capacities, internal tree configuration, or `self.generation()`.
-    fn partial_cmp(&self, other: &OrdArena<P, K, V>) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &OrdArena<P, K, V, B>) -> Option<Ordering> {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
@@ -613,13 +621,13 @@ impl<P: Ptr, K: PartialOrd, V: PartialOrd> PartialOrd<OrdArena<P, K, V>> for Ord
     }
 }
 
-impl<P: Ptr, K: Ord, V: Ord> Ord for OrdArena<P, K, V> {
+impl<P: Ptr, K: Ord, V: Ord, B: ArenaBacking> Ord for OrdArena<P, K, V, B> {
     /// Orders as if the arena were a `Vec<(K, V)>` in order, returning early if
     /// the prefix had a difference, checking the key before the value in the
     /// pair, and returning based on which is longer. This is sensitive to
     /// nonhereditary ordering, but does not compare pointers, generations,
     /// arena capacities, internal tree configuration, or `self.generation()`.
-    fn cmp(&self, other: &OrdArena<P, K, V>) -> Ordering {
+    fn cmp(&self, other: &OrdArena<P, K, V, B>) -> Ordering {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {

@@ -2,7 +2,7 @@
 
 ## [0.15.0] - TODO
 ### Changes
-- Updated MSRV to 1.85
+- Updated MSRV to 1.86
 
 ## [0.14.0] - 2025-02-10
 ### Changes

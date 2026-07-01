@@ -1,6 +1,6 @@
-use crate::{OrdArena, traits::Ptr};
+use crate::{OrdArena, traits::Ptr, utils::ArenaBacking};
 
-impl<P: Ptr, K, V> OrdArena<P, K, V> {
+impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Removes the key-value pair at `p`. Returns `None` if `p` is invalid.
     #[must_use]
     pub fn remove(&mut self, p: P) -> Option<(K, V)> {

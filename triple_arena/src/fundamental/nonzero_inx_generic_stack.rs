@@ -1,6 +1,6 @@
-use core::num::NonZeroUsize;
+use core::{num::NonZeroUsize, slice::GetDisjointMutError};
 
-use crate::fundamental::{AllocError, GetDisjointMutError};
+use crate::fundamental::AllocError;
 
 /// A trait for `Vec`-like collection structs that are one-indexed by
 /// `NonZeroUsize` instead of zero-indexed.
@@ -25,7 +25,8 @@ use crate::fundamental::{AllocError, GetDisjointMutError};
 /// - `self.len() <= self.capacity()`
 /// - After calling `ensure_capacity` and getting Ok, `self.capacity() >=
 ///   min_capacity`
-/// - Must act consistently as a stack should with regards to pushes, pops, and accesses
+/// - Must act consistently as a stack should with regards to pushes, pops, and
+///   accesses
 ///
 /// `self.capacity_limit` is a hint with respect to downstream assumptions and
 /// can be anything (because of the potential to modify limits with some

@@ -1,6 +1,7 @@
 //! Note: there are "std" and "serde_support" feature flags
 
 #![no_std]
+#![allow(clippy::type_complexity)]
 
 extern crate alloc;
 
@@ -42,8 +43,9 @@ pub mod utils {
         pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
     }
 
-    pub use crate::fundamental::{
-        AllocError, GetDisjointMutError, NonZeroInxGenericStack, ptrinx_unchecked,
+    pub use crate::{
+        arena::{ArenaBacking, HeapBacking},
+        fundamental::{AllocError, NonZeroInxGenericStack, ptrinx_unchecked},
     };
 }
 
@@ -51,5 +53,5 @@ pub mod utils {
 pub mod traits {
     pub use recasting::{Recast, Recaster};
 
-    pub use crate::fundamental::{Advancer, ArenaTrait, Ptr};
+    pub use crate::fundamental::{Advancer, Ptr};
 }

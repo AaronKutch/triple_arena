@@ -11,7 +11,10 @@
 //! ```
 //! // Example using the `ron` crate
 //! use ron::{from_str, to_string};
-//! use triple_arena::{Arena, Recast, Recaster, ptr_struct};
+//! use triple_arena::{
+//!     Arena, ptr_struct,
+//!     traits::{Recast, Recaster},
+//! };
 //!
 //! ptr_struct!(P0);
 //!

@@ -7,7 +7,10 @@ use crate::{
     Arena, ChainArena,
     arena::InternalEntry,
     traits::{Advancer, Ptr},
-    utils::{ChainNoGenArena, LinkNoGen, PtrInx, PtrNoGen},
+    utils::{
+        ArenaBacking, ChainNoGenArena, HeapBacking, LinkNoGen, NonZeroInxGenericStack, PtrInx,
+        PtrNoGen,
+    },
 };
 
 #[derive(Clone)]
@@ -149,9 +152,9 @@ pub(crate) struct Val<V> {
 ///     Some(("key2".to_owned(), Some("42 + 7".to_owned())))
 /// );
 /// ```
-pub struct SurjectArena<P: Ptr, K, V> {
-    pub(crate) keys: ChainNoGenArena<P, Key<P, K>>,
-    pub(crate) vals: Arena<PtrNoGen<P>, Val<V>>,
+pub struct SurjectArena<P: Ptr, K, V, B: ArenaBacking = HeapBacking> {
+    pub(crate) keys: ChainNoGenArena<P, Key<P, K>, B>,
+    pub(crate) vals: Arena<PtrNoGen<P>, Val<V>, B>,
 }
 
 /// # Note
@@ -159,7 +162,7 @@ pub struct SurjectArena<P: Ptr, K, V> {
 /// `Ptr`s in a `SurjectArena` follow the same validity rules as `Ptr`s in a
 /// regular `Arena` (see the documentation on the main
 /// `impl<P: Ptr, T> Arena<P, T>`). The validity of each `Ptr` is kept separate.
-impl<P: Ptr, K, V> SurjectArena<P, K, V> {
+impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
@@ -173,7 +176,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     #[doc(hidden)]
     pub fn _check_surjects(this: &Self) -> Result<(), &'static str> {
         // there should be exactly one key chain associated with each val
-        let mut count = Arena::<PtrNoGen<P>, usize>::new();
+        let mut count = Arena::<PtrNoGen<P>, usize, B>::new();
         count.clone_from_with(&this.vals, |_, _| 0);
         for link in this.keys.vals() {
             match count.get_mut(link.t.p_val) {
@@ -657,7 +660,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         // we run into the problem of not being able to lookup keys from values, so we
         // do a special kind of manual compression on the values
         let mut first_unallocated = None;
-        for i in self.vals.m.nziter() {
+        for i in self.vals.nziter() {
             if matches!(
                 self.vals.m_get(P::Inx::new(i)).unwrap(),
                 InternalEntry::Free(_)
@@ -729,7 +732,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
             }
         }
         self.vals.freelist_root = None;
-        self.vals.m.shrink_to_fit();
+        self.vals.m.ensure_capacity(0);
     }
 
     /// Has the same properties of [Arena::clone_from_with]
@@ -740,7 +743,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         F1: FnMut(NonZeroUsize, &V1) -> V,
     >(
         &mut self,
-        source: &SurjectArena<P, K1, V1>,
+        source: &SurjectArena<P, K1, V1, B>,
         mut map_key: F0,
         mut map_val: F1,
     ) {
@@ -765,7 +768,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// `self`, with groups of keys preserved as cyclical chains.
     pub fn clone_keys_to_chain_arena<T, F: FnMut(P, &K) -> T>(
         &self,
-        chain_arena: &mut ChainArena<P, T>,
+        chain_arena: &mut ChainArena<P, T, B>,
         mut map: F,
     ) {
         self.keys
@@ -777,7 +780,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// `self`, with groups of keys preserved as cyclical chains.
     pub fn clone_keys_to_chain_no_gen_arena<T, F: FnMut(P, &K) -> T>(
         &self,
-        chain_arena: &mut ChainNoGenArena<P, T>,
+        chain_arena: &mut ChainNoGenArena<P, T, B>,
         mut map: F,
     ) {
         chain_arena.clone_from_with(&self.keys, |p, link| map(p, &link.t.k))
@@ -788,7 +791,7 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     /// `Ptr` mapping of `self`.
     pub fn clone_keys_to_arena<T, F: FnMut(P, &K) -> T>(
         &self,
-        arena: &mut Arena<P, T>,
+        arena: &mut Arena<P, T, B>,
         mut map: F,
     ) {
         self.keys.clone_to_arena(arena, |p, link| map(p, &link.t.k))
@@ -798,14 +801,14 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
 // we can't implement `Index` because the format would force `&(&K, &V)` which
 // causes many further problems
 
-impl<P: Ptr, K: Debug, V: Debug> Debug for SurjectArena<P, K, V> {
+impl<P: Ptr, K: Debug, V: Debug, B: ArenaBacking> Debug for SurjectArena<P, K, V, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_set().entries(self.iter()).finish()
     }
 }
 
 /// Implemented if `K: Clone` and `V: Clone`.
-impl<P: Ptr, K: Clone, V: Clone> Clone for SurjectArena<P, K, V> {
+impl<P: Ptr, K: Clone, V: Clone, B: ArenaBacking> Clone for SurjectArena<P, K, V, B> {
     /// Has the `Ptr` preserving properties of [Arena::clone]
     fn clone(&self) -> Self {
         Self {
@@ -821,20 +824,20 @@ impl<P: Ptr, K: Clone, V: Clone> Clone for SurjectArena<P, K, V> {
     }
 }
 
-impl<P: Ptr, K, V> Default for SurjectArena<P, K, V> {
+impl<P: Ptr, K, V, B: ArenaBacking> Default for SurjectArena<P, K, V, B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<SurjectArena<P, K, V>>
-    for SurjectArena<P, K, V>
+impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> PartialEq<SurjectArena<P, K, V, B>>
+    for SurjectArena<P, K, V, B>
 {
     /// Checks if all `(P, K, V)` pairs are equal. This is sensitive to
     /// `Ptr` indexes, generation counters, and some hidden key set relations,
     /// but does not compare arena capacities, `self.generation()`, or hidden
     /// value pointers.
-    fn eq(&self, other: &SurjectArena<P, K, V>) -> bool {
+    fn eq(&self, other: &SurjectArena<P, K, V, B>) -> bool {
         // first the keys
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
@@ -867,4 +870,4 @@ impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<SurjectArena<P, K, V>>
     }
 }
 
-impl<P: Ptr, K: Eq, V: Eq> Eq for SurjectArena<P, K, V> {}
+impl<P: Ptr, K: Eq, V: Eq, B: ArenaBacking> Eq for SurjectArena<P, K, V, B> {}

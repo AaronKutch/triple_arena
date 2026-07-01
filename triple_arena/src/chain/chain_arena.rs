@@ -10,6 +10,7 @@ use core::{
 use crate::{
     Arena,
     traits::{Advancer, Ptr},
+    utils::{ArenaBacking, HeapBacking},
 };
 
 /// This represents a link in a `ChainArena` that has a public `t: T` field and
@@ -146,8 +147,8 @@ impl<P: Ptr, T> Link<P, T> {
 /// a.remove_chain(p_x).unwrap();
 /// assert!(a.is_empty());
 /// ```
-pub struct ChainArena<P: Ptr, T> {
-    pub(crate) a: Arena<P, Link<P, T>>,
+pub struct ChainArena<P: Ptr, T, B: ArenaBacking = HeapBacking> {
+    pub(crate) a: Arena<P, Link<P, T>, B>,
 }
 
 /// # Note
@@ -161,7 +162,7 @@ pub struct ChainArena<P: Ptr, T> {
 /// neighbor has exactly one corresponding interlink `Ptr` pointing from the
 /// neighbor back to itself. However, note that external copies of interlinks
 /// may be indirectly invalidated by operations on a neighboring link.
-impl<P: Ptr, T> ChainArena<P, T> {
+impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
@@ -764,7 +765,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
         // memory.
         self.a.inc_gen();
         let generation = self.generation();
-        let mut new = Arena::<P, Link<P, T>>::with_capacity(self.len());
+        let mut new = Arena::<P, Link<P, T>, B>::with_capacity(self.len());
         new.set_gen(generation);
         let mut adv = self.a.advancer();
         'outer: while let Some(p_init) = adv.advance(&self.a) {
@@ -840,7 +841,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
 
     /// Creates a `ChainArena<P, T>` directly from an `Arena<P, Link<P, T>>`.
     /// Returns an error if interlink transitivity fails to hold.
-    pub fn from_arena(arena: Arena<P, Link<P, T>>) -> Result<Self, &'static str> {
+    pub fn from_arena(arena: Arena<P, Link<P, T>, B>) -> Result<Self, &'static str> {
         let res = Self { a: arena };
         Self::_check_interlinks(&res)?;
         Ok(res)
@@ -850,7 +851,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
     /// interlinks as well.
     pub fn clone_from_with<U, F: FnMut(P, &Link<P, U>) -> T>(
         &mut self,
-        source: &ChainArena<P, U>,
+        source: &ChainArena<P, U, B>,
         mut map: F,
     ) {
         self.a.clone_from_with(&source.a, |p, link| {
@@ -864,7 +865,7 @@ impl<P: Ptr, T> ChainArena<P, T> {
     /// `self`, except that the interlink structure has been dropped.
     pub fn clone_to_arena<U, F: FnMut(P, &Link<P, T>) -> U>(
         &self,
-        arena: &mut Arena<P, U>,
+        arena: &mut Arena<P, U, B>,
         map: F,
     ) {
         arena.clone_from_with(&self.a, map);
@@ -915,17 +916,17 @@ impl<P: Ptr, T> ChainArena<P, T> {
     }
 }
 
-impl<P: Ptr, T, B: Borrow<P>> Index<B> for ChainArena<P, T> {
+impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> Index<Q> for ChainArena<P, T, B> {
     type Output = T;
 
-    fn index(&self, index: B) -> &Self::Output {
+    fn index(&self, index: Q) -> &Self::Output {
         self.get(*index.borrow())
             .expect("indexed `ChainArena` with invalidated `Ptr`")
     }
 }
 
-impl<P: Ptr, T, B: Borrow<P>> IndexMut<B> for ChainArena<P, T> {
-    fn index_mut(&mut self, index: B) -> &mut Self::Output {
+impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for ChainArena<P, T, B> {
+    fn index_mut(&mut self, index: Q) -> &mut Self::Output {
         self.a
             .get_mut(*index.borrow())
             .map(|link| &mut link.t)
@@ -997,7 +998,7 @@ impl<P: Ptr, T: Display> Display for Link<P, T> {
     }
 }
 
-impl<P: Ptr, T: Debug> Debug for ChainArena<P, T> {
+impl<P: Ptr, T: Debug, B: ArenaBacking> Debug for ChainArena<P, T, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // needs to be done this way have the proper formatting
         if f.alternate() {
@@ -1009,7 +1010,7 @@ impl<P: Ptr, T: Debug> Debug for ChainArena<P, T> {
 }
 
 /// Implemented if `T: Clone`.
-impl<P: Ptr, T: Clone> Clone for ChainArena<P, T> {
+impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for ChainArena<P, T, B> {
     /// Has the `Ptr` preserving properties of [Arena::clone]
     fn clone(&self) -> Self {
         Self { a: self.a.clone() }
@@ -1021,19 +1022,19 @@ impl<P: Ptr, T: Clone> Clone for ChainArena<P, T> {
     }
 }
 
-impl<P: Ptr, T> Default for ChainArena<P, T> {
+impl<P: Ptr, T, B: ArenaBacking> Default for ChainArena<P, T, B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<P: Ptr, T: PartialEq> PartialEq<ChainArena<P, T>> for ChainArena<P, T> {
+impl<P: Ptr, T: PartialEq, B: ArenaBacking> PartialEq<ChainArena<P, T, B>> for ChainArena<P, T, B> {
     /// Checks if all `(P, Link<P, T>)` pairs are equal. This is sensitive to
     /// `Ptr` indexes and generation counters, but does not compare arena
     /// capacities or `self.generation()`.
-    fn eq(&self, other: &ChainArena<P, T>) -> bool {
+    fn eq(&self, other: &ChainArena<P, T, B>) -> bool {
         self.a == other.a
     }
 }
 
-impl<P: Ptr, T: Eq> Eq for ChainArena<P, T> {}
+impl<P: Ptr, T: Eq, B: ArenaBacking> Eq for ChainArena<P, T, B> {}

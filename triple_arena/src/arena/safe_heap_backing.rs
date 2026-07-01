@@ -28,14 +28,16 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
 
     fn ensure_capacity(&mut self, min_capacity: usize) -> Result<(), AllocError> {
         if min_capacity > self.capacity() {
-            self.v.try_reserve(min_capacity - self.len()).map_err(|_| AllocError)?;
+            self.v
+                .try_reserve(min_capacity - self.len())
+                .map_err(|_| AllocError)?;
         } else if min_capacity < self.capacity() {
             // TODO change when `try_shrink_to` is stabilized
 
             // the only stable way to do it
             let mut v = Vec::new();
             v.try_reserve(min_capacity).map_err(|_| AllocError)?;
-            v.extend(self.v.drain(..));
+            v.append(&mut self.v);
             self.v = v;
         }
         Ok(())
@@ -46,18 +48,21 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
     }
 
     unsafe fn get_unchecked(&self, inx: NonZeroUsize) -> &T {
-        unsafe {self.v.get_unchecked(inx.get().wrapping_sub(1))}
+        unsafe { self.v.get_unchecked(inx.get().wrapping_sub(1)) }
     }
 
     unsafe fn get_unchecked_mut(&mut self, inx: NonZeroUsize) -> &mut T {
-        unsafe {self.v.get_unchecked_mut(inx.get().wrapping_sub(1))}
+        unsafe { self.v.get_unchecked_mut(inx.get().wrapping_sub(1)) }
     }
 
     unsafe fn get_disjoint_unchecked_mut<const N: usize>(
         &mut self,
         indices: [NonZeroUsize; N],
     ) -> [&mut T; N] {
-        unsafe {self.v.get_disjoint_unchecked_mut(indices.map(|inx|inx.get().wrapping_sub(1)))}
+        unsafe {
+            self.v
+                .get_disjoint_unchecked_mut(indices.map(|inx| inx.get().wrapping_sub(1)))
+        }
     }
 
     fn pop(&mut self) -> Option<T> {

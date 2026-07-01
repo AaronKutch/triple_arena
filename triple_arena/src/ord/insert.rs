@@ -3,9 +3,9 @@
 use core::{cmp::Ordering, mem};
 
 use super::ord_arena::Node;
-use crate::{OrdArena, traits::Ptr};
+use crate::{OrdArena, traits::Ptr, utils::ArenaBacking};
 
-impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
+impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Inserts key `v` with associated value `v` into `self` and returns a
     /// `Ptr` to it. If the inserted key is equal to a key already contained
     /// in `self`, the new value replaces the old value, and `k` and the old
@@ -88,7 +88,7 @@ impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
 }
 
 /// Does not require `K: Ord`
-impl<P: Ptr, K, V> OrdArena<P, K, V> {
+impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Inserts key `k` with associated value `v` at `p`. Does not enforce key
     /// orderings, and instead accepts whatever `direction` says. If
     /// `direction` is `Ordering::Equal`, the value at `p` is replaced and

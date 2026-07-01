@@ -229,7 +229,7 @@ pub unsafe trait Ptr:
 ///
 /// ```
 /// use core::num::{NonZeroU16, NonZeroU8};
-/// use triple_arena::{ptr_struct, Arena, Ptr};
+/// use triple_arena::{ptr_struct, Arena, traits::Ptr};
 ///
 /// // Note that in most use cases the default types or default index with no
 /// // generation counter are what should be used

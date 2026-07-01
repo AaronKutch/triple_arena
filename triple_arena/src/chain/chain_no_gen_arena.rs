@@ -10,6 +10,7 @@ use core::{
 use crate::{
     Arena, ChainArena, Link,
     traits::{Advancer, Ptr},
+    utils::{ArenaBacking, HeapBacking},
 };
 
 /// The same as [crate::Link] except that the interlinks do not have a
@@ -61,8 +62,8 @@ impl<P: Ptr, T> LinkNoGen<P, T> {
 /// The advantage of this is reduced memory footprint at the expense of
 /// generation checks from the interlinks. This is mainly intended for internal
 /// usage within data structures.
-pub struct ChainNoGenArena<P: Ptr, T> {
-    pub(crate) a: Arena<P, LinkNoGen<P, T>>,
+pub struct ChainNoGenArena<P: Ptr, T, B: ArenaBacking = HeapBacking> {
+    pub(crate) a: Arena<P, LinkNoGen<P, T>, B>,
 }
 
 /// # Note
@@ -76,7 +77,7 @@ pub struct ChainNoGenArena<P: Ptr, T> {
 /// neighbor has exactly one corresponding interlink `Ptr` pointing from the
 /// neighbor back to itself. However, note that external copies of interlinks
 /// may be indirectly invalidated by operations on a neighboring link.
-impl<P: Ptr, T> ChainNoGenArena<P, T> {
+impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
@@ -720,7 +721,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
         // memory.
         self.a.inc_gen();
         let generation = self.generation();
-        let mut new = Arena::<P, LinkNoGen<P, T>>::with_capacity(self.len());
+        let mut new = Arena::<P, LinkNoGen<P, T>, B>::with_capacity(self.len());
         new.set_gen(generation);
         let mut adv = self.a.advancer();
         'outer: while let Some(p_init) = adv.advance(&self.a) {
@@ -805,7 +806,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
     ) {
         self.a.inc_gen();
         let generation = self.generation();
-        let mut new = Arena::<P, LinkNoGen<P, T>>::with_capacity(self.len());
+        let mut new = Arena::<P, LinkNoGen<P, T>, B>::with_capacity(self.len());
         new.set_gen(generation);
         let p_init = first_link;
         let link = self.a.remove(p_init).unwrap();
@@ -834,7 +835,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
     /// Creates a `ChainNoGenArena<P, T>` directly from an
     /// `Arena<P, LinkNoGen<P, T>>`. Returns an error if interlink transitivity
     /// fails to hold.
-    pub fn from_arena(arena: Arena<P, LinkNoGen<P, T>>) -> Result<Self, &'static str> {
+    pub fn from_arena(arena: Arena<P, LinkNoGen<P, T>, B>) -> Result<Self, &'static str> {
         let res = Self { a: arena };
         Self::_check_interlinks(&res)?;
         Ok(res)
@@ -844,7 +845,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
     /// interlinks as well.
     pub fn clone_from_with<U, F: FnMut(P, &LinkNoGen<P, U>) -> T>(
         &mut self,
-        source: &ChainNoGenArena<P, U>,
+        source: &ChainNoGenArena<P, U, B>,
         mut map: F,
     ) {
         self.a.clone_from_with(&source.a, |p, link| {
@@ -858,7 +859,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
     /// `self`, except that the interlink structure has been dropped.
     pub fn clone_to_chain_arena<U, F: FnMut(P, &T) -> U>(
         &self,
-        chain_arena: &mut ChainArena<P, U>,
+        chain_arena: &mut ChainArena<P, U, B>,
         mut map: F,
     ) {
         chain_arena.a.clone_from_with(&self.a, |p, link| {
@@ -883,7 +884,7 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
     /// `self`, except that the interlink structure has been dropped.
     pub fn clone_to_arena<U, F: FnMut(P, &LinkNoGen<P, T>) -> U>(
         &self,
-        arena: &mut Arena<P, U>,
+        arena: &mut Arena<P, U, B>,
         map: F,
     ) {
         arena.clone_from_with(&self.a, map);
@@ -934,17 +935,17 @@ impl<P: Ptr, T> ChainNoGenArena<P, T> {
     }
 }
 
-impl<P: Ptr, T, B: Borrow<P>> Index<B> for ChainNoGenArena<P, T> {
+impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> Index<Q> for ChainNoGenArena<P, T, B> {
     type Output = T;
 
-    fn index(&self, index: B) -> &Self::Output {
+    fn index(&self, index: Q) -> &Self::Output {
         self.get(*index.borrow())
             .expect("indexed `ChainNoGenArena` with invalidated `Ptr`")
     }
 }
 
-impl<P: Ptr, T, B: Borrow<P>> IndexMut<B> for ChainNoGenArena<P, T> {
-    fn index_mut(&mut self, index: B) -> &mut Self::Output {
+impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for ChainNoGenArena<P, T, B> {
+    fn index_mut(&mut self, index: Q) -> &mut Self::Output {
         self.a
             .get_mut(*index.borrow())
             .map(|link| &mut link.t)
@@ -1016,7 +1017,7 @@ impl<P: Ptr, T: Display> Display for LinkNoGen<P, T> {
     }
 }
 
-impl<P: Ptr, T: Debug> Debug for ChainNoGenArena<P, T> {
+impl<P: Ptr, T: Debug, B: ArenaBacking> Debug for ChainNoGenArena<P, T, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // needs to be done this way have the proper formatting
         if f.alternate() {
@@ -1028,7 +1029,7 @@ impl<P: Ptr, T: Debug> Debug for ChainNoGenArena<P, T> {
 }
 
 /// Implemented if `T: Clone`.
-impl<P: Ptr, T: Clone> Clone for ChainNoGenArena<P, T> {
+impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for ChainNoGenArena<P, T, B> {
     /// Has the `Ptr` preserving properties of [Arena::clone]
     fn clone(&self) -> Self {
         Self { a: self.a.clone() }
@@ -1040,19 +1041,21 @@ impl<P: Ptr, T: Clone> Clone for ChainNoGenArena<P, T> {
     }
 }
 
-impl<P: Ptr, T> Default for ChainNoGenArena<P, T> {
+impl<P: Ptr, T, B: ArenaBacking> Default for ChainNoGenArena<P, T, B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<P: Ptr, T: PartialEq> PartialEq<ChainNoGenArena<P, T>> for ChainNoGenArena<P, T> {
+impl<P: Ptr, T: PartialEq, B: ArenaBacking> PartialEq<ChainNoGenArena<P, T, B>>
+    for ChainNoGenArena<P, T, B>
+{
     /// Checks if all `(P, LinkNoGen<P, T>)` pairs are equal. This is sensitive
     /// to `Ptr` indexes and generation counters, but does not compare arena
     /// capacities or `self.generation()`.
-    fn eq(&self, other: &ChainNoGenArena<P, T>) -> bool {
+    fn eq(&self, other: &ChainNoGenArena<P, T, B>) -> bool {
         self.a == other.a
     }
 }
 
-impl<P: Ptr, T: Eq> Eq for ChainNoGenArena<P, T> {}
+impl<P: Ptr, T: Eq, B: ArenaBacking> Eq for ChainNoGenArena<P, T, B> {}

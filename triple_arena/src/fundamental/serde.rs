@@ -15,10 +15,12 @@ use crate::{
     ord::Node,
     surject::{Key, Val},
     traits::Ptr,
-    utils::{ChainNoGenArena, LinkNoGen, PtrGen, PtrInx, PtrNoGen},
+    utils::{
+        ArenaBacking, ChainNoGenArena, LinkNoGen, NonZeroInxGenericStack, PtrGen, PtrInx, PtrNoGen,
+    },
 };
 
-impl<P: Ptr, T: Serialize> Serialize for Arena<P, T> {
+impl<P: Ptr, T: Serialize, B: ArenaBacking> Serialize for Arena<P, T, B> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -44,7 +46,7 @@ impl<P: Ptr, T: Serialize> Serialize for Link<P, T> {
     }
 }
 
-impl<P: Ptr, T: Serialize> Serialize for ChainArena<P, T> {
+impl<P: Ptr, T: Serialize, B: ArenaBacking> Serialize for ChainArena<P, T, B> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -66,7 +68,7 @@ impl<P: Ptr, T: Serialize> Serialize for LinkNoGen<P, T> {
     }
 }
 
-impl<P: Ptr, T: Serialize> Serialize for ChainNoGenArena<P, T> {
+impl<P: Ptr, T: Serialize, B: ArenaBacking> Serialize for ChainNoGenArena<P, T, B> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -99,7 +101,7 @@ impl<V: Serialize> Serialize for Val<V> {
     }
 }
 
-impl<P: Ptr, K: Serialize, V: Serialize> Serialize for SurjectArena<P, K, V> {
+impl<P: Ptr, K: Serialize, V: Serialize, B: ArenaBacking> Serialize for SurjectArena<P, K, V, B> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -111,7 +113,7 @@ impl<P: Ptr, K: Serialize, V: Serialize> Serialize for SurjectArena<P, K, V> {
     }
 }
 
-impl<P: Ptr, K: Serialize, V: Serialize> Serialize for OrdArena<P, K, V> {
+impl<P: Ptr, K: Serialize, V: Serialize, B: ArenaBacking> Serialize for OrdArena<P, K, V, B> {
     /// The `OrdArena` must be compressed or else an error will be returned (use
     /// one of the `compress_and_shrink_*` functions).
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -139,13 +141,13 @@ impl<P: Ptr, K: Serialize, V: Serialize> Serialize for OrdArena<P, K, V> {
     }
 }
 
-struct ArenaVisitor<P: Ptr, T>(PhantomData<fn() -> (P, T)>);
+struct ArenaVisitor<P: Ptr, T, B: ArenaBacking>(PhantomData<fn() -> (P, T, B)>);
 
-impl<'de, P: Ptr, T> Visitor<'de> for ArenaVisitor<P, T>
+impl<'de, P: Ptr, T, B: ArenaBacking> Visitor<'de> for ArenaVisitor<P, T, B>
 where
     T: Deserialize<'de>,
 {
-    type Value = Arena<P, T>;
+    type Value = Arena<P, T, B>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter.write_str("a `triple_arena` arena")
@@ -155,9 +157,9 @@ where
     where
         M: MapAccess<'de>,
     {
-        let mut a = Arena::new();
+        let mut a = Arena::<P, T, B>::new();
         if let Some(hint) = access.size_hint() {
-            a.m.reserve(hint);
+            a.m.ensure_capacity(hint);
         }
 
         while let Some((p, t)) = access.next_entry::<P::Inx, T>()? {
@@ -187,7 +189,7 @@ where
 
         // fix the freelist
         let mut last_free = None;
-        for i in a.m.nziter() {
+        for i in a.nziter() {
             if let InternalEntry::Free(p) = a.m_get_mut(PtrInx::new(i)).unwrap() {
                 if let Some(ref mut last_free) = last_free {
                     *p = PtrInx::new(*last_free);
@@ -209,7 +211,7 @@ where
     }
 }
 
-impl<'de, P: Ptr, T> Deserialize<'de> for Arena<P, T>
+impl<'de, P: Ptr, T, B: ArenaBacking> Deserialize<'de> for Arena<P, T, B>
 where
     T: Deserialize<'de>,
 {
@@ -235,7 +237,7 @@ where
     }
 }
 
-impl<'de, P: Ptr, T> Deserialize<'de> for ChainArena<P, T>
+impl<'de, P: Ptr, T, B: ArenaBacking> Deserialize<'de> for ChainArena<P, T, B>
 where
     T: Deserialize<'de>,
 {
@@ -244,7 +246,7 @@ where
     where
         D: Deserializer<'de>,
     {
-        let a: Arena<P, Link<P, T>> = Deserialize::deserialize(deserializer)?;
+        let a: Arena<P, Link<P, T>, B> = Deserialize::deserialize(deserializer)?;
         match ChainArena::from_arena(a) {
             Ok(res) => Ok(res),
             Err(e) => Err(Error::custom(e)),
@@ -266,7 +268,7 @@ where
     }
 }
 
-impl<'de, P: Ptr, T> Deserialize<'de> for ChainNoGenArena<P, T>
+impl<'de, P: Ptr, T, B: ArenaBacking> Deserialize<'de> for ChainNoGenArena<P, T, B>
 where
     T: Deserialize<'de>,
 {
@@ -275,7 +277,7 @@ where
     where
         D: Deserializer<'de>,
     {
-        let a: Arena<P, LinkNoGen<P, T>> = Deserialize::deserialize(deserializer)?;
+        let a: Arena<P, LinkNoGen<P, T>, B> = Deserialize::deserialize(deserializer)?;
         match ChainNoGenArena::from_arena(a) {
             Ok(res) => Ok(res),
             Err(e) => Err(Error::custom(e)),
@@ -309,7 +311,7 @@ where
     }
 }
 
-impl<'de, P: Ptr, K, V> Deserialize<'de> for SurjectArena<P, K, V>
+impl<'de, P: Ptr, K, V, B: ArenaBacking> Deserialize<'de> for SurjectArena<P, K, V, B>
 where
     K: Deserialize<'de>,
     V: Deserialize<'de>,
@@ -319,8 +321,10 @@ where
     where
         D: Deserializer<'de>,
     {
-        let (keys, vals): (ChainNoGenArena<P, Key<P, K>>, Arena<PtrNoGen<P>, Val<V>>) =
-            Deserialize::deserialize(deserializer)?;
+        let (keys, vals): (
+            ChainNoGenArena<P, Key<P, K>, B>,
+            Arena<PtrNoGen<P>, Val<V>, B>,
+        ) = Deserialize::deserialize(deserializer)?;
         let res = SurjectArena { keys, vals };
         if let Err(e) = SurjectArena::_check_surjects(&res) {
             Err(Error::custom(e))
@@ -330,14 +334,14 @@ where
     }
 }
 
-struct OrdArenaVisitor<P: Ptr, K, V>(PhantomData<fn() -> (P, K, V)>);
+struct OrdArenaVisitor<P: Ptr, K, V, B: ArenaBacking>(PhantomData<fn() -> (P, K, V, B)>);
 
-impl<'de, P: Ptr, K, V> Visitor<'de> for OrdArenaVisitor<P, K, V>
+impl<'de, P: Ptr, K, V, B: ArenaBacking> Visitor<'de> for OrdArenaVisitor<P, K, V, B>
 where
     K: Deserialize<'de>,
     V: Deserialize<'de>,
 {
-    type Value = OrdArena<P, K, V>;
+    type Value = OrdArena<P, K, V, B>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter.write_str("a `triple_arena` arena")
@@ -347,9 +351,9 @@ where
     where
         M: MapAccess<'de>,
     {
-        let mut a: Arena<P, LinkNoGen<P, Node<P, K, V>>> = Arena::new();
+        let mut a: Arena<P, LinkNoGen<P, Node<P, K, V>>, B> = Arena::new();
         if let Some(hint) = access.size_hint() {
-            a.m.reserve(hint);
+            a.m.ensure_capacity(hint);
         }
 
         let mut i = 1usize;
@@ -388,7 +392,7 @@ where
     }
 }
 
-impl<'de, P: Ptr, K, V> Deserialize<'de> for OrdArena<P, K, V>
+impl<'de, P: Ptr, K, V, B: ArenaBacking> Deserialize<'de> for OrdArena<P, K, V, B>
 where
     K: Deserialize<'de>,
     V: Deserialize<'de>,
