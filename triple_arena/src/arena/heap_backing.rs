@@ -5,6 +5,15 @@ use core::num::NonZeroUsize;
 
 use crate::utils::{AllocError, NonZeroInxGenericStack};
 
+// Note: an older version of `triple_arena` had manually managed allocations and
+// an extreme microoptimization where we pre-offset the allocation pointer so
+// that `get`s etc only need a single addition in machine code to arrive at the
+// destination address. But on most architectures, even RISC-V, they can have an
+// immediate offset to their loads and zero instructions are saved. Also, it
+// precluded `NonNull` optimizations from existing on the struct.
+
+/// The standard heap-based unlimited `capacity_limit` implementation of
+/// [NonZeroInxGenericStack]
 pub struct NonZeroInxVec<T> {
     v: Vec<T>,
 }
@@ -86,53 +95,4 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
         self.v.clear();
         self.v.shrink_to_fit();
     }
-}
-
-pub struct NonZeroUsizeIterator {
-    // invariant: if `end_inclusive.is_some()`, `current <= end_inclusive.get()` must be true
-    current: NonZeroUsize,
-    end_inclusive: Option<NonZeroUsize>,
-}
-
-impl Iterator for NonZeroUsizeIterator {
-    type Item = NonZeroUsize;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(end_inclusive) = self.end_inclusive {
-            let res = self.current;
-            // safety: this is safe since `current < end_inclusive.get()` and
-            // `end_inclusive` cannot be more than the maximum, meaning it
-            // cannot overflow into zero. We maintain the invariant by checking
-            // for equality.
-            self.current = NonZeroUsize::new(res.get().wrapping_add(1)).unwrap();
-            if self.current > end_inclusive {
-                self.end_inclusive = None;
-            }
-            Some(res)
-        } else {
-            None
-        }
-    }
-}
-
-pub struct IntoNonZeroUsizeIterator(NonZeroUsizeIterator);
-
-impl IntoIterator for IntoNonZeroUsizeIterator {
-    type IntoIter = NonZeroUsizeIterator;
-    type Item = NonZeroUsize;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        self.0
-    }
-}
-
-/// Starts from 1
-#[inline]
-pub fn nzusize_iter(end_inclusive: Option<NonZeroUsize>) -> IntoNonZeroUsizeIterator {
-    IntoNonZeroUsizeIterator(NonZeroUsizeIterator {
-        current: NonZeroUsize::new(1).unwrap(),
-        end_inclusive,
-    })
 }

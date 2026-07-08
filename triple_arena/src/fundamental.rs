@@ -11,7 +11,7 @@ pub mod serde;
 pub mod serde_docs;
 
 pub use advancer::Advancer;
-pub use extra::{AllocError, ptrinx_unchecked};
+pub use extra::{AllocError, IntoNonZeroUsizeIterator, nzusize_iter, ptrinx_unchecked};
 pub use nonzero_inx_generic_stack::NonZeroInxGenericStack;
 #[cfg(not(feature = "serde_support"))]
 pub use ptr::{Ptr, PtrGen, PtrInx, PtrNoGen};

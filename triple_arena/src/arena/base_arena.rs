@@ -6,7 +6,7 @@ use core::{
 };
 
 use crate::{
-    arena::{ArenaBacking, HeapBacking, reference_heap_backing::IntoNonZeroUsizeIterator},
+    arena::{ArenaBacking, HeapBacking},
     traits::{Advancer, Ptr},
     utils::{NonZeroInxGenericStack, PtrGen, PtrInx, ptrinx_unchecked},
 };
@@ -205,8 +205,8 @@ pub struct Arena<P: Ptr, T, B: ArenaBacking = HeapBacking> {
 /// panic occurs. If `Arena::generation()` is the maximum value of its type and
 /// an invalidation occurs, a panic occurs.
 impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
-    pub(crate) fn nziter(&self) -> IntoNonZeroUsizeIterator {
-        super::reference_heap_backing::nzusize_iter(NonZeroUsize::new(self.m.len()))
+    pub(crate) fn nziter(&self) -> crate::fundamental::IntoNonZeroUsizeIterator {
+        crate::fundamental::nzusize_iter(NonZeroUsize::new(self.m.len()))
     }
 
     /// Used by tests
