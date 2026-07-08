@@ -25,7 +25,7 @@ pub use surject::{SurjectArena, surject_iterators};
 /// Special utilities for advanced usage
 pub mod utils {
     #[cfg(feature = "expose_internal_utils")]
-    pub use crate::arena::{InternalEntry, NonZeroInxArray, NonZeroInxVec};
+    pub use crate::arena::{InternalEntry, NonZeroInxArray, NonZeroInxLimitedVec, NonZeroInxVec};
     // only intended for size_of tests and such
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::ord::Node;
@@ -40,7 +40,7 @@ pub mod utils {
     }
 
     pub use crate::{
-        arena::{ArenaBacking, HeapBacking, StackBacking},
+        arena::{ArenaBacking, HeapBacking, LimitedHeapBacking, StackBacking},
         fundamental::{AllocError, NonZeroInxGenericStack, ptrinx_unchecked},
     };
 }

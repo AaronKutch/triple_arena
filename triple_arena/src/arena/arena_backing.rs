@@ -1,5 +1,5 @@
 use crate::{
-    arena::{NonZeroInxArray, NonZeroInxVec},
+    arena::{NonZeroInxArray, NonZeroInxLimitedVec, NonZeroInxVec},
     utils::NonZeroInxGenericStack,
 };
 
@@ -13,7 +13,12 @@ impl ArenaBacking for HeapBacking {
     type Stack<U> = NonZeroInxVec<U>;
 }
 
-// FIXME a Limited dynamic type
+pub struct LimitedHeapBacking;
+
+impl ArenaBacking for LimitedHeapBacking {
+    type Stack<U> = NonZeroInxLimitedVec<U>;
+}
+
 pub struct StackBacking<const LIMIT: usize>;
 
 impl<const LIMIT: usize> ArenaBacking for StackBacking<LIMIT> {

@@ -28,9 +28,9 @@ use crate::fundamental::AllocError;
 /// - Must act consistently as a stack should with regards to pushes, pops, and
 ///   accesses
 ///
-/// `self.capacity_limit` is a hint with respect to downstream assumptions and
-/// can be anything (because of the potential to modify limits with some
-/// implementations, but they should try to be sane)
+/// `self.capacity_limit` is only a hint with respect to downstream assumptions
+/// and can be anything (because of `SettableCapacityLimit` and other
+/// implementation details)
 pub unsafe trait NonZeroInxGenericStack<T> {
     fn new() -> Self;
 
@@ -179,4 +179,17 @@ pub unsafe trait NonZeroInxGenericStack<T> {
 
     /// Runs `self.clear()` and shrinks the capacity to zero.
     fn clear_and_shrink(&mut self);
+}
+
+/// A trait for types that have a settable capacity limit.
+///
+/// Traits like [NonZeroInxGenericStack] have a `capacity_limit` function that
+/// conveys a set limit on what their capacity can be grown to. This trait has a
+/// `set_capacity_limit` function separately from the other related functions,
+/// because usually this is set by users who have already concretely chosen a
+/// modifiable limit type, and the intermediate types only want to expose this
+/// function and not others
+pub trait SettableCapacityLimit {
+    /// Changes the capacity limit to `limit`
+    fn set_capacity_limit(&mut self, limit: usize);
 }
