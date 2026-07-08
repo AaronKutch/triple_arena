@@ -7,7 +7,7 @@ use recasting::{Recast, Recaster};
 
 use crate::{
     Arena,
-    arena::{InternalEntry, base_arena::ArenaBacking},
+    arena::{ArenaBacking, InternalEntry},
     traits::{Advancer, Ptr},
     utils::{NonZeroInxGenericStack, PtrInx},
 };

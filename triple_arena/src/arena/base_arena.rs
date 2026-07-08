@@ -6,27 +6,10 @@ use core::{
 };
 
 use crate::{
-    arena::{NonZeroInxVec, safe_heap_backing::IntoNonZeroUsizeIterator},
+    arena::{ArenaBacking, HeapBacking, reference_heap_backing::IntoNonZeroUsizeIterator},
     traits::{Advancer, Ptr},
     utils::{NonZeroInxGenericStack, PtrGen, PtrInx, ptrinx_unchecked},
 };
-
-pub trait ArenaBacking {
-    type Stack<U>: NonZeroInxGenericStack<U>;
-}
-
-pub struct HeapBacking;
-
-impl ArenaBacking for HeapBacking {
-    type Stack<U> = NonZeroInxVec<U>;
-}
-
-// FIXME this and a Limited dynamic type
-/*pub struct StackBacking<const N: usize>;
-
-impl<const N: usize> ArenaBacking for StackBacking<N> {
-
-}*/
 
 /// Internal entry for an `Arena`.
 #[derive(Clone)]
@@ -223,7 +206,7 @@ pub struct Arena<P: Ptr, T, B: ArenaBacking = HeapBacking> {
 /// an invalidation occurs, a panic occurs.
 impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     pub(crate) fn nziter(&self) -> IntoNonZeroUsizeIterator {
-        super::safe_heap_backing::nzusize_iter(NonZeroUsize::new(self.m.len()))
+        super::reference_heap_backing::nzusize_iter(NonZeroUsize::new(self.m.len()))
     }
 
     /// Used by tests
@@ -375,16 +358,16 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                 for i in old_virt_cap.wrapping_add(2)
                     ..old_virt_cap.wrapping_add(remaining).wrapping_add(1)
                 {
-                    self.m.push(Free(ptrinx_unchecked(i)));
+                    self.m.push(Free(ptrinx_unchecked(i))).ok().unwrap();
                 }
                 match old_root {
                     Some(old_root) => {
                         // The last `Free` points to the old root
-                        self.m.push(Free(old_root));
+                        self.m.push(Free(old_root)).ok().unwrap();
                     }
                     None => {
                         // the last `Free` points to itself
-                        self.m.push(Free(ptrinx_unchecked(target)));
+                        self.m.push(Free(ptrinx_unchecked(target))).ok().unwrap();
                     }
                 }
             }
@@ -845,7 +828,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                     &mut t,
                     Ptr::_from_raw(PtrInx::new(NonZeroUsize::new(j).unwrap()), generation),
                 );
-                new_m.push(Allocated(generation, t));
+                new_m.push(Allocated(generation, t)).ok().unwrap();
                 j = j.wrapping_add(1);
             }
         }
@@ -885,24 +868,27 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                     map(P::_from_raw(P::Inx::new(i), *generation), u),
                 ),
             };
-            self.m.push(new);
+            self.m.push(new).ok().unwrap();
         }
 
         // Safety: `isize::MAX` guarantee
         unsafe {
             for i in self.m.len().wrapping_add(2)..old_virt_cap.wrapping_add(1) {
                 // point to next
-                self.m.push(Free(ptrinx_unchecked(i)));
+                self.m.push(Free(ptrinx_unchecked(i))).ok().unwrap();
             }
             if self.m.len() < old_virt_cap {
                 // new root starting at extension of `self.m` beyond `source.m`
                 self.freelist_root = Some(ptrinx_unchecked(source.m.len().wrapping_add(1)));
-                self.m.push(match source.freelist_root {
-                    // points to old root
-                    Some(inx) => Free(inx),
-                    // points to itself
-                    None => Free(ptrinx_unchecked(self.m.len().wrapping_add(1))),
-                });
+                self.m
+                    .push(match source.freelist_root {
+                        // points to old root
+                        Some(inx) => Free(inx),
+                        // points to itself
+                        None => Free(ptrinx_unchecked(self.m.len().wrapping_add(1))),
+                    })
+                    .ok()
+                    .unwrap();
             } else {
                 self.freelist_root = source.freelist_root;
             }
@@ -993,7 +979,7 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for Arena<P, T, B> {
         let mut m = B::Stack::new();
         let _ = m.ensure_capacity(self.m.len());
         for i in self.nziter() {
-            m.push(self.m.get(i).unwrap().clone());
+            m.push(self.m.get(i).unwrap().clone()).ok().unwrap();
         }
         Self {
             len: self.len,
@@ -1017,24 +1003,27 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for Arena<P, T, B> {
         // clearing first makes `self.m.reserve` cheaper by not needing to copy
         self.m.clear();
         for i in source.nziter() {
-            self.m.push(source.m.get(i).unwrap().clone());
+            self.m.push(source.m.get(i).unwrap().clone()).ok().unwrap();
         }
 
         // Safety: `isize::MAX` guarantee
         unsafe {
             for i in self.m.len().wrapping_add(2)..old_virt_cap.wrapping_add(1) {
                 // point to next
-                self.m.push(Free(ptrinx_unchecked(i)));
+                self.m.push(Free(ptrinx_unchecked(i))).ok().unwrap();
             }
             if self.m.len() < old_virt_cap {
                 // new root starting at extension of `self.m` beyond `source.m`
                 self.freelist_root = Some(ptrinx_unchecked(source.m.len().wrapping_add(1)));
-                self.m.push(match source.freelist_root {
-                    // points to old root
-                    Some(inx) => Free(inx),
-                    // points to itself
-                    None => Free(ptrinx_unchecked(self.m.len().wrapping_add(1))),
-                });
+                self.m
+                    .push(match source.freelist_root {
+                        // points to old root
+                        Some(inx) => Free(inx),
+                        // points to itself
+                        None => Free(ptrinx_unchecked(self.m.len().wrapping_add(1))),
+                    })
+                    .ok()
+                    .unwrap();
             } else {
                 self.freelist_root = source.freelist_root;
             }

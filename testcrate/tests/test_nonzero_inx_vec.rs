@@ -15,7 +15,7 @@ fn nonzero_inx_vec() {
     assert!(v.get_mut(nz(1)).is_none());
     assert!(v.pop().is_none());
     // use a `Box` to make sure drop glue works
-    v.push(Box::new(7u8));
+    v.push(Box::new(7u8)).ok().unwrap();
     assert!(!v.is_empty());
     assert_eq!(v.get(nz(1)), Some(&Box::new(7)));
     assert_eq!(v.get_mut(nz(1)), Some(&mut Box::new(7)));
@@ -23,7 +23,7 @@ fn nonzero_inx_vec() {
     // TODO
     //assert_eq!(unsafe { v.get_unchecked(nz(1)) }, &Box::new(7));
     //assert_eq!(unsafe { v.get_unchecked_mut(nz(1)) }, &mut Box::new(7));
-    v.push(Box::new(3u8));
+    v.push(Box::new(3u8)).ok().unwrap();
     assert!(v.capacity() >= 2);
     v.ensure_capacity(34).unwrap();
     assert!(v.capacity() >= 34);
@@ -52,14 +52,14 @@ fn nonzero_inx_vec() {
     v.clear_and_shrink();
     v.clear_and_shrink();
     assert_eq!(v.capacity(), 0);
-    v.push(Box::new(1u8));
-    v.push(Box::new(2u8));
-    v.push(Box::new(4u8));
+    v.push(Box::new(1u8)).ok().unwrap();
+    v.push(Box::new(2u8)).ok().unwrap();
+    v.push(Box::new(4u8)).ok().unwrap();
     assert_eq!(v.get(nz(2)), Some(&Box::new(2)));
     v.clear_and_shrink();
     assert_eq!(v.capacity(), 0);
     assert!(v.is_empty());
-    v.push(Box::new(1u8));
-    v.push(Box::new(2u8));
+    v.push(Box::new(1u8)).ok().unwrap();
+    v.push(Box::new(2u8)).ok().unwrap();
     drop(v);
 }

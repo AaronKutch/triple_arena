@@ -1,9 +1,10 @@
+//! This is a safer implementation of the heap backing for reference
+
 use alloc::vec::Vec;
 use core::num::NonZeroUsize;
 
 use crate::utils::{AllocError, NonZeroInxGenericStack};
 
-#[derive(Clone)]
 pub struct NonZeroInxVec<T> {
     v: Vec<T>,
 }
@@ -43,8 +44,16 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
         Ok(())
     }
 
-    fn push(&mut self, t: T) {
-        self.v.push(t)
+    fn push(&mut self, t: T) -> Result<(NonZeroUsize, &mut T), T> {
+        if self.v.len() < self.v.capacity() {
+            self.v.push(t);
+            Ok((
+                unsafe { NonZeroUsize::new_unchecked(self.len()) },
+                self.v.last_mut().unwrap(),
+            ))
+        } else {
+            Err(t)
+        }
     }
 
     unsafe fn get_unchecked(&self, inx: NonZeroUsize) -> &T {

@@ -166,9 +166,23 @@ where
             let i = PtrInx::get(p).get();
             if i > a.capacity() {
                 for _ in 0..(i.wrapping_sub(a.capacity())) {
-                    a.m.push(InternalEntry::Free(PtrInx::new(
+                    // the freelist is fixed later
+                    match a.m.push(InternalEntry::Free(PtrInx::new(
                         NonZeroUsize::new(1).unwrap(),
-                    )))
+                    ))) {
+                        Ok(_) => (),
+                        Err(retry) => {
+                            // there was no hint or it was wrong
+                            a.m.ensure_capacity(a.m.capacity().saturating_mul(2))
+                                .map_err(|_| {
+                                    Error::custom(
+                                        "when deserializing a `triple_arena` arena, ran into \
+                                         allocation error",
+                                    )
+                                })?;
+                            a.m.push(retry).ok().unwrap();
+                        }
+                    }
                 }
             }
             let entry = a.m_get_mut(p).unwrap();
@@ -371,7 +385,20 @@ where
                 p_tree1: None,
                 rank: 0,
             });
-            a.m.push(InternalEntry::Allocated(PtrGen::two(), t));
+            match a.m.push(InternalEntry::Allocated(PtrGen::two(), t)) {
+                Ok(_) => (),
+                Err(retry) => {
+                    // there was no hint or it was wrong
+                    a.m.ensure_capacity(a.m.capacity().saturating_mul(2))
+                        .map_err(|_| {
+                            Error::custom(
+                                "when deserializing a `triple_arena` arena, ran into allocation \
+                                 error",
+                            )
+                        })?;
+                    a.m.push(retry).ok().unwrap();
+                }
+            }
             i = i.wrapping_add(1);
             last = Some(p);
         }

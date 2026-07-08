@@ -90,8 +90,10 @@ pub unsafe trait NonZeroInxGenericStack<T> {
     fn ensure_capacity(&mut self, min_capacity: usize) -> Result<(), AllocError>;
 
     /// Pushes an element to the end such that its index is
-    /// `NonZeroUsize::new_unchecked(self.len())` immediately _after_ this call
-    fn push(&mut self, t: T);
+    /// `NonZeroUsize::new_unchecked(self.len())` immediately _after_ this call.
+    /// Returns the index to the element and a mutable reference to it on
+    /// success, else returns the element if there was no remaining capacity.
+    fn push(&mut self, t: T) -> Result<(NonZeroUsize, &mut T), T>;
 
     /// Gets a reference to an element without doing checks
     ///
