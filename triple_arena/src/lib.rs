@@ -41,7 +41,9 @@ pub mod utils {
 
     pub use crate::{
         arena::{ArenaBacking, HeapBacking, LimitedHeapBacking, StackBacking},
-        fundamental::{AllocError, NonZeroInxGenericStack, ptrinx_unchecked},
+        fundamental::{
+            AllocError, NonZeroInxGenericStack, SettableCapacityLimit, ptrinx_unchecked,
+        },
     };
 }
 

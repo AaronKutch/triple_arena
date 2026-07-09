@@ -938,6 +938,23 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             _ => unreachable!(), /* panic!("get_inx_mut_unwrap of unallocated entry"), */
         }
     }
+
+    /// Directly returns a reference to the internal backing, for the purposes
+    /// of accessing `ArenaBacking`-specific functions
+    pub fn backing(&self) -> &B::Stack<InternalEntry<P, T>> {
+        &self.m
+    }
+
+    /// Directly returns a mutable reference to the internal backing, for the
+    /// purposes of accessing `ArenaBacking`-specific functions
+    ///
+    /// # Safety
+    ///
+    /// The `InternalEntry` allocation state must not be modified, or else the
+    /// freelist or entry length could be broken.
+    pub unsafe fn backing_mut(&mut self) -> &mut B::Stack<InternalEntry<P, T>> {
+        &mut self.m
+    }
 }
 
 impl<P: Ptr, T, B: ArenaBacking> Default for Arena<P, T, B> {
