@@ -93,8 +93,8 @@ unsafe impl<T, const LIMIT: usize> NonZeroInxGenericStack<T> for NonZeroInxArray
         unsafe {
             self.array
                 .get_unchecked_mut(..self.len)
-                .assume_init_mut()
                 .get_disjoint_unchecked_mut(indices.map(|inx| inx.get().wrapping_sub(1)))
+                .map(|x| x.assume_init_mut())
         }
     }
 
