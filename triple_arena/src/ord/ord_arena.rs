@@ -13,7 +13,7 @@ use crate::{
     Arena, ChainArena, Link,
     chain::LinkNoGen,
     traits::{Advancer, Ptr},
-    utils::{ArenaBacking, ChainNoGenArena, HeapBacking, PtrInx},
+    utils::{ArenaBacking, ChainNoGenArena, PtrInx},
 };
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
@@ -141,7 +141,13 @@ pub struct Node<P: Ptr, K, V> {
 /// version will find a way to fix this, however it should still be faster in
 /// many cases if `Ptr`s can be reused multiple times. Try to minimize
 /// the points where `find_key` is required.
-pub struct OrdArena<P: Ptr, K, V, B: ArenaBacking = HeapBacking> {
+pub struct OrdArena<
+    P: Ptr,
+    K,
+    V,
+    #[cfg(feature = "alloc")] B: ArenaBacking = crate::utils::HeapBacking,
+    #[cfg(not(feature = "alloc"))] B: ArenaBacking,
+> {
     pub(crate) root: P::Inx,
     pub(crate) first: P::Inx,
     pub(crate) last: P::Inx,

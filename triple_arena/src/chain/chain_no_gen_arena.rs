@@ -10,7 +10,7 @@ use core::{
 use crate::{
     Arena, ChainArena, Link,
     traits::{Advancer, Ptr},
-    utils::{ArenaBacking, HeapBacking},
+    utils::ArenaBacking,
 };
 
 /// The same as [crate::Link] except that the interlinks do not have a
@@ -62,7 +62,12 @@ impl<P: Ptr, T> LinkNoGen<P, T> {
 /// The advantage of this is reduced memory footprint at the expense of
 /// generation checks from the interlinks. This is mainly intended for internal
 /// usage within data structures.
-pub struct ChainNoGenArena<P: Ptr, T, B: ArenaBacking = HeapBacking> {
+pub struct ChainNoGenArena<
+    P: Ptr,
+    T,
+    #[cfg(feature = "alloc")] B: ArenaBacking = crate::utils::HeapBacking,
+    #[cfg(not(feature = "alloc"))] B: ArenaBacking,
+> {
     pub(crate) a: Arena<P, LinkNoGen<P, T>, B>,
 }
 

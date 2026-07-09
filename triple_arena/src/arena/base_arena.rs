@@ -1,12 +1,13 @@
 use core::{
     borrow::Borrow,
+    cmp::max,
     fmt, mem,
     num::NonZeroUsize,
     ops::{Index, IndexMut},
 };
 
 use crate::{
-    arena::{ArenaBacking, HeapBacking},
+    arena::ArenaBacking,
     traits::{Advancer, Ptr},
     utils::{NonZeroInxGenericStack, PtrGen, PtrInx, ptrinx_unchecked},
 };
@@ -131,7 +132,12 @@ use InternalEntry::*;
 ///
 /// Note: See the `triple_arena_render` crate for a trait-based way to visualize
 /// graph structures in `Arena`s
-pub struct Arena<P: Ptr, T, B: ArenaBacking = HeapBacking> {
+pub struct Arena<
+    P: Ptr,
+    T,
+    #[cfg(feature = "alloc")] B: ArenaBacking = crate::arena::HeapBacking,
+    #[cfg(not(feature = "alloc"))] B: ArenaBacking,
+> {
     /// The main memory of entries.
     ///
     /// # Capacity
@@ -858,6 +864,9 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         // Invariants are temporarily broken, use only methods on `m`.
         // clearing first makes `self.m.reserve` cheaper by not needing to copy
         self.m.clear();
+        self.m
+            .ensure_capacity(max(old_virt_cap, source.capacity()))
+            .unwrap();
         for i in source.nziter() {
             let new = match source.m.get(i).unwrap() {
                 // copy `source` freelist
@@ -1019,6 +1028,9 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for Arena<P, T, B> {
         // Invariants are temporarily broken, use only methods on `m`.
         // clearing first makes `self.m.reserve` cheaper by not needing to copy
         self.m.clear();
+        self.m
+            .ensure_capacity(max(old_virt_cap, source.capacity()))
+            .unwrap();
         for i in source.nziter() {
             self.m.push(source.m.get(i).unwrap().clone()).ok().unwrap();
         }

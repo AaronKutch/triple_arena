@@ -1,8 +1,13 @@
-//! Note: there are "std" and "serde_support" feature flags
+//! Note: there are "alloc" (enabled by default), "std", "serde_support", and
+//! "expose_internal_utils" feature flags. When the default "alloc" feature is
+//! enabled, the arenas have a defaulted
+//! `B: ArenaBacking = triple_arena::utils::HeapBacking` parameter, but when
+//! disabled the parameter must be specified.
 
 #![no_std]
 #![allow(clippy::type_complexity)]
 
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
 mod arena;
@@ -25,7 +30,9 @@ pub use surject::{SurjectArena, surject_iterators};
 /// Special utilities for advanced usage
 pub mod utils {
     #[cfg(feature = "expose_internal_utils")]
-    pub use crate::arena::{InternalEntry, NonZeroInxArray, NonZeroInxLimitedVec, NonZeroInxVec};
+    pub use crate::arena::{InternalEntry, NonZeroInxArray};
+    #[cfg(all(feature = "alloc", feature = "expose_internal_utils"))]
+    pub use crate::arena::{NonZeroInxLimitedVec, NonZeroInxVec};
     // only intended for size_of tests and such
     #[cfg(feature = "expose_internal_utils")]
     pub use crate::ord::Node;
@@ -39,8 +46,10 @@ pub mod utils {
         pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
     }
 
+    #[cfg(feature = "alloc")]
+    pub use crate::arena::{HeapBacking, LimitedHeapBacking};
     pub use crate::{
-        arena::{ArenaBacking, HeapBacking, LimitedHeapBacking, StackBacking},
+        arena::{ArenaBacking, StackBacking},
         fundamental::{
             AllocError, NonZeroInxGenericStack, SettableCapacityLimit, ptrinx_unchecked,
         },

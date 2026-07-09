@@ -388,7 +388,7 @@ res.unwrap();
 */
 
 /// Used for development debugging only, see find.rs for example
-#[cfg(feature = "expose_internal_utils")]
+#[cfg(all(feature = "alloc", feature = "expose_internal_utils"))]
 #[allow(clippy::type_complexity)]
 impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug, B: ArenaBacking>
     OrdArena<P, K, V, B>

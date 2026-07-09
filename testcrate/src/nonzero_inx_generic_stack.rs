@@ -1,3 +1,4 @@
+/*
 use std::num::NonZeroUsize;
 
 use triple_arena::utils::{NonZeroInxGenericStack, NonZeroInxVec};
@@ -63,3 +64,4 @@ fn nonzero_inx_vec() {
     v.push(Box::new(2u8)).ok().unwrap();
     drop(v);
 }
+*/

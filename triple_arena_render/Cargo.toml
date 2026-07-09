@@ -12,4 +12,4 @@ keywords = ["arena", "graph", "render", "visualize"]
 categories = ["rendering::data-formats", "graphics", "visualization"]
 
 [dependencies]
-triple_arena = { path = "../triple_arena", version = "0.14" }
+triple_arena = { path = "../triple_arena", version = "0.14", features = ["alloc"] }

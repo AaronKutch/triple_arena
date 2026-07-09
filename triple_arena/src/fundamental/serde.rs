@@ -1,7 +1,6 @@
 #![allow(clippy::type_complexity)]
 
-use alloc::fmt;
-use core::{marker::PhantomData, num::NonZeroUsize};
+use core::{fmt, marker::PhantomData, num::NonZeroUsize};
 
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,

@@ -1,7 +1,6 @@
-use crate::{
-    arena::{NonZeroInxArray, NonZeroInxLimitedVec, NonZeroInxVec},
-    utils::NonZeroInxGenericStack,
-};
+#[cfg(feature = "alloc")]
+use crate::arena::{NonZeroInxLimitedVec, NonZeroInxVec};
+use crate::{arena::NonZeroInxArray, utils::NonZeroInxGenericStack};
 
 /// A trait describing the backing for an Arena
 ///
@@ -15,15 +14,19 @@ pub unsafe trait ArenaBacking {
 }
 
 /// The default heap backing for arenas
+#[cfg(feature = "alloc")]
 pub struct HeapBacking;
 
+#[cfg(feature = "alloc")]
 unsafe impl ArenaBacking for HeapBacking {
     type Stack<U> = NonZeroInxVec<U>;
 }
 
 /// The standard limited heap backing for arenas
+#[cfg(feature = "alloc")]
 pub struct LimitedHeapBacking;
 
+#[cfg(feature = "alloc")]
 unsafe impl ArenaBacking for LimitedHeapBacking {
     type Stack<U> = NonZeroInxLimitedVec<U>;
 }

@@ -1,5 +1,4 @@
-use alloc::fmt;
-use core::{mem, num::NonZeroUsize};
+use core::{fmt, mem, num::NonZeroUsize};
 
 use fmt::Debug;
 
@@ -7,10 +6,7 @@ use crate::{
     Arena, ChainArena,
     arena::InternalEntry,
     traits::{Advancer, Ptr},
-    utils::{
-        ArenaBacking, ChainNoGenArena, HeapBacking, LinkNoGen, NonZeroInxGenericStack, PtrInx,
-        PtrNoGen,
-    },
+    utils::{ArenaBacking, ChainNoGenArena, LinkNoGen, NonZeroInxGenericStack, PtrInx, PtrNoGen},
 };
 
 #[derive(Clone)]
@@ -152,7 +148,13 @@ pub(crate) struct Val<V> {
 ///     Some(("key2".to_owned(), Some("42 + 7".to_owned())))
 /// );
 /// ```
-pub struct SurjectArena<P: Ptr, K, V, B: ArenaBacking = HeapBacking> {
+pub struct SurjectArena<
+    P: Ptr,
+    K,
+    V,
+    #[cfg(feature = "alloc")] B: ArenaBacking = crate::utils::HeapBacking,
+    #[cfg(not(feature = "alloc"))] B: ArenaBacking,
+> {
     pub(crate) keys: ChainNoGenArena<P, Key<P, K>, B>,
     pub(crate) vals: Arena<PtrNoGen<P>, Val<V>, B>,
 }

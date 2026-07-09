@@ -16,10 +16,15 @@ keywords = ["arena", "generation", "no_std"]
 categories = ["memory-management", "data-structures", "no-std"]
 
 [features]
-default = []
-std = ["recasting/std"]
+default = ["alloc"]
+# When disabled, there is no longer a default backing generic parameter on the `Arena`s,
+# so they must be explicitly specified
+alloc = []
+std = ["alloc", "recasting/std"]
 serde_support = ["serde"]
-# this is only for testing purposes
+# Primarily intended for tests, this can be used by downstream users
+# but does not have stability guarantees. Note also that "alloc" is
+# additionally required for some things
 expose_internal_utils = []
 
 [dependencies]

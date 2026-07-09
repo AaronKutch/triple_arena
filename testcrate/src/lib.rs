@@ -1,5 +1,6 @@
 #![allow(clippy::type_complexity)]
 
+mod nonzero_inx_generic_stack;
 use std::{
     cell::RefCell,
     num::{NonZeroU32, NonZeroU128},

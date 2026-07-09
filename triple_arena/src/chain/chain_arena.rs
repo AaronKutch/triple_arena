@@ -10,7 +10,7 @@ use core::{
 use crate::{
     Arena,
     traits::{Advancer, Ptr},
-    utils::{ArenaBacking, HeapBacking},
+    utils::ArenaBacking,
 };
 
 /// This represents a link in a `ChainArena` that has a public `t: T` field and
@@ -147,7 +147,12 @@ impl<P: Ptr, T> Link<P, T> {
 /// a.remove_chain(p_x).unwrap();
 /// assert!(a.is_empty());
 /// ```
-pub struct ChainArena<P: Ptr, T, B: ArenaBacking = HeapBacking> {
+pub struct ChainArena<
+    P: Ptr,
+    T,
+    #[cfg(feature = "alloc")] B: ArenaBacking = crate::utils::HeapBacking,
+    #[cfg(not(feature = "alloc"))] B: ArenaBacking,
+> {
     pub(crate) a: Arena<P, Link<P, T>, B>,
 }
 

@@ -4,9 +4,10 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 
-# separate feature because we need to test the `ptr_struct` macro both ways
+# separate feature because we need to test the `ptr_struct` macro both ways and make sure we got configuration correct
 [features]
 default = ["serde_support"]
+alloc = ["triple_arena/alloc"]
 serde_support = ["triple_arena/serde_support"]
 
 [dependencies]

@@ -13,3 +13,6 @@ generation counter to check for invalidity (zero cost when omitted). `no_std` co
   key and value pairs that are all ordered by the key. Hereditary and nonhereditary insertion is
   supported. Unlike most `BTreeMap`s and `HashMap`s, the `P: Ptr` references to entries are stable,
   and can be trivially reused for `O(1)` operations.
+
+Note: there are "alloc" (enabled by default), "std", "serde_support", and "expose_internal_utils" feature flags.
+When the default "alloc" feature is enabled, the arenas have a defaulted `B: ArenaBacking = triple_arena::utils::HeapBacking` parameter, but when disabled the parameter must be specified.
