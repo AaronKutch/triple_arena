@@ -31,12 +31,13 @@ test *ARGS:
 
 test_all *ARGS:
   {{cargo}} sort -cw
-  {{cargo}} doc --no-deps
+  {{cargo}} doc --no-deps --all-features
   {{cargo}} nextest run --all-features {{ARGS}}
   {{cargo}} t --doc --all-features {{ARGS}}
   {{cargo}} r --bin render0
   {{cargo}} r --bin render1
   {{cargo}} r --example equation
+  {{cargo}} machete
   # needs the pinned toolchain
   {{cargo}} b --target=riscv32i-unknown-none-elf -p no_std_test
 
