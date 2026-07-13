@@ -1,8 +1,11 @@
 # Changelog
 
 ## [0.15.0] - TODO
-### Changes
+### Crate
 - Updated MSRV to 1.86
+
+### Changes
+- Put all traits under modules
 
 ## [0.14.0] - 2025-02-10
 ### Changes

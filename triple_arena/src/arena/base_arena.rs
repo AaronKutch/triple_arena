@@ -643,6 +643,8 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         self.remove_internal(p, true)
     }
 
+    // FIXME delete this, just have a good entry advancer
+
     /// For every `T` in the arena, `pred` is called with a tuple of the `Ptr`
     /// to that `T` and a mutable reference to the `T`. If `pred` returns `true`
     /// that `T` is dropped and pointers to it invalidated.

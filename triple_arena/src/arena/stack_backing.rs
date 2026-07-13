@@ -22,7 +22,7 @@ impl<T, const LIMIT: usize> Drop for NonZeroInxArray<T, LIMIT> {
     }
 }
 
-// Safety: we use safe ops internally and follow the requirements of the trait
+// Safety: we follow the requirements of the trait
 unsafe impl<T, const LIMIT: usize> NonZeroInxGenericStack<T> for NonZeroInxArray<T, LIMIT> {
     fn new() -> Self {
         Self {

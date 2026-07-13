@@ -572,6 +572,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         }
     }
 
+    // FIXME use "remove_surject" instead
+
     /// Removes the entire key set and value cheaply, returning the value. `p`
     /// can point to any key from the key set. Returns `None` if `p` is invalid.
     #[must_use]

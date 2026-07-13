@@ -18,7 +18,7 @@ pub struct NonZeroInxVec<T> {
     v: Vec<T>,
 }
 
-// Safety: we use safe ops internally and follow the requirements of the trait
+// Safety: we follow the requirements of the trait
 unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
     fn new() -> Self {
         Self { v: Vec::new() }

@@ -1,4 +1,5 @@
 mod advancer;
+mod arena_traits;
 mod extra;
 mod nonzero_inx_generic_stack;
 #[cfg(not(feature = "serde_support"))]
@@ -11,6 +12,7 @@ pub mod serde;
 pub mod serde_docs;
 
 pub use advancer::Advancer;
+pub use arena_traits::ArenaTrait;
 pub use extra::{AllocError, IntoNonZeroUsizeIterator, nzusize_iter, ptrinx_unchecked};
 pub use nonzero_inx_generic_stack::{
     NonZeroInxGenericStack, NonZeroInxGenericStackFallible, SetMaxCapacity,

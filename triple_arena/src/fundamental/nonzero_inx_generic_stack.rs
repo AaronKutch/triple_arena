@@ -197,7 +197,8 @@ pub unsafe trait NonZeroInxGenericStack<T> {
     /// which case this returns `None`
     fn pop(&mut self) -> Option<T>;
 
-    /// Clears all elements, dropping all `T`
+    /// Clears all elements, dropping all `T`. This has no effect on allocated
+    /// capacity.
     fn clear(&mut self);
 }
 

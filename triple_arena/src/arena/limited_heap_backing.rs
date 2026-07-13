@@ -29,7 +29,7 @@ impl<T> SetMaxCapacity for NonZeroInxLimitedVec<T> {
     }
 }
 
-// Safety: we use safe ops internally and follow the requirements of the trait
+// Safety: we follow the requirements of the trait
 unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxLimitedVec<T> {
     fn new() -> Self {
         Self {

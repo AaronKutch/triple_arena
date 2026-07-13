@@ -61,5 +61,5 @@ pub mod utils {
 pub mod traits {
     pub use recasting::{Recast, Recaster};
 
-    pub use crate::fundamental::{Advancer, Ptr};
+    pub use crate::fundamental::{Advancer, ArenaTrait, Ptr};
 }

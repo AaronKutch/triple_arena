@@ -3,6 +3,7 @@ pub mod arena_iterators;
 mod base_arena;
 #[cfg(feature = "alloc")]
 mod heap_backing;
+mod impl_arena_trait;
 #[cfg(feature = "alloc")]
 mod limited_heap_backing;
 mod stack_backing;
