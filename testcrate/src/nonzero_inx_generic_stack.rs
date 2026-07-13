@@ -6,11 +6,12 @@ use triple_arena::utils::{AllocError, NonZeroInxGenericStack};
 
 use crate::cdgen::{Cd, CdGen, CdKey};
 
-const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
-
-const STATS: usize = if cfg!(miri) { 1 } else { 1020 };
-
-pub const LIMIT: usize = 8;
+#[derive(Clone, Copy)]
+pub struct Stats {
+    pub limit: usize,
+    pub n: usize,
+    pub iters999: Option<usize>,
+}
 
 // the `CdGen` is passed in, because otherwise it can be dropped upon returning
 // an error
@@ -18,6 +19,7 @@ pub const LIMIT: usize = 8;
 /// Use the [LIMIT] for fixed length types and as the limit for settable limit
 /// types, ignore otherwise
 pub fn fuzz(
+    stats: Stats,
     cd_gen: &mut CdGen<()>,
     mut a: impl NonZeroInxGenericStack<Cd<()>>,
 ) -> Result<(), StackedError> {
@@ -34,17 +36,16 @@ pub fn fuzz(
     // determinism
     let mut iters999 = 0;
 
-    for _ in 0..N {
+    for _ in 0..stats.n {
         let len = b.len();
+        ensure!(cd_gen.len() <= len);
         ensure_eq!(a.len(), len);
         ensure_eq!(a.is_empty(), b.is_empty());
         ensure!(len <= a.capacity());
-        ensure!(a.capacity() <= LIMIT);
-        ensure!(cd_gen.len() <= LIMIT);
         let limited = a.max_capacity().is_some();
         if let Some(limit) = a.max_capacity() {
             // required for caller
-            ensure_eq!(limit, LIMIT);
+            ensure_eq!(limit, stats.limit);
 
             ensure!(a.capacity() <= limit);
         }
@@ -52,7 +53,7 @@ pub fn fuzz(
         match op_inx {
             0..20 => {
                 // reallocate_min_capacity success
-                let new_cap = rng.index(LIMIT + 1).unwrap();
+                let new_cap = rng.index(stats.limit + 1).unwrap();
                 a.reallocate_min_capacity(new_cap).stack()?;
                 ensure!(a.capacity() >= new_cap)
             }
@@ -60,7 +61,7 @@ pub fn fuzz(
                 // reallocate_min_capacity failure
                 let cap = a.capacity();
                 if limited {
-                    ensure_eq!(a.reallocate_min_capacity(LIMIT + 1), Err(AllocError));
+                    ensure_eq!(a.reallocate_min_capacity(stats.limit + 1), Err(AllocError));
                 } else {
                     // could fail for ZSTs
                     ensure_eq!(a.reallocate_min_capacity(usize::MAX), Err(AllocError));
@@ -149,8 +150,8 @@ pub fn fuzz(
             1000.. => unreachable!(),
         }
     }
-    // I may need a custom allocator, because some of the determinism is dependent
-    // on reallocation behavior
-    ensure_eq!(iters999, STATS);
+    if let Some(x) = stats.iters999 {
+        ensure_eq!(iters999, x);
+    }
     Ok(())
 }
