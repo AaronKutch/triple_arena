@@ -37,6 +37,7 @@ impl<T> Drop for CdGen<T> {
     fn drop(&mut self) {
         let inner = &mut self.inner.borrow_mut();
         if inner.freelist.len() != inner.slots.len() && !std::thread::panicking() {
+            dbg!(inner.freelist.len(), inner.slots.len());
             panic!(
                 "A CdGen test struct generator has been dropped without all of its generated \
                  `Cd`s being dropped first"
@@ -75,6 +76,15 @@ impl<T> CdGen<T> {
             key,
             inner: Rc::clone(&self.inner),
         })
+    }
+
+    pub fn len(&self) -> usize {
+        let inner = self.inner.borrow();
+        inner.slots.len().checked_sub(inner.freelist.len()).unwrap()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 

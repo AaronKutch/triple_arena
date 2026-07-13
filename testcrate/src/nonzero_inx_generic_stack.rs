@@ -4,19 +4,25 @@ use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use star_rng::StarRng;
 use triple_arena::utils::{AllocError, NonZeroInxGenericStack};
 
-use crate::helpers::{Cd, CdGen, CdKey};
+use crate::cdgen::{Cd, CdGen, CdKey};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
-const STATS: usize = if cfg!(miri) { 1 } else { 1069 };
+const STATS: usize = if cfg!(miri) { 1 } else { 1020 };
 
 pub const LIMIT: usize = 8;
 
+// the `CdGen` is passed in, because otherwise it can be dropped upon returning
+// an error
+
 /// Use the [LIMIT] for fixed length types and as the limit for settable limit
 /// types, ignore otherwise
-pub fn fuzz(mut a: impl NonZeroInxGenericStack<Cd<()>>) -> Result<(), StackedError> {
+pub fn fuzz(
+    cd_gen: &mut CdGen<()>,
+    mut a: impl NonZeroInxGenericStack<Cd<()>>,
+) -> Result<(), StackedError> {
+    ensure!(cd_gen.is_empty());
     let mut rng = StarRng::new(0);
-    let mut cd_gen = CdGen::new();
 
     // reference
     let mut b: Vec<CdKey> = vec![];
@@ -34,6 +40,7 @@ pub fn fuzz(mut a: impl NonZeroInxGenericStack<Cd<()>>) -> Result<(), StackedErr
         ensure_eq!(a.is_empty(), b.is_empty());
         ensure!(len <= a.capacity());
         ensure!(a.capacity() <= LIMIT);
+        ensure!(cd_gen.len() <= LIMIT);
         let limited = a.max_capacity().is_some();
         if let Some(limit) = a.max_capacity() {
             // required for caller
@@ -113,9 +120,9 @@ pub fn fuzz(mut a: impl NonZeroInxGenericStack<Cd<()>>) -> Result<(), StackedErr
                         for i in &mut set {
                             *i = NonZeroUsize::new(rng.index(len).unwrap() + 1).unwrap();
                         }
-                        for i in &set {
-                            for j in &set {
-                                if *i == *j {
+                        for (set_i0, i) in set.iter().enumerate() {
+                            for (set_i1, j) in set.iter().enumerate() {
+                                if set_i0 != set_i1 && *i == *j {
                                     ensure!(a.get_disjoint_mut(set).is_err_and(
                                         |e| e == GetDisjointMutError::OverlappingIndices
                                     ));
@@ -144,7 +151,6 @@ pub fn fuzz(mut a: impl NonZeroInxGenericStack<Cd<()>>) -> Result<(), StackedErr
     }
     // I may need a custom allocator, because some of the determinism is dependent
     // on reallocation behavior
-    ensure_eq!(iters999, STATS, "stat mismatch");
-    a.clear();
+    ensure_eq!(iters999, STATS);
     Ok(())
 }
