@@ -502,7 +502,7 @@ fn fuzz_surject() {
                 // self.compress_and_shrink_with(|_, _, _| ())
 
                 let mut tmp: HashMap<Val, HashMap<Key, P0>> = HashMap::new();
-                let q_gen = PtrGen::increment(a.generation());
+                let q_gen = PtrGen::generational_inc(a.generation()).0;
                 a.compress_and_shrink_with(|p, key, val, q| {
                     for pair in b.get(val).unwrap() {
                         if pair.k == *key {

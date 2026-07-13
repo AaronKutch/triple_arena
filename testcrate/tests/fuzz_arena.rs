@@ -337,7 +337,7 @@ fn fuzz_arena() {
             993 => {
                 // compress_and_shrink_with
                 let mut tmp = HashMap::new();
-                let q_gen = PtrGen::increment(a.generation());
+                let q_gen = PtrGen::generational_inc(a.generation()).0;
                 a.compress_and_shrink_with(|p, t, q| {
                     assert_eq!(b[t], p);
                     assert_eq!(q_gen, q.generation());

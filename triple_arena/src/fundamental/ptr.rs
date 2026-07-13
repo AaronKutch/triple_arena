@@ -12,7 +12,7 @@ use core::{
 
 use recasting::{Recast, Recaster};
 
-/// Pointer generation information type
+/// The trait for Arena Pointer generation types.
 ///
 /// Users should never have to implement this, it is implemented only for the
 /// `NonZeroU...` types and for `()`.
@@ -33,15 +33,21 @@ pub unsafe trait PtrGen:
     + UnwindSafe
     + Recast<Self>
 {
-    /// Returns the first element after 0, which is special because Arenas with
-    /// generation counters always start at generation 2, which means invalid
-    /// pointers can use generation 1 and be guaranteed to always be invalid.
+    /// Returns generation 1, which we designate as a representable invalid
+    /// generation value, because Arenas with generation counters always
+    /// start at generation 2, and [PtrGen::generational_inc] skips generation
+    /// 2, which means invalid pointers can be constructed with this
+    /// generation and be guaranteed to always be invalid.
     fn one() -> Self;
-    /// The value of 2
+    /// The first valid generation value
     fn two() -> Self;
-    /// Returns `this` incremented by one. This should detect overflow and
-    /// should panic if overflow happens.
-    fn increment(this: Self) -> Self;
+    /// A special overflowing increment function. For all values (including
+    /// [PtrGen::one], but this shouldn't normally be done) except for the
+    /// maximum value, this simply returns the incremented integer value and
+    /// `false`. Upon being called on the maximum value, this overflows by
+    /// skipping both the unrepresentable generation 0 and invalid generation 1
+    /// values, resulting in [PtrGen::two] and a `true` value for overflow.
+    fn generational_inc(this: Self) -> (Self, bool);
 }
 
 // I am using aggressive inlining even on trivial functions because there may
@@ -62,10 +68,10 @@ macro_rules! impl_gen {
                 }
 
                 #[inline]
-                fn increment(this: Self) -> Self {
+                fn generational_inc(this: Self) -> (Self, bool) {
                     match Self::new(this.get().wrapping_add(1)) {
-                        Some(x) => x,
-                        None => panic!("generation overflow"),
+                        Some(x) => (x, false),
+                        None => (Self::new(2).unwrap(), true),
                     }
                 }
             }
@@ -83,10 +89,12 @@ unsafe impl PtrGen for () {
     fn two() -> Self {}
 
     #[inline]
-    fn increment(_this: Self) -> Self {}
+    fn generational_inc(_this: Self) -> (Self, bool) {
+        ((), false)
+    }
 }
 
-/// This is a trait for the index type used by the arena.
+/// The trait for Arena index types.
 ///
 /// Users should never have to implement this, it is implemented only for Rust's
 /// unsigned integers.
@@ -124,6 +132,7 @@ macro_rules! impl_ptr_inx {
             unsafe impl PtrInx for $nz {
                 #[inline]
                 fn new(inx: NonZeroUsize) -> Self {
+                    // will optimize away
                     $nz::new(inx.get() as $x).unwrap()
                 }
 
@@ -191,15 +200,15 @@ pub unsafe trait Ptr:
     fn name() -> &'static str;
 
     /// Returns a new `Ptr` with a generation value `PtrGen::one()`. Because the
-    /// arena starts with generation 2, this is guaranteed invalid when
-    /// generation counters are used. The raw index is also set to `Inx::max()`
-    /// which should also cause failures with the generationless case, but be
-    /// aware this can be reached practically with small `Inx` types.
+    /// arena starts with generation 2 and skips generation 1 on overflow, this
+    /// is guaranteed invalid if generation counters are used. The raw index
+    /// is also set to `Inx::max()` which should also cause failures with
+    /// the generationless case, but be aware this can be reached
+    /// practically with small `Inx` types.
     fn invalid() -> Self;
 
     /// Returns a raw `Inx`. This can be useful when getting a unique id for
-    /// every entry. Do not rely on this if the `Ptr` is invalidated after
-    /// `get_raw` is used.
+    /// every entry, but be aware of generational invalidation.
     fn inx(self) -> Self::Inx;
 
     /// Returns the generation of this `Ptr`.
