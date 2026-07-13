@@ -346,7 +346,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         // check for greater than zero, `reserve(0)` can trigger allocation and thus
         // exponential growth problems
         if reserve_amt > 0 {
-            let _ = self.m.ensure_capacity(target);
+            let _ = self.m.reallocate_min_capacity(target);
         }
         // Get to `target` virtual capacity and no more, do not go all way to
         // `self.m.capacity()`. Nonoverflowing since `target` is a checked add on
@@ -364,16 +364,22 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                 for i in old_virt_cap.wrapping_add(2)
                     ..old_virt_cap.wrapping_add(remaining).wrapping_add(1)
                 {
-                    self.m.push(Free(ptrinx_unchecked(i))).ok().unwrap();
+                    self.m
+                        .push_within_capacity(Free(ptrinx_unchecked(i)))
+                        .ok()
+                        .unwrap();
                 }
                 match old_root {
                     Some(old_root) => {
                         // The last `Free` points to the old root
-                        self.m.push(Free(old_root)).ok().unwrap();
+                        self.m.push_within_capacity(Free(old_root)).ok().unwrap();
                     }
                     None => {
                         // the last `Free` points to itself
-                        self.m.push(Free(ptrinx_unchecked(target))).ok().unwrap();
+                        self.m
+                            .push_within_capacity(Free(ptrinx_unchecked(target)))
+                            .ok()
+                            .unwrap();
                     }
                 }
             }
@@ -788,10 +794,12 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         self.len = 0;
     }
 
+    // FIXME remove
+
     /// Performs an [Arena::clear] and resets capacity to 0
     pub fn clear_and_shrink(&mut self) {
         self.m.clear();
-        self.m.clear_and_shrink();
+        self.m.reallocate_min_capacity(0).unwrap();
         self.freelist_root = None;
         self.inc_gen();
         self.len = 0;
@@ -821,7 +829,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         self.inc_gen();
         let generation = self.generation();
         let mut new_m = B::Stack::<InternalEntry<P, T>>::new();
-        let _ = new_m.ensure_capacity(self.len());
+        let _ = new_m.reallocate_min_capacity(self.len());
         let mut j = 1;
         for i in self.nziter() {
             let entry = mem::replace(
@@ -834,7 +842,10 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                     &mut t,
                     Ptr::_from_raw(PtrInx::new(NonZeroUsize::new(j).unwrap()), generation),
                 );
-                new_m.push(Allocated(generation, t)).ok().unwrap();
+                new_m
+                    .push_within_capacity(Allocated(generation, t))
+                    .ok()
+                    .unwrap();
                 j = j.wrapping_add(1);
             }
         }
@@ -865,7 +876,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         // clearing first makes `self.m.reserve` cheaper by not needing to copy
         self.m.clear();
         self.m
-            .ensure_capacity(max(old_virt_cap, source.capacity()))
+            .reallocate_min_capacity(max(old_virt_cap, source.capacity()))
             .unwrap();
         for i in source.nziter() {
             let new = match source.m.get(i).unwrap() {
@@ -877,20 +888,23 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                     map(P::_from_raw(P::Inx::new(i), *generation), u),
                 ),
             };
-            self.m.push(new).ok().unwrap();
+            self.m.push_within_capacity(new).ok().unwrap();
         }
 
         // Safety: `isize::MAX` guarantee
         unsafe {
             for i in self.m.len().wrapping_add(2)..old_virt_cap.wrapping_add(1) {
                 // point to next
-                self.m.push(Free(ptrinx_unchecked(i))).ok().unwrap();
+                self.m
+                    .push_within_capacity(Free(ptrinx_unchecked(i)))
+                    .ok()
+                    .unwrap();
             }
             if self.m.len() < old_virt_cap {
                 // new root starting at extension of `self.m` beyond `source.m`
                 self.freelist_root = Some(ptrinx_unchecked(source.m.len().wrapping_add(1)));
                 self.m
-                    .push(match source.freelist_root {
+                    .push_within_capacity(match source.freelist_root {
                         // points to old root
                         Some(inx) => Free(inx),
                         // points to itself
@@ -1003,9 +1017,11 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for Arena<P, T, B> {
     /// with respect to the different arenas can diverge.
     fn clone(&self) -> Self {
         let mut m = B::Stack::new();
-        let _ = m.ensure_capacity(self.m.len());
+        let _ = m.reallocate_min_capacity(self.m.len());
         for i in self.nziter() {
-            m.push(self.m.get(i).unwrap().clone()).ok().unwrap();
+            m.push_within_capacity(self.m.get(i).unwrap().clone())
+                .ok()
+                .unwrap();
         }
         Self {
             len: self.len,
@@ -1029,23 +1045,29 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for Arena<P, T, B> {
         // clearing first makes `self.m.reserve` cheaper by not needing to copy
         self.m.clear();
         self.m
-            .ensure_capacity(max(old_virt_cap, source.capacity()))
+            .reallocate_min_capacity(max(old_virt_cap, source.capacity()))
             .unwrap();
         for i in source.nziter() {
-            self.m.push(source.m.get(i).unwrap().clone()).ok().unwrap();
+            self.m
+                .push_within_capacity(source.m.get(i).unwrap().clone())
+                .ok()
+                .unwrap();
         }
 
         // Safety: `isize::MAX` guarantee
         unsafe {
             for i in self.m.len().wrapping_add(2)..old_virt_cap.wrapping_add(1) {
                 // point to next
-                self.m.push(Free(ptrinx_unchecked(i))).ok().unwrap();
+                self.m
+                    .push_within_capacity(Free(ptrinx_unchecked(i)))
+                    .ok()
+                    .unwrap();
             }
             if self.m.len() < old_virt_cap {
                 // new root starting at extension of `self.m` beyond `source.m`
                 self.freelist_root = Some(ptrinx_unchecked(source.m.len().wrapping_add(1)));
                 self.m
-                    .push(match source.freelist_root {
+                    .push_within_capacity(match source.freelist_root {
                         // points to old root
                         Some(inx) => Free(inx),
                         // points to itself

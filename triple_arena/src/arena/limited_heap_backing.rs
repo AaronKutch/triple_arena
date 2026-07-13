@@ -1,24 +1,31 @@
 //! This is a safer implementation of the heap backing for reference
 
-use core::num::NonZeroUsize;
+use core::{cmp::min, num::NonZeroUsize};
 
 use crate::{
     arena::NonZeroInxVec,
-    fundamental::SettableCapacityLimit,
+    fundamental::SetMaxCapacity,
     utils::{AllocError, NonZeroInxGenericStack},
 };
 
-/// The standard heap-based limited `capacity_limit` implementation of
+/// The standard heap-based limited `max_capacity` implementation of
 /// [NonZeroInxGenericStack]
 pub struct NonZeroInxLimitedVec<T> {
     v: NonZeroInxVec<T>,
-    limit: usize,
+    // N.B. it happens that the current impl of `Vec` as of writing has the ability to exactly
+    // allocate with `reserve_exact` but this is not a guaranteed behavior into the future.
+    // `min(v.capacity(), max_capacity)` is used as the actual virtual capacity.
+    max_capacity: usize,
 }
 
-impl<T> SettableCapacityLimit for NonZeroInxLimitedVec<T> {
-    /// Changes the capacity limit to `limit`
-    fn set_capacity_limit(&mut self, limit: usize) {
-        self.limit = limit;
+impl<T> SetMaxCapacity for NonZeroInxLimitedVec<T> {
+    fn set_max_capacity(&mut self, max_capacity: usize) -> Option<()> {
+        if max_capacity < self.capacity() {
+            None
+        } else {
+            self.max_capacity = max_capacity;
+            Some(())
+        }
     }
 }
 
@@ -27,7 +34,7 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxLimitedVec<T> {
     fn new() -> Self {
         Self {
             v: NonZeroInxVec::new(),
-            limit: 0,
+            max_capacity: 0,
         }
     }
 
@@ -36,24 +43,26 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxLimitedVec<T> {
     }
 
     fn capacity(&self) -> usize {
-        self.v.capacity()
+        min(self.v.capacity(), self.max_capacity)
     }
 
-    fn capacity_limit(&self) -> Option<usize> {
-        Some(self.limit)
+    fn max_capacity(&self) -> Option<usize> {
+        Some(self.max_capacity)
     }
 
-    fn ensure_capacity(&mut self, min_capacity: usize) -> Result<(), AllocError> {
-        // always check, the limit may have been manually changed to be below
-        // `self.capacity()`
-        if min_capacity > self.limit {
+    fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), AllocError> {
+        if min_capacity > self.max_capacity {
             return Err(AllocError);
         }
-        self.v.ensure_capacity(min_capacity)
+        self.v.reallocate_min_capacity(min_capacity)
     }
 
-    fn push(&mut self, t: T) -> Result<(NonZeroUsize, &mut T), T> {
-        self.v.push(t)
+    fn push_within_capacity(&mut self, t: T) -> Result<(NonZeroUsize, &mut T), T> {
+        // extra condition needed to avoid exceeding virtual capacity
+        if self.v.len() == self.max_capacity {
+            return Err(t);
+        }
+        self.v.push_within_capacity(t)
     }
 
     unsafe fn get_unchecked(&self, inx: NonZeroUsize) -> &T {
@@ -77,9 +86,5 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxLimitedVec<T> {
 
     fn clear(&mut self) {
         self.v.clear()
-    }
-
-    fn clear_and_shrink(&mut self) {
-        self.v.clear_and_shrink();
     }
 }

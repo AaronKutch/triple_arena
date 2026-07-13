@@ -12,7 +12,7 @@ use crate::utils::{AllocError, NonZeroInxGenericStack};
 // immediate offset to their loads and zero instructions are saved. Also, it
 // precluded `NonNull` optimizations from existing on the struct.
 
-/// The standard heap-based unlimited `capacity_limit` implementation of
+/// The standard heap-based unlimited `max_capacity` implementation of
 /// [NonZeroInxGenericStack]
 pub struct NonZeroInxVec<T> {
     v: Vec<T>,
@@ -32,11 +32,11 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
         self.v.capacity()
     }
 
-    fn capacity_limit(&self) -> Option<usize> {
+    fn max_capacity(&self) -> Option<usize> {
         None
     }
 
-    fn ensure_capacity(&mut self, min_capacity: usize) -> Result<(), AllocError> {
+    fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), AllocError> {
         if min_capacity > self.capacity() {
             self.v
                 .try_reserve(min_capacity - self.len())
@@ -53,7 +53,7 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
         Ok(())
     }
 
-    fn push(&mut self, t: T) -> Result<(NonZeroUsize, &mut T), T> {
+    fn push_within_capacity(&mut self, t: T) -> Result<(NonZeroUsize, &mut T), T> {
         if self.v.len() < self.v.capacity() {
             self.v.push(t);
             Ok((
@@ -89,10 +89,5 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
 
     fn clear(&mut self) {
         self.v.clear()
-    }
-
-    fn clear_and_shrink(&mut self) {
-        self.v.clear();
-        self.v.shrink_to_fit();
     }
 }

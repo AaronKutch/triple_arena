@@ -39,11 +39,11 @@ unsafe impl<T, const LIMIT: usize> NonZeroInxGenericStack<T> for NonZeroInxArray
         LIMIT
     }
 
-    fn capacity_limit(&self) -> Option<usize> {
+    fn max_capacity(&self) -> Option<usize> {
         Some(LIMIT)
     }
 
-    fn ensure_capacity(&mut self, min_capacity: usize) -> Result<(), AllocError> {
+    fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), AllocError> {
         if min_capacity > LIMIT {
             Err(AllocError)
         } else {
@@ -51,7 +51,7 @@ unsafe impl<T, const LIMIT: usize> NonZeroInxGenericStack<T> for NonZeroInxArray
         }
     }
 
-    fn push(&mut self, t: T) -> Result<(NonZeroUsize, &mut T), T> {
+    fn push_within_capacity(&mut self, t: T) -> Result<(NonZeroUsize, &mut T), T> {
         // fine because of isize::MAX limits
         if self.len.wrapping_add(1) > LIMIT {
             Err(t)
@@ -123,9 +123,5 @@ unsafe impl<T, const LIMIT: usize> NonZeroInxGenericStack<T> for NonZeroInxArray
             }
             self.len = 0;
         }
-    }
-
-    fn clear_and_shrink(&mut self) {
-        self.clear();
     }
 }

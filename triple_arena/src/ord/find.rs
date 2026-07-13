@@ -382,7 +382,6 @@ if res.is_err() {
     render_to_svg_file(&debug_arena2, false, PathBuf::from("tmp.svg".to_owned()))
         .unwrap();
     println!("{}", a.debug());
-    dbg!(len);
 }
 res.unwrap();
 */

@@ -70,7 +70,7 @@ fn fuzz_surject() {
     generation += 1;
     a.clear_and_shrink();
     generation += 1;
-    let mut op_inx = u32::MAX;
+    let mut op_inx;
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut iters999 = 0;
@@ -82,7 +82,6 @@ fn fuzz_surject() {
         assert_eq!(a.len_vals(), b.len());
         let len = list.len();
         if a.generation().get() != generation {
-            dbg!(a.generation().get(), generation, op_inx);
             panic!();
         }
         assert_eq!(a.generation().get(), generation);
@@ -100,7 +99,6 @@ fn fuzz_surject() {
             }
             assert_eq!(a.len_keys(), len_keys);
             if let Err(e) = SurjectArena::_check_invariants(&a) {
-                dbg!(op_inx);
                 panic!("{e}");
             }
         }

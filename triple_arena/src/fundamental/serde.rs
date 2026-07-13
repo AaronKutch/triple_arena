@@ -158,7 +158,7 @@ where
     {
         let mut a = Arena::<P, T, B>::new();
         if let Some(hint) = access.size_hint() {
-            let _ = a.m.ensure_capacity(hint);
+            let _ = a.m.reallocate_min_capacity(hint);
         }
 
         while let Some((p, t)) = access.next_entry::<P::Inx, T>()? {
@@ -166,22 +166,14 @@ where
             if i > a.capacity() {
                 for _ in 0..(i.wrapping_sub(a.capacity())) {
                     // the freelist is fixed later
-                    match a.m.push(InternalEntry::Free(PtrInx::new(
+                    a.m.push_reallocating(InternalEntry::Free(PtrInx::new(
                         NonZeroUsize::new(1).unwrap(),
-                    ))) {
-                        Ok(_) => (),
-                        Err(retry) => {
-                            // there was no hint or it was wrong
-                            a.m.ensure_capacity(a.m.capacity().saturating_mul(2))
-                                .map_err(|_| {
-                                    Error::custom(
-                                        "when deserializing a `triple_arena` arena, ran into \
-                                         allocation error",
-                                    )
-                                })?;
-                            a.m.push(retry).ok().unwrap();
-                        }
-                    }
+                    )))
+                    .map_err(|_| {
+                        Error::custom(
+                            "when deserializing a `triple_arena` arena, ran into allocation error",
+                        )
+                    })?;
                 }
             }
             let entry = a.m_get_mut(p).unwrap();
@@ -366,7 +358,7 @@ where
     {
         let mut a: Arena<P, LinkNoGen<P, Node<P, K, V>>, B> = Arena::new();
         if let Some(hint) = access.size_hint() {
-            let _ = a.m.ensure_capacity(hint);
+            let _ = a.m.reallocate_min_capacity(hint);
         }
 
         let mut i = 1usize;
@@ -384,20 +376,12 @@ where
                 p_tree1: None,
                 rank: 0,
             });
-            match a.m.push(InternalEntry::Allocated(PtrGen::two(), t)) {
-                Ok(_) => (),
-                Err(retry) => {
-                    // there was no hint or it was wrong
-                    a.m.ensure_capacity(a.m.capacity().saturating_mul(2))
-                        .map_err(|_| {
-                            Error::custom(
-                                "when deserializing a `triple_arena` arena, ran into allocation \
-                                 error",
-                            )
-                        })?;
-                    a.m.push(retry).ok().unwrap();
-                }
-            }
+            a.m.push_reallocating(InternalEntry::Allocated(PtrGen::two(), t))
+                .map_err(|_| {
+                    Error::custom(
+                        "when deserializing a `triple_arena` arena, ran into allocation error",
+                    )
+                })?;
             i = i.wrapping_add(1);
             last = Some(p);
         }
