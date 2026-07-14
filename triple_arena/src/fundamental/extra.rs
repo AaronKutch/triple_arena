@@ -27,8 +27,8 @@ impl fmt::Display for AllocError {
 impl Error for AllocError {}
 
 pub struct NonZeroUsizeIterator {
-    // invariant: if `end_inclusive.is_some()`, `current <= end_inclusive.get()` must be true
-    current: NonZeroUsize,
+    // invariant: if `end_inclusive.is_some()`, `start <= end_inclusive.get()` must be true
+    start: NonZeroUsize,
     end_inclusive: Option<NonZeroUsize>,
 }
 
@@ -38,14 +38,34 @@ impl Iterator for NonZeroUsizeIterator {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(end_inclusive) = self.end_inclusive {
-            let res = self.current;
-            // safety: this is safe since `current < end_inclusive.get()` and
+            let res = self.start;
+            // safety: this is safe since `start < end_inclusive.get()` and
             // `end_inclusive` cannot be more than the maximum, meaning it
             // cannot overflow into zero. We maintain the invariant by checking
             // for equality.
-            self.current = NonZeroUsize::new(res.get().wrapping_add(1)).unwrap();
-            if self.current > end_inclusive {
+            self.start = NonZeroUsize::new(res.get().wrapping_add(1)).unwrap();
+            if self.start > end_inclusive {
                 self.end_inclusive = None;
+            }
+            Some(res)
+        } else {
+            None
+        }
+    }
+}
+
+impl DoubleEndedIterator for NonZeroUsizeIterator {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if let Some(end_inclusive) = self.end_inclusive {
+            let res = end_inclusive;
+            if res == self.start {
+                // the range is now empty
+                self.end_inclusive = None;
+            } else {
+                // safety: `1 <= self.start < res`, so `res.get() - 1 >= 1` and
+                // cannot underflow into zero.
+                self.end_inclusive = Some(NonZeroUsize::new(res.get() - 1).unwrap());
             }
             Some(res)
         } else {
@@ -68,9 +88,21 @@ impl IntoIterator for IntoNonZeroUsizeIterator {
 
 /// Starts from 1
 #[inline]
-pub fn nzusize_iter(end_inclusive: Option<NonZeroUsize>) -> IntoNonZeroUsizeIterator {
+pub fn nzusize_iter(
+    start: NonZeroUsize,
+    end_inclusive: Option<NonZeroUsize>,
+) -> IntoNonZeroUsizeIterator {
+    if let Some(end_inclusive) = end_inclusive
+        && start > end_inclusive
+    {
+        // must make empty
+        return IntoNonZeroUsizeIterator(NonZeroUsizeIterator {
+            start,
+            end_inclusive: None,
+        });
+    }
     IntoNonZeroUsizeIterator(NonZeroUsizeIterator {
-        current: NonZeroUsize::new(1).unwrap(),
+        start,
         end_inclusive,
     })
 }

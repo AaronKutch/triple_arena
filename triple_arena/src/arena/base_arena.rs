@@ -214,7 +214,10 @@ pub struct Arena<
 /// an invalidation occurs, a panic occurs.
 impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     pub(crate) fn nziter(&self) -> crate::fundamental::IntoNonZeroUsizeIterator {
-        crate::fundamental::nzusize_iter(NonZeroUsize::new(self.m.len()))
+        crate::fundamental::nzusize_iter(
+            NonZeroUsize::new(1).unwrap(),
+            NonZeroUsize::new(self.m.len()),
+        )
     }
 
     /// Used by tests
@@ -262,6 +265,79 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             return Err("freelist discontinuous");
         }
         Ok(())
+    }
+
+    /// We assume that if an entry has been successfully pushed before (implying
+    /// that `P::Inx::try_from_usize` has succeeded with this exact value
+    /// before), then passing the same raw index again to this will not fail
+    pub(crate) fn from_checked(inx: NonZeroUsize) -> P::Inx {
+        <P::Inx as PtrInx>::try_from_usize(inx).expect(
+            "`<P::Inx as PtrInx>::try_from_usize` failed on a value that has succeeded before",
+        )
+    }
+
+    /// Pops off free slots on the end, and rebuilds the freelist so it is
+    /// ordered to allocate from the earliest free slot forwards
+    pub(crate) fn canonicalize_free_list(&mut self) {
+        // remove free slots off the end
+        for inx in self.nziter().into_iter().rev() {
+            if let Free(_) = self.m.get(inx).unwrap() {
+                self.m.pop();
+            } else {
+                break;
+            }
+        }
+
+        let mut earliest_free = None;
+        for inx in self.nziter().into_iter().rev() {
+            if let Free(overwrite) = self.m.get_mut(inx).unwrap() {
+                if let Some(next) = earliest_free {
+                    // point to the next free slot, the last one we encountered
+                    *overwrite = next;
+                    earliest_free = Some(Self::from_checked(inx));
+                } else {
+                    // point to self on first one going in reverse
+                    *overwrite = Self::from_checked(inx);
+                    earliest_free = Some(*overwrite);
+                }
+            }
+        }
+        // there being no free slots is automatically handled
+        self.freelist_root = earliest_free;
+    }
+
+    /// `remove` but with optional generation counter increment
+    #[must_use]
+    pub(crate) fn remove_internal(&mut self, p: P, inc_gen: bool) -> Option<T> {
+        let freelist_ptr = if let Some(free) = self.freelist_root {
+            // points to previous root
+            free
+        } else {
+            // points to itself
+            p.inx()
+        };
+        let allocation = self.m.get_mut(P::Inx::try_into_usize(p.inx())?)?;
+        match allocation {
+            // invalid by being already free
+            Free(_) => None,
+            Allocated(generation, _) => {
+                if *generation != p.generation() {
+                    // invalid by generation
+                    None
+                } else {
+                    // in both cases the new root is the entry we just removed
+                    self.freelist_root = Some(p.inx());
+                    self.len = self.len.wrapping_sub(1);
+                    let Allocated(_, old_t) = mem::replace(allocation, Free(freelist_ptr)) else {
+                        unreachable!()
+                    };
+                    if inc_gen {
+                        self.inc_gen();
+                    }
+                    Some(old_t)
+                }
+            }
+        }
     }
 
     /// Creates a new arena of type `T`, which are pointed to by `P`s. The arena
@@ -394,6 +470,8 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             }
         }
     }
+
+    // FIXME remove these
 
     #[must_use]
     #[inline]
@@ -571,42 +649,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             }
         } else {
             None
-        }
-    }
-
-    /// `remove` but with optional generation counter increment
-    #[must_use]
-    pub(crate) fn remove_internal(&mut self, p: P, inc_gen: bool) -> Option<T> {
-        let freelist_ptr = if let Some(free) = self.freelist_root {
-            // points to previous root
-            free
-        } else {
-            // points to itself
-            p.inx()
-        };
-        let allocation = self.m_get_mut(p.inx())?;
-        let old = mem::replace(allocation, Free(freelist_ptr));
-        match old {
-            Free(old_free) => {
-                // undo
-                *allocation = Free(old_free);
-                None
-            }
-            Allocated(generation, old_t) => {
-                if generation != p.generation() {
-                    // undo
-                    *allocation = Allocated(generation, old_t);
-                    None
-                } else {
-                    // in both cases the new root is the entry we just removed
-                    self.freelist_root = Some(p.inx());
-                    self.len = self.len.wrapping_sub(1);
-                    if inc_gen {
-                        self.inc_gen();
-                    }
-                    Some(old_t)
-                }
-            }
         }
     }
 

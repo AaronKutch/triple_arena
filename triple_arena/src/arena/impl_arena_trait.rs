@@ -1,4 +1,4 @@
-use core::slice::GetDisjointMutError;
+use core::{num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
     Arena, InvalidationResult,
@@ -29,7 +29,11 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         &mut self,
         min_capacity: usize,
     ) -> Result<(), crate::utils::AllocError> {
-        todo!()
+        // so that capacity on the end is not used up by unallocated slots, and just fix
+        // up the freelist if this function was called under any circumstance, it is
+        // understood that it is a `O(n)` operation anyway.
+        self.canonicalize_free_list();
+        self.m.reallocate_min_capacity(min_capacity)
     }
 
     fn len(&self) -> usize {
@@ -107,7 +111,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     }
 
     fn remove(&mut self, p: P) -> Option<T> {
-        todo!()
+        self.remove_internal(p, true)
     }
 
     fn clear(&mut self) {
