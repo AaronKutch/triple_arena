@@ -74,7 +74,7 @@ pub trait ArenaTrait<P: Ptr, T> {
     /// invalid with generation counters.
     fn set_generation(&mut self, new_gen: P::Gen);
 
-    //fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), T>;
+    fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), T>;
     //fn insert_reallocating(&mut self, t: T) -> Result<(P, &mut T), T>;
     // Never panics on generation overflow
     //fn insert

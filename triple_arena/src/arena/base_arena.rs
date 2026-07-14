@@ -269,10 +269,17 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
 
     /// We assume that if an entry has been successfully pushed before (implying
     /// that `P::Inx::try_from_usize` has succeeded with this exact value
-    /// before), then passing the same raw index again to this will not fail
+    /// before), then passing the same raw index again to this will not fail,
+    /// this function is to check places where this assumption happens
     pub(crate) fn from_checked(inx: NonZeroUsize) -> P::Inx {
         <P::Inx as PtrInx>::try_from_usize(inx).expect(
             "`<P::Inx as PtrInx>::try_from_usize` failed on a value that has succeeded before",
+        )
+    }
+
+    pub(crate) fn into_checked(inx: P::Inx) -> NonZeroUsize {
+        <P::Inx as PtrInx>::try_into_usize(inx).expect(
+            "`<P::Inx as PtrInx>::try_into_usize` failed on a value that has succeeded before",
         )
     }
 

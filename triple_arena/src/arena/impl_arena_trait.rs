@@ -1,8 +1,11 @@
-use core::{num::NonZeroUsize, slice::GetDisjointMutError};
+use core::{mem, slice::GetDisjointMutError};
 
 use crate::{
     Arena, InvalidationResult,
-    arena::{ArenaBacking, InternalEntry::*},
+    arena::{
+        ArenaBacking,
+        InternalEntry::{self, *},
+    },
     traits::{ArenaTrait, Ptr},
     utils::{NonZeroInxGenericStack, PtrGen, PtrInx},
 };
@@ -46,6 +49,55 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
 
     fn set_generation(&mut self, new_gen: P::Gen) {
         self.generation = new_gen;
+    }
+
+    fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), T> {
+        let generation = self.generation;
+        if let Some(inx) = self.freelist_root {
+            let entry = self.m.get_mut(Self::into_checked(inx)).unwrap();
+            let InternalEntry::Free(next) = mem::replace(entry, Allocated(generation, t)) else {
+                unreachable!()
+            };
+            if next == inx {
+                // end of freelist
+                self.freelist_root = None;
+            } else {
+                // move to next node in the freelist
+                self.freelist_root = Some(next);
+            }
+            self.len = self.len.wrapping_add(1);
+            let InternalEntry::Allocated(_, t) = entry else {
+                unreachable!()
+            };
+            Ok((Ptr::_from_raw(inx, generation), t))
+        } else {
+            // see if capacity for entries remains
+            match self
+                .m
+                .push_within_capacity(InternalEntry::Allocated(self.generation, t))
+            {
+                Ok((inx, entry)) => {
+                    if let Some(inx) = P::Inx::try_from_usize(inx) {
+                        let InternalEntry::Allocated(_, t) = entry else {
+                            unreachable!()
+                        };
+                        return Ok((<P as Ptr>::_from_raw(inx, generation), t));
+                    } else {
+                        // undo
+                        let InternalEntry::Allocated(_, t) = self.m.pop().unwrap() else {
+                            unreachable!()
+                        };
+                        return Err(t);
+                    }
+                }
+                Err(entry) => {
+                    let InternalEntry::Allocated(_, t) = entry else {
+                        unreachable!()
+                    };
+                    Err(t)
+                }
+            }
+        }
     }
 
     fn get_inx(&self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &T)> {
@@ -115,6 +167,6 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     }
 
     fn clear(&mut self) {
-        todo!()
+        self.m.clear();
     }
 }
