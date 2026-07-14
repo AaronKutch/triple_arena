@@ -6,6 +6,7 @@
 
 ### Changes
 - Put all traits under modules
+- `PtrInx` is now supposed to be strict and check for overflow when casting to and from `NonZeroUsize`
 
 ## [0.14.0] - 2025-02-10
 ### Changes

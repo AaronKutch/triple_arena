@@ -27,6 +27,7 @@ trait Debug {}
 trait Display {}
 
 trait Recast {}
+// FIXME have the testcrate run with and without serde (but have it by default)
 trait Serialize {}
 trait Deserialize {}
 

@@ -182,8 +182,10 @@ pub struct Arena<
     pub(crate) len: usize,
     /// Points to the root of the chain of freelist nodes
     pub(crate) freelist_root: Option<P::Inx>,
-    generation: P::Gen,
+    pub(crate) generation: P::Gen,
 }
+
+// FIXME restrict visibility above to pub(in arena)
 
 /// # Note
 ///

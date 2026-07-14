@@ -1,12 +1,20 @@
+use core::{mem, slice::GetDisjointMutError};
+
 use crate::{Link, chain::LinkNoGen, traits::Ptr, utils::AllocError};
 
-pub enum InsertionFailure {
-    OutOfCapacity,
-    GenerationOverflow,
+pub enum InvalidationResult<P: Ptr> {
+    Success(P),
+    /// The operation was completed successfully, except that the Arena's
+    /// generation counter overflowed
+    GenerationOverflow(P),
+    /// The `Ptr` that invalidation was targeting was invalid, and nothing has
+    /// been mutated
+    InvalidPtr,
 }
 
-/// The base trait for `triple_arena` style Arenas.
-pub unsafe trait ArenaTrait<P: Ptr, T> {
+/// The base trait for `triple_arena` style Arenas. See [crate::Arena] for the
+/// standard implementor.
+pub trait ArenaTrait<P: Ptr, T> {
     /// Creates an empty arena, which may have any capacity to start with
     fn new() -> Self;
 
@@ -45,7 +53,7 @@ pub unsafe trait ArenaTrait<P: Ptr, T> {
     /// give back more than requested.
     fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), AllocError>;
 
-    /// The number of elements in the stack
+    /// Returns the number of elements in the arena
     fn len(&self) -> usize;
 
     /// If `self.len() == 0`
@@ -61,6 +69,11 @@ pub unsafe trait ArenaTrait<P: Ptr, T> {
     /// performed on this arena plus 2
     fn generation(&self) -> P::Gen;
 
+    /// Manually set the arena generation counter. This can break some soft
+    /// invariants such as ABA problem prevention and `P::invalid` always being
+    /// invalid with generation counters.
+    fn set_generation(&mut self, new_gen: P::Gen);
+
     //fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), T>;
     //fn insert_reallocating(&mut self, t: T) -> Result<(P, &mut T), T>;
     // Never panics on generation overflow
@@ -68,27 +81,82 @@ pub unsafe trait ArenaTrait<P: Ptr, T> {
     //fn insert_with // maybe?
 
     /// Returns if `p` is a valid `Ptr`
-    fn contains(&self, p: P) -> bool;
+    fn contains(&self, p: P) -> bool {
+        self.get(p).is_some()
+    }
 
-    /*
-    /// Gets a reference to an element without doing checks
-    ///
-    /// # Safety
-    ///
-    /// Must not be called with `inx.get() > self.len()`
-    unsafe fn get_unchecked(&self, inx: NonZeroUsize) -> &T;*/
+    /// Returns a reference to a `T` pointed to by `p`. Returns `None` if `p` is
+    /// invalid.
+    #[must_use]
+    fn get(&self, p: P) -> Option<&T> {
+        self.get_inx(p.inx())
+            .and_then(|(generation, t)| (generation == p.generation()).then_some(t))
+    }
 
-    /*
     /// Like [Arena::get], except generation counters are ignored and the
     /// existing generation is returned.
-    #[doc(hidden)]
-    fn get_no_gen(&self, p: P::Inx) -> Option<(P::Gen, &T)>*/
+    fn get_inx(&self, p: P::Inx) -> Option<(P::Gen, &T)>;
+
+    /// Returns a mutable reference to a `T` pointed to by `p`. Returns `None`
+    /// if `p` is invalid.
+    #[must_use]
+    fn get_mut(&mut self, p: P) -> Option<&mut T> {
+        self.get_inx_mut(p.inx())
+            .and_then(|(generation, t)| (generation == p.generation()).then_some(t))
+    }
+
+    // I'd rather just reuse `GetDisjointMutError`, there are necessarily so many
+    // specific cases from `P` overtruncation to unallocated vs out-of-bounds in the
+    // underlying stack anyways that wouldn't be general to split up, we would end
+    // up having a isomorphic enum with essentially the same useful semantics.
+
+    /// Returns mutable references to many elements at once, in order according
+    /// to the `indices` passed in. Returns an error if any `Ptr`s are invalid
+    /// or if any are repeated.
+    ///
+    /// This method does a `O(n^2)` check for overlapping indices, be careful
+    /// when passing in many indices. Any kind of invalid `Ptr` is reported
+    /// as `GetDisjointMutError::IndexOutOfBounds` and any repeated `Ptr`s are
+    /// reported as `GetDisjointMutError::OverlappingIndices`.
+    fn get_disjoint_mut<const N: usize>(
+        &mut self,
+        indices: [P; N],
+    ) -> Result<[&mut T; N], GetDisjointMutError> {
+        // check generations before `IndexOutOfBounds` could be returned, because it
+        // would be normal to have an invalidated `Ptr` collide with a newer `Ptr` by
+        // index, when the `Ptr`s were not actually equal
+        for p in indices {
+            if !self.contains(p) {
+                return Err(GetDisjointMutError::IndexOutOfBounds);
+            }
+        }
+        self.get_disjoint_inx_mut(indices.map(|p| p.inx()))
+            .map(|a| a.map(|(_, t)| t))
+    }
+
+    /// Like [Arena::get_mut], except generation counters are ignored and the
+    /// existing generation is returned.
+    fn get_inx_mut(&mut self, p: P::Inx) -> Option<(P::Gen, &mut T)> {
+        let [res] = self.get_disjoint_inx_mut([p]).ok()?;
+        Some(res)
+    }
+
+    /// Like [Arena::get_disjoint_mut], except generation counters are ignored
+    /// and the existing generations are returned with the mutable
+    /// references.
+    fn get_disjoint_inx_mut<const N: usize>(
+        &mut self,
+        indices: [P::Inx; N],
+    ) -> Result<[(P::Gen, &mut T); N], GetDisjointMutError>;
 
     /// Invalidates all references to the `T` pointed to by `p`, and returns a
     /// new valid reference. Does no invalidation and returns `None` if `p` is
     /// invalid.
     #[must_use]
-    fn invalidate(&mut self, p: P) -> Option<P>;
+    fn invalidate(&mut self, p: P) -> InvalidationResult<P>;
+
+    // this is simple but I want it to complement the existence of
+    // `replace_and_update_gen`
 
     /// Replaces the `T` pointed to by `p` with `new`, returns the old `T`, and
     /// keeps the internal generation counter as-is so that previously
@@ -97,7 +165,15 @@ pub unsafe trait ArenaTrait<P: Ptr, T> {
     /// # Errors
     ///
     /// Returns ownership of `new` instead if `p` is invalid
-    fn replace_and_keep_gen(&mut self, p: P, new: T) -> Result<T, T>;
+    fn replace_and_keep_gen(&mut self, p: P, new: T) -> Result<T, T> {
+        match self.get_mut(p) {
+            Some(old) => Ok(mem::replace(old, new)),
+            None => Err(new),
+        }
+    }
+
+    /* FIXME
+    // use (T, P) instead of (P, T) here because they are unrelated
 
     /// Replaces the `T` pointed to by `p` with `new`, returns a tuple of the
     /// old `T` and new `Ptr`, and updates the internal generation counter so
@@ -106,13 +182,25 @@ pub unsafe trait ArenaTrait<P: Ptr, T> {
     /// # Errors
     ///
     /// Does no invalidation and returns ownership of `new` if `p` is invalid
-    fn replace_and_update_gen(&mut self, p: P, new: T) -> Result<(T, P), T>;
+    fn replace_and_update_gen(&mut self, p: P, new: T) -> Result<(T, InvalidationResult<P>), T> {
+        match self.invalidate(p) {
+            InvalidationResult::Success(p) => {
+                self.replace_and_keep_gen(p, new).map(|t| (t, p))
+            },
+            InvalidationResult::GenerationOverflow(_) => todo!(),
+            InvalidationResult::InvalidPtr => todo!(),
+        }
+    }*/
 
     /// Swaps the `T` at indexes `p0` and `p1` and keeps the generation counters
     /// as-is. If `p0 == p1` then nothing occurs. Returns `None` if `p0` or `p1`
     /// are invalid.
     #[must_use]
-    fn swap(&mut self, p0: P, p1: P) -> Option<()>;
+    fn swap(&mut self, p0: P, p1: P) -> Option<()> {
+        let [t0, t1] = self.get_disjoint_mut([p0, p1]).ok()?;
+        mem::swap(t0, t1);
+        Some(())
+    }
 
     /// Removes the `T` pointed to by `p`, returns the `T`, and invalidates old
     /// `Ptr`s to the `T`. Does no invalidation and returns `None` if `p` is
@@ -129,14 +217,14 @@ pub unsafe trait ArenaTrait<P: Ptr, T> {
 
 /// This inherits all the methods of [ArenaTrait] but adds on some [Link]-aware
 /// ones
-pub unsafe trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
+pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     fn get_link(&self, p: P) -> Option<&Link<P, T>>;
 }
 
 // this will end up being entirely separate, will eventually want advanced
 // allocation control on key and value arenas
 
-pub unsafe trait OrdArenaTrait<P: Ptr, K, V> {
+pub trait OrdArenaTrait<P: Ptr, K, V> {
     //fn insert_nonhereditary_linear(&mut self, p_init: P, num: usize, k: K, v: V)
     // -> P {
 
@@ -152,6 +240,6 @@ pub unsafe trait OrdArenaTrait<P: Ptr, K, V> {
 }
 
 // this just needs to be entirely separate
-pub unsafe trait SurjectArenaTrait<P: Ptr, T> {
+pub trait SurjectArenaTrait<P: Ptr, T> {
     fn len_keys(&self) -> usize;
 }

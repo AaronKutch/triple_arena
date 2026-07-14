@@ -1,10 +1,25 @@
-use std::num::NonZeroU8;
+use std::num::{NonZeroU8, NonZeroU128};
 
-use triple_arena::{Arena, ptr_struct, traits::*};
+use triple_arena::{Arena, ptr_struct, traits::*, utils::PtrInx};
 
 ptr_struct!(P0[NonZeroU8]);
 ptr_struct!(P1(NonZeroU8));
 ptr_struct!(P2[NonZeroU8]());
+
+ptr_struct!(PLargeInx[NonZeroU128]());
+
+// The `PtrInx` trait could use truncation, and if only `Ptr`s constructed by
+// the arena were used it could never lead to observable different index
+// collisions. However, I'd rather not let this potentiality exist and just make
+// it checked (and it will be a zero cost operation with the default
+// `NonZeroUsize` index).
+#[test]
+fn ptr_inx_no_truncate() {
+    let mut a = Arena::<PLargeInx, ()>::new();
+    a.insert(());
+    let p = Ptr::_from_raw(NonZeroU128::new(7 << 64).unwrap(), ());
+    assert!(a.get(p).is_none());
+}
 
 // note: we have two tests, because we need to make sure both that there is not
 // a premature panic and that there is a panic when is should happen

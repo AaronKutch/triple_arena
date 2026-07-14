@@ -21,6 +21,7 @@ mod surject;
 // reexport for the macros to use
 pub use arena::{Arena, arena_iterators};
 pub use chain::{ChainArena, Link, chain_iterators};
+pub use fundamental::InvalidationResult;
 // always keep this for the serde documentation
 #[cfg(feature = "serde_support")]
 pub use fundamental::serde_docs;

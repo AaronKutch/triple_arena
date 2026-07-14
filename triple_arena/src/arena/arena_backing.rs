@@ -13,7 +13,8 @@ pub unsafe trait ArenaBacking {
     type Stack<U>: NonZeroInxGenericStack<U>;
 }
 
-/// The default heap backing for arenas
+/// The default heap backing for arenas. When creating new arenas, this will not
+/// allocate until the first insertion or reallocation.
 #[cfg(feature = "alloc")]
 pub struct HeapBacking;
 
