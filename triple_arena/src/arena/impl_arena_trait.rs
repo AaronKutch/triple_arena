@@ -45,7 +45,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     }
 
     fn get_inx(&self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &T)> {
-        let Allocated(generation, t) = self.m.get(PtrInx::get(p))? else {
+        let Allocated(generation, t) = self.m.get(PtrInx::try_into_usize(p)?)? else {
             return None;
         };
         Some((*generation, t))
@@ -55,7 +55,14 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         &mut self,
         indices: [<P as Ptr>::Inx; N],
     ) -> Result<[(<P as Ptr>::Gen, &mut T); N], GetDisjointMutError> {
-        match self.m.get_disjoint_mut(indices.map(PtrInx::get)) {
+        // check for PtrInx truncation, this is a no-op in the default case
+        for inx in indices {
+            if PtrInx::try_into_usize(inx).is_none() {
+                return Err(GetDisjointMutError::IndexOutOfBounds);
+            }
+        }
+        let indices = indices.map(|inx| PtrInx::try_into_usize(inx).unwrap());
+        match self.m.get_disjoint_mut(indices) {
             Ok(a) => {
                 for entry in &a {
                     if matches!(entry, Free(_)) {
@@ -79,7 +86,10 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     }
 
     fn invalidate(&mut self, p: P) -> InvalidationResult<P> {
-        let Some(Allocated(generation, _)) = self.m.get_mut(PtrInx::get(p.inx())) else {
+        let Some(inx) = PtrInx::try_into_usize(p.inx()) else {
+            return InvalidationResult::InvalidPtr;
+        };
+        let Some(Allocated(generation, _)) = self.m.get_mut(inx) else {
             return InvalidationResult::InvalidPtr;
         };
         if *generation != p.generation() {

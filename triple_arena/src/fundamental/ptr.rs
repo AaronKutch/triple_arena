@@ -12,12 +12,10 @@ use core::{
 
 use recasting::{Recast, Recaster};
 
-/// The trait for Arena Pointer generation types.
-///
-/// Users should never have to implement this, it is implemented only for the
-/// `NonZeroU...` types and for `()`.
-#[allow(clippy::missing_safety_doc)]
-pub unsafe trait PtrGen:
+/// The trait for Arena Pointer generation types. Users should never have to
+/// implement this for simple arenas, it is implemented for the `NonZeroU...`
+/// types and for `()`.
+pub trait PtrGen:
     Debug
     + Hash
     + Clone
@@ -56,7 +54,7 @@ pub unsafe trait PtrGen:
 macro_rules! impl_gen {
     ($($x: ident)*) => {
         $(
-            unsafe impl PtrGen for $x {
+            impl PtrGen for $x {
                 #[inline]
                 fn one() -> Self {
                     Self::new(1).unwrap()
@@ -81,7 +79,7 @@ macro_rules! impl_gen {
 
 impl_gen!(NonZeroU8 NonZeroU16 NonZeroU32 NonZeroU64 NonZeroU128);
 
-unsafe impl PtrGen for () {
+impl PtrGen for () {
     #[inline]
     fn one() -> Self {}
 
@@ -94,12 +92,10 @@ unsafe impl PtrGen for () {
     }
 }
 
-/// The trait for Arena index types.
-///
-/// Users should never have to implement this, it is implemented only for Rust's
-/// unsigned integers.
+/// The trait for Arena index types. Users should never have to implement this
+/// for simple arenas, it is implemented for the primitive unsigned integers.
 #[allow(clippy::missing_safety_doc)]
-pub unsafe trait PtrInx:
+pub trait PtrInx:
     Debug
     + Hash
     + Clone
@@ -115,35 +111,44 @@ pub unsafe trait PtrInx:
     + UnwindSafe
     + Recast<Self>
 {
-    /// Note: this should be truncating or zero extending cast, higher level
-    /// functions should handle fallible cases
-    fn new(inx: NonZeroUsize) -> Self;
-    /// Note: this should be truncating or zero extending cast, higher level
-    /// functions should handle fallible cases
-    fn get(this: Self) -> NonZeroUsize;
-    /// The maximum representable value, which should be truncated down to
-    /// `usize::MAX` if necessary
-    fn max() -> NonZeroUsize;
+    /// This is used by "simple" arenas that expect a simple integer index that
+    /// can be cast to and from `NonZeroUsize` losslessly. `NonZeroUsize` is
+    /// used because any in-memory arena cannot ever take advantage of more
+    /// elements using a larger type. If `inx` would be truncated when casting
+    /// from `NonZeroUsize`, this must return `None` (this would only normally
+    /// happen from a manually constructed `Ptr`, but we prefer to be strict,
+    /// and it optimizes to nothing with the default). If this is not a simple
+    /// `PtrInx` (such as one intended for a complex arena that takes the index
+    /// modulo something and dispatches to different substructures), then it
+    /// should always return `None`, so that any of the simple arenas will
+    /// report the inability to allocate if given a `Ptr` with a complex index.
+    fn try_from_usize(inx: NonZeroUsize) -> Option<Self>;
+    /// See [PtrInx::try_from_usize], this is the same except for converting to
+    /// `NonZeroUsize`
+    fn try_into_usize(this: Self) -> Option<NonZeroUsize>;
+    /// Returns the invalid index most likely to be unvalid if given to an
+    /// arena, which is usually the max value
+    fn best_effort_invalid() -> Self;
 }
 
 macro_rules! impl_ptr_inx {
     ($($nz:ident $x:ident);*;) => {
         $(
-            unsafe impl PtrInx for $nz {
+            impl PtrInx for $nz {
                 #[inline]
-                fn new(inx: NonZeroUsize) -> Self {
-                    // will optimize away
-                    $nz::new(inx.get() as $x).unwrap()
+                fn try_from_usize(inx: NonZeroUsize) -> Option<Self> {
+                    // the zero check will optimize away, and the `try_into` will optimize away in the standard case
+                    $nz::new(inx.get().try_into().ok()?)
                 }
 
                 #[inline]
-                fn get(this: Self) -> NonZeroUsize {
-                    NonZeroUsize::new(this.get() as usize).unwrap()
+                fn try_into_usize(this: Self) -> Option<NonZeroUsize> {
+                    // the zero check will optimize away
+                    NonZeroUsize::new(this.get().try_into().ok()?)
                 }
 
-                #[inline]
-                fn max() -> NonZeroUsize {
-                    NonZeroUsize::new($x::MAX as usize).unwrap()
+                fn best_effort_invalid() -> Self {
+                    $nz::MAX
                 }
             }
         )*
@@ -202,9 +207,9 @@ pub unsafe trait Ptr:
     /// Returns a new `Ptr` with a generation value `PtrGen::one()`. Because the
     /// arena starts with generation 2 and skips generation 1 on overflow, this
     /// is guaranteed invalid if generation counters are used. The raw index
-    /// is also set to `Inx::max()` which should also cause failures with
-    /// the generationless case, but be aware this can be reached
-    /// practically with small `Inx` types.
+    /// is also set to `Inx::best_effort_invalid()` which should also cause
+    /// failures with the generationless case, but be aware this can be
+    /// reached practically with small `Inx` types.
     fn invalid() -> Self;
 
     /// Returns a raw `Inx`. This can be useful when getting a unique id for
@@ -294,9 +299,7 @@ macro_rules! ptr_struct {
                 #[inline]
                 fn invalid() -> Self {
                     Self {
-                        _internal_inx: $crate::utils::PtrInx::new(
-                            <Self::Inx as $crate::utils::PtrInx>::max()
-                        ),
+                        _internal_inx: $crate::utils::PtrInx::best_effort_invalid(),
                         _internal_gen: $crate::utils::PtrGen::one()
                     }
                 }
@@ -386,9 +389,7 @@ macro_rules! ptr_struct {
                 #[inline]
                 fn invalid() -> Self {
                     Self {
-                        _internal_inx: $crate::utils::PtrInx::new(
-                            <Self::Inx as $crate::utils::PtrInx>::max()
-                        ),
+                        _internal_inx: $crate::utils::PtrInx::best_effort_invalid(),
                         _internal_gen: $crate::utils::PtrGen::one()
                     }
                 }
@@ -510,9 +511,7 @@ unsafe impl<P: Ptr> Ptr for PtrNoGen<P> {
     #[inline]
     fn invalid() -> Self {
         Self {
-            _internal_inx: PtrInx::new(
-                core::num::NonZeroUsize::new(core::primitive::usize::MAX).unwrap(),
-            ),
+            _internal_inx: PtrInx::best_effort_invalid(),
             _internal_gen: PtrGen::one(),
         }
     }

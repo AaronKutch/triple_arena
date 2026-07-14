@@ -9,35 +9,38 @@ use triple_arena::{
 
 #[test]
 fn ptrs() {
-    let x: NonZeroUsize = <NonZeroUsize as PtrInx>::max();
+    let x: NonZeroUsize = <NonZeroUsize as PtrInx>::best_effort_invalid();
     assert_eq!(x.get(), usize::MAX);
-    let x: NonZeroUsize = <NonZeroU8 as PtrInx>::max();
-    assert_eq!(x.get(), u8::MAX as usize);
-    let x: NonZeroUsize = <NonZeroU16 as PtrInx>::max();
-    assert_eq!(x.get(), u16::MAX as usize);
-    let x: NonZeroUsize = <NonZeroU32 as PtrInx>::max();
-    assert_eq!(x.get(), u32::MAX as usize);
-    let x: NonZeroUsize = <NonZeroU64 as PtrInx>::max();
-    assert_eq!(x.get(), u64::MAX as usize);
-    let x: NonZeroUsize = <NonZeroU128 as PtrInx>::max();
-    assert_eq!(x.get(), u128::MAX as usize);
+    let x: NonZeroU8 = <NonZeroU8 as PtrInx>::best_effort_invalid();
+    assert_eq!(x.get(), u8::MAX);
+    let x: NonZeroU16 = <NonZeroU16 as PtrInx>::best_effort_invalid();
+    assert_eq!(x.get(), u16::MAX);
+    let x: NonZeroU32 = <NonZeroU32 as PtrInx>::best_effort_invalid();
+    assert_eq!(x.get(), u32::MAX);
+    let x: NonZeroU64 = <NonZeroU64 as PtrInx>::best_effort_invalid();
+    assert_eq!(x.get(), u64::MAX);
+    let x: NonZeroU128 = <NonZeroU128 as PtrInx>::best_effort_invalid();
+    assert_eq!(x.get(), u128::MAX);
 
     let max = NonZeroUsize::new(usize::MAX).unwrap();
-    let x: NonZeroUsize = PtrInx::new(max);
+    let x: NonZeroUsize = PtrInx::try_from_usize(max).unwrap();
     assert_eq!(x.get(), usize::MAX);
-    assert_eq!(PtrInx::get(x).get(), usize::MAX);
-    let x: NonZeroU8 = PtrInx::new(max);
-    assert_eq!(PtrInx::get(x).get(), u8::MAX as usize);
-    assert_eq!(x.get(), usize::MAX as u8);
-    let x: NonZeroU16 = PtrInx::new(max);
-    assert_eq!(x.get(), usize::MAX as u16);
-    let x: NonZeroU32 = PtrInx::new(max);
-    assert_eq!(x.get(), usize::MAX as u32);
-    let x: NonZeroU64 = PtrInx::new(max);
-    assert_eq!(x.get(), usize::MAX as u64);
-    let x: NonZeroU128 = PtrInx::new(max);
-    assert_eq!(x.get(), usize::MAX as u128);
-    assert_eq!(PtrInx::get(x).get(), usize::MAX);
+    assert_eq!(PtrInx::try_into_usize(x).unwrap().get(), usize::MAX);
+    assert!(
+        <NonZeroU8 as PtrInx>::try_from_usize(NonZeroUsize::new(1usize << 8).unwrap()).is_none()
+    );
+
+    let x: NonZeroU128 =
+        <NonZeroU128 as PtrInx>::try_from_usize(NonZeroUsize::new(usize::MAX).unwrap()).unwrap();
+    assert_eq!(
+        <NonZeroU128 as PtrInx>::try_into_usize(x).unwrap().get(),
+        usize::MAX
+    );
+    #[cfg(target_pointer_width = "64")]
+    assert!(
+        <NonZeroU128 as PtrInx>::try_into_usize(NonZeroU128::new(usize::MAX as u128 + 1).unwrap())
+            .is_none()
+    );
 }
 
 #[test]

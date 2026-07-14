@@ -122,10 +122,15 @@ impl<P: Ptr, K: Serialize, V: Serialize, B: ArenaBacking> Serialize for OrdArena
         let mut s = serializer.serialize_map(Some(self.len()))?;
         let mut last = None;
         for (p, k, v) in self {
+            // FIXME
             let err = if let Some(last) = last {
-                PtrInx::get(last).get().saturating_add(1) != PtrInx::get(p.inx()).get()
+                PtrInx::try_into_usize(last)
+                    .unwrap()
+                    .get()
+                    .saturating_add(1)
+                    != PtrInx::try_into_usize(p.inx()).unwrap().get()
             } else {
-                PtrInx::get(p.inx()).get() != 1
+                PtrInx::try_into_usize(p.inx()).unwrap().get() != 1
             };
             if err {
                 return Err(serde::ser::Error::custom(
@@ -162,13 +167,15 @@ where
         }
 
         while let Some((p, t)) = access.next_entry::<P::Inx, T>()? {
-            let i = PtrInx::get(p).get();
+            let i = PtrInx::try_into_usize(p).unwrap().get();
             if i > a.capacity() {
                 for _ in 0..(i.wrapping_sub(a.capacity())) {
                     // the freelist is fixed later
-                    a.m.push_reallocating(InternalEntry::Free(PtrInx::new(
-                        NonZeroUsize::new(1).unwrap(),
-                    )))
+
+                    // FIXME
+                    a.m.push_reallocating(InternalEntry::Free(
+                        PtrInx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap(),
+                    ))
                     .map_err(|_| {
                         Error::custom(
                             "when deserializing a `triple_arena` arena, ran into allocation error",
@@ -195,19 +202,22 @@ where
         // fix the freelist
         let mut last_free = None;
         for i in a.nziter() {
-            if let InternalEntry::Free(p) = a.m_get_mut(PtrInx::new(i)).unwrap() {
+            // FIXME
+            if let InternalEntry::Free(p) = a.m_get_mut(PtrInx::try_from_usize(i).unwrap()).unwrap()
+            {
                 if let Some(ref mut last_free) = last_free {
-                    *p = PtrInx::new(*last_free);
+                    *p = PtrInx::try_from_usize(*last_free).unwrap();
                     *last_free = i;
                 } else {
                     // points to itself
-                    *p = PtrInx::new(i);
+                    *p = PtrInx::try_from_usize(i).unwrap();
                     last_free = Some(i);
                 }
             }
         }
         if let Some(last_free) = last_free {
-            a.freelist_root = Some(PtrInx::new(last_free));
+            // FIXME
+            a.freelist_root = Some(PtrInx::try_from_usize(last_free).unwrap());
         } else {
             a.freelist_root = None;
         }
@@ -364,7 +374,8 @@ where
         let mut i = 1usize;
         let mut last = None;
         while let Some((k, v)) = access.next_entry::<K, V>()? {
-            let p = PtrInx::new(NonZeroUsize::new(i).unwrap());
+            // FIXME
+            let p = PtrInx::try_from_usize(NonZeroUsize::new(i).unwrap()).unwrap();
             if let Some(last) = last {
                 a.get_inx_mut_unwrap(last).prev_next.1 = Some(p);
             }

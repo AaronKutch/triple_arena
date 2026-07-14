@@ -156,10 +156,12 @@ pub struct OrdArena<
 
 impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     pub fn new() -> Self {
+        // FIXME just panic on `try_from_usize` failure with right message, do that
+        // everywhere since the arena would be completely broken anyways
         Self {
-            root: P::Inx::new(NonZeroUsize::new(1).unwrap()),
-            first: P::Inx::new(NonZeroUsize::new(1).unwrap()),
-            last: P::Inx::new(NonZeroUsize::new(1).unwrap()),
+            root: P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap(),
+            first: P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap(),
+            last: P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap(),
             a: ChainNoGenArena::new(),
         }
     }
@@ -403,9 +405,9 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// compressed, and all `p_tree0`s and `p_tree1`s are preset to `None`.
     pub(crate) fn raw_rebalance_assuming_compressed(&mut self) {
         // redo the tree structure for better balance
-        let p_first = P::Inx::new(NonZeroUsize::new(1).unwrap());
+        let p_first = P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap();
         self.first = p_first;
-        self.last = P::Inx::new(NonZeroUsize::new(self.a.len()).unwrap());
+        self.last = P::Inx::try_from_usize(NonZeroUsize::new(self.a.len()).unwrap()).unwrap();
         let root_rank = (self
             .a
             .len()
@@ -416,7 +418,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         let mut i = NonZeroUsize::new(self.a.len()).unwrap();
         loop {
             let mut lvl = root_rank;
-            let p = P::Inx::new(i);
+            let p = P::Inx::try_from_usize(i).unwrap();
             let mut subtree_first = 1;
             let mut subtree_last = self.a.len();
             let mut last_subtree_mid = None;
@@ -437,10 +439,12 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                         node.rank = lvl;
                     }
                     if let Some(last_subtree_mid) = last_subtree_mid {
-                        let p_back = P::Inx::new(NonZeroUsize::new(last_subtree_mid).unwrap());
+                        let p_back =
+                            P::Inx::try_from_usize(NonZeroUsize::new(last_subtree_mid).unwrap())
+                                .unwrap();
                         node.p_back = Some(p_back);
                         let node = self.a.get_inx_mut_unwrap_t(p_back);
-                        if i < P::Inx::get(p_back) {
+                        if i < P::Inx::try_into_usize(p_back).unwrap() {
                             node.p_tree0 = Some(p);
                         } else {
                             node.p_tree1 = Some(p);

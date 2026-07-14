@@ -241,7 +241,8 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         if let Some(root) = this.freelist_root {
             let mut tmp_inx = root;
             for i in 0.. {
-                let entry = this.m.get(P::Inx::get(tmp_inx)).unwrap();
+                let p = P::Inx::try_into_usize(tmp_inx).unwrap();
+                let entry = this.m.get(p).unwrap();
                 if let Free(inx) = entry {
                     freelist_len = freelist_len.checked_add(1).unwrap();
                     if *inx == tmp_inx {
@@ -336,7 +337,9 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         let target = old_virt_cap
             .checked_add(additional)
             .expect(" wanted arena capacity exceeds `P::Inx::MAX`");
-        if target > <P::Inx as PtrInx>::max().get() {
+        if let Some(target) = NonZeroUsize::new(target)
+            && <P::Inx as PtrInx>::try_from_usize(target).is_none()
+        {
             panic!("wanted arena capacity exceeds `P::Inx::MAX`");
         }
         // then determine if we need to reserve any real capacity
@@ -395,13 +398,13 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     #[must_use]
     #[inline]
     pub(crate) fn m_get(&self, inx: P::Inx) -> Option<&InternalEntry<P, T>> {
-        self.m.get(P::Inx::get(inx))
+        self.m.get(P::Inx::try_into_usize(inx)?)
     }
 
     #[must_use]
     #[inline]
     pub(crate) fn m_get_mut(&mut self, inx: P::Inx) -> Option<&mut InternalEntry<P, T>> {
-        self.m.get_mut(P::Inx::get(inx))
+        self.m.get_mut(P::Inx::try_into_usize(inx)?)
     }
 
     /// Panics if index `inx` does not point to a `Free` entry.
@@ -468,11 +471,9 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                     // need at least one
                     additional = 1;
                 }
+                // FIXME
                 // make sure to not make `reserve` panic
-                let new_len = self
-                    .len()
-                    .saturating_add(additional)
-                    .clamp(0, <P::Inx as PtrInx>::max().get());
+                let new_len = self.len().saturating_add(additional);
                 additional = new_len.wrapping_sub(self.len());
                 self.reserve(additional);
                 // can't unwrap unless T: Debug
@@ -555,10 +556,10 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     /// or a pointer is invalid, `None` is returned.
     #[must_use]
     pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<(&mut T, &mut T)> {
-        if let Ok([n0, n1]) = self
-            .m
-            .get_disjoint_mut([P::Inx::get(p0.inx()), P::Inx::get(p1.inx())])
-        {
+        if let Ok([n0, n1]) = self.m.get_disjoint_mut([
+            P::Inx::try_into_usize(p0.inx())?,
+            P::Inx::try_into_usize(p1.inx())?,
+        ]) {
             if let (Allocated(gen0, t0), Allocated(gen1, t1)) = (n0, n1) {
                 if (*gen0 == p0.generation()) && (*gen1 == p1.generation()) {
                     Some((t0, t1))
@@ -653,7 +654,8 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     pub fn remove_by<F: FnMut(P, &mut T) -> bool>(&mut self, mut pred: F) {
         for inx in self.nziter() {
             let entry = self.m.get_mut(inx).unwrap();
-            let inx = P::Inx::new(inx);
+            // FIXME
+            let inx = P::Inx::try_from_usize(inx).unwrap();
             if let Allocated(generation, t) = entry {
                 if pred(P::_from_raw(inx, *generation), t) {
                     self.len = self.len.wrapping_sub(1);
@@ -757,10 +759,10 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             } else {
                 None
             }
-        } else if let Ok([n0, n1]) = self
-            .m
-            .get_disjoint_mut([P::Inx::get(p0.inx()), P::Inx::get(p1.inx())])
-        {
+        } else if let Ok([n0, n1]) = self.m.get_disjoint_mut([
+            P::Inx::try_into_usize(p0.inx())?,
+            P::Inx::try_into_usize(p1.inx())?,
+        ]) {
             if let (Allocated(gen0, t0), Allocated(gen1, t1)) = (n0, n1) {
                 if (*gen0 == p0.generation()) && (*gen1 == p1.generation()) {
                     mem::swap(t0, t1);
@@ -784,7 +786,8 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             // Safety: `isize::MAX` guarantee
             unsafe {
                 let next = ptrinx_unchecked(i.get().wrapping_add(1));
-                *self.m_get_mut(P::Inx::new(i)).unwrap() = Free(next);
+                // FIXME
+                *self.m_get_mut(P::Inx::try_from_usize(i).unwrap()).unwrap() = Free(next);
             }
         }
         if !self.m.is_empty() {
@@ -792,7 +795,8 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             // Safety: `isize::MAX` guarantee, and `!self.m.is_empty()`
             unsafe {
                 let last = NonZeroUsize::new_unchecked(self.m.len());
-                *self.m.get_mut(last).unwrap() = Free(P::Inx::new(last));
+                // FIXME
+                *self.m.get_mut(last).unwrap() = Free(P::Inx::try_from_usize(last).unwrap());
                 self.freelist_root = Some(ptrinx_unchecked(1));
             }
         } else {
@@ -840,15 +844,19 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         let _ = new_m.reallocate_min_capacity(self.len());
         let mut j = 1;
         for i in self.nziter() {
+            // FIXME bad `try_from_usize` usage
             let entry = mem::replace(
                 self.m.get_mut(i).unwrap(),
-                Free(PtrInx::new(NonZeroUsize::new(1).unwrap())),
+                Free(P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap()),
             );
             if let Allocated(old_gen, mut t) = entry {
                 map(
-                    Ptr::_from_raw(PtrInx::new(i), old_gen),
+                    Ptr::_from_raw(P::Inx::try_from_usize(i).unwrap(), old_gen),
                     &mut t,
-                    Ptr::_from_raw(PtrInx::new(NonZeroUsize::new(j).unwrap()), generation),
+                    Ptr::_from_raw(
+                        P::Inx::try_from_usize(NonZeroUsize::new(j).unwrap()).unwrap(),
+                        generation,
+                    ),
                 );
                 new_m
                     .push_within_capacity(Allocated(generation, t))
@@ -893,7 +901,11 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                 // map `source` allocated
                 Allocated(generation, u) => Allocated(
                     *generation,
-                    map(P::_from_raw(P::Inx::new(i), *generation), u),
+                    // FIXME bad `try_from_usize` usage
+                    map(
+                        P::_from_raw(P::Inx::try_from_usize(i).unwrap(), *generation),
+                        u,
+                    ),
                 ),
             };
             self.m.push_within_capacity(new).ok().unwrap();

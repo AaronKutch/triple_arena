@@ -33,7 +33,7 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer for PtrAdvancer<P, T, B> {
                 self.inx = NonZeroUsize::new_unchecked(old_inx.get().wrapping_add(1));
             }
             if let Allocated(g, _) = allocation {
-                return Some(P::_from_raw(P::Inx::new(old_inx), *g));
+                return Some(P::_from_raw(P::Inx::try_from_usize(old_inx)?, *g));
             }
         }
     }

@@ -2,13 +2,15 @@ use core::{error::Error, fmt, num::NonZeroUsize};
 
 use crate::utils::PtrInx;
 
+// FIXME remove
+
 /// Shorthand for `PtrInx::new(NonZeroUsize::new_unchecked(x))`.
 ///
 /// # Safety
 ///
 /// `x` must not be 0 and must be within the `PtrInx` limits
 pub unsafe fn ptrinx_unchecked<P: PtrInx>(x: usize) -> P {
-    PtrInx::new(unsafe { NonZeroUsize::new_unchecked(x) })
+    PtrInx::try_from_usize(NonZeroUsize::new(x).unwrap()).unwrap()
 }
 
 // TODO
