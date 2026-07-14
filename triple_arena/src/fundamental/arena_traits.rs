@@ -2,11 +2,11 @@ use core::{mem, slice::GetDisjointMutError};
 
 use crate::{Link, chain::LinkNoGen, traits::Ptr, utils::AllocError};
 
-pub enum InvalidationResult<P: Ptr> {
-    Success(P),
+pub enum InvalidationResult<T> {
+    Success(T),
     /// The operation was completed successfully, except that the Arena's
     /// generation counter overflowed
-    GenerationOverflow(P),
+    GenerationOverflow(T),
     /// The `Ptr` that invalidation was targeting was invalid, and nothing has
     /// been mutated
     InvalidPtr,
@@ -74,8 +74,13 @@ pub trait ArenaTrait<P: Ptr, T> {
     /// invalid with generation counters.
     fn set_generation(&mut self, new_gen: P::Gen);
 
+    /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
+    /// it. Returns the `t` if there was no available capacity.
     fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), T>;
-    //fn insert_reallocating(&mut self, t: T) -> Result<(P, &mut T), T>;
+
+    fn insert_reallocating(&mut self, t: T) -> Result<(P, &mut T), T> {
+        todo!()
+    }
     // Never panics on generation overflow
     //fn insert
     //fn insert_with // maybe?
@@ -206,7 +211,7 @@ pub trait ArenaTrait<P: Ptr, T> {
     /// `Ptr`s to the `T`. Does no invalidation and returns `None` if `p` is
     /// invalid.
     #[must_use]
-    fn remove(&mut self, p: P) -> Option<T>;
+    fn remove(&mut self, p: P) -> InvalidationResult<T>;
 
     /// Drops all `T` from the arena and invalidates all pointers previously
     /// created from it. This has no effect on allocated capacity.

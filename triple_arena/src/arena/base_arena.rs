@@ -7,6 +7,7 @@ use core::{
 };
 
 use crate::{
+    InvalidationResult,
     arena::ArenaBacking,
     traits::{Advancer, Ptr},
     utils::{NonZeroInxGenericStack, PtrGen, PtrInx, ptrinx_unchecked},
@@ -315,7 +316,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
 
     /// `remove` but with optional generation counter increment
     #[must_use]
-    pub(crate) fn remove_internal(&mut self, p: P, inc_gen: bool) -> Option<T> {
+    pub(crate) fn remove_internal(&mut self, p: P, inc_gen: bool) -> InvalidationResult<T> {
         let freelist_ptr = if let Some(free) = self.freelist_root {
             // points to previous root
             free
@@ -323,14 +324,17 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             // points to itself
             p.inx()
         };
-        let allocation = self.m.get_mut(P::Inx::try_into_usize(p.inx())?)?;
+        let allocation = self
+            .m
+            .get_mut(P::Inx::try_into_usize(p.inx()).ok_or(InvalidationResult::InvalidPtr)?)
+            .ok_or(InvalidationResult::InvalidPtr)?;
         match allocation {
             // invalid by being already free
-            Free(_) => None,
+            Free(_) => InvalidationResult::InvalidPtr,
             Allocated(generation, _) => {
                 if *generation != p.generation() {
                     // invalid by generation
-                    None
+                    InvalidationResult::InvalidPtr
                 } else {
                     // in both cases the new root is the entry we just removed
                     self.freelist_root = Some(p.inx());
@@ -339,9 +343,14 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                         unreachable!()
                     };
                     if inc_gen {
-                        self.inc_gen();
+                        if PtrGen::generational_inc(self.generation).1 {
+                            InvalidationResult::GenerationOverflow(old_t)
+                        } else {
+                            InvalidationResult::Success(old_t)
+                        }
+                    } else {
+                        InvalidationResult::Success(old_t)
                     }
-                    Some(old_t)
                 }
             }
         }
@@ -659,6 +668,40 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
+    /// `remove` but with optional generation counter increment
+    #[must_use]
+    pub(crate) fn remove_internal_old(&mut self, p: P, inc_gen: bool) -> Option<T> {
+        let freelist_ptr = if let Some(free) = self.freelist_root {
+            // points to previous root
+            free
+        } else {
+            // points to itself
+            p.inx()
+        };
+        let allocation = self.m.get_mut(P::Inx::try_into_usize(p.inx())?)?;
+        match allocation {
+            // invalid by being already free
+            Free(_) => None,
+            Allocated(generation, _) => {
+                if *generation != p.generation() {
+                    // invalid by generation
+                    None
+                } else {
+                    // in both cases the new root is the entry we just removed
+                    self.freelist_root = Some(p.inx());
+                    self.len = self.len.wrapping_sub(1);
+                    let Allocated(_, old_t) = mem::replace(allocation, Free(freelist_ptr)) else {
+                        unreachable!()
+                    };
+                    if inc_gen {
+                        self.inc_gen();
+                    }
+                    Some(old_t)
+                }
+            }
+        }
+    }
+
     /// Same as [Arena::remove_internal] but using an `P::Inx` and panicking if
     /// `p` is invalid
     pub(crate) fn remove_internal_inx_unwrap(&mut self, p: P::Inx, inc_gen: bool) -> T {
@@ -692,7 +735,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     /// invalid.
     #[must_use]
     pub fn remove(&mut self, p: P) -> Option<T> {
-        self.remove_internal(p, true)
+        self.remove_internal_old(p, true)
     }
 
     // FIXME delete this, just have a good entry advancer

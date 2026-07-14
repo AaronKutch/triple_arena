@@ -71,23 +71,25 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
             };
             Ok((Ptr::_from_raw(inx, generation), t))
         } else {
-            // see if capacity for entries remains
+            // see if capacity for entries remains, freelist remains unset if we push just
+            // one thing
             match self
                 .m
                 .push_within_capacity(InternalEntry::Allocated(self.generation, t))
             {
-                Ok((inx, entry)) => {
-                    if let Some(inx) = P::Inx::try_from_usize(inx) {
-                        let InternalEntry::Allocated(_, t) = entry else {
+                // TODO Polonius cleans this up
+                Ok((raw_inx, _)) => {
+                    if let Some(inx) = P::Inx::try_from_usize(raw_inx) {
+                        let Some(InternalEntry::Allocated(_, t)) = self.m.get_mut(raw_inx) else {
                             unreachable!()
                         };
-                        return Ok((<P as Ptr>::_from_raw(inx, generation), t));
+                        Ok((<P as Ptr>::_from_raw(inx, generation), t))
                     } else {
                         // undo
                         let InternalEntry::Allocated(_, t) = self.m.pop().unwrap() else {
                             unreachable!()
                         };
-                        return Err(t);
+                        Err(t)
                     }
                 }
                 Err(entry) => {
@@ -163,7 +165,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     }
 
     fn remove(&mut self, p: P) -> Option<T> {
-        self.remove_internal(p, true)
+        self.remove_internal_old(p, true)
     }
 
     fn clear(&mut self) {

@@ -572,7 +572,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// might only include itself). Returns the length of the chain. Returns
     /// `None` if `p` is not valid.
     pub fn remove_chain(&mut self, p: P) -> Option<usize> {
-        let init = self.a.remove_internal(p, false)?;
+        let init = self.a.remove_internal_old(p, false)?;
         let mut len = 1;
         self.a.inc_gen();
         let mut tmp = init.next();
