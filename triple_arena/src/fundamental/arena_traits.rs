@@ -1,7 +1,8 @@
-use core::{mem, slice::GetDisjointMutError};
+use core::{slice::GetDisjointMutError};
 
-use crate::{Link, chain::LinkNoGen, traits::Ptr, utils::AllocError};
+use crate::{traits::Ptr, utils::AllocError};
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum InvalidationResult<T> {
     Success(T),
     /// The operation was completed successfully, except that the Arena's
@@ -11,6 +12,8 @@ pub enum InvalidationResult<T> {
     /// been mutated
     InvalidPtr,
 }
+
+// Originally there were complementary `replace_and_update_gen` and `replace_and_keep_gen` functions to emphasize the ability to deal with non-Clone types and how they should deal with generations, but these were barely used in practice and the signature of `replace_and_update_gen` was unavoidably awkward and increasingly so with the new strict generation overflow fallibility and the future possibility of types that can't be `mem::replace`d.
 
 /// The base trait for `triple_arena` style Arenas. See [crate::Arena] for the
 /// standard implementor.
@@ -73,17 +76,6 @@ pub trait ArenaTrait<P: Ptr, T> {
     /// invariants such as ABA problem prevention and `P::invalid` always being
     /// invalid with generation counters.
     fn set_generation(&mut self, new_gen: P::Gen);
-
-    /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
-    /// it. Returns the `t` if there was no available capacity.
-    fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), T>;
-
-    fn insert_reallocating(&mut self, t: T) -> Result<(P, &mut T), T> {
-        todo!()
-    }
-    // Never panics on generation overflow
-    //fn insert
-    //fn insert_with // maybe?
 
     /// Returns if `p` is a valid `Ptr`
     fn contains(&self, p: P) -> bool {
@@ -160,53 +152,6 @@ pub trait ArenaTrait<P: Ptr, T> {
     #[must_use]
     fn invalidate(&mut self, p: P) -> InvalidationResult<P>;
 
-    // this is simple but I want it to complement the existence of
-    // `replace_and_update_gen`
-
-    /// Replaces the `T` pointed to by `p` with `new`, returns the old `T`, and
-    /// keeps the internal generation counter as-is so that previously
-    /// constructed `Ptr`s to this allocation are still valid.
-    ///
-    /// # Errors
-    ///
-    /// Returns ownership of `new` instead if `p` is invalid
-    fn replace_and_keep_gen(&mut self, p: P, new: T) -> Result<T, T> {
-        match self.get_mut(p) {
-            Some(old) => Ok(mem::replace(old, new)),
-            None => Err(new),
-        }
-    }
-
-    /* FIXME
-    // use (T, P) instead of (P, T) here because they are unrelated
-
-    /// Replaces the `T` pointed to by `p` with `new`, returns a tuple of the
-    /// old `T` and new `Ptr`, and updates the internal generation counter so
-    /// that previous `Ptr`s to this allocation are invalidated.
-    ///
-    /// # Errors
-    ///
-    /// Does no invalidation and returns ownership of `new` if `p` is invalid
-    fn replace_and_update_gen(&mut self, p: P, new: T) -> Result<(T, InvalidationResult<P>), T> {
-        match self.invalidate(p) {
-            InvalidationResult::Success(p) => {
-                self.replace_and_keep_gen(p, new).map(|t| (t, p))
-            },
-            InvalidationResult::GenerationOverflow(_) => todo!(),
-            InvalidationResult::InvalidPtr => todo!(),
-        }
-    }*/
-
-    /// Swaps the `T` at indexes `p0` and `p1` and keeps the generation counters
-    /// as-is. If `p0 == p1` then nothing occurs. Returns `None` if `p0` or `p1`
-    /// are invalid.
-    #[must_use]
-    fn swap(&mut self, p0: P, p1: P) -> Option<()> {
-        let [t0, t1] = self.get_disjoint_mut([p0, p1]).ok()?;
-        mem::swap(t0, t1);
-        Some(())
-    }
-
     /// Removes the `T` pointed to by `p`, returns the `T`, and invalidates old
     /// `Ptr`s to the `T`. Does no invalidation and returns `None` if `p` is
     /// invalid.
@@ -216,10 +161,61 @@ pub trait ArenaTrait<P: Ptr, T> {
     /// Drops all `T` from the arena and invalidates all pointers previously
     /// created from it. This has no effect on allocated capacity.
     fn clear(&mut self);
+
+    // `clone_from_with_within_capacity() -> Option<()>` is getting ridiculous and the return type is only if it was called in a trivially checkable state, just make this one reallocating with a condition that it will never reallocate if there is enough capacity. Also we break with old requirements and always canonicalize the freelist, this solves certain double buffering exponential growth problems that early versions of `triple_arena` ran into.
+
+    /// Overwrites `self` with a clone of `source` (dropping all preexisting `T` and overwriting the
+    /// generation counter with `source.generation()`). The `Ptr` validities are also cloned so that the `P` associated with a `U` is a valid reference to its mapped `T`. Reallocation occurs if the capacity of `self` is not large enough. If `self.capacity() >= source.len()`, this is guaranteed to _not_ reallocate and the function is infallible. Returns an error upon reallocation failure.
+    fn clone_from_with<U, A: ArenaTrait<P, U>, F: FnMut(P, &U) -> T>(
+        &mut self,
+        source: &A,
+        map: F,
+    ) -> Result<(), AllocError>;
 }
 
-// Index traits, Clone, clone_from_with get associated with another trait?
+/// The standard trait for insertion into [ArenaTrait] arenas. Some arenas do not have a freelist however, and this trait could not be implemented efficiently. The [ArenaDirectInsertTrait] trait is a separate trait because direct insertions would not be efficient on an arena with a one-way linked freelist.
+pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
+    /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
+    /// it. Returns the `t` if there was no available capacity.
+    fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), T>;
 
+    /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
+    /// it. Automatically reallocates if needing more capacity. Returns the `t` if there was no available capacity.
+    fn insert_reallocating(&mut self, t: T) -> Result<(P, &mut T), T> {
+        if self.len() == self.capacity() {
+            // TODO may want something more sophisticated, see https://github.com/rust-lang/rust/issues/29931
+
+            if self.reallocate_min_capacity(self.capacity().saturating_mul(2)).is_err() {
+                return Err(t)
+            }
+        }
+        self.insert_within_capacity(t)
+    }
+
+    /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
+    /// it.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure when needing to extend
+    /// capacity
+    fn insert(&mut self, t: T) -> (P, &mut T){
+        self.insert_reallocating(t).ok().expect("`ArenaTrait::insert_reallocating` failed")
+    }
+}
+
+/// See [ArenaInsertTrait], this mainly is for special arenas without a freelist, that are supposed to follow the state of another arena.
+pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
+    /// Inserts `t` directly at raw [PtrInx] `p` into the arena and returns a `Ptr` and mutable reference to
+    /// it. Returns an error with the `t` if the index was beyond capacity or if there was an existing entry at `p`. Uses the current `self.generation()` of the arena for the generation.
+    fn insert_direct_inx(&mut self, p: P::Inx, t: T) -> Result<(P, &mut T), T>;
+
+    /// Inserts `t` directly at `p` into the arena, accepting `p` and its generation as the valid `Ptr` to the element, returning a mutable reference to it. Returns an error with the `t` if the index was beyond capacity or if there was an existing entry at `p.inx()`.
+    fn insert_direct(&mut self, p: P, t: T) -> Result<&mut T, T>;
+}
+
+
+/*
 /// This inherits all the methods of [ArenaTrait] but adds on some [Link]-aware
 /// ones
 pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
@@ -248,3 +244,4 @@ pub trait OrdArenaTrait<P: Ptr, K, V> {
 pub trait SurjectArenaTrait<P: Ptr, T> {
     fn len_keys(&self) -> usize;
 }
+*/

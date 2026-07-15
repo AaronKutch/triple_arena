@@ -324,10 +324,14 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             // points to itself
             p.inx()
         };
-        let allocation = self
+        let Some(inx) = P::Inx::try_into_usize(p.inx()) else {
+            return InvalidationResult::InvalidPtr;
+        };
+        let Some(allocation) = self
             .m
-            .get_mut(P::Inx::try_into_usize(p.inx()).ok_or(InvalidationResult::InvalidPtr)?)
-            .ok_or(InvalidationResult::InvalidPtr)?;
+            .get_mut(inx) else {
+                return InvalidationResult::InvalidPtr;
+            };
         match allocation {
             // invalid by being already free
             Free(_) => InvalidationResult::InvalidPtr,

@@ -164,8 +164,8 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         }
     }
 
-    fn remove(&mut self, p: P) -> Option<T> {
-        self.remove_internal_old(p, true)
+    fn remove(&mut self, p: P) -> InvalidationResult<T> {
+        self.remove_internal(p, true)
     }
 
     fn clear(&mut self) {

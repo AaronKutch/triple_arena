@@ -107,13 +107,14 @@ pub unsafe trait NonZeroInxGenericStack<T> {
 
     /// The same as [NonZeroInxGenericStack::push_within_capacity], except that
     /// it will automatically reallocate to try and extend the capacity upon
-    /// running out, and returns an error upon an allocation error.
+    /// running out, and returns the element upon an allocation error.
     fn push_reallocating(&mut self, t: T) -> Result<(NonZeroUsize, &mut T), T> {
         if self.len() == self.capacity() {
             // TODO may want something more sophisticated, see https://github.com/rust-lang/rust/issues/29931
 
-            self.reallocate_min_capacity(self.capacity().saturating_mul(2))
-                .expect("`reallocate_min_capacity` to double capacity failed");
+            if self.reallocate_min_capacity(self.capacity().saturating_mul(2)).is_err() {
+                return Err(t)
+            }
         }
         self.push_within_capacity(t)
     }
