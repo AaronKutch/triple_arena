@@ -23,6 +23,12 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer for PtrAdvancer<P, T, B> {
     fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
         self.adv.advance(&collection.a)
     }
+
+    fn empty() -> Self {
+        Self {
+            adv: arena_iterators::PtrAdvancer::empty(),
+        }
+    }
 }
 
 /// An advancer over the valid `P`s of one chain in a `ChainNoGenArena`
@@ -89,6 +95,17 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer for ChainPtrAdvancer<P, T, B> {
             }
         } else {
             None
+        }
+    }
+
+    fn empty() -> Self {
+        // `max_advances: 0` guarantees empty
+        Self {
+            init: P::invalid().inx(),
+            ptr: None,
+            switch: false,
+            max_advances: 0,
+            _boo: PhantomData,
         }
     }
 }

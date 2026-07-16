@@ -14,11 +14,10 @@ use crate::{
 
 /// An advancer over the valid `P`s of an `Arena`
 pub struct PtrAdvancer<P: Ptr, T, B: ArenaBacking> {
-    // If we used `P::Inx`, we would be widening and truncating on every advance, and running into
-    // needing a boolean to tell if we advanced past the last entry where `P::Inx::max` is a valid
-    // entry
-    inx: NonZeroUsize,
-    _boo: PhantomData<fn() -> (P, T, B)>,
+    pub(in crate::arena) inx: Option<P::Inx>,
+    // if in reverse
+    pub(in crate::arena) rev: bool,
+    pub(in crate::arena) _boo: PhantomData<fn() -> (P, T, B)>,
 }
 
 impl<P: Ptr, T, B: ArenaBacking> Advancer for PtrAdvancer<P, T, B> {
@@ -27,14 +26,28 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer for PtrAdvancer<P, T, B> {
 
     fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
         loop {
-            let old_inx = self.inx;
-            let allocation = collection.m.get(old_inx)?;
-            unsafe {
-                self.inx = NonZeroUsize::new_unchecked(old_inx.get().wrapping_add(1));
+            let inx = self.inx?;
+            // If the `Ptr` is not linear then this will always return `None` and the
+            // advancer will be empty like it should
+            let raw_inx = P::Inx::try_into_usize(inx)?;
+            // update before other fallible points
+            if self.rev {
+                self.inx = NonZeroUsize::new(raw_inx.get() - 1).and_then(P::Inx::try_from_usize);
+            } else {
+                self.inx = raw_inx.checked_add(1).and_then(P::Inx::try_from_usize);
             }
+            let allocation = collection.m.get(raw_inx)?;
             if let Allocated(g, _) = allocation {
-                return Some(P::_from_raw(P::Inx::try_from_usize(old_inx)?, *g));
+                return Some(P::_from_raw(inx, *g));
             }
+        }
+    }
+
+    fn empty() -> Self {
+        PtrAdvancer {
+            inx: None,
+            rev: false,
+            _boo: PhantomData,
         }
     }
 }
@@ -216,7 +229,9 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     /// witnessed or not witnessed before the loop terminates.
     pub fn advancer(&self) -> PtrAdvancer<P, T, B> {
         PtrAdvancer {
-            inx: NonZeroUsize::new(1).unwrap(),
+            // FIXME remove we fixed this in the trait
+            inx: Some(P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap()),
+            rev: false,
             _boo: PhantomData,
         }
     }

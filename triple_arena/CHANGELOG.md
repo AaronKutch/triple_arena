@@ -5,9 +5,10 @@
 - Updated MSRV to 1.86
 
 ### Changes
-- Put all traits under modules
+- Added new traits with new methods and put all traits under modules, they can be glob imported in some cases to preserve ease of use.
 - Generation overflow no longer panics, has the best possible behavior in the default case, and can be explicitly checked with various functions now.
 - The `PtrInx` and `PtrGen` traits have been changed to be safe, and have stricter semantics around conversion now
+- Removed `swap`, `replace_and_update_gen`, and `replace_and_keep_gen` because they were barely used, would have very awkward signatures with the new design, and wouldn't work with potential future `!Overwrite` abilities
 
 ## [0.14.0] - 2025-02-10
 ### Changes

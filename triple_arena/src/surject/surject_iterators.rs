@@ -15,7 +15,7 @@ use crate::{
 /// An advancer over the valid `P`s of a `SurjectArena`
 pub struct PtrAdvancer<P: Ptr, K, V, B: ArenaBacking> {
     adv: chain_no_gen_iterators::PtrAdvancer<P, Key<P, K>, B>,
-    _boo: PhantomData<fn() -> (V, B)>,
+    _boo: PhantomData<fn() -> V>,
 }
 
 impl<P: Ptr, K, V, B: ArenaBacking> Advancer for PtrAdvancer<P, K, V, B> {
@@ -24,6 +24,13 @@ impl<P: Ptr, K, V, B: ArenaBacking> Advancer for PtrAdvancer<P, K, V, B> {
 
     fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
         self.adv.advance(&collection.keys)
+    }
+
+    fn empty() -> Self {
+        Self {
+            adv: chain_no_gen_iterators::PtrAdvancer::empty(),
+            _boo: PhantomData,
+        }
     }
 }
 
@@ -66,6 +73,16 @@ impl<P: Ptr, K, V, B: ArenaBacking> Advancer for SurjectPtrAdvancer<P, K, V, B> 
             }
         } else {
             None
+        }
+    }
+
+    fn empty() -> Self {
+        // `max_advances: 0` guarantees empty
+        Self {
+            init: P::invalid().inx(),
+            ptr: None,
+            max_advances: 0,
+            _boo: PhantomData,
         }
     }
 }

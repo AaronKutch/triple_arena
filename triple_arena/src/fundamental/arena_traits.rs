@@ -1,6 +1,9 @@
 use core::slice::GetDisjointMutError;
 
-use crate::{traits::Ptr, utils::AllocError};
+use crate::{
+    traits::{Advancer, Ptr},
+    utils::AllocError,
+};
 
 /*
 REF(arena_terminology): Internally an arena has a main memory (usually `m`) of slots, usually a stack of free or allocated slots. I decide to use the terminology "slots" to refer to the actual internal stack elements that exist. "entries" for the public logical behavior docs and entry APIs may involve capacity in the internal stack that doesn't have a slot yet, or beyond. I use "root" for single linked lists.
@@ -15,6 +18,7 @@ Originally there were complementary `replace_and_update_gen` and `replace_and_ke
 */
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[must_use]
 pub enum InvalidationResult<T> {
     Success(T),
     /// The operation was completed successfully, except that the Arena's
@@ -86,6 +90,8 @@ impl<T> InvalidationResult<T> {
 /// handle allocation failures, then [ArenaInsertTrait::insert_reallocating] and
 /// similar should be used.
 pub trait ArenaTrait<P: Ptr, T> {
+    type PtrAdvancer: Advancer<Collection = Self, Item = P>;
+
     /// Creates an empty arena, which may have any capacity to start with
     fn new() -> Self;
 
@@ -214,16 +220,42 @@ pub trait ArenaTrait<P: Ptr, T> {
         indices: [P::Inx; N],
     ) -> Result<[(P::Gen, &mut T); N], GetDisjointMutError>;
 
+    /// Finds the first valid `Ptr` in terms of the `P::Inx` ordering, be aware
+    /// that this can be an `O(n)` operation on some implementations
+    fn find_first_ptr(&self) -> Option<P>;
+
+    /// Finds the last valid `Ptr` in terms of the `P::Inx` ordering, be aware
+    /// that this can be an `O(n)` operation on some implementations
+    fn find_last_ptr(&self) -> Option<P>;
+
+    /// Advances over every valid `Ptr` in `self` starting from the first.
+    ///
+    /// When using the correct [Advancer] loop structure, every `Ptr` valid from
+    /// before the loop began will be witnessed as long as it is kept valid
+    /// during the loop. The `Ptr`s of insertions that occur during the loop
+    /// can both be witnessed or not witnessed before the loop terminates.
+    fn advancer(&self) -> Self::PtrAdvancer {
+        if let Some(first) = self.find_first_ptr() {
+            self.ordered_advancer(first.inx(), false)
+        } else {
+            Self::PtrAdvancer::empty()
+        }
+    }
+
+    /// The same as [ArenaTrait::advancer], but it starts from `inx` and goes
+    /// forwards or in reverse if `rev` is set. `inx` does not have to point at
+    /// a valid entry, and it will find the nexte valid entry if it exists in
+    /// the direction the advancer is going.
+    fn ordered_advancer(&self, inx: P::Inx, rev: bool) -> Self::PtrAdvancer;
+
     /// Invalidates all references to the `T` pointed to by `p`, and returns a
     /// new valid reference. Does no invalidation and returns `None` if `p` is
     /// invalid.
-    #[must_use]
     fn invalidate(&mut self, p: P) -> InvalidationResult<P>;
 
     /// Removes the `T` pointed to by `p`, returns the `T`, and invalidates old
     /// `Ptr`s to the `T`. Does no invalidation and returns `None` if `p` is
     /// invalid.
-    #[must_use]
     fn remove(&mut self, p: P) -> InvalidationResult<T>;
 
     /// Drops all `T` from the arena and invalidates all pointers previously

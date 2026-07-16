@@ -275,7 +275,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     }
 
     /// `remove` but with optional generation counter increment
-    #[must_use]
     pub(crate) fn remove_internal(
         &mut self,
         inx: P::Inx,

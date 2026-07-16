@@ -40,6 +40,13 @@ impl<P: Ptr, K, V, B: ArenaBacking> Advancer for PtrAdvancer<P, K, V, B> {
             None
         }
     }
+
+    fn empty() -> Self {
+        Self {
+            ptr: None,
+            _boo: PhantomData,
+        }
+    }
 }
 
 /// An iterator over the valid `P`s of an `OrdArena`

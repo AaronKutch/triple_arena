@@ -62,4 +62,7 @@ pub trait Advancer {
     type Item;
 
     fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item>;
+
+    /// Returns an empty advancer
+    fn empty() -> Self;
 }

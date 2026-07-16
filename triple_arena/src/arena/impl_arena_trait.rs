@@ -1,4 +1,4 @@
-use core::{mem, slice::GetDisjointMutError};
+use core::{marker::PhantomData, mem, slice::GetDisjointMutError};
 
 use crate::{
     Arena, InvalidationResult,
@@ -6,11 +6,14 @@ use crate::{
         ArenaBacking,
         InternalSlot::{self, *},
     },
-    traits::{ArenaInsertTrait, ArenaTrait, Ptr},
+    arena_iterators,
+    traits::{Advancer, ArenaInsertTrait, ArenaTrait, Ptr},
     utils::{AllocError, NonZeroInxGenericStack, PtrGen, PtrInx},
 };
 
 impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
+    type PtrAdvancer = arena_iterators::PtrAdvancer<P, T, B>;
+
     fn new() -> Self {
         Self {
             len: 0,
@@ -89,6 +92,32 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         }
     }
 
+    fn find_first_ptr(&self) -> Option<P> {
+        for inx in self.nziter() {
+            if let Allocated(generation, _) = self.m.get(inx).unwrap() {
+                return Some(P::_from_raw(Self::from_checked(inx), *generation));
+            }
+        }
+        None
+    }
+
+    fn find_last_ptr(&self) -> Option<P> {
+        for inx in self.nziter().into_iter().rev() {
+            if let Allocated(generation, _) = self.m.get(inx).unwrap() {
+                return Some(P::_from_raw(Self::from_checked(inx), *generation));
+            }
+        }
+        None
+    }
+
+    fn ordered_advancer(&self, inx: <P as Ptr>::Inx, rev: bool) -> Self::PtrAdvancer {
+        arena_iterators::PtrAdvancer {
+            inx: Some(inx),
+            rev,
+            _boo: PhantomData,
+        }
+    }
+
     fn invalidate(&mut self, p: P) -> InvalidationResult<P> {
         let Some(inx) = PtrInx::try_into_usize(p.inx()) else {
             return InvalidationResult::InvalidPtr;
@@ -116,15 +145,72 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
 
     fn clear(&mut self) {
         self.m.clear();
+        self.len = 0;
     }
 
     fn clone_from_with<U, A: ArenaTrait<P, U>, F: FnMut(P, &U) -> T>(
         &mut self,
         source: &A,
-        map: F,
+        mut map: F,
     ) -> Result<(), AllocError> {
-        //if self.capacity() < sour
-        todo!()
+        let Some(last) = source.find_last_ptr() else {
+            // no entries
+            self.clear();
+            return Ok(());
+        };
+        // Be aware that `source` may not be linear and the `P`s coming from it can't be
+        // relied on, if this happens just return the `AllocError` which is logical
+        // anyways
+        let Some(raw_last) = P::Inx::try_into_usize(last.inx()) else {
+            return Err(AllocError);
+        };
+        if raw_last.get() > self.capacity() {
+            self.reallocate_min_capacity(raw_last.get())?;
+        }
+        // start modifying after the fallible points that we can reasonably deal with
+        self.m.clear();
+        self.len = 0;
+        self.generation = source.generation();
+        // maintain invariants even with bad behavior, increment `len` at the right
+        // moment and always call `canonicalize_free_list` after this point
+        let res = 'outer: {
+            let mut adv = source.advancer();
+            while let Some(p) = adv.advance(source) {
+                let Some(raw) = P::Inx::try_into_usize(p.inx()) else {
+                    break 'outer Err(AllocError);
+                };
+                if raw.get() <= self.m.len() {
+                    // the advancer is out of order
+                    break 'outer Err(AllocError);
+                }
+                // insert free entries in gaps
+                while raw.get() - 1 > self.m.len() {
+                    if self
+                        .m
+                        .push_within_capacity(Free(P::invalid().inx()))
+                        .is_err()
+                    {
+                        break 'outer Err(AllocError);
+                    }
+                }
+                let Some(u) = source.get(p) else {
+                    break 'outer Err(AllocError);
+                };
+                let t = map(p, u);
+                if self
+                    .m
+                    .push_within_capacity(Allocated(p.generation(), t))
+                    .is_err()
+                {
+                    break 'outer Err(AllocError);
+                }
+                self.len = self.len.wrapping_add(1);
+            }
+            Ok(())
+        };
+        // has to be done with reverse iteration anyways
+        self.canonicalize_free_list();
+        res
     }
 }
 
