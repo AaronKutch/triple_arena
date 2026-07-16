@@ -10,7 +10,7 @@ use serde::{
 
 use crate::{
     Arena, ChainArena, Link, OrdArena, SurjectArena,
-    arena::InternalEntry,
+    arena::InternalSlot,
     ord::Node,
     surject::{Key, Val},
     traits::Ptr,
@@ -173,7 +173,7 @@ where
                     // the freelist is fixed later
 
                     // FIXME
-                    a.m.push_reallocating(InternalEntry::Free(
+                    a.m.push_reallocating(InternalSlot::Free(
                         PtrInx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap(),
                     ))
                     .map_err(|_| {
@@ -185,12 +185,12 @@ where
             }
             let entry = a.m_get_mut(p).unwrap();
             match entry {
-                InternalEntry::Free(_) => {
+                InternalSlot::Free(_) => {
                     entry.replace_free_with_allocated(PtrGen::two(), t).unwrap();
                     let len = a.len;
                     a.len = len.wrapping_add(1);
                 }
-                InternalEntry::Allocated(..) => {
+                InternalSlot::Allocated(..) => {
                     return Err(Error::custom(
                         "when deserializing a `triple_arena` arena, encountered duplicate pointer \
                          index keys",
@@ -203,7 +203,7 @@ where
         let mut last_free = None;
         for i in a.nziter() {
             // FIXME
-            if let InternalEntry::Free(p) = a.m_get_mut(PtrInx::try_from_usize(i).unwrap()).unwrap()
+            if let InternalSlot::Free(p) = a.m_get_mut(PtrInx::try_from_usize(i).unwrap()).unwrap()
             {
                 if let Some(ref mut last_free) = last_free {
                     *p = PtrInx::try_from_usize(*last_free).unwrap();
@@ -387,7 +387,7 @@ where
                 p_tree1: None,
                 rank: 0,
             });
-            a.m.push_reallocating(InternalEntry::Allocated(PtrGen::two(), t))
+            a.m.push_reallocating(InternalSlot::Allocated(PtrGen::two(), t))
                 .map_err(|_| {
                     Error::custom(
                         "when deserializing a `triple_arena` arena, ran into allocation error",

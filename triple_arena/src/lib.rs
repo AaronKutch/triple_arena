@@ -31,7 +31,7 @@ pub use surject::{SurjectArena, surject_iterators};
 /// Special utilities for advanced usage
 pub mod utils {
     #[cfg(feature = "expose_internal_utils")]
-    pub use crate::arena::{InternalEntry, NonZeroInxArray};
+    pub use crate::arena::{InternalSlot, NonZeroInxArray};
     #[cfg(all(feature = "alloc", feature = "expose_internal_utils"))]
     pub use crate::arena::{NonZeroInxLimitedVec, NonZeroInxVec};
     // only intended for size_of tests and such
@@ -62,5 +62,7 @@ pub mod utils {
 pub mod traits {
     pub use recasting::{Recast, Recaster};
 
-    pub use crate::fundamental::{Advancer, ArenaTrait, Ptr,ArenaTraitFallible};
+    pub use crate::fundamental::{
+        Advancer, ArenaDirectInsertTrait, ArenaInsertTrait, ArenaTrait, Ptr,
+    };
 }

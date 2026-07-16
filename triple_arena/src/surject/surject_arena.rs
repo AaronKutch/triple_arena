@@ -4,7 +4,7 @@ use fmt::Debug;
 
 use crate::{
     Arena, ChainArena,
-    arena::InternalEntry,
+    arena::InternalSlot,
     traits::{Advancer, Ptr},
     utils::{ArenaBacking, ChainNoGenArena, LinkNoGen, NonZeroInxGenericStack, PtrInx, PtrNoGen},
 };
@@ -667,7 +667,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         for i in self.vals.nziter() {
             if matches!(
                 self.vals.m_get(P::Inx::try_from_usize(i).unwrap()).unwrap(),
-                InternalEntry::Free(_)
+                InternalSlot::Free(_)
             ) {
                 first_unallocated = Some(i);
                 break;
@@ -701,7 +701,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
                                 self.vals
                                     .m_get(P::Inx::try_from_usize(j_nz).unwrap())
                                     .unwrap(),
-                                InternalEntry::Free(_)
+                                InternalSlot::Free(_)
                             ) {
                                 first_unallocated = Some(j_nz);
                                 break;
@@ -731,7 +731,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         // to fit `self.vals`, completes the compression and fixes the likely broken
         // freelist
         while let Some(i) = NonZeroUsize::new(self.vals.m.len()) {
-            if let Some(InternalEntry::Free(_)) = self.vals.m.get(i) {
+            if let Some(InternalSlot::Free(_)) = self.vals.m.get(i) {
                 self.vals.m.pop().unwrap();
             } else {
                 break;

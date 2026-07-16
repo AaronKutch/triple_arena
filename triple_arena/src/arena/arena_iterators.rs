@@ -2,12 +2,12 @@
 
 use core::{marker::PhantomData, num::NonZeroUsize};
 
-use InternalEntry::*;
+use InternalSlot::*;
 use recasting::{Recast, Recaster};
 
 use crate::{
     Arena,
-    arena::{ArenaBacking, InternalEntry},
+    arena::{ArenaBacking, InternalSlot},
     traits::{Advancer, Ptr},
     utils::{NonZeroInxGenericStack, PtrInx},
 };

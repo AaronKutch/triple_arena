@@ -112,8 +112,11 @@ pub unsafe trait NonZeroInxGenericStack<T> {
         if self.len() == self.capacity() {
             // TODO may want something more sophisticated, see https://github.com/rust-lang/rust/issues/29931
 
-            if self.reallocate_min_capacity(self.capacity().saturating_mul(2)).is_err() {
-                return Err(t)
+            if self
+                .reallocate_min_capacity(self.capacity().saturating_mul(2))
+                .is_err()
+            {
+                return Err(t);
             }
         }
         self.push_within_capacity(t)

@@ -6,7 +6,8 @@
 
 ### Changes
 - Put all traits under modules
-- `PtrInx` has stricter semantics around conversion now
+- Generation overflow no longer panics, has the best possible behavior in the default case, and can be explicitly checked with various functions now.
+- The `PtrInx` and `PtrGen` traits have been changed to be safe, and have stricter semantics around conversion now
 
 ## [0.14.0] - 2025-02-10
 ### Changes

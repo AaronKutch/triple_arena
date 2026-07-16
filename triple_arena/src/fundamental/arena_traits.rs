@@ -1,6 +1,18 @@
-use core::{slice::GetDisjointMutError};
+use core::slice::GetDisjointMutError;
 
 use crate::{traits::Ptr, utils::AllocError};
+
+/*
+REF(arena_terminology): Internally an arena has a main memory (usually `m`) of slots, usually a stack of free or allocated slots. I decide to use the terminology "slots" to refer to the actual internal stack elements that exist. "entries" for the public logical behavior docs and entry APIs may involve capacity in the internal stack that doesn't have a slot yet, or beyond. I use "root" for single linked lists.
+
+REF(exponential_double_buffer_blowup): In earlier versions of `triple_arena`, there was an invariant that we would keep all slots of the internal arena memory at least filled with free slots so that `self.m.capacity() == self.m.len()`. However, functions like `clone_from_with` exposed a flaw with this that is absolutely catastrophic for some use cases of this crate: `reserve` and `reserve_exact` are allowed to allocate inconsistently, e.x. one arena gets 32 capacity from doubling and another arena gets 24 from taking a half step (it happens that more recent versions of Rust's `Vec` reserve exactly, but this is not a guarantee for future versions to follow). If `clone_from` is called to copy the 24 capacity arena to the 32 capacity arena, then it must reserve 8 more capacity. `reserve_exact` can then choose to start allocating by only doubling, in which case the 24 capacity arena gets 24 additional capacity. If the new 48 capacity arena is cloned to the 32 capacity arena, it can get 32 more capacity to increase to 64 capacity despite nothing being inserted. If the arenas in a double buffer setup `clone_from` to each other in a loop, they leap frog each other exponentially. This means that there must be a detached internal length (in slots which is different from the Arena's logical length) from an internal capacity. The current version has introduced the philosophy around `NonZeroInxGenericStack::reallocate_min_capacity` which we use and follow at the arena level in order to prevent issues. We also canonicalize the freelist with certain operations, which in some cases means that compression isn't even necessary to guarantee compact arenas over time.
+
+other notes:
+
+We don't need a `insert_with_manual_generation` function for `ArenaInsertTrait`, `set_generation` can be used in combination instead.
+
+Originally there were complementary `replace_and_update_gen` and `replace_and_keep_gen` functions to emphasize the ability to deal with non-Clone types and how they should deal with generations, but these were barely used in practice and the signature of `replace_and_update_gen` was unavoidably awkward and increasingly so with the new strict generation overflow fallibility and the future possibility of `!Overwrite` types that can't be `mem::replace`d.
+*/
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum InvalidationResult<T> {
@@ -13,10 +25,66 @@ pub enum InvalidationResult<T> {
     InvalidPtr,
 }
 
-// Originally there were complementary `replace_and_update_gen` and `replace_and_keep_gen` functions to emphasize the ability to deal with non-Clone types and how they should deal with generations, but these were barely used in practice and the signature of `replace_and_update_gen` was unavoidably awkward and increasingly so with the new strict generation overflow fallibility and the future possibility of types that can't be `mem::replace`d.
+impl<T> InvalidationResult<T> {
+    /// Maps both `Success` and `GenerationOverflow` to `Some` (the preferred
+    /// method for most uses that don't care about the incredible difficulty of
+    /// reaching generation overflow with the default `NonZeroU64`). Maps
+    /// `InvalidPtr` to `None`.
+    pub fn ok(self) -> Option<T> {
+        match self {
+            InvalidationResult::Success(t) => Some(t),
+            InvalidationResult::GenerationOverflow(t) => Some(t),
+            InvalidationResult::InvalidPtr => None,
+        }
+    }
+
+    /// Maps `Success` to `Ok`, `GenerationOverflow` to `Err(Some)`, and
+    /// `InvalidPtr` to `Err(None)`. Recommended only for small `P::Gen` sizes
+    /// or ABA prevention situations that require absolute strictness.
+    pub fn strict(self) -> Result<T, Option<T>> {
+        match self {
+            InvalidationResult::Success(t) => Ok(t),
+            InvalidationResult::GenerationOverflow(t) => Err(Some(t)),
+            InvalidationResult::InvalidPtr => Err(None),
+        }
+    }
+}
 
 /// The base trait for `triple_arena` style Arenas. See [crate::Arena] for the
 /// standard implementor.
+///
+/// # Note
+///
+/// A `P: Ptr` instance is logically invalid if:
+///  - it points to a different arena than the one it is being used as an
+///    argument to
+///  - it points to a `T` that has been the target of some `Ptr` invalidation
+///    operation such as removal
+///
+/// However, the functions here might not detect invalidity and return a `T`
+/// different than the one a `Ptr` originally pointed to. The first case is
+/// caught if different `Ptr` structs are being used for different arenas, in
+/// which case Rust's type system will prevent using the wrong pointers. The
+/// second case is only guaranteed to be caught if `P` has a generation counter
+/// and generation overflow is guarded against. Otherwise, it is possible for
+/// another `T` to get allocated in the same allocation, and pointers to the
+/// previous `T` will now point to a different `T` (otherwise known as the ABA
+/// problem).
+///
+/// # Overflow
+///
+/// When using the default `P::Inx = usize` and `P::Gen = NonZeroU64`, only
+/// memory exhaustion should be a concern on all platforms. It would take over
+/// 500 years for generation overflow to occur if 1 billion invalidations per
+/// second occured. Note that generation overflow with the `NonZero*` primitives
+/// wraps around and skips the invalid `Ptr` generation case, and does not
+/// panic.
+///
+/// For example, in most cases, you should just use [ArenaInsertTrait::insert]
+/// to insert elements into the arena and [InvalidationResult::ok] on
+/// invalidation operations. If the arena backing type is limited or you must
+/// handle allocation failures, then [ArenaInsertTrait::insert_reallocating] and
+/// similar should be used.
 pub trait ArenaTrait<P: Ptr, T> {
     /// Creates an empty arena, which may have any capacity to start with
     fn new() -> Self;
@@ -162,10 +230,22 @@ pub trait ArenaTrait<P: Ptr, T> {
     /// created from it. This has no effect on allocated capacity.
     fn clear(&mut self);
 
-    // `clone_from_with_within_capacity() -> Option<()>` is getting ridiculous and the return type is only if it was called in a trivially checkable state, just make this one reallocating with a condition that it will never reallocate if there is enough capacity. Also we break with old requirements and always canonicalize the freelist, this solves certain double buffering exponential growth problems that early versions of `triple_arena` ran into.
+    // `clone_from_with_within_capacity() -> Option<()>` is getting ridiculous and
+    // the fallible return is only for if it was called in a trivially checkable
+    // state, just make this one reallocating with a condition that it will never
+    // reallocate if there is enough capacity. Also we break with old requirements
+    // and always canonicalize the freelist and check for the last actually
+    // allocated slot in `source`, this solves certain double buffering exponential
+    // growth problems that early versions of `triple_arena` ran into.
 
-    /// Overwrites `self` with a clone of `source` (dropping all preexisting `T` and overwriting the
-    /// generation counter with `source.generation()`). The `Ptr` validities are also cloned so that the `P` associated with a `U` is a valid reference to its mapped `T`. Reallocation occurs if the capacity of `self` is not large enough. If `self.capacity() >= source.len()`, this is guaranteed to _not_ reallocate and the function is infallible. Returns an error upon reallocation failure.
+    /// Overwrites `self` with a clone of `source` (dropping all preexisting `T`
+    /// and overwriting the generation counter with `source.generation()`).
+    /// The `Ptr` validities are also cloned so that the `P` associated with a
+    /// `U` is a valid reference to its mapped `T`. Reallocation occurs if the
+    /// capacity of `self` is not large enough. If the highest `P::Inx` index of
+    /// an allocated entry in `source` would fit in `self.capacity()`, this is
+    /// guaranteed to _not_ reallocate and the function is infallible. Returns
+    /// an error upon reallocation failure.
     fn clone_from_with<U, A: ArenaTrait<P, U>, F: FnMut(P, &U) -> T>(
         &mut self,
         source: &A,
@@ -173,20 +253,28 @@ pub trait ArenaTrait<P: Ptr, T> {
     ) -> Result<(), AllocError>;
 }
 
-/// The standard trait for insertion into [ArenaTrait] arenas. Some arenas do not have a freelist however, and this trait could not be implemented efficiently. The [ArenaDirectInsertTrait] trait is a separate trait because direct insertions would not be efficient on an arena with a one-way linked freelist.
+/// The standard trait for insertion into [ArenaTrait] arenas. Some arenas do
+/// not have a freelist however, and this trait could not be implemented
+/// efficiently. The [ArenaDirectInsertTrait] trait is a separate trait because
+/// direct insertions would not be efficient on an arena with a one-way linked
+/// freelist.
 pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
     /// it. Returns the `t` if there was no available capacity.
     fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), T>;
 
     /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
-    /// it. Automatically reallocates if needing more capacity. Returns the `t` if there was no available capacity.
+    /// it. Automatically reallocates if needing more capacity. Returns the `t`
+    /// if there was no available capacity.
     fn insert_reallocating(&mut self, t: T) -> Result<(P, &mut T), T> {
         if self.len() == self.capacity() {
             // TODO may want something more sophisticated, see https://github.com/rust-lang/rust/issues/29931
 
-            if self.reallocate_min_capacity(self.capacity().saturating_mul(2)).is_err() {
-                return Err(t)
+            if self
+                .reallocate_min_capacity(self.capacity().saturating_mul(2))
+                .is_err()
+            {
+                return Err(t);
             }
         }
         self.insert_within_capacity(t)
@@ -199,21 +287,28 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     ///
     /// This function can panic on allocation failure when needing to extend
     /// capacity
-    fn insert(&mut self, t: T) -> (P, &mut T){
-        self.insert_reallocating(t).ok().expect("`ArenaTrait::insert_reallocating` failed")
+    fn insert(&mut self, t: T) -> (P, &mut T) {
+        self.insert_reallocating(t)
+            .ok()
+            .expect("`ArenaTrait::insert_reallocating` failed")
     }
 }
 
-/// See [ArenaInsertTrait], this mainly is for special arenas without a freelist, that are supposed to follow the state of another arena.
+/// See [ArenaInsertTrait], this mainly is for special arenas without a
+/// freelist, that are supposed to follow the state of another arena.
 pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
-    /// Inserts `t` directly at raw [PtrInx] `p` into the arena and returns a `Ptr` and mutable reference to
-    /// it. Returns an error with the `t` if the index was beyond capacity or if there was an existing entry at `p`. Uses the current `self.generation()` of the arena for the generation.
+    /// Inserts `t` directly at raw [PtrInx] `p` into the arena and returns a
+    /// `Ptr` and mutable reference to it. Returns an error with the `t` if
+    /// the index was beyond capacity or if there was an existing entry at `p`.
+    /// Uses the current `self.generation()` of the arena for the generation.
     fn insert_direct_inx(&mut self, p: P::Inx, t: T) -> Result<(P, &mut T), T>;
 
-    /// Inserts `t` directly at `p` into the arena, accepting `p` and its generation as the valid `Ptr` to the element, returning a mutable reference to it. Returns an error with the `t` if the index was beyond capacity or if there was an existing entry at `p.inx()`.
+    /// Inserts `t` directly at `p` into the arena, accepting `p` and its
+    /// generation as the valid `Ptr` to the element, returning a mutable
+    /// reference to it. Returns an error with the `t` if the index was beyond
+    /// capacity or if there was an existing entry at `p.inx()`.
     fn insert_direct(&mut self, p: P, t: T) -> Result<&mut T, T>;
 }
-
 
 /*
 /// This inherits all the methods of [ArenaTrait] but adds on some [Link]-aware

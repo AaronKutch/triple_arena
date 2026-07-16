@@ -13,18 +13,25 @@ use crate::{
     utils::{NonZeroInxGenericStack, PtrGen, PtrInx, ptrinx_unchecked},
 };
 
-/// Internal entry for an `Arena`.
+// See REF(arena_terminology)
+
+/// Internal slot for an one-way linked freelist arena. Note the `P::Gen` is a
+/// ZST in logically generationless cases, and there are niches in both if
+/// `NonZero*` is being used like it should.
 #[derive(Clone)]
-pub enum InternalEntry<P: Ptr, T> {
-    /// A free entry with no `T`. The `usize` points to the next free entry,
-    /// except if it points to the self entry in which case it is the last free
-    /// entry.
+pub enum InternalSlot<P: Ptr, T> {
+    /// A free slot with no `T`. This index points to the next free slot (and it
+    /// is encoded as a `P::Inx` which can be smaller than a `usize`, this is
+    /// safe because its limitations are the same as the limitations that could
+    /// have pushed an allocated slot in the first case), except if it
+    /// points to the self slot in which case it is the last free slot.
     Free(P::Inx),
-    /// An entry allocated for a `(P::Gen, T)` pair in the arena.
+    /// A slot allocated for a `(P::Gen, T)` pair in the arena.
     Allocated(P::Gen, T),
 }
 
-impl<P: Ptr, T> InternalEntry<P, T> {
+// FIXME remove
+impl<P: Ptr, T> InternalSlot<P, T> {
     #[inline]
     pub fn replace_free_with_allocated(&mut self, generation: P::Gen, t: T) -> Option<P::Inx> {
         let free = mem::replace(self, Allocated(generation, t));
@@ -39,7 +46,7 @@ impl<P: Ptr, T> InternalEntry<P, T> {
     // breakage
 }
 
-use InternalEntry::*;
+use InternalSlot::*;
 
 /// An arena supporting non-Clone `T` (`T` has no requirements other than
 /// `Sized`, but some traits are only active if `T` implements them), deletion,
@@ -51,6 +58,9 @@ use InternalEntry::*;
 /// to have the type system guard against confusion and mistakenly using
 /// pointers from one arena in another. The arena will use generation counters
 /// to check for invalidated pointers if `P` has a generation counter.
+///
+/// See also the documentation on [ArenaTrait].
+///
 /// ```
 /// use triple_arena::{Arena, ptr_struct, traits::Ptr};
 ///
@@ -139,47 +149,22 @@ pub struct Arena<
     #[cfg(feature = "alloc")] B: ArenaBacking = crate::arena::HeapBacking,
     #[cfg(not(feature = "alloc"))] B: ArenaBacking,
 > {
-    /// The main memory of entries.
-    ///
-    /// # Capacity
-    ///
-    /// In earlier versions of this crate, there was an invariant that
-    /// `self.m.capacity() == self.m.len()`. However, the `clone_from_with`
-    /// exposed a flaw with this that is absolutely catastrophic for some use
-    /// cases of this crate: `reserve` and `reserve_exact` are allowed to
-    /// allocate inconsistently, e.x. one arena gets 32 capacity from doubling
-    /// and another arena gets 24 from taking a half step (this has been
-    /// observed in practice even with `reserve_exact` and identical arenas). If
-    /// `clone_from` is called to copy the 24 capacity arena to the 32 capacity
-    /// arena, then it must reserve 8 more capacity. `reserve_exact` can
-    /// then choose to start allocating by only doubling, in which case the
-    /// 24 capacity arena gets 24 additional capacity. If the new 48
-    /// capacity arena is cloned to the 32 capacity arena, it can get 32
-    /// more capacity to increase to 64 capacity despite nothing being
-    /// inserted. If the arenas `clone_from` to each other in a loop, they
-    /// leap frog each other exponentially. The only way to fix this is to
-    /// have `clone_from` push exactly what it needs to `self.m.len()`, so
-    /// they must be detached.
-    ///
-    /// I have decided to call `m.capacity()` the true allocated capacity and
-    /// `m.len()` the virtual capacity. Only `try_insert` and friends increase
-    /// the virtual capacity within the allocated capacity, everything else
-    /// reads only the virtual capacity and treats it as a limit. See `remove`
-    /// for more mitigations.
-    ///
     /// # Invariants
+    ///
+    /// - If there are free slots, all free slots have their freelist nodes in a
+    ///   single linked list with the start being pointed to by `freelist_root`
+    ///   and the end pointing to itself
+    /// - If there are no free slots, `freelist_root` is `None`
+    ///
+    /// # Soft Invariants
     ///
     /// - The generation value starts at 2 in a new Arena, so that the
     ///   `Ptr::invalid` function works
-    /// - If there are free entries, all Free entries have their freelist nodes
-    ///   in a single linked list with the start being pointed to by
-    ///   `freelist_root` and the end pointing to itself
-    /// - If there are no free entries, `freelist_root` is `None`
     /// - During an invalidation operation, the arena `generation` is
-    ///   incremented _and_ the allocation in question is turned into a `Free`
+    ///   incremented _and_ the allocation in question is turned into a `Free`,
     ///   or has its generation updated to equal the arena's `generation`. Newer
     ///   allocations must use the new `generation` value.
-    pub(crate) m: B::Stack<InternalEntry<P, T>>,
+    pub(crate) m: B::Stack<InternalSlot<P, T>>,
     pub(crate) len: usize,
     /// Points to the root of the chain of freelist nodes
     pub(crate) freelist_root: Option<P::Inx>,
@@ -188,31 +173,6 @@ pub struct Arena<
 
 // FIXME restrict visibility above to pub(in arena)
 
-/// # Note
-///
-/// A `Ptr` is logically invalid if:
-///  - it points to a different arena than the one it is being used as an
-///    argument to
-///  - it points to a `T` that has been the target of some `Ptr` invalidation
-///    operation such as removal
-///
-/// However, the functions here might not detect invalidity and return a `T`
-/// different than the one a `Ptr` originally pointed to. The first case is
-/// caught if different `Ptr` structs are being used for different arenas, in
-/// which case Rust's type system will prevent using the wrong pointers. The
-/// second case is only guaranteed to be caught if `P` has a generation counter.
-/// Otherwise, it is possible for another `T` to get allocated in the same
-/// allocation, and pointers to the previous `T` will now point to a different
-/// `T`. If this is intentional, [Arena::replace_and_keep_gen] should be used.
-///
-/// # Overflow
-///
-/// When using the default `P::Inx = usize` and `P::Gen = NonZeroU64`, only
-/// memory exhaustion should be a concern on all platforms, but if smaller types
-/// are used then panics can realistically happen under these conditions: If
-/// `Arena::len() == P::Inx::max()` and an insertion function is called, a
-/// panic occurs. If `Arena::generation()` is the maximum value of its type and
-/// an invalidation occurs, a panic occurs.
 impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     pub(crate) fn nziter(&self) -> crate::fundamental::IntoNonZeroUsizeIterator {
         crate::fundamental::nzusize_iter(
@@ -268,7 +228,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         Ok(())
     }
 
-    /// We assume that if an entry has been successfully pushed before (implying
+    /// We assume that if a slot has been successfully pushed before (implying
     /// that `P::Inx::try_from_usize` has succeeded with this exact value
     /// before), then passing the same raw index again to this will not fail,
     /// this function is to check places where this assumption happens
@@ -316,45 +276,72 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
 
     /// `remove` but with optional generation counter increment
     #[must_use]
-    pub(crate) fn remove_internal(&mut self, p: P, inc_gen: bool) -> InvalidationResult<T> {
-        let freelist_ptr = if let Some(free) = self.freelist_root {
-            // points to previous root
-            free
-        } else {
-            // points to itself
-            p.inx()
-        };
-        let Some(inx) = P::Inx::try_into_usize(p.inx()) else {
+    pub(crate) fn remove_internal(
+        &mut self,
+        inx: P::Inx,
+        generation: Option<P::Gen>,
+        inc_gen: bool,
+    ) -> InvalidationResult<T> {
+        let Some(raw_inx) = P::Inx::try_into_usize(inx) else {
             return InvalidationResult::InvalidPtr;
         };
-        let Some(allocation) = self
-            .m
-            .get_mut(inx) else {
-                return InvalidationResult::InvalidPtr;
-            };
+        let len = self.m.len();
+        let Some(allocation) = self.m.get_mut(raw_inx) else {
+            return InvalidationResult::InvalidPtr;
+        };
         match allocation {
             // invalid by being already free
             Free(_) => InvalidationResult::InvalidPtr,
-            Allocated(generation, _) => {
-                if *generation != p.generation() {
+            Allocated(generation1, _) => {
+                if let Some(generation) = generation
+                    && *generation1 != generation
+                {
                     // invalid by generation
-                    InvalidationResult::InvalidPtr
+                    return InvalidationResult::InvalidPtr;
+                }
+
+                let old_t = if len == raw_inx.get() {
+                    // Special optimization case: if this was the last slot in the stack, pop it off
+                    // without touching the freelist at all. We can't efficiently keep the end
+                    // canonicalized in general if using a one-way freelist (if something in the
+                    // middle is freed before elements to the right are freed, it leads to free
+                    // slots on the end). This decision does make a change in the deterministic
+                    // behavior of this standard arena, but I think it has its own idealness if we
+                    // accept stack lengths within capacities to begin with (which has uninit
+                    // advantages with small lengths in large array capacities, and I _think_ it may
+                    // be necessary to prevent the REF(exponential_double_buffer_blowup) problem).
+                    // If deterministic compatibility needs to be a thing again (and I don't think
+                    // it will ever since we introduced `ArenaDirectInsertTrait` mirror arenas), I
+                    // don't see it being difficult to follow this case.
+                    let Allocated(_, old_t) = self.m.pop().unwrap() else {
+                        unreachable!()
+                    };
+                    old_t
                 } else {
-                    // in both cases the new root is the entry we just removed
-                    self.freelist_root = Some(p.inx());
+                    let freelist_ptr = if let Some(free) = self.freelist_root {
+                        // points to previous root
+                        free
+                    } else {
+                        // points to itself
+                        inx
+                    };
+                    // in both cases the new root is the slot we just freed
+                    self.freelist_root = Some(inx);
                     self.len = self.len.wrapping_sub(1);
                     let Allocated(_, old_t) = mem::replace(allocation, Free(freelist_ptr)) else {
                         unreachable!()
                     };
-                    if inc_gen {
-                        if PtrGen::generational_inc(self.generation).1 {
-                            InvalidationResult::GenerationOverflow(old_t)
-                        } else {
-                            InvalidationResult::Success(old_t)
-                        }
+                    old_t
+                };
+
+                if inc_gen {
+                    if PtrGen::generational_inc(self.generation).1 {
+                        InvalidationResult::GenerationOverflow(old_t)
                     } else {
                         InvalidationResult::Success(old_t)
                     }
+                } else {
+                    InvalidationResult::Success(old_t)
                 }
             }
         }
@@ -495,13 +482,13 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
 
     #[must_use]
     #[inline]
-    pub(crate) fn m_get(&self, inx: P::Inx) -> Option<&InternalEntry<P, T>> {
+    pub(crate) fn m_get(&self, inx: P::Inx) -> Option<&InternalSlot<P, T>> {
         self.m.get(P::Inx::try_into_usize(inx)?)
     }
 
     #[must_use]
     #[inline]
-    pub(crate) fn m_get_mut(&mut self, inx: P::Inx) -> Option<&mut InternalEntry<P, T>> {
+    pub(crate) fn m_get_mut(&mut self, inx: P::Inx) -> Option<&mut InternalSlot<P, T>> {
         self.m.get_mut(P::Inx::try_into_usize(inx)?)
     }
 
@@ -936,7 +923,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     pub fn compress_and_shrink_with<F: FnMut(P, &mut T, P)>(&mut self, mut map: F) {
         self.inc_gen();
         let generation = self.generation();
-        let mut new_m = B::Stack::<InternalEntry<P, T>>::new();
+        let mut new_m = B::Stack::<InternalSlot<P, T>>::new();
         let _ = new_m.reallocate_min_capacity(self.len());
         let mut j = 1;
         for i in self.nziter() {
@@ -1080,7 +1067,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
 
     /// Directly returns a reference to the internal backing, for the purposes
     /// of accessing `ArenaBacking`-specific functions
-    pub fn backing(&self) -> &B::Stack<InternalEntry<P, T>> {
+    pub fn backing(&self) -> &B::Stack<InternalSlot<P, T>> {
         &self.m
     }
 
@@ -1091,7 +1078,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     ///
     /// The `InternalEntry` allocation state must not be modified, or else the
     /// freelist or entry length could be broken.
-    pub unsafe fn backing_mut(&mut self) -> &mut B::Stack<InternalEntry<P, T>> {
+    pub unsafe fn backing_mut(&mut self) -> &mut B::Stack<InternalSlot<P, T>> {
         &mut self.m
     }
 }

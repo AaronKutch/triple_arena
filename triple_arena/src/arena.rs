@@ -11,7 +11,7 @@ mod stack_backing;
 pub use arena_backing::{ArenaBacking, StackBacking};
 #[cfg(feature = "alloc")]
 pub use arena_backing::{HeapBacking, LimitedHeapBacking};
-pub use base_arena::{Arena, InternalEntry};
+pub use base_arena::{Arena, InternalSlot};
 #[cfg(feature = "alloc")]
 pub use heap_backing::NonZeroInxVec;
 #[cfg(feature = "alloc")]
