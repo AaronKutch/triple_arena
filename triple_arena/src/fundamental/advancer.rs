@@ -52,16 +52,25 @@
 ///
 /// `Advancers` should guarantee that any `Some(..)` will always be a valid
 /// `Item` for the start of the loop, and it should never return the same `Item`
-/// more than once.
+/// more than once. `Advancers` should also always fuse to always return `None`
+/// after the first time `None` is returned.
 ///
-/// It is _not_ guaranteed that `advance` will continue returning `None`s after
-/// the first time a `None` is returned (but this shouldn't be a concern unless
-/// you are not using the standard `while let` loop)
-pub trait Advancer {
-    type Collection;
+/// `Collection` would have been an associated type (as an extra guard against
+/// using the advancer on the wrong structure) instead of a trait parameter. But
+/// an unavoidable consequence is that the Advancer structs would have to
+/// include `PhantomData`s of the other generic parameters of the collection,
+/// and when using them in generics it would require `'static` bounds on those
+/// parameters. But, if arenas were already sharing the same `P` parameter then
+/// it was easy to cross validity domains anyway. `Advancer`s are by their
+/// purpose detached and extremely flexible, and the `'static` bound has been
+/// added as well to the advancer type, which is not possible in almost any
+/// other kind of iterator.
+pub trait Advancer<Collection: ?Sized>: 'static {
+    /// The item that this advancer returns
     type Item;
 
-    fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item>;
+    /// Advance over the collection and return a single item
+    fn advance(&mut self, collection: &Collection) -> Option<Self::Item>;
 
     /// Returns an empty advancer
     fn empty() -> Self;

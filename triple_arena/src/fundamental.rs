@@ -12,7 +12,9 @@ pub mod serde;
 pub mod serde_docs;
 
 pub use advancer::Advancer;
-pub use arena_traits::{ArenaDirectInsertTrait, ArenaInsertTrait, ArenaTrait, InvalidationResult};
+pub use arena_traits::{
+    ArenaDirectInsertTrait, ArenaInsertTrait, ArenaTrait, InvalidationOption, InvalidationResult,
+};
 pub use extra::{AllocError, IntoNonZeroUsizeIterator, nzusize_iter, ptrinx_unchecked};
 pub use nonzero_inx_generic_stack::{
     NonZeroInxGenericStack, NonZeroInxGenericStackFallible, SetMaxCapacity,

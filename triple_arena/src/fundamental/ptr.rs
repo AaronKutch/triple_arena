@@ -30,6 +30,7 @@ pub trait PtrGen:
     + RefUnwindSafe
     + UnwindSafe
     + Recast<Self>
+    + 'static
 {
     /// Returns generation 1, which we designate as a representable invalid
     /// generation value, because Arenas with generation counters always
@@ -110,6 +111,7 @@ pub trait PtrInx:
     + RefUnwindSafe
     + UnwindSafe
     + Recast<Self>
+    + 'static
 {
     /// This is used by "simple" arenas that expect a simple integer index that
     /// can be cast to and from `NonZeroUsize` losslessly. `NonZeroUsize` is
@@ -193,6 +195,7 @@ pub unsafe trait Ptr:
     + RefUnwindSafe
     + UnwindSafe
     + Recast<Self>
+    + 'static
 {
     /// The recommended general purpose type for this is `usize`
     type Inx: PtrInx;

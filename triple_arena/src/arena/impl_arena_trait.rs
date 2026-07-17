@@ -1,7 +1,7 @@
-use core::{marker::PhantomData, mem, slice::GetDisjointMutError};
+use core::{mem, slice::GetDisjointMutError};
 
 use crate::{
-    Arena, InvalidationResult,
+    Arena, InvalidationOption, InvalidationResult,
     arena::{
         ArenaBacking,
         InternalSlot::{self, *},
@@ -12,7 +12,7 @@ use crate::{
 };
 
 impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
-    type PtrAdvancer = arena_iterators::PtrAdvancer<P, T, B>;
+    type PtrAdvancer = arena_iterators::PtrAdvancer<P>;
 
     fn new() -> Self {
         Self {
@@ -114,8 +114,15 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         arena_iterators::PtrAdvancer {
             inx: Some(inx),
             rev,
-            _boo: PhantomData,
         }
+    }
+
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
+    where
+        T: 'a,
+    {
+        let adv = self.advancer();
+        arena_iterators::IterMut { arena: self, adv }
     }
 
     fn invalidate(&mut self, p: P) -> InvalidationResult<P> {
@@ -143,9 +150,16 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         self.remove_internal(p.inx(), Some(p.generation()), true)
     }
 
-    fn clear(&mut self) {
+    fn clear(&mut self) -> InvalidationOption<()> {
         self.m.clear();
         self.len = 0;
+        let tmp = P::Gen::generational_inc(self.generation);
+        self.generation = tmp.0;
+        if tmp.1 {
+            InvalidationOption::GenerationOverflow(())
+        } else {
+            InvalidationOption::Success(())
+        }
     }
 
     fn clone_from_with<U, A: ArenaTrait<P, U>, F: FnMut(P, &U) -> T>(

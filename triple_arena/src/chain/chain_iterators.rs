@@ -1,38 +1,35 @@
 //! Iterators for `ChainArena`
 
-use core::marker::PhantomData;
-
 use recasting::{Recast, Recaster};
 
 pub use crate::arena_iterators::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
 use crate::{
-    ChainArena, Link, arena_iterators,
+    Arena, ChainArena, Link, arena_iterators,
     traits::{Advancer, Ptr},
     utils::ArenaBacking,
 };
 
 /// An advancer over the valid `P`s of a `ChainArena`
-pub struct PtrAdvancer<P: Ptr, T, B: ArenaBacking> {
-    adv: arena_iterators::PtrAdvancer<P, Link<P, T>, B>,
+pub struct PtrAdvancer<P: Ptr> {
+    adv: arena_iterators::PtrAdvancer<P>,
 }
 
-impl<P: Ptr, T, B: ArenaBacking> Advancer for PtrAdvancer<P, T, B> {
-    type Collection = ChainArena<P, T, B>;
+impl<P: Ptr, T, B: ArenaBacking> Advancer<ChainArena<P, T, B>> for PtrAdvancer<P> {
     type Item = P;
 
-    fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
+    fn advance(&mut self, collection: &ChainArena<P, T, B>) -> Option<Self::Item> {
         self.adv.advance(&collection.a)
     }
 
     fn empty() -> Self {
         Self {
-            adv: arena_iterators::PtrAdvancer::empty(),
+            adv: <arena_iterators::PtrAdvancer<P> as Advancer<Arena<P, Link<P, T>, B>>>::empty(),
         }
     }
 }
 
 /// An advancer over the valid `P`s of one chain in a `ChainArena`
-pub struct ChainPtrAdvancer<P: Ptr, T, B: ArenaBacking> {
+pub struct ChainPtrAdvancer<P: Ptr> {
     // the initial `Ptr` for checking if we are in a cycle
     init: P,
     // we ultimately want this in order to provide the extra guarantee that a removal and insertion
@@ -42,14 +39,12 @@ pub struct ChainPtrAdvancer<P: Ptr, T, B: ArenaBacking> {
     switch: bool,
     // prevents infinite loops in case of various shenanigans
     max_advances: usize,
-    _boo: PhantomData<fn() -> (P, T, B)>,
 }
 
-impl<P: Ptr, T, B: ArenaBacking> Advancer for ChainPtrAdvancer<P, T, B> {
-    type Collection = ChainArena<P, T, B>;
+impl<P: Ptr, T, B: ArenaBacking> Advancer<ChainArena<P, T, B>> for ChainPtrAdvancer<P> {
     type Item = P;
 
-    fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
+    fn advance(&mut self, collection: &ChainArena<P, T, B>) -> Option<Self::Item> {
         if self.max_advances == 0 {
             return None;
         } else {
@@ -105,7 +100,6 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer for ChainPtrAdvancer<P, T, B> {
             ptr: None,
             switch: false,
             max_advances: 0,
-            _boo: PhantomData,
         }
     }
 }
@@ -128,7 +122,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for ValsLinkMut<'a, P, T, B> {
 /// An iterator for links in a chain in a `ChainArena`
 pub struct IterChain<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a ChainArena<P, T, B>,
-    adv: ChainPtrAdvancer<P, T, B>,
+    adv: ChainPtrAdvancer<P>,
 }
 
 impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterChain<'a, P, T, B> {
@@ -204,7 +198,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// Advances over every valid `Ptr` in `self`.
     ///
     /// Has the same properties as [crate::Arena::advancer]
-    pub fn advancer(&self) -> PtrAdvancer<P, T, B> {
+    pub fn advancer(&self) -> PtrAdvancer<P> {
         PtrAdvancer {
             adv: self.a.advancer(),
         }
@@ -222,13 +216,12 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// the loop, it can lead to a loop where the same `Ptr` can be returned
     /// multiple times. There is a internal fail safe that prevents
     /// non-termination.
-    pub fn advancer_chain(&self, p_init: P) -> ChainPtrAdvancer<P, T, B> {
+    pub fn advancer_chain(&self, p_init: P) -> ChainPtrAdvancer<P> {
         ChainPtrAdvancer {
             init: p_init,
             ptr: Some(p_init),
             switch: false,
             max_advances: self.len(),
-            _boo: PhantomData,
         }
     }
 

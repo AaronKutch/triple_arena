@@ -1,7 +1,5 @@
 //! Iterators for `OrdArena`
 
-use core::marker::PhantomData;
-
 use recasting::{Recast, Recaster};
 
 use crate::{
@@ -11,18 +9,16 @@ use crate::{
 };
 
 /// An advancer over the valid `P`s of an `OrdArena`
-pub struct PtrAdvancer<P: Ptr, K, V, B: ArenaBacking> {
+pub struct PtrAdvancer<P: Ptr> {
     // same as for `ChainPtrAdvancer` except we get to assume the chain is acyclical and we start
     // from the beginning
     ptr: Option<P::Inx>,
-    _boo: PhantomData<fn() -> (K, V, B)>,
 }
 
-impl<P: Ptr, K, V, B: ArenaBacking> Advancer for PtrAdvancer<P, K, V, B> {
-    type Collection = OrdArena<P, K, V, B>;
+impl<P: Ptr, K, V, B: ArenaBacking> Advancer<OrdArena<P, K, V, B>> for PtrAdvancer<P> {
     type Item = P;
 
-    fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
+    fn advance(&mut self, collection: &OrdArena<P, K, V, B>) -> Option<Self::Item> {
         if let Some(ptr) = self.ptr {
             if let Some((generation, link)) = collection.a.get_no_gen(ptr) {
                 if let Some(next) = link.next() {
@@ -42,17 +38,14 @@ impl<P: Ptr, K, V, B: ArenaBacking> Advancer for PtrAdvancer<P, K, V, B> {
     }
 
     fn empty() -> Self {
-        Self {
-            ptr: None,
-            _boo: PhantomData,
-        }
+        Self { ptr: None }
     }
 }
 
 /// An iterator over the valid `P`s of an `OrdArena`
 pub struct Ptrs<'a, P: Ptr, K, V, B: ArenaBacking> {
     arena: &'a OrdArena<P, K, V, B>,
-    adv: PtrAdvancer<P, K, V, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<P: Ptr, K, V, B: ArenaBacking> Iterator for Ptrs<'_, P, K, V, B> {
@@ -66,7 +59,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> Iterator for Ptrs<'_, P, K, V, B> {
 /// An iterator over `&K` in an `OrdArena`
 pub struct Keys<'a, P: Ptr, K, V, B: ArenaBacking> {
     arena: &'a OrdArena<P, K, V, B>,
-    adv: PtrAdvancer<P, K, V, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<'a, P: Ptr, K, V, B: ArenaBacking> Iterator for Keys<'a, P, K, V, B> {
@@ -82,7 +75,7 @@ impl<'a, P: Ptr, K, V, B: ArenaBacking> Iterator for Keys<'a, P, K, V, B> {
 /// An iterator over `&V` in an `OrdArena`
 pub struct Vals<'a, P: Ptr, K, V, B: ArenaBacking> {
     arena: &'a OrdArena<P, K, V, B>,
-    adv: PtrAdvancer<P, K, V, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<'a, P: Ptr, K, V, B: ArenaBacking> Iterator for Vals<'a, P, K, V, B> {
@@ -98,7 +91,7 @@ impl<'a, P: Ptr, K, V, B: ArenaBacking> Iterator for Vals<'a, P, K, V, B> {
 /// A mutable iterator over `&mut V` in an `OrdArena`
 pub struct ValsMut<'a, P: Ptr, K, V, B: ArenaBacking> {
     arena: &'a mut OrdArena<P, K, V, B>,
-    adv: PtrAdvancer<P, K, V, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<'a, P: Ptr, K, V, B: ArenaBacking> Iterator for ValsMut<'a, P, K, V, B> {
@@ -118,7 +111,7 @@ impl<'a, P: Ptr, K, V, B: ArenaBacking> Iterator for ValsMut<'a, P, K, V, B> {
 /// An iterator over `(P, &K, &V)` in an `OrdArena`
 pub struct Iter<'a, P: Ptr, K, V, B: ArenaBacking> {
     arena: &'a OrdArena<P, K, V, B>,
-    adv: PtrAdvancer<P, K, V, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<'a, P: Ptr, K, V, B: ArenaBacking> Iterator for Iter<'a, P, K, V, B> {
@@ -135,7 +128,7 @@ impl<'a, P: Ptr, K, V, B: ArenaBacking> Iterator for Iter<'a, P, K, V, B> {
 /// A draining iterator over `(P, K, V)` in an `OrdArena`
 pub struct Drain<'a, P: Ptr, K, V, B: ArenaBacking> {
     arena: &'a mut OrdArena<P, K, V, B>,
-    adv: PtrAdvancer<P, K, V, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<P: Ptr, K, V, B: ArenaBacking> Drop for Drain<'_, P, K, V, B> {
@@ -163,7 +156,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> Iterator for Drain<'_, P, K, V, B> {
 /// A capacity draining iterator over `(P, T)` in an `Arena`
 pub struct CapacityDrain<P: Ptr, K, V, B: ArenaBacking> {
     arena: OrdArena<P, K, V, B>,
-    adv: PtrAdvancer<P, K, V, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<P: Ptr, K, V, B: ArenaBacking> Iterator for CapacityDrain<P, K, V, B> {
@@ -212,20 +205,18 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> FromIterator<(K, V)> for OrdArena<P, K,
 impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Advances over every valid `Ptr` in `self`. Invalidating the next greater
     /// entry is _not_ supported during each advancement.
-    pub fn advancer(&self) -> PtrAdvancer<P, K, V, B> {
+    pub fn advancer(&self) -> PtrAdvancer<P> {
         PtrAdvancer {
             ptr: self.first().map(|p| p.inx()),
-            _boo: PhantomData,
         }
     }
 
     /// Advances over valid `Ptr`s in `self` starting from `p_start`. If
     /// `p_start` is invalid the advancer will return only `None`s. Invalidating
     /// the next greater entry is _not_ supported during each advancement.
-    pub fn advancer_starting_from(&self, p_start: P) -> PtrAdvancer<P, K, V, B> {
+    pub fn advancer_starting_from(&self, p_start: P) -> PtrAdvancer<P> {
         PtrAdvancer {
             ptr: Some(p_start.inx()),
-            _boo: PhantomData,
         }
     }
 

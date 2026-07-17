@@ -1,6 +1,6 @@
 //! Iterators for `Arena`
 
-use core::{marker::PhantomData, num::NonZeroUsize};
+use core::num::NonZeroUsize;
 
 use InternalSlot::*;
 use recasting::{Recast, Recaster};
@@ -13,18 +13,16 @@ use crate::{
 };
 
 /// An advancer over the valid `P`s of an `Arena`
-pub struct PtrAdvancer<P: Ptr, T, B: ArenaBacking> {
+pub struct PtrAdvancer<P: Ptr> {
     pub(in crate::arena) inx: Option<P::Inx>,
     // if in reverse
     pub(in crate::arena) rev: bool,
-    pub(in crate::arena) _boo: PhantomData<fn() -> (P, T, B)>,
 }
 
-impl<P: Ptr, T, B: ArenaBacking> Advancer for PtrAdvancer<P, T, B> {
-    type Collection = Arena<P, T, B>;
+impl<P: Ptr, T, B: ArenaBacking> Advancer<Arena<P, T, B>> for PtrAdvancer<P> {
     type Item = P;
 
-    fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
+    fn advance(&mut self, collection: &Arena<P, T, B>) -> Option<Self::Item> {
         loop {
             let inx = self.inx?;
             // If the `Ptr` is not linear then this will always return `None` and the
@@ -44,10 +42,9 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer for PtrAdvancer<P, T, B> {
     }
 
     fn empty() -> Self {
-        PtrAdvancer {
+        Self {
             inx: None,
             rev: false,
-            _boo: PhantomData,
         }
     }
 }
@@ -55,7 +52,7 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer for PtrAdvancer<P, T, B> {
 /// An iterator over the valid `P`s of an `Arena`
 pub struct Ptrs<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a Arena<P, T, B>,
-    adv: PtrAdvancer<P, T, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<P: Ptr, T, B: ArenaBacking> Iterator for Ptrs<'_, P, T, B> {
@@ -69,7 +66,7 @@ impl<P: Ptr, T, B: ArenaBacking> Iterator for Ptrs<'_, P, T, B> {
 /// An iterator over `&T` in an `Arena`
 pub struct Vals<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a Arena<P, T, B>,
-    adv: PtrAdvancer<P, T, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for Vals<'a, P, T, B> {
@@ -85,7 +82,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for Vals<'a, P, T, B> {
 /// A mutable iterator over `&mut T` in an `Arena`
 pub struct ValsMut<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a mut Arena<P, T, B>,
-    adv: PtrAdvancer<P, T, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for ValsMut<'a, P, T, B> {
@@ -105,7 +102,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for ValsMut<'a, P, T, B> {
 /// An iterator over `(P, &T)` in an `Arena`
 pub struct Iter<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a Arena<P, T, B>,
-    adv: PtrAdvancer<P, T, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for Iter<'a, P, T, B> {
@@ -120,8 +117,8 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for Iter<'a, P, T, B> {
 
 /// A mutable iterator over `(P, &mut T)` in an `Arena`
 pub struct IterMut<'a, P: Ptr, T, B: ArenaBacking> {
-    arena: &'a mut Arena<P, T, B>,
-    adv: PtrAdvancer<P, T, B>,
+    pub(in crate::arena) arena: &'a mut Arena<P, T, B>,
+    pub(in crate::arena) adv: PtrAdvancer<P>,
 }
 
 impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterMut<'a, P, T, B> {
@@ -141,7 +138,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterMut<'a, P, T, B> {
 /// A draining iterator over `(P, T)` in an `Arena`
 pub struct Drain<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a mut Arena<P, T, B>,
-    adv: PtrAdvancer<P, T, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<P: Ptr, T, B: ArenaBacking> Drop for Drain<'_, P, T, B> {
@@ -168,7 +165,7 @@ impl<P: Ptr, T, B: ArenaBacking> Iterator for Drain<'_, P, T, B> {
 /// A capacity draining iterator over `(P, T)` in an `Arena`
 pub struct CapacityDrain<P: Ptr, T, B: ArenaBacking> {
     arena: Arena<P, T, B>,
-    adv: PtrAdvancer<P, T, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<P: Ptr, T, B: ArenaBacking> Iterator for CapacityDrain<P, T, B> {
@@ -227,12 +224,11 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     /// loop began will be witnessed as long as it is kept valid during the
     /// loop. The `Ptr`s of insertions that occur during the loop can both be
     /// witnessed or not witnessed before the loop terminates.
-    pub fn advancer(&self) -> PtrAdvancer<P, T, B> {
+    pub fn advancer(&self) -> PtrAdvancer<P> {
         PtrAdvancer {
             // FIXME remove we fixed this in the trait
             inx: Some(P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap()),
             rev: false,
-            _boo: PhantomData,
         }
     }
 

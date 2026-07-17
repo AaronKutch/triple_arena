@@ -1,54 +1,50 @@
 //! Iterators for `SurjectArena`
 
-use core::marker::PhantomData;
-
 use recasting::{Recast, Recaster};
 
 use crate::{
     Arena, SurjectArena,
     arena_iterators::{self},
+    chain::ChainNoGenArena,
     surject::{Key, Val},
     traits::{Advancer, Ptr},
     utils::{ArenaBacking, LinkNoGen, PtrNoGen, chain_no_gen_iterators},
 };
 
 /// An advancer over the valid `P`s of a `SurjectArena`
-pub struct PtrAdvancer<P: Ptr, K, V, B: ArenaBacking> {
-    adv: chain_no_gen_iterators::PtrAdvancer<P, Key<P, K>, B>,
-    _boo: PhantomData<fn() -> V>,
+pub struct PtrAdvancer<P: Ptr> {
+    adv: chain_no_gen_iterators::PtrAdvancer<P>,
 }
 
-impl<P: Ptr, K, V, B: ArenaBacking> Advancer for PtrAdvancer<P, K, V, B> {
-    type Collection = SurjectArena<P, K, V, B>;
+impl<P: Ptr, K, V, B: ArenaBacking> Advancer<SurjectArena<P, K, V, B>> for PtrAdvancer<P> {
     type Item = P;
 
-    fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
+    fn advance(&mut self, collection: &SurjectArena<P, K, V, B>) -> Option<Self::Item> {
         self.adv.advance(&collection.keys)
     }
 
     fn empty() -> Self {
         Self {
-            adv: chain_no_gen_iterators::PtrAdvancer::empty(),
-            _boo: PhantomData,
+            adv: <chain_no_gen_iterators::PtrAdvancer<P> as Advancer<
+                ChainNoGenArena<P, Key<P, K>, B>,
+            >>::empty(),
         }
     }
 }
 
 /// An advancer over the valid `P`s of one surject in a `SurjectArena`
-pub struct SurjectPtrAdvancer<P: Ptr, K, V, B: ArenaBacking> {
+pub struct SurjectPtrAdvancer<P: Ptr> {
     // same as for `ChainPtrAdvancer` except we get to assume the chain is cyclical
     init: P::Inx,
     ptr: Option<P::Inx>,
     // prevent infinite loops
     max_advances: usize,
-    _boo: PhantomData<fn() -> (K, V, B)>,
 }
 
-impl<P: Ptr, K, V, B: ArenaBacking> Advancer for SurjectPtrAdvancer<P, K, V, B> {
-    type Collection = SurjectArena<P, K, V, B>;
+impl<P: Ptr, K, V, B: ArenaBacking> Advancer<SurjectArena<P, K, V, B>> for SurjectPtrAdvancer<P> {
     type Item = P;
 
-    fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
+    fn advance(&mut self, collection: &SurjectArena<P, K, V, B>) -> Option<Self::Item> {
         if self.max_advances == 0 {
             return None;
         } else {
@@ -82,7 +78,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> Advancer for SurjectPtrAdvancer<P, K, V, B> 
             init: P::invalid().inx(),
             ptr: None,
             max_advances: 0,
-            _boo: PhantomData,
         }
     }
 }
@@ -170,7 +165,7 @@ impl<'a, P: Ptr, K, V, B: ArenaBacking> Iterator for Iter<'a, P, K, V, B> {
 /// An iterator over `(P, &K, &V)` in a `SurjectArena` surject
 pub struct IterSurject<'a, P: Ptr, K, V, B: ArenaBacking> {
     arena: &'a SurjectArena<P, K, V, B>,
-    adv: SurjectPtrAdvancer<P, K, V, B>,
+    adv: SurjectPtrAdvancer<P>,
     surject_val: Option<&'a V>,
 }
 
@@ -203,10 +198,9 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// Advances over every valid `Ptr` in `self`.
     ///
     /// Has the same properties as [crate::Arena::advancer]
-    pub fn advancer(&self) -> PtrAdvancer<P, K, V, B> {
+    pub fn advancer(&self) -> PtrAdvancer<P> {
         PtrAdvancer {
             adv: self.keys.advancer(),
-            _boo: PhantomData,
         }
     }
 
@@ -220,12 +214,11 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// the loop, it can lead to loop where the same `Ptr` can be returned
     /// multiple times. There is an internal fail safe that prevents
     /// non-termination.
-    pub fn advancer_surject(&self, p_init: P) -> SurjectPtrAdvancer<P, K, V, B> {
+    pub fn advancer_surject(&self, p_init: P) -> SurjectPtrAdvancer<P> {
         SurjectPtrAdvancer {
             init: p_init.inx(),
             ptr: Some(p_init.inx()),
             max_advances: self.len_keys(),
-            _boo: PhantomData,
         }
     }
 

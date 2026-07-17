@@ -1,4 +1,4 @@
-use core::slice::GetDisjointMutError;
+use core::{iter::from_fn, slice::GetDisjointMutError};
 
 use crate::{
     traits::{Advancer, Ptr},
@@ -15,30 +15,72 @@ other notes:
 We don't need a `insert_with_manual_generation` function for `ArenaInsertTrait`, `set_generation` can be used in combination instead.
 
 Originally there were complementary `replace_and_update_gen` and `replace_and_keep_gen` functions to emphasize the ability to deal with non-Clone types and how they should deal with generations, but these were barely used in practice and the signature of `replace_and_update_gen` was unavoidably awkward and increasingly so with the new strict generation overflow fallibility and the future possibility of `!Overwrite` types that can't be `mem::replace`d.
+
+I don't think we need a `vals_mut`, may as well be advancing
 */
 
+/// Returned from operations that are infallible but could involve generation
+/// overflow
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[must_use]
+pub enum InvalidationOption<T> {
+    /// The operation was successful without generation counter overflow
+    Success(T),
+    /// The operation was completed successfully, except that a generation
+    /// counter overflowed
+    GenerationOverflow(T),
+}
+
+impl<T> InvalidationOption<T> {
+    // I chose this naming because it is very short and is what is wanted extremely
+    // often
+
+    /// Maps both options to `T`. This is the preferred method for most uses
+    /// that don't care about the incredible difficulty of
+    /// reaching generation overflow with the default `NonZeroU64`.
+    pub fn ok(self) -> T {
+        match self {
+            Self::Success(t) => t,
+            Self::GenerationOverflow(t) => t,
+        }
+    }
+
+    /// Maps `Success` to `Ok`, `GenerationOverflow` to `Err`. Recommended only
+    /// for small `P::Gen` sizes or ABA prevention situations that require
+    /// absolute strictness.
+    pub fn strict(self) -> Result<T, T> {
+        match self {
+            Self::Success(t) => Ok(t),
+            Self::GenerationOverflow(t) => Err(t),
+        }
+    }
+}
+
+/// Returned from fallible operations that have two different degrees of
+/// success.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 #[must_use]
 pub enum InvalidationResult<T> {
+    /// The operation was successful without generation counter overflow
     Success(T),
-    /// The operation was completed successfully, except that the Arena's
-    /// generation counter overflowed
+    /// The operation was completed successfully, except that a generation
+    /// counter overflowed
     GenerationOverflow(T),
-    /// The `Ptr` that invalidation was targeting was invalid, and nothing has
-    /// been mutated
+    /// The `Ptr` that invalidation was targeting was invalid, and the operation
+    /// was never executed
     InvalidPtr,
 }
 
 impl<T> InvalidationResult<T> {
-    /// Maps both `Success` and `GenerationOverflow` to `Some` (the preferred
-    /// method for most uses that don't care about the incredible difficulty of
-    /// reaching generation overflow with the default `NonZeroU64`). Maps
-    /// `InvalidPtr` to `None`.
+    /// Maps both `Success` and `GenerationOverflow` to `Some`, and maps
+    /// `InvalidPtr` to `None`. This is the preferred method for most uses
+    /// that don't care about the incredible difficulty of
+    /// reaching generation overflow with the default `NonZeroU64`.
     pub fn ok(self) -> Option<T> {
         match self {
-            InvalidationResult::Success(t) => Some(t),
-            InvalidationResult::GenerationOverflow(t) => Some(t),
-            InvalidationResult::InvalidPtr => None,
+            Self::Success(t) => Some(t),
+            Self::GenerationOverflow(t) => Some(t),
+            Self::InvalidPtr => None,
         }
     }
 
@@ -47,9 +89,9 @@ impl<T> InvalidationResult<T> {
     /// or ABA prevention situations that require absolute strictness.
     pub fn strict(self) -> Result<T, Option<T>> {
         match self {
-            InvalidationResult::Success(t) => Ok(t),
-            InvalidationResult::GenerationOverflow(t) => Err(Some(t)),
-            InvalidationResult::InvalidPtr => Err(None),
+            Self::Success(t) => Ok(t),
+            Self::GenerationOverflow(t) => Err(Some(t)),
+            Self::InvalidPtr => Err(None),
         }
     }
 }
@@ -90,7 +132,8 @@ impl<T> InvalidationResult<T> {
 /// handle allocation failures, then [ArenaInsertTrait::insert_reallocating] and
 /// similar should be used.
 pub trait ArenaTrait<P: Ptr, T> {
-    type PtrAdvancer: Advancer<Collection = Self, Item = P>;
+    // An advancer over the valid `Ptr`s of this arena
+    type PtrAdvancer: Advancer<Self, Item = P>;
 
     /// Creates an empty arena, which may have any capacity to start with
     fn new() -> Self;
@@ -248,6 +291,69 @@ pub trait ArenaTrait<P: Ptr, T> {
     /// the direction the advancer is going.
     fn ordered_advancer(&self, inx: P::Inx, rev: bool) -> Self::PtrAdvancer;
 
+    /// Iteration over all valid `P` in the arena
+    fn ptrs(&self) -> impl Iterator<Item = P> {
+        let mut adv = self.advancer();
+        from_fn(move || adv.advance(self))
+    }
+
+    /// Iteration over all `&T` in the arena
+    fn vals<'a>(&'a self) -> impl Iterator<Item = &'a T>
+    where
+        T: 'a,
+    {
+        let mut adv = self.advancer();
+        from_fn(move || {
+            // we would need to handle the ability to handle invalidation in the middle of
+            // advancing, but `advance` is supposed to return a guaranteed valid `Ptr` that
+            // is good if we immediately use it here
+            adv.advance(self).and_then(|p| self.get(p))
+        })
+    }
+
+    fn vals_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut T>
+    where
+        T: 'a,
+    {
+        self.iter_mut().map(|(_, t)| t)
+    }
+
+    /// Iteration over all `(P, &T)` in the arena
+    fn iter<'a>(&'a self) -> impl Iterator<Item = (P, &'a T)>
+    where
+        T: 'a,
+    {
+        let mut adv = self.advancer();
+        from_fn(move || {
+            let p = adv.advance(self)?;
+            Some((p, self.get(p)?))
+        })
+    }
+
+    /// Iteration over all `(P, &mut T)` in the arena
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
+    where
+        T: 'a;
+
+    /// A draining iterator over `(P, T)` in the arena.
+    ///
+    /// The `InvalidationOption` is returned per-element because of certain
+    /// arena designs that have a generation per internal slot or region instead
+    /// of a global generation.
+    fn drain(&mut self) -> impl Iterator<Item = InvalidationOption<(P, T)>> {
+        let mut adv = self.advancer();
+        from_fn(move || {
+            let p = adv.advance(self)?;
+            match self.remove(p) {
+                InvalidationResult::Success(t) => Some(InvalidationOption::Success((p, t))),
+                InvalidationResult::GenerationOverflow(t) => {
+                    Some(InvalidationOption::GenerationOverflow((p, t)))
+                }
+                InvalidationResult::InvalidPtr => None,
+            }
+        })
+    }
+
     /// Invalidates all references to the `T` pointed to by `p`, and returns a
     /// new valid reference. Does no invalidation and returns `None` if `p` is
     /// invalid.
@@ -260,7 +366,7 @@ pub trait ArenaTrait<P: Ptr, T> {
 
     /// Drops all `T` from the arena and invalidates all pointers previously
     /// created from it. This has no effect on allocated capacity.
-    fn clear(&mut self);
+    fn clear(&mut self) -> InvalidationOption<()>;
 
     // `clone_from_with_within_capacity() -> Option<()>` is getting ridiculous and
     // the fallible return is only for if it was called in a trivially checkable
