@@ -12,11 +12,9 @@ REF(exponential_double_buffer_blowup): In earlier versions of `triple_arena`, th
 
 other notes:
 
-We don't need a `insert_with_manual_generation` function for `ArenaInsertTrait`, `set_generation` can be used in combination instead.
+There is no `generation` or `set_generation` function (or at least there won't be one without an index involved), because some implementations will have generations per slot or per domain
 
 Originally there were complementary `replace_and_update_gen` and `replace_and_keep_gen` functions to emphasize the ability to deal with non-Clone types and how they should deal with generations, but these were barely used in practice and the signature of `replace_and_update_gen` was unavoidably awkward and increasingly so with the new strict generation overflow fallibility and the future possibility of `!Overwrite` types that can't be `mem::replace`d.
-
-I don't think we need a `vals_mut`, may as well be advancing
 */
 
 /// Returned from operations that are infallible but could involve generation
@@ -94,6 +92,17 @@ impl<T> InvalidationResult<T> {
             Self::InvalidPtr => Err(None),
         }
     }
+}
+
+/// A type that implements this trait becomes usable in functions like
+/// [ArenaTrait::clone_from_with]. Some arenas do not have a global generation,
+/// or at least some singular generation that could be chosen for functions like
+/// [ArenaTrait::clone_from_with] to use when selecting a generation to be used
+/// for ABA prevention.
+pub trait SingularGenerationArena<P: Ptr> {
+    /// Returns a singular generation for the arena, that is usually the
+    /// generation of the latest valid entries
+    fn singular_generation(&self) -> P::Gen;
 }
 
 /// The base trait for `triple_arena` style Arenas. See [crate::Arena] for the
@@ -180,19 +189,6 @@ pub trait ArenaTrait<P: Ptr, T> {
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
-
-    /// Return the arena generation counter (unless `P::Gen` is `()` in which
-    /// case there is no generation counting).
-    ///
-    /// Unless overflow or generation jumps from certain special operations
-    /// happens, this is equal to the number of invalidation operations
-    /// performed on this arena plus 2
-    fn generation(&self) -> P::Gen;
-
-    /// Manually set the arena generation counter. This can break some soft
-    /// invariants such as ABA problem prevention and `P::invalid` always being
-    /// invalid with generation counters.
-    fn set_generation(&mut self, new_gen: P::Gen);
 
     /// Returns if `p` is a valid `Ptr`
     fn contains(&self, p: P) -> bool {
@@ -338,12 +334,14 @@ pub trait ArenaTrait<P: Ptr, T> {
     /// A draining iterator over `(P, T)` in the arena.
     ///
     /// The `InvalidationOption` is returned per-element because of certain
-    /// arena designs that have a generation per internal slot or region instead
+    /// arena designs that have a generation per internal slot or domain instead
     /// of a global generation.
     fn drain(&mut self) -> impl Iterator<Item = InvalidationOption<(P, T)>> {
         let mut adv = self.advancer();
         from_fn(move || {
             let p = adv.advance(self)?;
+            // for global generation arenas, just do this for simplicity and so that the
+            // invalidation is associated with a particular element
             match self.remove(p) {
                 InvalidationResult::Success(t) => Some(InvalidationOption::Success((p, t))),
                 InvalidationResult::GenerationOverflow(t) => {
@@ -365,7 +363,10 @@ pub trait ArenaTrait<P: Ptr, T> {
     fn remove(&mut self, p: P) -> InvalidationResult<T>;
 
     /// Drops all `T` from the arena and invalidates all pointers previously
-    /// created from it. This has no effect on allocated capacity.
+    /// created from it. This has no effect on allocated capacity. Returns if
+    /// any generation overflow occured (for arena implementations that have
+    /// generations per internal slot or domain, this will return overflow if
+    /// any single one overflowed)
     fn clear(&mut self) -> InvalidationOption<()>;
 
     // `clone_from_with_within_capacity() -> Option<()>` is getting ridiculous and
@@ -377,14 +378,16 @@ pub trait ArenaTrait<P: Ptr, T> {
     // growth problems that early versions of `triple_arena` ran into.
 
     /// Overwrites `self` with a clone of `source` (dropping all preexisting `T`
-    /// and overwriting the generation counter with `source.generation()`).
-    /// The `Ptr` validities are also cloned so that the `P` associated with a
-    /// `U` is a valid reference to its mapped `T`. Reallocation occurs if the
-    /// capacity of `self` is not large enough. If the highest `P::Inx` index of
-    /// an allocated entry in `source` would fit in `self.capacity()`, this is
-    /// guaranteed to _not_ reallocate and the function is infallible. Returns
-    /// an error upon reallocation failure.
-    fn clone_from_with<U, A: ArenaTrait<P, U>, F: FnMut(P, &U) -> T>(
+    /// and overwriting the singular generation counter with
+    /// `source.singular_generation()`). The `Ptr` validities are also
+    /// cloned so that the `P` associated with a `U` in `source` is also
+    /// precisely the valid `Ptr` to its mapped `T`. Reallocation occurs if
+    /// the capacity of `self` is not large enough. With simple arenas and
+    /// indexes, if the `P::Inx` from the highest index is such that
+    /// `source.find_last_ptr().unwrap().inx().get() <= self.capacity()`, this
+    /// is guaranteed to _not_ reallocate and the function is infallible.
+    /// Returns an error upon reallocation failure.
+    fn clone_from_with<U, A: ArenaTrait<P, U> + SingularGenerationArena<P>, F: FnMut(P, &U) -> T>(
         &mut self,
         source: &A,
         map: F,

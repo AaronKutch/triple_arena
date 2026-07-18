@@ -7,9 +7,15 @@ use crate::{
         InternalSlot::{self, *},
     },
     arena_iterators,
-    traits::{Advancer, ArenaInsertTrait, ArenaTrait, Ptr},
+    traits::{Advancer, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena},
     utils::{AllocError, NonZeroInxGenericStack, PtrGen, PtrInx},
 };
+
+impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for Arena<P, T, B> {
+    fn singular_generation(&self) -> <P as Ptr>::Gen {
+        self.generation
+    }
+}
 
 impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     type PtrAdvancer = arena_iterators::PtrAdvancer<P>;
@@ -41,14 +47,6 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
 
     fn len(&self) -> usize {
         self.len
-    }
-
-    fn generation(&self) -> <P as Ptr>::Gen {
-        self.generation
-    }
-
-    fn set_generation(&mut self, new_gen: P::Gen) {
-        self.generation = new_gen;
     }
 
     fn get_inx(&self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &T)> {
@@ -162,7 +160,11 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         }
     }
 
-    fn clone_from_with<U, A: ArenaTrait<P, U>, F: FnMut(P, &U) -> T>(
+    fn clone_from_with<
+        U,
+        A: ArenaTrait<P, U> + SingularGenerationArena<P>,
+        F: FnMut(P, &U) -> T,
+    >(
         &mut self,
         source: &A,
         mut map: F,
@@ -184,7 +186,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         // start modifying after the fallible points that we can reasonably deal with
         self.m.clear();
         self.len = 0;
-        self.generation = source.generation();
+        self.generation = source.singular_generation();
         // maintain invariants even with bad behavior, increment `len` at the right
         // moment and always call `canonicalize_free_list` after this point
         let res = 'outer: {

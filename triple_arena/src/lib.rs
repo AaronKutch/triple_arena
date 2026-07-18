@@ -64,5 +64,6 @@ pub mod traits {
 
     pub use crate::fundamental::{
         Advancer, ArenaDirectInsertTrait, ArenaInsertTrait, ArenaTrait, Ptr,
+        SingularGenerationArena,
     };
 }
