@@ -439,9 +439,9 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
 /// freelist, that are supposed to follow the state of another arena.
 pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// Inserts `t` directly at raw [PtrInx] `p` into the arena and returns a
-    /// `Ptr` and mutable reference to it. Returns an error with the `t` if
-    /// the index was beyond capacity or if there was an existing entry at `p`.
-    /// Uses the current `self.generation()` of the arena for the generation.
+    /// valid `Ptr` and mutable reference to it. Returns an error with the `t`
+    /// if the index was beyond capacity or if there was an existing entry
+    /// at `p`.
     fn insert_direct_inx(&mut self, p: P::Inx, t: T) -> Result<(P, &mut T), T>;
 
     /// Inserts `t` directly at `p` into the arena, accepting `p` and its
