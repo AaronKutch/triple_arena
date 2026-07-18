@@ -1,7 +1,4 @@
-use std::{
-    cell::RefCell,
-    num::{NonZeroU32, NonZeroU128},
-};
+use std::cell::RefCell;
 
 use rand_xoshiro::{
     Xoshiro128StarStar,
@@ -9,9 +6,11 @@ use rand_xoshiro::{
 };
 use serde_derive::{Deserialize, Serialize};
 use triple_arena::{
-    Arena, ChainArena, OrdArena, SurjectArena, ptr_struct, traits::Ptr, utils::ChainNoGenArena,
+    Arena, ChainArena, OrdArena, SurjectArena, traits::Ptr, utils::ChainNoGenArena,
 };
 use triple_arena_render::*;
+
+use crate::P1;
 
 #[cfg(miri)]
 pub const A: u64 = 1 << 4;
@@ -44,11 +43,6 @@ impl<P: Ptr> DebugNodeTrait<P> for MyNode<P> {
         }
     }
 }
-
-// This is constructed this way to guard against problems with stuff like
-// `PtrNoGen`
-ptr_struct!(P0[NonZeroU32](NonZeroU128));
-ptr_struct!(P1);
 
 thread_local! {
     pub static CLONE_COUNT: RefCell<u64> = const { RefCell::new(0) };

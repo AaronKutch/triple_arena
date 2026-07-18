@@ -6,5 +6,7 @@ pub mod cdgen;
 pub mod nonzero_inx_generic_stack;
 // FIXME remove what is unused
 pub mod old_helpers;
+mod ptrs;
 
 pub use old_helpers::*;
+pub use ptrs::*;
