@@ -76,7 +76,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
         rng,
         &mut CdGen::new(),
         Arena::<P2, Cd<()>, StackBacking<LIMIT>>::new(),
-        |a| check_arena(a),
+        check_arena,
     )
     .stack()?;
 

@@ -88,7 +88,7 @@ pub fn fuzz<
                 }
                 ensure_eq!(cap, a.capacity());
             }
-            100..300 => {
+            100..200 => {
                 // insert_within_capacity
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
@@ -100,6 +100,51 @@ pub fn fuzz<
                 } else {
                     let (k, t) = cd_gen.new_cd();
                     ensure!(a.insert_within_capacity(t).is_err_and(|t| t.key() == k));
+                }
+            }
+            200..250 => {
+                // insert_reallocating
+                if len < a.capacity() {
+                    let (k, t) = cd_gen.new_cd();
+                    let Ok((p, t1)) = a.insert_reallocating(t) else {
+                        bail!("")
+                    };
+                    ensure_eq!(t1.key(), k);
+                    b.insert(k, p);
+                } else if len < stats.limit {
+                    let (k, t) = cd_gen.new_cd();
+                    let cap = a.capacity();
+                    let Ok((p, t1)) = a.insert_reallocating(t) else {
+                        bail!("")
+                    };
+                    ensure_eq!(t1.key(), k);
+                    // check that capacity increased
+                    ensure!(a.capacity() > cap);
+                    b.insert(k, p);
+                } else if limited {
+                    let (k, t) = cd_gen.new_cd();
+                    ensure!(a.insert_reallocating(t).is_err_and(|t| t.key() == k));
+                } else {
+                    // do nothing
+                }
+            }
+            250..300 => {
+                // insert
+                if len < a.capacity() {
+                    let (k, t) = cd_gen.new_cd();
+                    let (p, t1) = a.insert(t);
+                    ensure_eq!(t1.key(), k);
+                    b.insert(k, p);
+                } else if len < stats.limit {
+                    let (k, t) = cd_gen.new_cd();
+                    let cap = a.capacity();
+                    let (p, t1) = a.insert(t);
+                    ensure_eq!(t1.key(), k);
+                    // check that capacity increased
+                    ensure!(a.capacity() > cap);
+                    b.insert(k, p);
+                } else {
+                    // do nothing
                 }
             }
             300..500 => {
@@ -122,87 +167,38 @@ pub fn fuzz<
                     ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr))
                 }
             }
-            500..999 => {
-                // insert_within_capacity
-                /*if a.len() < a.capacity() {
-                    let t = new_t();
-                    let ptr = a.try_insert(t).unwrap();
-                    b.insert(t, ptr);
-                    list.push(t);
-                } else {
-                    let t = new_t();
-                    assert_eq!(a.try_insert(t), Err(t));
-                }*/
-            }
-            /*50..=99 => {
-                // try_insert_with
-                if a.len() < a.capacity() {
-                    let t = new_t();
-                    let mut create_ptr = None;
-                    let ptr = if let Ok(ptr) = a.try_insert_with(|p| {
-                        create_ptr = Some(p);
-                        t
-                    }) {
-                        ptr
-                    } else {
-                        panic!()
-                    };
-                    assert_eq!(ptr, create_ptr.unwrap());
-                    b.insert(t, ptr);
-                    list.push(t);
-                } else {
-                    let create = |_p: P0| unreachable!();
-                    assert!(a.try_insert_with(create).is_err());
-                }
-            }
-            100..=149 => {
-                // insert
-                let t = new_t();
-                let ptr = a.insert(t);
-                b.insert(t, ptr);
-                list.push(t);
-            }
-            150..=199 => {
-                // insert_with
-                let t = new_t();
-                let mut create_ptr = None;
-                let ptr = a.insert_with(|p| {
-                    create_ptr = Some(p);
-                    t
-                });
-                assert_eq!(ptr, create_ptr.unwrap());
-                b.insert(t, ptr);
-                list.push(t);
-            }
-            200..=399 => {
-                // remove
-                if len != 0 {
-                    let t = list.swap_remove(next_inx!(rng, len));
-                    let ptr = b.remove(&t).unwrap();
-                    assert_eq!(t, a.remove(ptr).unwrap());
-                    generation += 1;
-                } else {
-                    assert!(a.remove(invalid).is_none());
-                }
-            }
-            */
-            /*
-            400..=449 => {
+            500..600 => {
                 // invalidate
-                if len != 0 {
-                    let t = list[next_inx!(rng, len)];
-                    let ptr = b.remove(&t).unwrap();
-                    let new_ptr = a.invalidate(ptr).unwrap();
-                    generation += 1;
-                    b.insert(t, new_ptr);
-                    assert_eq!(t, a[new_ptr]);
+                if let Some((_, p)) = b.get_mut_rand(rng) {
+                    match a.invalidate(*p) {
+                        InvalidationResult::Success(p1) => {
+                            *p = p1;
+                            ensure!(!g.invalidate());
+                        }
+                        InvalidationResult::GenerationOverflow(p1) => {
+                            *p = p1;
+                            ensure!(g.invalidate());
+                        }
+                        InvalidationResult::InvalidPtr => {
+                            bail!("")
+                        }
+                    }
                 } else {
-                    assert!(a.invalidate(invalid).is_none());
+                    ensure!(matches!(
+                        a.invalidate(invalid),
+                        InvalidationResult::InvalidPtr
+                    ))
                 }
             }
-            450..=499 => {}
-            500..=549 => {}
-            550..=599 => {}*/
+            600..800 => {
+                // contains
+                if let Some((_, p)) = b.get_rand(rng) {
+                    ensure!(a.contains(*p));
+                } else {
+                    ensure!(!a.contains(invalid))
+                }
+            }
+            800..999 => {}
             /*600..=799 => {
                 // contains
                 if len != 0 {

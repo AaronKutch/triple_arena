@@ -183,9 +183,21 @@ impl<D: Copy, T> CkMap<D, T> {
         self.list.is_empty()
     }
 
+    pub fn get_rand(&self, rng: &mut StarRng) -> Option<(Ck<D>, &T)> {
+        let i = rng.index(self.list.len())?;
+        let k = self.list.get(i).unwrap();
+        Some((*k, self.map.get(k).unwrap()))
+    }
+
+    pub fn get_mut_rand(&mut self, rng: &mut StarRng) -> Option<(Ck<D>, &mut T)> {
+        let i = rng.index(self.list.len())?;
+        let k = self.list.get(i).unwrap();
+        Some((*k, self.map.get_mut(k).unwrap()))
+    }
+
     pub fn remove_rand(&mut self, rng: &mut StarRng) -> Option<(Ck<D>, T)> {
         let i = rng.index(self.list.len())?;
-        let k = self.list.remove(i);
+        let k = self.list.swap_remove(i);
         Some((k, self.map.remove(&k).unwrap()))
     }
 
