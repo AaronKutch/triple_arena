@@ -17,9 +17,7 @@ pub use arena_traits::{
     SingularGenerationArena,
 };
 pub use extra::{AllocError, IntoNonZeroUsizeIterator, nzusize_iter, ptrinx_unchecked};
-pub use nonzero_inx_generic_stack::{
-    NonZeroInxGenericStack, NonZeroInxGenericStackFallible, SetMaxCapacity,
-};
+pub use nonzero_inx_generic_stack::{NonZeroInxGenericStack, SetMaxCapacity};
 #[cfg(not(feature = "serde_support"))]
 pub use ptr::{Ptr, PtrGen, PtrInx, PtrNoGen};
 #[cfg(feature = "serde_support")]

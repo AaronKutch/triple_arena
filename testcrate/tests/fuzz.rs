@@ -7,7 +7,7 @@ use triple_arena::utils::{
 #[test]
 fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
     const N: usize = if cfg!(miri) { 10_000 } else { 10_000_000 };
-    const ITERS999: usize = if cfg!(miri) { 5 } else { 9962 };
+    const ITERS999: usize = if cfg!(miri) { 5 } else { 9922 };
     pub const LIMIT: usize = 8;
 
     let mut stats = nonzero_inx_generic_stack::Stats {

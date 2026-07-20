@@ -107,19 +107,37 @@ pub unsafe trait NonZeroInxGenericStack<T> {
 
     /// The same as [NonZeroInxGenericStack::push_within_capacity], except that
     /// it will automatically reallocate to try and extend the capacity upon
-    /// running out, and returns the element upon an allocation error.
+    /// running out, and returns the element upon an allocation error or using
+    /// up [NonZeroInxGenericStack::max_capacity].
     fn push_reallocating(&mut self, t: T) -> Result<(NonZeroUsize, &mut T), T> {
         if self.len() == self.capacity() {
             // TODO may want something more sophisticated, see https://github.com/rust-lang/rust/issues/29931
 
-            if self
-                .reallocate_min_capacity(self.capacity().saturating_mul(2))
-                .is_err()
-            {
+            let mut next = self.capacity().saturating_mul(2);
+            // but be able to saturate max capacity before causing an error
+            if let Some(max_capacity) = self.max_capacity() {
+                next = next.min(max_capacity);
+            }
+            if self.reallocate_min_capacity(next).is_err() {
                 return Err(t);
             }
         }
         self.push_within_capacity(t)
+    }
+
+    /// The same as [NonZeroInxGenericStack::push_reallocating], except that
+    /// this panics upon an allocation error or using up
+    /// [NonZeroInxGenericStack::max_capacity].
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure when needing to extend
+    /// capacity
+    #[track_caller]
+    fn push(&mut self, t: T) -> (NonZeroUsize, &mut T) {
+        self.push_reallocating(t)
+            .ok()
+            .expect("`push_reallocating` failed")
     }
 
     /// Gets a reference to an element without doing checks
@@ -204,32 +222,6 @@ pub unsafe trait NonZeroInxGenericStack<T> {
     /// Clears all elements, dropping all `T`. This has no effect on allocated
     /// capacity.
     fn clear(&mut self);
-}
-
-/// Trait for fallible methods that panic internally on allocation errors
-///
-/// # Safety
-///
-/// Must follow [NonZeroInxGenericStack]
-pub unsafe trait NonZeroInxGenericStackFallible<T> {
-    /// Pushes an element to the end such that its index is
-    /// `NonZeroUsize::new_unchecked(self.len())` immediately _after_ this call.
-    /// Returns the index to the element and a mutable reference to it on
-    /// success. Automatically reallocates if needing more capacity.
-    ///
-    /// # Panics
-    ///
-    /// This function can panic on allocation failure when needing to extend
-    /// capacity
-    fn push(&mut self, t: T) -> (NonZeroUsize, &mut T);
-}
-
-unsafe impl<T, S: NonZeroInxGenericStack<T>> NonZeroInxGenericStackFallible<T> for S {
-    fn push(&mut self, t: T) -> (NonZeroUsize, &mut T) {
-        self.push_reallocating(t)
-            .ok()
-            .expect("`push_reallocating` failed")
-    }
 }
 
 /// A trait for types that have a settable maximum capacity, complementing

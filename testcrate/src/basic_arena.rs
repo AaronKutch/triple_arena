@@ -1,10 +1,10 @@
-use std::slice::GetDisjointMutError;
+use std::{collections::HashMap, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use star_rng::StarRng;
 use triple_arena::{
-    traits::{ArenaTrait, Ptr, SingularGenerationArena},
-    utils::{AllocError, PtrGen},
+    traits::{ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena},
+    utils::{AllocError, PtrGen, PtrInx},
 };
 
 use crate::{
@@ -21,17 +21,26 @@ pub struct Stats {
 
 /// Use the [LIMIT] for fixed length types and as the limit for settable limit
 /// types, ignore otherwise
-pub fn fuzz<P: Ptr>(
+pub fn fuzz<
+    P: Ptr,
+    A: ArenaTrait<P, Cd<()>> + ArenaInsertTrait<P, Cd<()>> + SingularGenerationArena<P>,
+>(
     stats: Stats,
     cd_gen: &mut CdGen<()>,
-    mut a: impl ArenaTrait<P, Cd<()>> + SingularGenerationArena<P>,
+    mut a: A,
+    mut check_invariants: impl FnMut(&mut A) -> Result<(), StackedError>,
 ) -> Result<(), StackedError> {
     ensure!(cd_gen.is_empty());
     let mut rng = StarRng::new(0);
 
     // reference
-    let mut b: Vec<CdKey> = vec![];
+    let mut b = HashMap::<CdKey, P>::new();
     let mut g = TestGen::<P>(PtrGen::two());
+
+    // FIXME
+    // these are set by the `clone_from` variants
+    //let mut a1 = A::new();
+    //let mut b1 = HashMap::<CdKey, P>::new();
 
     // for temporary debug changes
     #[allow(unused)]
@@ -39,6 +48,13 @@ pub fn fuzz<P: Ptr>(
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut iters999 = 0;
+    let mut max_len = 0;
+
+    // invalid `Ptr` (from 0th index and not `Ptr::invalid()`)
+    let invalid = P::_from_raw(
+        PtrInx::try_from_usize(NonZeroUsize::new(0).unwrap()).unwrap(),
+        PtrGen::one(),
+    );
 
     for _ in 0..stats.n {
         let len = b.len();
@@ -54,11 +70,33 @@ pub fn fuzz<P: Ptr>(
 
             ensure!(a.capacity() <= limit);
         }
+        if !cfg!(miri) {
+            check_invariants(&mut a).stack()?;
+        }
         op_inx = rng.index(1000).unwrap();
+        // note: pushes and pops are balanced except for clears
         match op_inx {
-            /*0..=50 => {
-                // try_insert
-                if a.len() < a.capacity() {
+            0..75 => {
+                // reallocate_min_capacity success
+                let new_cap = rng.index(stats.limit + 1).unwrap();
+                a.reallocate_min_capacity(new_cap).stack()?;
+                ensure!(a.capacity() >= new_cap)
+            }
+            75..100 => {
+                // reallocate_min_capacity failure
+                let cap = a.capacity();
+                if limited {
+                    ensure_eq!(a.reallocate_min_capacity(stats.limit + 1), Err(AllocError));
+                } else {
+                    // could fail for ZSTs
+                    ensure_eq!(a.reallocate_min_capacity(usize::MAX), Err(AllocError));
+                }
+                ensure_eq!(cap, a.capacity());
+            }
+            100..400 => {}
+            400..999 => {
+                // insert_within_capacity
+                /*if a.len() < a.capacity() {
                     let t = new_t();
                     let ptr = a.try_insert(t).unwrap();
                     b.insert(t, ptr);
@@ -66,9 +104,9 @@ pub fn fuzz<P: Ptr>(
                 } else {
                     let t = new_t();
                     assert_eq!(a.try_insert(t), Err(t));
-                }
+                }*/
             }
-            50..=99 => {
+            /*50..=99 => {
                 // try_insert_with
                 if a.len() < a.capacity() {
                     let t = new_t();
@@ -119,6 +157,14 @@ pub fn fuzz<P: Ptr>(
                     assert!(a.remove(invalid).is_none());
                 }
             }
+            */
+            400..999 => {
+                // reallocate_min_capacity
+                let min_capacity = rng.index(stats.limit.saturating_mul(2)).unwrap();
+                a.reallocate_min_capacity(min_capacity).stack()?;
+                ensure!(a.capacity() > min_capacity);
+            }
+            /*
             400..=449 => {
                 // invalidate
                 if len != 0 {
@@ -378,7 +424,6 @@ pub fn fuzz<P: Ptr>(
                 list.clear();
                 assert_eq!(a.capacity(), prev_cap);
             }*/
-            0..999 => {} //FIXME
             999 => {
                 // clear
                 b.clear();

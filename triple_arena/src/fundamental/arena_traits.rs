@@ -411,15 +411,18 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
 
     /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
     /// it. Automatically reallocates if needing more capacity. Returns the `t`
-    /// if there was no available capacity.
+    /// if an allocation error occurs or if [ArenaTrait::max_capacity] is used
+    /// up.
     fn insert_reallocating(&mut self, t: T) -> Result<(P, &mut T), T> {
         if self.len() == self.capacity() {
             // TODO may want something more sophisticated, see https://github.com/rust-lang/rust/issues/29931
 
-            if self
-                .reallocate_min_capacity(self.capacity().saturating_mul(2))
-                .is_err()
-            {
+            let mut next = self.capacity().saturating_mul(2);
+            // but be able to saturate max capacity before causing an error
+            if let Some(max_capacity) = self.max_capacity() {
+                next = next.min(max_capacity);
+            }
+            if self.reallocate_min_capacity(next).is_err() {
                 return Err(t);
             }
         }
@@ -427,12 +430,14 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     }
 
     /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
-    /// it.
+    /// it. Panics if an allocation error occurs or if
+    /// [ArenaTrait::max_capacity] is used up.
     ///
     /// # Panics
     ///
     /// This function can panic on allocation failure when needing to extend
     /// capacity
+    #[track_caller]
     fn insert(&mut self, t: T) -> (P, &mut T) {
         self.insert_reallocating(t)
             .ok()

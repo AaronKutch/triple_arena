@@ -346,6 +346,13 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
+    /// Manually set the arena generation counter. This can break some soft
+    /// invariants such as ABA problem prevention and `P::invalid` always being
+    /// invalid with generation counters.
+    pub fn set_generation(&mut self, new_gen: P::Gen) {
+        self.generation = new_gen;
+    }
+
     /// Creates a new arena of type `T`, which are pointed to by `P`s. The arena
     /// will not allocate until elements are inserted.
     pub fn new() -> Self {
