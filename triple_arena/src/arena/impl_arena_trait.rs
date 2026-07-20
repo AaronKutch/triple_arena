@@ -151,6 +151,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     fn clear(&mut self) -> InvalidationOption<()> {
         self.m.clear();
         self.len = 0;
+        self.freelist_root = None;
         let tmp = P::Gen::generational_inc(self.generation);
         self.generation = tmp.0;
         if tmp.1 {

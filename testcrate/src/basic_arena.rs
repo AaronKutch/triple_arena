@@ -67,9 +67,7 @@ pub fn fuzz<
 
             ensure!(a.capacity() <= limit);
         }
-        if !cfg!(miri) {
-            check_invariants(&mut a).stack()?;
-        }
+        check_invariants(&mut a).stack()?;
         op_inx = rng.index(1000).unwrap();
         // note: pushes and pops are balanced except for clears
         match op_inx {
