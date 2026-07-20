@@ -181,9 +181,10 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         )
     }
 
-    /// Used by tests
+    /// Used by tests. Note that some errors are only for "soft" invariants.
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
+        // assume the backing is sane
         if this.generation() < P::Gen::two() {
             return Err("bad generation");
         }
@@ -196,17 +197,24 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                 n_allocated = n_allocated.checked_add(1).unwrap();
             }
         }
-        let n_free = this.m.len() - n_allocated;
         if this.len() != n_allocated {
             return Err("len != n_allocated");
+        }
+        let n_free = this.m.len().wrapping_sub(n_allocated);
+        if (n_free == 0) != this.freelist_root.is_none() {
+            return Err("bad freelist_root");
         }
         // checking freelist integrity
         let mut freelist_len = 0usize;
         if let Some(root) = this.freelist_root {
             let mut tmp_inx = root;
             for i in 0.. {
-                let p = P::Inx::try_into_usize(tmp_inx).unwrap();
-                let entry = this.m.get(p).unwrap();
+                let Some(p) = P::Inx::try_into_usize(tmp_inx) else {
+                    return Err("try_into_usize failed");
+                };
+                let Some(entry) = this.m.get(p) else {
+                    return Err("getting entry failed");
+                };
                 if let Free(inx) = entry {
                     freelist_len = freelist_len.checked_add(1).unwrap();
                     if *inx == tmp_inx {
@@ -334,7 +342,9 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
 
                 self.len = self.len.wrapping_sub(1);
                 if inc_gen {
-                    if PtrGen::generational_inc(self.generation).1 {
+                    let tmp = PtrGen::generational_inc(self.generation);
+                    self.generation = tmp.0;
+                    if tmp.1 {
                         InvalidationResult::GenerationOverflow(old_t)
                     } else {
                         InvalidationResult::Success(old_t)
