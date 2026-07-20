@@ -52,6 +52,11 @@ impl<T> InvalidationOption<T> {
             Self::GenerationOverflow(t) => Err(t),
         }
     }
+
+    /// If `matches!(self, Self::GenerationOverflow(_))`
+    pub fn is_overflow(&self) -> bool {
+        matches!(self, Self::GenerationOverflow(_))
+    }
 }
 
 /// Returned from fallible operations that have two different degrees of
