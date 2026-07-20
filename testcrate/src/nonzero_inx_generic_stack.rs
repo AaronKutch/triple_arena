@@ -4,7 +4,7 @@ use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use star_rng::StarRng;
 use triple_arena::utils::{AllocError, NonZeroInxGenericStack};
 
-use crate::cdgen::{Cd, CdGen, CdKey};
+use crate::cdgen::{Cd, CdGen, Ck};
 
 #[derive(Clone, Copy)]
 pub struct Stats {
@@ -27,7 +27,7 @@ pub fn fuzz(
     let mut rng = StarRng::new(0);
 
     // reference
-    let mut b: Vec<CdKey> = vec![];
+    let mut b: Vec<Ck<()>> = vec![];
 
     // for temporary debug changes
     #[allow(unused)]
@@ -52,13 +52,13 @@ pub fn fuzz(
         op_inx = rng.index(1000).unwrap();
         // note: pushes and pops are balanced except for clears
         match op_inx {
-            0..50 => {
+            0..75 => {
                 // reallocate_min_capacity success
                 let new_cap = rng.index(stats.limit + 1).unwrap();
                 a.reallocate_min_capacity(new_cap).stack()?;
                 ensure!(a.capacity() >= new_cap)
             }
-            50..100 => {
+            75..100 => {
                 // reallocate_min_capacity failure
                 let cap = a.capacity();
                 if limited {
@@ -72,7 +72,7 @@ pub fn fuzz(
             100..200 => {
                 // push_within_capacity
                 if len < a.capacity() {
-                    let (k, t) = cd_gen.next(());
+                    let (k, t) = cd_gen.new_cd();
                     b.push(k);
                     let inx = NonZeroUsize::new(b.len()).unwrap();
                     let Ok((inx1, t1)) = a.push_within_capacity(t) else {
@@ -80,14 +80,14 @@ pub fn fuzz(
                     };
                     ensure_eq!((inx1, t1.key()), (inx, k));
                 } else {
-                    let (k, t) = cd_gen.next(());
+                    let (k, t) = cd_gen.new_cd();
                     ensure!(a.push_within_capacity(t).is_err_and(|t| t.key() == k));
                 }
             }
-            200..300 => {
+            200..250 => {
                 // push_reallocating
                 if len < a.capacity() {
-                    let (k, t) = cd_gen.next(());
+                    let (k, t) = cd_gen.new_cd();
                     b.push(k);
                     let inx = NonZeroUsize::new(b.len()).unwrap();
                     let Ok((inx1, t1)) = a.push_reallocating(t) else {
@@ -95,7 +95,7 @@ pub fn fuzz(
                     };
                     ensure_eq!((inx1, t1.key()), (inx, k));
                 } else if len < stats.limit {
-                    let (k, t) = cd_gen.next(());
+                    let (k, t) = cd_gen.new_cd();
                     b.push(k);
                     let inx = NonZeroUsize::new(b.len()).unwrap();
                     let cap = a.capacity();
@@ -106,22 +106,22 @@ pub fn fuzz(
                     // check that capacity increased
                     ensure!(a.capacity() > cap);
                 } else if limited {
-                    let (_, t) = cd_gen.next(());
+                    let (_, t) = cd_gen.new_cd();
                     ensure!(a.push_reallocating(t).is_err());
                 } else {
                     // do nothing
                 }
             }
-            /*250..300 => {
+            250..300 => {
                 // push
                 if len < a.capacity() {
-                    let (k, t) = cd_gen.next(());
+                    let (k, t) = cd_gen.new_cd();
                     b.push(k);
                     let inx = NonZeroUsize::new(b.len()).unwrap();
                     let (inx1, t1) = a.push(t);
                     ensure_eq!((inx1, t1.key()), (inx, k));
                 } else if len < stats.limit {
-                    let (k, t) = cd_gen.next(());
+                    let (k, t) = cd_gen.new_cd();
                     b.push(k);
                     let inx = NonZeroUsize::new(b.len()).unwrap();
                     let cap = a.capacity();
@@ -132,7 +132,7 @@ pub fn fuzz(
                 } else {
                     // do nothing
                 }
-            }*/
+            }
             300..500 => {
                 // pop
                 ensure_eq!(a.pop().map(|t| t.key()), b.pop());

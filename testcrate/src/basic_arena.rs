@@ -1,15 +1,16 @@
-use std::{collections::HashMap, num::NonZeroUsize, slice::GetDisjointMutError};
+use std::{num::NonZeroUsize, slice::GetDisjointMutError};
 
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use star_rng::StarRng;
 use triple_arena::{
+    InvalidationResult,
     traits::{ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena},
     utils::{AllocError, PtrGen, PtrInx},
 };
 
 use crate::{
-    P0, TestGen,
-    cdgen::{Cd, CdGen, CdKey},
+    TestGen,
+    cdgen::{Cd, CdGen, Ck, CkMap},
 };
 
 #[derive(Clone, Copy)]
@@ -31,16 +32,16 @@ pub fn fuzz<
     mut check_invariants: impl FnMut(&mut A) -> Result<(), StackedError>,
 ) -> Result<(), StackedError> {
     ensure!(cd_gen.is_empty());
-    let mut rng = StarRng::new(0);
+    let mut rng = &mut StarRng::new(0);
 
     // reference
-    let mut b = HashMap::<CdKey, P>::new();
+    let mut b = CkMap::<(), P>::new();
     let mut g = TestGen::<P>(PtrGen::two());
 
     // FIXME
     // these are set by the `clone_from` variants
     //let mut a1 = A::new();
-    //let mut b1 = HashMap::<CdKey, P>::new();
+    //let mut b1 = HashMap::<Ck, P>::new();
 
     // for temporary debug changes
     #[allow(unused)]
@@ -50,11 +51,7 @@ pub fn fuzz<
     let mut iters999 = 0;
     let mut max_len = 0;
 
-    // invalid `Ptr` (from 0th index and not `Ptr::invalid()`)
-    let invalid = P::_from_raw(
-        PtrInx::try_from_usize(NonZeroUsize::new(0).unwrap()).unwrap(),
-        PtrGen::one(),
-    );
+    let invalid = P::invalid();
 
     for _ in 0..stats.n {
         let len = b.len();
@@ -93,8 +90,41 @@ pub fn fuzz<
                 }
                 ensure_eq!(cap, a.capacity());
             }
-            100..400 => {}
-            400..999 => {
+            100..300 => {
+                // insert_within_capacity
+                if len < a.capacity() {
+                    let (k, t) = cd_gen.new_cd();
+                    let Ok((p, t1)) = a.insert_within_capacity(t) else {
+                        bail!("")
+                    };
+                    ensure_eq!(t1.key(), k);
+                    b.insert(k, p);
+                } else {
+                    let (k, t) = cd_gen.new_cd();
+                    ensure!(a.insert_within_capacity(t).is_err_and(|t| t.key() == k));
+                }
+            }
+            300..500 => {
+                // remove
+                if let Some((k, p)) = b.remove_rand(rng) {
+                    match a.remove(p) {
+                        InvalidationResult::Success(t) => {
+                            ensure_eq!(k, t.key());
+                            ensure!(!g.invalidate());
+                        }
+                        InvalidationResult::GenerationOverflow(t) => {
+                            ensure_eq!(k, t.key());
+                            ensure!(g.invalidate());
+                        }
+                        InvalidationResult::InvalidPtr => {
+                            bail!("")
+                        }
+                    }
+                } else {
+                    ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr))
+                }
+            }
+            500..999 => {
                 // insert_within_capacity
                 /*if a.len() < a.capacity() {
                     let t = new_t();
@@ -158,12 +188,6 @@ pub fn fuzz<
                 }
             }
             */
-            400..999 => {
-                // reallocate_min_capacity
-                let min_capacity = rng.index(stats.limit.saturating_mul(2)).unwrap();
-                a.reallocate_min_capacity(min_capacity).stack()?;
-                ensure!(a.capacity() > min_capacity);
-            }
             /*
             400..=449 => {
                 // invalidate

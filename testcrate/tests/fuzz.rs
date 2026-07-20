@@ -1,14 +1,22 @@
 use stacked_errors::{StackableErr, StackedError};
-use testcrate::{cdgen::CdGen, nonzero_inx_generic_stack};
-use triple_arena::utils::{
-    NonZeroInxArray, NonZeroInxGenericStack, NonZeroInxLimitedVec, NonZeroInxVec, SetMaxCapacity,
+use testcrate::{
+    P2, basic_arena,
+    cdgen::{Cd, CdGen},
+    nonzero_inx_generic_stack,
+};
+use triple_arena::{
+    Arena,
+    utils::{
+        NonZeroInxArray, NonZeroInxGenericStack, NonZeroInxLimitedVec, NonZeroInxVec,
+        SetMaxCapacity, StackBacking,
+    },
 };
 
 #[test]
 fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
     const N: usize = if cfg!(miri) { 10_000 } else { 10_000_000 };
-    const ITERS999: usize = if cfg!(miri) { 5 } else { 9922 };
-    pub const LIMIT: usize = 8;
+    const ITERS999: usize = if cfg!(miri) { 5 } else { 9819 };
+    pub const LIMIT: usize = 7;
 
     let mut stats = nonzero_inx_generic_stack::Stats {
         limit: LIMIT,
@@ -22,13 +30,43 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
     )
     .stack()?;
 
-    // TODO use a custom allocator so that this can be deterministic
+    // I could get a custom allocator to make this deterministic, but I think one
+    // check is good enough
     stats.iters999 = None;
 
     let mut a = NonZeroInxLimitedVec::new();
     a.set_max_capacity(LIMIT).unwrap();
     nonzero_inx_generic_stack::fuzz(stats, &mut CdGen::new(), a).stack()?;
     nonzero_inx_generic_stack::fuzz(stats, &mut CdGen::new(), NonZeroInxVec::new()).stack()?;
+
+    Ok(())
+}
+
+#[test]
+fn fuzz_basic_arena() -> Result<(), StackedError> {
+    const N: usize = if cfg!(miri) { 10_000 } else { 10_000_000 };
+    const ITERS999: usize = if cfg!(miri) { 5 } else { 9939 };
+    pub const LIMIT: usize = 7;
+
+    let mut stats = basic_arena::Stats {
+        limit: LIMIT,
+        n: N,
+        iters999: Some(ITERS999),
+    };
+    basic_arena::fuzz(
+        stats,
+        &mut CdGen::new(),
+        Arena::<P2, Cd<()>, StackBacking<LIMIT>>::new(),
+        |a| Arena::_check_invariants(a).stack(),
+    )
+    .stack()?;
+
+    stats.iters999 = None;
+    /*
+    let mut a = NonZeroInxLimitedVec::new();
+    a.set_max_capacity(LIMIT).unwrap();
+    basic_arena::fuzz(stats, &mut CdGen::new(), a).stack()?;
+    basic_arena::fuzz(stats, &mut CdGen::new(), NonZeroInxVec::new()).stack()?;*/
 
     Ok(())
 }
