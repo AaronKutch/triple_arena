@@ -113,7 +113,12 @@ pub unsafe trait NonZeroInxGenericStack<T> {
         if self.len() == self.capacity() {
             // TODO may want something more sophisticated, see https://github.com/rust-lang/rust/issues/29931
 
-            let mut next = self.capacity().saturating_mul(2);
+            // follow `RawVec`
+            let mut next = if self.capacity() == 0 {
+                if size_of::<T>() <= 1024 { 4 } else { 1 }
+            } else {
+                self.capacity().saturating_mul(2)
+            };
             // but be able to saturate max capacity before causing an error
             if let Some(max_capacity) = self.max_capacity() {
                 next = next.min(max_capacity);
