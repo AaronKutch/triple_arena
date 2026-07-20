@@ -27,12 +27,12 @@ pub fn fuzz<
     A: ArenaTrait<P, Cd<()>> + ArenaInsertTrait<P, Cd<()>> + SingularGenerationArena<P>,
 >(
     stats: Stats,
+    rng: &mut StarRng,
     cd_gen: &mut CdGen<()>,
     mut a: A,
     mut check_invariants: impl FnMut(&mut A) -> Result<(), StackedError>,
 ) -> Result<(), StackedError> {
     ensure!(cd_gen.is_empty());
-    let mut rng = &mut StarRng::new(0);
 
     // reference
     let mut b = CkMap::<(), P>::new();

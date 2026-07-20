@@ -1,4 +1,5 @@
 use stacked_errors::{StackableErr, StackedError};
+use star_rng::StarRng;
 use testcrate::{
     P2, basic_arena,
     cdgen::{Cd, CdGen},
@@ -14,6 +15,8 @@ use triple_arena::{
 
 #[test]
 fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
+    let rng = &mut StarRng::new(0);
+
     const N: usize = if cfg!(miri) { 10_000 } else { 10_000_000 };
     const ITERS999: usize = if cfg!(miri) { 5 } else { 9819 };
     pub const LIMIT: usize = 7;
@@ -25,6 +28,7 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
     };
     nonzero_inx_generic_stack::fuzz(
         stats,
+        rng,
         &mut CdGen::new(),
         NonZeroInxArray::<_, { LIMIT }>::new(),
     )
@@ -36,14 +40,16 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
 
     let mut a = NonZeroInxLimitedVec::new();
     a.set_max_capacity(LIMIT).unwrap();
-    nonzero_inx_generic_stack::fuzz(stats, &mut CdGen::new(), a).stack()?;
-    nonzero_inx_generic_stack::fuzz(stats, &mut CdGen::new(), NonZeroInxVec::new()).stack()?;
+    nonzero_inx_generic_stack::fuzz(stats, rng, &mut CdGen::new(), a).stack()?;
+    nonzero_inx_generic_stack::fuzz(stats, rng, &mut CdGen::new(), NonZeroInxVec::new()).stack()?;
 
     Ok(())
 }
 
 #[test]
 fn fuzz_basic_arena() -> Result<(), StackedError> {
+    let rng = &mut StarRng::new(0);
+
     const N: usize = if cfg!(miri) { 10_000 } else { 10_000_000 };
     const ITERS999: usize = if cfg!(miri) { 5 } else { 9939 };
     pub const LIMIT: usize = 7;
@@ -55,6 +61,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
     };
     basic_arena::fuzz(
         stats,
+        rng,
         &mut CdGen::new(),
         Arena::<P2, Cd<()>, StackBacking<LIMIT>>::new(),
         |a| Arena::_check_invariants(a).stack(),

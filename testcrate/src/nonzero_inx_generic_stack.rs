@@ -13,18 +13,22 @@ pub struct Stats {
     pub iters999: Option<usize>,
 }
 
-// the `CdGen` is passed in, because otherwise it can be dropped upon returning
-// an error
+// The `CdGen` is passed in, because otherwise it can be dropped upon returning
+// an error (because it will get dropped first because of bad drop ordering that
+// is verbose to correct) and give another error, all the `Cd`s will be dropped
+// by the time the function returns so that the `CdGen` can be dropped then.
+
+// The `StarRng` is passed in so that more is fuzzed across multiple calls
 
 /// Use the [LIMIT] for fixed length types and as the limit for settable limit
 /// types, ignore otherwise
 pub fn fuzz(
     stats: Stats,
+    rng: &mut StarRng,
     cd_gen: &mut CdGen<()>,
     mut a: impl NonZeroInxGenericStack<Cd<()>>,
 ) -> Result<(), StackedError> {
     ensure!(cd_gen.is_empty());
-    let mut rng = StarRng::new(0);
 
     // reference
     let mut b: Vec<Ck<()>> = vec![];
