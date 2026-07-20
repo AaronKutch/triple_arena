@@ -326,13 +326,13 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                     };
                     // in both cases the new root is the slot we just freed
                     self.freelist_root = Some(inx);
-                    self.len = self.len.wrapping_sub(1);
                     let Allocated(_, old_t) = mem::replace(allocation, Free(freelist_ptr)) else {
                         unreachable!()
                     };
                     old_t
                 };
 
+                self.len = self.len.wrapping_sub(1);
                 if inc_gen {
                     if PtrGen::generational_inc(self.generation).1 {
                         InvalidationResult::GenerationOverflow(old_t)

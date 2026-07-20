@@ -30,7 +30,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     }
 
     fn capacity(&self) -> usize {
-        self.m.len()
+        self.m.capacity()
     }
 
     fn max_capacity(&self) -> Option<usize> {
@@ -245,6 +245,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaInsertTrait<P, T> for Arena<P, T, B> {
                 // move to next node in the freelist
                 self.freelist_root = Some(next);
             }
+            // safe by `isize::MAX` limits, the slots can never be ZSTs
             self.len = self.len.wrapping_add(1);
             let InternalSlot::Allocated(_, t) = slot else {
                 unreachable!()
@@ -263,6 +264,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaInsertTrait<P, T> for Arena<P, T, B> {
                         let Some(InternalSlot::Allocated(_, t)) = self.m.get_mut(raw_inx) else {
                             unreachable!()
                         };
+                        self.len = self.len.wrapping_add(1);
                         Ok((<P as Ptr>::_from_raw(inx, generation), t))
                     } else {
                         // undo
