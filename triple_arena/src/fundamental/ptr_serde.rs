@@ -31,6 +31,8 @@ pub trait PtrGen:
     + RefUnwindSafe
     + UnwindSafe
     + Recast<Self>
+    + Serialize
+    + DeserializeOwned
     + 'static
 {
     /// Returns generation 1, which we designate as a representable invalid
