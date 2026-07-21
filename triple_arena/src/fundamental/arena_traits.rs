@@ -15,6 +15,8 @@ other notes:
 There is no `generation` or `set_generation` function (or at least there won't be one without an index involved), because some implementations will have generations per slot or per domain
 
 Originally there were complementary `replace_and_update_gen` and `replace_and_keep_gen` functions to emphasize the ability to deal with non-Clone types and how they should deal with generations, but these were barely used in practice and the signature of `replace_and_update_gen` was unavoidably awkward and increasingly so with the new strict generation overflow fallibility and the future possibility of `!Overwrite` types that can't be `mem::replace`d.
+
+The defaulted iterator designs mean that concrete associated types can't be used, but the advancer can do anything so we just have it as the associated type
 */
 
 /// Returned from operations that are infallible but could involve generation
@@ -170,12 +172,17 @@ pub trait ArenaTrait<P: Ptr, T> {
 
     /// Reallocates in order to try and change `self.capacity()` to have a lower
     /// bound of `min_capacity` elements of capacity. This can act both to
-    /// grow and shrink the memory allocation. This will never remove elements
-    /// and will always result in a capacity of at least `self.len()`. Note
-    /// that, depending on internal element allocation, the capacity can be
-    /// prevented from shrinking unless `Ptr`s are recast with FIXME. Can return
-    /// an allocation error in all cases depending on implementor choice and
-    /// allocator behavior, even `min_capacity <= self.capacity()`.
+    /// grow and shrink the memory allocation. **Note** that, depending on
+    /// internal element allocation, the capacity may be unable to converge on
+    /// `self.len()` (because `Ptr` indexes need to be stable, a single element
+    /// allocated at a high index can prevent removing all the unallocated slots
+    /// less than it). This can be fixed by compressing with a function like
+    /// [ArenaTrait::compress_with], calling this function afterwards, and
+    /// fixing any external `Ptr`s with recasting. This will never remove
+    /// elements and will always result in a capacity of at least
+    /// `self.len()`. Can return an allocation error in all cases depending
+    /// on implementor choice and allocator behavior, even `min_capacity <=
+    /// self.capacity()`.
     ///
     /// `self.reallocate_min_capacity(self.len())` is a replacement for the
     /// typical `shrink_to_fit` function. We have limited manual capacity
@@ -397,6 +404,34 @@ pub trait ArenaTrait<P: Ptr, T> {
         source: &A,
         map: F,
     ) -> Result<(), AllocError>;
+
+    /// Compresses the arena as much as possible by moving all internal
+    /// allocated indexes to be one after another with no unallocated gaps
+    /// between them, such that `self.reallocate_min_capacity(self.len())` would
+    /// reduce the capacity as much as possible. After this, the capacity can be
+    /// reduced as much as possible with
+    /// `self.reallocate_min_capacity(self.len())`. All `T` remains, but all
+    /// `Ptr`s are invalidated. New `Ptr`s to the entries can be found again
+    /// by advancers and iterators.
+    fn compress(&mut self) -> InvalidationOption<()> {
+        self.compress_with(|_, _, _| ())
+    }
+
+    /// The same as [Arena::compress_and_shrink] except that `map` is run on
+    /// `(P, &mut T, P)`, with the first `P` being the old `Ptr` and the last
+    /// `P` being the new `Ptr` that points to the `T` after compression.
+    ///
+    /// This can be used to create a custom [Recaster] for recasting external
+    /// `Ptr`s:
+    /// ```text
+    /// // this recaster will create a mapping from the old `Ptr` domain to the new one
+    /// let mut recaster = Arena::<P, P>::new();
+    /// // this clones all the entries and `Ptr` validities of the pre-compression `self` into the recaster and puts in invalid placeholders for the new domain
+    /// recaster.clone_from_with(self, |_, _| P::invalid());
+    /// // compress and write the new `Ptr`s at the indexes of the old ones
+    /// self.compress_with(|p, _, q| *recaster.get_mut(p).unwrap() = q);
+    /// ```
+    fn compress_with<F: FnMut(P, &mut T, P)>(&mut self, map: F) -> InvalidationOption<()>;
 }
 
 /// The standard trait for insertion into [ArenaTrait] arenas. Some arenas do

@@ -14,7 +14,9 @@
 - Added a required `Advancer::empty` method
 - The `Advancer` trait now specifies that implemenations should always fuse
 - The `Ptr` traits and `Advancer` now have a `'static` bound, they should never have lifetimes due to their entire purposes, and I don't know of any use for `dyn Ptr`.
+- Removed `compress_and_shrink*` in favor of just `compress*` functions, `self.reallocate_min_capacity(self.len())` can be used afterwards to retain the original functionality
 - Removed the `remove_by`, `capacity_drain`, and `*_shrink` functions. With some backings, shrinking capacity is not actually possible. The `reallocate_min_capacity` method should be used in tandem with other functions instead.
+- Added `set_generation`, `inc_generation`, and other low level manipulation functions
 
 ## [0.14.0] - 2025-02-10
 ### Changes

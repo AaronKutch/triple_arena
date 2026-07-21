@@ -7,7 +7,7 @@ use core::{
 };
 
 use crate::{
-    InvalidationResult,
+    InvalidationOption, InvalidationResult,
     arena::ArenaBacking,
     traits::{Advancer, Ptr},
     utils::{NonZeroInxGenericStack, PtrGen, PtrInx, ptrinx_unchecked},
@@ -356,11 +356,23 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    /// Manually set the arena generation counter. This can break some soft
-    /// invariants such as ABA problem prevention and `P::invalid` always being
-    /// invalid with generation counters.
+    /// Manually set the singular arena generation counter. This can break some
+    /// soft invariants such as ABA problem prevention and `P::invalid`
+    /// always being invalid with generation counters.
     pub fn set_generation(&mut self, new_gen: P::Gen) {
         self.generation = new_gen;
+    }
+
+    /// Increment the singular arena generation counter, returning if generation
+    /// overflow occurred.
+    pub fn inc_generation(&mut self) -> InvalidationOption<()> {
+        let tmp = P::Gen::generational_inc(self.generation);
+        self.generation = tmp.0;
+        if tmp.1 {
+            InvalidationOption::GenerationOverflow(())
+        } else {
+            InvalidationOption::Success(())
+        }
     }
 
     /// Creates a new arena of type `T`, which are pointed to by `P`s. The arena

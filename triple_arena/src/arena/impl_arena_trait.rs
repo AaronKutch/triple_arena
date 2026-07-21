@@ -1,4 +1,4 @@
-use core::{mem, slice::GetDisjointMutError};
+use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
     Arena, InvalidationOption, InvalidationResult,
@@ -152,13 +152,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         self.m.clear();
         self.len = 0;
         self.freelist_root = None;
-        let tmp = P::Gen::generational_inc(self.generation);
-        self.generation = tmp.0;
-        if tmp.1 {
-            InvalidationOption::GenerationOverflow(())
-        } else {
-            InvalidationOption::Success(())
-        }
+        self.inc_generation()
     }
 
     fn clone_from_with<
@@ -227,6 +221,39 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         };
         // has to be done with reverse iteration anyways
         self.canonicalize_free_list();
+        res
+    }
+
+    fn compress_with<F: FnMut(P, &mut T, P)>(&mut self, mut map: F) -> InvalidationOption<()> {
+        let res = self.inc_generation();
+        let new_gen = self.generation;
+        // we are moving from `j` to `i`
+        let mut i = NonZeroUsize::new(1).unwrap();
+        for j in self.nziter() {
+            let entry = mem::replace(
+                self.m.get_mut(j).unwrap(),
+                // this will be overwritten or dropped
+                Free(P::invalid().inx()),
+            );
+            if let Allocated(old_gen, mut t) = entry {
+                map(
+                    Ptr::_from_raw(Self::from_checked(j), old_gen),
+                    &mut t,
+                    Ptr::_from_raw(Self::from_checked(i), new_gen),
+                );
+                let _ = mem::replace(self.m.get_mut(i).unwrap(), Allocated(new_gen, t));
+                i = i.checked_add(1).unwrap();
+            }
+        }
+        // remove free slots off the end
+        for inx in self.nziter().into_iter().rev() {
+            if let Free(_) = self.m.get(inx).unwrap() {
+                self.m.pop();
+            } else {
+                break;
+            }
+        }
+        self.freelist_root = None;
         res
     }
 }
