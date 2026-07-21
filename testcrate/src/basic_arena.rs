@@ -51,13 +51,57 @@ pub fn fuzz<
     let mut iters999 = 0;
     let mut max_len = 0;
 
-    let invalid = P::invalid();
+    // generate invalid `Ptr`s via `P::invalid()`, an existing allocation but with
+    // wrong generation (incremented or gen 1), or index 1 in a free slot, and in
+    // the space between `self.m.len()` and `self.m.capacity()`
+    let gen_invalid = |rng: &mut StarRng, arena: &A| {
+        match rng.index(16).unwrap() {
+            0 => return P::invalid(),
+            1..4 => {
+                if let Some(p) = arena.find_first_ptr() {
+                    return P::_from_raw(p.inx(), P::Gen::generational_inc(p.generation()).0);
+                }
+            }
+            4..8 => {
+                if let Some(p) = arena.find_first_ptr() {
+                    return P::_from_raw(p.inx(), P::Gen::one());
+                }
+            }
+            8..12 => {
+                let inx1 = P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap();
+                if let Some((generation, _)) = arena.get_inx(inx1) {
+                    return P::_from_raw(inx1, P::Gen::generational_inc(generation).0);
+                } else {
+                    // the primary intention
+                    return P::_from_raw(inx1, arena.singular_generation());
+                }
+            }
+            12..16 => {
+                if arena.capacity() > 0 {
+                    let last_inx =
+                        P::Inx::try_from_usize(NonZeroUsize::new(arena.capacity()).unwrap())
+                            .unwrap();
+                    if let Some((generation, _)) = arena.get_inx(last_inx) {
+                        return P::_from_raw(last_inx, P::Gen::generational_inc(generation).0);
+                    } else {
+                        // the primary intention
+                        return P::_from_raw(last_inx, arena.singular_generation());
+                    }
+                }
+            }
+            _ => unreachable!(),
+        }
+        // backup
+        P::invalid()
+    };
 
     for _ in 0..stats.n {
         let len = b.len();
         ensure!(cd_gen.len() <= len);
         ensure_eq!(a.len(), len);
         ensure_eq!(a.is_empty(), b.is_empty());
+        // if not incremented explicitly and the arena increments, then we get a
+        // mismatch
         ensure_eq!(a.singular_generation(), g.0);
         ensure!(len <= a.capacity());
         let limited = a.max_capacity().is_some();
@@ -164,10 +208,17 @@ pub fn fuzz<
                         }
                     }
                 } else {
+                    let invalid = gen_invalid(rng, &a);
                     ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr))
                 }
             }
-            500..600 => {
+            // we do these to test against when there are elements in the arena
+            500..520 => {
+                // remove invalid
+                let invalid = gen_invalid(rng, &a);
+                ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr))
+            }
+            520..600 => {
                 // invalidate
                 if let Some((_, p)) = b.get_mut_rand(rng) {
                     match a.invalidate(*p) {
@@ -184,30 +235,37 @@ pub fn fuzz<
                         }
                     }
                 } else {
+                    let invalid = gen_invalid(rng, &a);
                     ensure!(matches!(
                         a.invalidate(invalid),
                         InvalidationResult::InvalidPtr
                     ))
                 }
             }
-            600..800 => {
+            600..620 => {
+                // invalidate invalid
+                let invalid = gen_invalid(rng, &a);
+                ensure!(matches!(
+                    a.invalidate(invalid),
+                    InvalidationResult::InvalidPtr
+                ))
+            }
+            620..800 => {
                 // contains
                 if let Some((_, p)) = b.get_rand(rng) {
                     ensure!(a.contains(*p));
                 } else {
+                    let invalid = gen_invalid(rng, &a);
                     ensure!(!a.contains(invalid))
                 }
             }
-            800..999 => {}
-            /*600..=799 => {
-                // contains
-                if len != 0 {
-                    let t = list[next_inx!(rng, len)];
-                    assert!(a.contains(b[&t]));
-                } else {
-                    assert!(!a.contains(invalid));
-                }
+            800..820 => {
+                // contains invalid
+                let invalid = gen_invalid(rng, &a);
+                ensure!(!a.contains(invalid))
             }
+            820..999 => {}
+            /*
             800..=839 => {
                 // get and index
                 if len != 0 {
