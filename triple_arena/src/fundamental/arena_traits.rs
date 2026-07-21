@@ -17,6 +17,8 @@ There is no `generation` or `set_generation` function (or at least there won't b
 Originally there were complementary `replace_and_update_gen` and `replace_and_keep_gen` functions to emphasize the ability to deal with non-Clone types and how they should deal with generations, but these were barely used in practice and the signature of `replace_and_update_gen` was unavoidably awkward and increasingly so with the new strict generation overflow fallibility and the future possibility of `!Overwrite` types that can't be `mem::replace`d.
 
 The defaulted iterator designs mean that concrete associated types can't be used, but the advancer can do anything so we just have it as the associated type
+
+`find_inx_first_ptr` and `find_inx_last_ptr` are weird from a more pure perspective, but they have a bunch of miscellanious uses in helping generics and in finding things like the last element's index etc. I termed them with "index first" and "index last" to avoid confusion with the orderings in more complicated arenas. On all nonlinear arenas I am aware of, it is still possible to have an ordering that corresponds to advancer ordering.
 */
 
 /// Returned from operations that are infallible but could involve generation
@@ -246,7 +248,7 @@ pub trait ArenaTrait<P: Ptr, T> {
     ) -> Result<[&mut T; N], GetDisjointMutError> {
         // check generations before `IndexOutOfBounds` could be returned, because it
         // would be normal to have an invalidated `Ptr` collide with a newer `Ptr` by
-        // index, when the `Ptr`s were not actually equal
+        // index, when the `Ptr`s were actually completely logically independent
         for p in indices {
             if !self.contains(p) {
                 return Err(GetDisjointMutError::IndexOutOfBounds);
@@ -271,13 +273,13 @@ pub trait ArenaTrait<P: Ptr, T> {
         indices: [P::Inx; N],
     ) -> Result<[(P::Gen, &mut T); N], GetDisjointMutError>;
 
-    /// Finds the first valid `Ptr` in terms of the `P::Inx` ordering, be aware
-    /// that this can be an `O(n)` operation on some implementations
-    fn find_first_ptr(&self) -> Option<P>;
+    /// Finds the index-first valid `Ptr` in terms of the `P::Inx` ordering, be
+    /// aware that this can be an `O(n)` operation on some implementations
+    fn find_inx_first_ptr(&self) -> Option<P>;
 
-    /// Finds the last valid `Ptr` in terms of the `P::Inx` ordering, be aware
-    /// that this can be an `O(n)` operation on some implementations
-    fn find_last_ptr(&self) -> Option<P>;
+    /// Finds the index-last valid `Ptr` in terms of the `P::Inx` ordering, be
+    /// aware that this can be an `O(n)` operation on some implementations
+    fn find_inx_last_ptr(&self) -> Option<P>;
 
     /// Advances over every valid `Ptr` in `self` starting from the first.
     ///
@@ -286,7 +288,7 @@ pub trait ArenaTrait<P: Ptr, T> {
     /// during the loop. The `Ptr`s of insertions that occur during the loop
     /// can both be witnessed or not witnessed before the loop terminates.
     fn advancer(&self) -> Self::PtrAdvancer {
-        if let Some(first) = self.find_first_ptr() {
+        if let Some(first) = self.find_inx_first_ptr() {
             self.ordered_advancer(first.inx(), false)
         } else {
             Self::PtrAdvancer::empty()
@@ -295,7 +297,7 @@ pub trait ArenaTrait<P: Ptr, T> {
 
     /// The same as [ArenaTrait::advancer], but it starts from `inx` and goes
     /// forwards or in reverse if `rev` is set. `inx` does not have to point at
-    /// a valid entry, and it will find the nexte valid entry if it exists in
+    /// a valid entry, and it will find the next valid entry if it exists in
     /// the direction the advancer is going.
     fn ordered_advancer(&self, inx: P::Inx, rev: bool) -> Self::PtrAdvancer;
 
@@ -396,9 +398,9 @@ pub trait ArenaTrait<P: Ptr, T> {
     /// precisely the valid `Ptr` to its mapped `T`. Reallocation occurs if
     /// the capacity of `self` is not large enough. With simple arenas and
     /// indexes, if the `P::Inx` from the highest index is such that
-    /// `source.find_last_ptr().unwrap().inx().get() <= self.capacity()`, this
-    /// is guaranteed to _not_ reallocate and the function is infallible.
-    /// Returns an error upon reallocation failure.
+    /// `source.find_inx_last_ptr().unwrap().inx().get() <= self.capacity()`,
+    /// this is guaranteed to _not_ reallocate and the function is
+    /// infallible. Returns an error upon reallocation failure.
     fn clone_from_with<U, A: ArenaTrait<P, U> + SingularGenerationArena<P>, F: FnMut(P, &U) -> T>(
         &mut self,
         source: &A,

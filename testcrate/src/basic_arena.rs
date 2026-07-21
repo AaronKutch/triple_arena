@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, slice::GetDisjointMutError};
+use std::{cmp::max, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use star_rng::StarRng;
@@ -58,12 +58,12 @@ pub fn fuzz<
         match rng.index(16).unwrap() {
             0 => return P::invalid(),
             1..4 => {
-                if let Some(p) = arena.find_first_ptr() {
+                if let Some(p) = arena.find_inx_first_ptr() {
                     return P::_from_raw(p.inx(), P::Gen::generational_inc(p.generation()).0);
                 }
             }
             4..8 => {
-                if let Some(p) = arena.find_first_ptr() {
+                if let Some(p) = arena.find_inx_first_ptr() {
                     return P::_from_raw(p.inx(), P::Gen::one());
                 }
             }
@@ -251,59 +251,118 @@ pub fn fuzz<
                 ))
             }
             620..800 => {
-                // contains
-                if let Some((_, p)) = b.get_rand(rng) {
-                    ensure!(a.contains(*p));
+                // contains, get, get_mut, get_inx, get_inx_mut
+                if let Some((k, p)) = b.get_rand(rng) {
+                    let p = *p;
+                    ensure!(a.contains(p));
+                    ensure_eq!(a.get(p).map(|t| t.key()), Some(k));
+                    ensure_eq!(a.get_mut(p).map(|t| t.key()), Some(k));
+                    ensure_eq!(
+                        a.get_inx(p.inx())
+                            .map(|(generation, t)| (generation, t.key())),
+                        Some((p.generation(), k))
+                    );
+                    ensure_eq!(
+                        a.get_inx_mut(p.inx())
+                            .map(|(generation, t)| (generation, t.key())),
+                        Some((p.generation(), k))
+                    );
                 } else {
-                    let invalid = gen_invalid(rng, &a);
-                    ensure!(!a.contains(invalid))
+                    let p = gen_invalid(rng, &a);
+                    ensure!(!a.contains(p));
+                    ensure!(a.get(p).is_none());
+                    ensure!(a.get_mut(p).is_none());
+                    ensure!(a.get_inx(p.inx()).is_none());
+                    ensure!(a.get_inx_mut(p.inx()).is_none());
                 }
             }
             800..820 => {
-                // contains invalid
-                let invalid = gen_invalid(rng, &a);
-                ensure!(!a.contains(invalid))
-            }
-            820..999 => {}
-            /*
-            800..=839 => {
-                // get and index
-                if len != 0 {
-                    let t = list[next_inx!(rng, len)];
-                    assert_eq!(t, *a.get(b[&t]).unwrap());
-                    assert_eq!(t, a[b[&t]]);
-                } else {
-                    assert!(a.get(invalid).is_none())
+                // contains, get, get_mut all invalid
+                let p = gen_invalid(rng, &a);
+                ensure!(!a.contains(p));
+                ensure!(a.get(p).is_none());
+                ensure!(a.get_mut(p).is_none());
+
+                if let Some((generation, _)) = a.get_inx(p.inx()) {
+                    ensure!(a.contains(P::_from_raw(p.inx(), generation)));
+                }
+                if let Some((generation, _)) = a.get_inx_mut(p.inx()) {
+                    ensure!(a.contains(P::_from_raw(p.inx(), generation)));
                 }
             }
-            840..=849 => {
-                // get2_mut
-                if len != 0 {
-                    let t0 = list[next_inx!(rng, len)];
-                    let t1 = list[next_inx!(rng, len)];
-                    if t0 != t1 {
-                        let tmp = a.get2_mut(b[&t0], b[&t1]).unwrap();
-                        assert_eq!((*tmp.0, *tmp.1), (t0, t1));
-                    } else {
-                        assert!(a.get2_mut(b[&t0], invalid).is_none());
-                        assert!(a.get2_mut(invalid, b[&t0]).is_none());
-                        assert!(a.get2_mut(b[&t0], b[&t0]).is_none());
+            820..900 => {
+                // get_disjoint_mut, get_disjoint_inx_mut and failures
+
+                let [] = a.get_disjoint_mut([]).stack()?;
+                let [] = a.get_disjoint_inx_mut([]).stack()?;
+
+                let i =
+                    P::Inx::try_from_usize(NonZeroUsize::new(a.capacity() + 1).unwrap()).unwrap();
+                ensure!(
+                    a.get_disjoint_inx_mut([i])
+                        .is_err_and(|e| e == GetDisjointMutError::IndexOutOfBounds)
+                );
+                ensure!(
+                    a.get_disjoint_mut([P::_from_raw(i, a.singular_generation())])
+                        .is_err_and(|e| e == GetDisjointMutError::IndexOutOfBounds)
+                );
+
+                'outer: {
+                    let mut set = [P::invalid().inx(); 3];
+                    let mut set1 = [P::invalid(); 3];
+                    if len >= set.len() {
+                        for i in &mut set {
+                            *i = P::Inx::try_from_usize(
+                                NonZeroUsize::new(rng.index(len).unwrap() + 1).unwrap(),
+                            )
+                            .unwrap();
+                        }
+                        for i in &set {
+                            if a.get_inx(*i).is_none() {
+                                ensure!(a.get_disjoint_inx_mut(set).is_err());
+                                ensure!(a.get_disjoint_mut(set1).is_err());
+                                break 'outer;
+                            }
+                        }
+                        for (set_i0, i) in set.iter().enumerate() {
+                            for (set_i1, j) in set.iter().enumerate() {
+                                if set_i0 != set_i1 && *i == *j {
+                                    ensure!(a.get_disjoint_inx_mut(set).is_err_and(
+                                        |e| e == GetDisjointMutError::OverlappingIndices
+                                    ));
+                                    ensure!(a.get_disjoint_mut(set1).is_err());
+                                    break 'outer;
+                                }
+                            }
+                        }
+
+                        let res = a
+                            .get_disjoint_inx_mut(set)
+                            .stack()?
+                            .map(|(generation, t)| (generation, t.key()));
+                        for ((generation, k), p) in res.iter().zip(set.iter()) {
+                            let tmp = a.get_inx(*p).stack()?;
+                            ensure_eq!(tmp.0, *generation);
+                            ensure_eq!(tmp.1.key(), *k);
+                        }
+                        for i in 0..set.len() {
+                            set1[i] = P::_from_raw(set[i], res[i].0);
+                        }
+
+                        match a.get_disjoint_mut(set1) {
+                            Ok(res) => {
+                                let res = res.map(|t| t.key());
+                                for (k, p) in res.iter().zip(set1.iter()) {
+                                    ensure_eq!(a.get(*p).stack()?.key(), *k);
+                                }
+                            }
+                            Err(GetDisjointMutError::IndexOutOfBounds) => bail!(""),
+                            _ => bail!(""),
+                        }
                     }
-                } else {
-                    assert!(a.get2_mut(invalid, invalid).is_none())
                 }
             }
-            850..=899 => {
-                // get_mut and index_mut
-                if len != 0 {
-                    let t = list[next_inx!(rng, len)];
-                    assert_eq!(t, *a.get_mut(b[&t]).unwrap());
-                    let tmp: &mut u64 = &mut a[b[&t]];
-                    assert_eq!(t, *tmp);
-                } else {
-                    assert!(a.get_mut(invalid).is_none())
-                }
-            }*/
+            900..999 => {}
             /*900..=909 => {
                 // ptrs
                 let mut n = 0;
