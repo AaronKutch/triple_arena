@@ -645,23 +645,26 @@ pub struct MultiStats {
 
 // for testing `clone_from_with` which interact between multiple arenas, we just
 // hardcode the heap backed arena in here
-pub fn fuzz_multi_arena(rng: &mut StarRng, stats: MultiStats) -> Result<(), StackedError> {
+pub fn fuzz_multi_arena(
+    rng: &mut StarRng,
+    stats: MultiStats,
+    cd_gen0: &mut CdGen<()>,
+    cd_gen1: &mut CdGen<D1>,
+) -> Result<(), StackedError> {
     let mut a0 = Arena::<P2, Cd<()>, HeapBacking>::new();
     let mut a1 = Arena::<P2, Cd<D1>, HeapBacking>::new();
     let mut g0 = TestGen(a0.generation());
     let mut g1 = TestGen(a1.generation());
     let mut b0 = CkMap::<(), P2>::new();
     let mut b1 = CkMap::<D1, P2>::new();
-    let mut cd_gen0 = CdGen::<()>::new();
-    let mut cd_gen1 = CdGen::<D1>::new();
 
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut max_len = 0;
 
     for _ in 0..stats.n {
-        fuzz_multi_arena_step(rng, &mut a0, &mut g0, &mut b0, &mut cd_gen0).stack()?;
-        fuzz_multi_arena_step(rng, &mut a1, &mut g1, &mut b1, &mut cd_gen1).stack()?;
+        fuzz_multi_arena_step(rng, &mut a0, &mut g0, &mut b0, cd_gen0).stack()?;
+        fuzz_multi_arena_step(rng, &mut a1, &mut g1, &mut b1, cd_gen1).stack()?;
         max_len = max(max_len, a0.len());
         match rng.index(1000).unwrap() {
             // do no major operations most of the time, rack up some random insertions and removals
@@ -699,9 +702,7 @@ pub fn fuzz_multi_arena(rng: &mut StarRng, stats: MultiStats) -> Result<(), Stac
         }
     }
     if let Some(max_len1) = stats.max_len {
-        ensure_eq!(max_len1, max_len);
+        ensure_eq!(max_len, max_len1);
     }
-    a0.clear();
-    a1.clear();
     Ok(())
 }

@@ -129,24 +129,24 @@ fn fuzz_multi_arena() -> Result<(), StackedError> {
     let mut rng = StarRng::new(2);
 
     const N: usize = if cfg!(miri) {
-        10_000
+        1_000
     } else if cfg!(debug_assertions) {
         1_000_000
     } else {
         10_000_000
     };
     const MAX_LEN: usize = if cfg!(miri) {
-        8
+        18
     } else if cfg!(debug_assertions) {
-        977
+        75
     } else {
-        9956
+        96
     };
 
     let stats = basic_arena::MultiStats {
         n: N,
         max_len: Some(MAX_LEN),
     };
-    basic_arena::fuzz_multi_arena(&mut rng, stats).stack()?;
+    basic_arena::fuzz_multi_arena(&mut rng, stats, &mut CdGen::new(), &mut CdGen::new()).stack()?;
     Ok(())
 }
