@@ -594,6 +594,8 @@ impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> PartialEq<OrdArena<P, 
     }
 }
 
+// FIXME These should become methods instead
+
 impl<P: Ptr, K: Eq, V: Eq, B: ArenaBacking> Eq for OrdArena<P, K, V, B> {}
 
 impl<P: Ptr, K: PartialOrd, V: PartialOrd, B: ArenaBacking> PartialOrd<OrdArena<P, K, V, B>>

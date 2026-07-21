@@ -62,7 +62,6 @@ impl<D: Copy + Default> Drop for CdGen<D> {
     fn drop(&mut self) {
         let inner = &mut self.inner.borrow_mut();
         if inner.freelist.len() != inner.slots.len() && !std::thread::panicking() {
-            dbg!(inner.freelist.len(), inner.slots.len());
             panic!(
                 "A CdGen test struct generator has been dropped without all of its generated \
                  `Cd`s being dropped first"
@@ -201,7 +200,7 @@ impl<D: Copy, T> CkMap<D, T> {
 
     pub fn remove(&mut self, i: usize) -> Option<(Ck<D>, T)> {
         if i > self.len() {
-            return None
+            return None;
         }
         let k = self.list.swap_remove(i);
         Some((k, self.map.remove(&k).unwrap()))

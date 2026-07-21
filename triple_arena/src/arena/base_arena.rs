@@ -1213,6 +1213,8 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for Arena<P, T, B> {
     }
 }
 
+// FIXME remove this, I don't know of any use case and it can be recreated
+
 impl<P: Ptr, T: PartialEq, B: ArenaBacking> PartialEq<Arena<P, T, B>> for Arena<P, T, B> {
     /// Checks if all `(P, T)` pairs are equal. This is sensitive to `Ptr`
     /// indexes and generation counters, but does not compare arena capacities

@@ -1,7 +1,8 @@
 use stacked_errors::{StackableErr, StackedError};
 use star_rng::StarRng;
 use testcrate::{
-    P2, basic_arena,
+    P2,
+    basic_arena::{self},
     cdgen::{Cd, CdGen},
     nonzero_inx_generic_stack,
 };
@@ -59,6 +60,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
         limit: LIMIT,
         n: N,
         iters999: Some(ITERS999),
+        max_len: LIMIT,
     };
 
     fn check_arena<P: Ptr, T, B: ArenaBacking>(
@@ -74,6 +76,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
     basic_arena::fuzz(
         stats,
         rng,
+        &mut CdGen::new(),
         &mut CdGen::new(),
         Arena::<P2, Cd<()>, StackBacking<LIMIT>>::new(),
         check_arena,

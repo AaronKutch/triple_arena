@@ -391,6 +391,8 @@ pub trait ArenaTrait<P: Ptr, T> {
     // allocated slot in `source`, this solves certain double buffering exponential
     // growth problems that early versions of `triple_arena` ran into.
 
+    // FIXME rename
+
     /// Overwrites `self` with a clone of `source` (dropping all preexisting `T`
     /// and overwriting the singular generation counter with
     /// `source.singular_generation()`). The `Ptr` validities are also
@@ -401,7 +403,11 @@ pub trait ArenaTrait<P: Ptr, T> {
     /// `source.find_inx_last_ptr().unwrap().inx().get() <= self.capacity()`,
     /// this is guaranteed to _not_ reallocate and the function is
     /// infallible. Returns an error upon reallocation failure.
-    fn clone_from_with<U, A: ArenaTrait<P, U> + SingularGenerationArena<P>, F: FnMut(P, &U) -> T>(
+    fn clone_from_with_new<
+        U,
+        A: ArenaTrait<P, U> + SingularGenerationArena<P>,
+        F: FnMut(P, &U) -> T,
+    >(
         &mut self,
         source: &A,
         map: F,
