@@ -19,6 +19,8 @@ Originally there were complementary `replace_and_update_gen` and `replace_and_ke
 The defaulted iterator designs mean that concrete associated types can't be used, but the advancer can do anything so we just have it as the associated type
 
 `find_inx_first_ptr` and `find_inx_last_ptr` are weird from a more pure perspective, but they have a bunch of miscellanious uses in helping generics and in finding things like the last element's index etc. I termed them with "index first" and "index last" to avoid confusion with the orderings in more complicated arenas. On all nonlinear arenas I am aware of, it is still possible to have an ordering that corresponds to advancer ordering.
+
+We can almost avoid "entry" style function and structs, except that some downstream uses simply must know the `Ptr` slot that they will be inserted into, and not only that but they need to be able to cancel the insertion if some internal contruction using that `Ptr` also goes wrong. We decide to have "entry_insert*" functions and multiply them in parallel with the other insert functions. The other potential way to have done it is some "next_insertion_ptr" function (which might be added in parallel for other reasons, note that you have to be careful for randomly generated `Ptr` designs), however the entry style promotes better typing and reduces broken intermediate changes, also the signature is technically more optimized for the fallible cases. It also doesn't make sense to have a single "entry" function like maps because of direct insertion and
 */
 
 /// Returned from operations that are infallible but could involve generation
@@ -442,12 +444,23 @@ pub trait ArenaTrait<P: Ptr, T> {
     fn compress_with<F: FnMut(P, &mut T, P)>(&mut self, map: F) -> InvalidationOption<()>;
 }
 
+/// Dropping the struct cancels the insertion
+pub trait ArenaInsertEntryTrait<'a, P: Ptr, T> {
+    fn ptr(&'a self) -> P;
+
+    fn insert(self, t: T);
+}
+
 /// The standard trait for insertion into [ArenaTrait] arenas. Some arenas do
 /// not have a freelist however, and this trait could not be implemented
 /// efficiently. The [ArenaDirectInsertTrait] trait is a separate trait because
 /// direct insertions would not be efficient on an arena with a one-way linked
 /// freelist.
 pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
+    type Entry<'a>: ArenaInsertEntryTrait<'a, P, T>
+    where
+        Self: 'a;
+
     /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
     /// it. Returns the `t` if there was no available capacity.
     fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), T>;
@@ -458,7 +471,7 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// up.
     fn insert_reallocating(&mut self, t: T) -> Result<(P, &mut T), T> {
         if self.len() == self.capacity() {
-            // TODO may want something more sophisticated, see https://github.com/rust-lang/rust/issues/29931
+            // REF(better_reallocation)
 
             // follow `RawVec`
             let mut next = if self.capacity() == 0 {
@@ -489,7 +502,35 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     fn insert(&mut self, t: T) -> (P, &mut T) {
         self.insert_reallocating(t)
             .ok()
-            .expect("`ArenaTrait::insert_reallocating` failed")
+            .expect("`ArenaInsertTrait::insert_reallocating` failed")
+    }
+
+    fn entry_insert_within_capacity(&mut self) -> Option<Self::Entry<'_>>;
+    fn entry_insert_reallocating(&mut self) -> Result<Self::Entry<'_>, AllocError> {
+        if self.len() == self.capacity() {
+            // REF(better_reallocation)
+
+            // follow `RawVec`
+            let mut next = if self.capacity() == 0 {
+                if size_of::<T>() <= 1024 { 4 } else { 1 }
+            } else {
+                self.capacity().saturating_mul(2)
+            };
+            // but be able to saturate max capacity before causing an error
+            if let Some(max_capacity) = self.max_capacity() {
+                next = next.min(max_capacity);
+            }
+            if self.reallocate_min_capacity(next).is_err() {
+                return Err(AllocError);
+            }
+        }
+        self.entry_insert_within_capacity().ok_or(AllocError)
+    }
+    #[track_caller]
+    fn entry_insert(&mut self) -> Self::Entry<'_> {
+        self.entry_insert_reallocating()
+            .ok()
+            .expect("`ArenaInsertTrait::entry_insert_reallocating` failed")
     }
 }
 

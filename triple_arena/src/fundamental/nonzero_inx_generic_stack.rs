@@ -111,7 +111,7 @@ pub unsafe trait NonZeroInxGenericStack<T> {
     /// up [NonZeroInxGenericStack::max_capacity].
     fn push_reallocating(&mut self, t: T) -> Result<(NonZeroUsize, &mut T), T> {
         if self.len() == self.capacity() {
-            // TODO may want something more sophisticated, see https://github.com/rust-lang/rust/issues/29931
+            // TODO REF(better_reallocation) may want something more sophisticated, see https://github.com/rust-lang/rust/issues/29931
 
             // follow `RawVec`
             let mut next = if self.capacity() == 0 {
@@ -140,6 +140,10 @@ pub unsafe trait NonZeroInxGenericStack<T> {
     /// capacity
     #[track_caller]
     fn push(&mut self, t: T) -> (NonZeroUsize, &mut T) {
+        // TODO it would be nice if Rust had a way to mark functions such that
+        // downstream uses would warn if downstream assertions (something like
+        // `clippy::cast_possible_wrap` but not just lexical and something more general
+        // that guards against other fallible things in the language)
         self.push_reallocating(t)
             .ok()
             .expect("`push_reallocating` failed")

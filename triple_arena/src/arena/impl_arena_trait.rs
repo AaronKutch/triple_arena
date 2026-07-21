@@ -263,8 +263,74 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     }
 }
 
+pub struct ArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
+    this: &'a mut Arena<P, T, B>,
+    p: P,
+    t: &'a mut InternalSlot<P, T>,
+}
+
+impl<'a, P: Ptr, T, B: ArenaBacking> ArenaIn {}
+
 impl<P: Ptr, T, B: ArenaBacking> ArenaInsertTrait<P, T> for Arena<P, T, B> {
+    type Entry<'a>
+        = ArenaInsertEntry<'a, P, T, B>
+    where
+        Self: 'a;
+
     fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), T> {
+        let generation = self.generation;
+        if let Some(inx) = self.freelist_root {
+            let slot = self.m.get_mut(Self::into_checked(inx)).unwrap();
+            let InternalSlot::Free(next) = mem::replace(slot, Allocated(generation, t)) else {
+                unreachable!()
+            };
+            if next == inx {
+                // end of freelist
+                self.freelist_root = None;
+            } else {
+                // move to next node in the freelist
+                self.freelist_root = Some(next);
+            }
+            // safe by `isize::MAX` limits, the slots can never be ZSTs
+            self.len = self.len.wrapping_add(1);
+            let InternalSlot::Allocated(_, t) = slot else {
+                unreachable!()
+            };
+            Ok((Ptr::_from_raw(inx, generation), t))
+        } else {
+            // see if capacity for slots remains, freelist remains unset if we push just
+            // one thing
+            match self
+                .m
+                .push_within_capacity(InternalSlot::Allocated(self.generation, t))
+            {
+                // TODO Polonius cleans this up
+                Ok((raw_inx, _)) => {
+                    if let Some(inx) = P::Inx::try_from_usize(raw_inx) {
+                        let Some(InternalSlot::Allocated(_, t)) = self.m.get_mut(raw_inx) else {
+                            unreachable!()
+                        };
+                        self.len = self.len.wrapping_add(1);
+                        Ok((<P as Ptr>::_from_raw(inx, generation), t))
+                    } else {
+                        // undo
+                        let InternalSlot::Allocated(_, t) = self.m.pop().unwrap() else {
+                            unreachable!()
+                        };
+                        Err(t)
+                    }
+                }
+                Err(slot) => {
+                    let InternalSlot::Allocated(_, t) = slot else {
+                        unreachable!()
+                    };
+                    Err(t)
+                }
+            }
+        }
+    }
+
+    fn entry_insert_within_capacity(&mut self) -> Option<Self::Entry<'_>> {
         let generation = self.generation;
         if let Some(inx) = self.freelist_root {
             let slot = self.m.get_mut(Self::into_checked(inx)).unwrap();
