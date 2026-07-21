@@ -166,7 +166,12 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     ) -> Result<(), AllocError> {
         let Some(last) = source.find_inx_last_ptr() else {
             // no entries
-            self.clear();
+
+            // same as `clear` but the generation is copied over
+            self.m.clear();
+            self.len = 0;
+            self.freelist_root = None;
+            self.generation = source.singular_generation();
             return Ok(());
         };
         // Be aware that `source` may not be linear and the `P`s coming from it can't be

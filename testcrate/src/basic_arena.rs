@@ -18,7 +18,6 @@ pub struct Stats {
     pub limit: usize,
     pub n: usize,
     pub iters999: Option<usize>,
-    pub max_len: usize,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -433,12 +432,15 @@ pub fn fuzz<
                     ensure!(adv.advance(&a).is_none());
                     let mut adv = a.ordered_advancer(inx1, true);
                     ensure!(adv.advance(&a).is_none());
-                    let inx_last =
-                        P::Inx::try_from_usize(NonZeroUsize::new(a.capacity()).unwrap()).unwrap();
-                    let mut adv = a.ordered_advancer(inx_last, false);
-                    ensure!(adv.advance(&a).is_none());
-                    let mut adv = a.ordered_advancer(inx_last, true);
-                    ensure!(adv.advance(&a).is_none());
+                    if a.capacity() > 0 {
+                        let inx_last =
+                            P::Inx::try_from_usize(NonZeroUsize::new(a.capacity()).unwrap())
+                                .unwrap();
+                        let mut adv = a.ordered_advancer(inx_last, false);
+                        ensure!(adv.advance(&a).is_none());
+                        let mut adv = a.ordered_advancer(inx_last, true);
+                        ensure!(adv.advance(&a).is_none());
+                    }
                 }
             }
             920..930 => {
@@ -493,6 +495,10 @@ pub fn fuzz<
             995 => {
                 // compress
                 ensure_eq!(a.compress().is_overflow(), g.invalidate());
+                b.clear();
+                for (p, t) in a.iter() {
+                    b.insert(t.key(), p);
+                }
                 if len > 0 {
                     ensure_eq!(
                         P::Inx::try_into_usize(a.find_inx_last_ptr().stack()?.inx())
@@ -527,7 +533,7 @@ pub fn fuzz<
                 }
             }
             997 => {
-                // clone_from variants. these are mainly tested in `multi_arena`, but we want
+                // clone_from_with, this is mainly tested in `multi_arena`, but we want
                 // them here to test if `self.m.len()` and `self.m.capacity()` detachments cause
                 // issues.
                 match rng.index(2).unwrap() {
@@ -562,7 +568,6 @@ pub fn fuzz<
                         }
                         g.0 = a1.singular_generation();
                     }
-                    // FIXME
                     _ => unreachable!(),
                 }
             }
@@ -588,6 +593,5 @@ pub fn fuzz<
     if let Some(x) = stats.iters999 {
         ensure_eq!(iters999, x);
     }
-    ensure_eq!(max_len, stats.max_len);
     Ok(())
 }

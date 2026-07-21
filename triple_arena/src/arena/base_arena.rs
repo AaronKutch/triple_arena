@@ -1099,6 +1099,11 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         &self.m
     }
 
+    // at the moment we aren't using unsafe operations that would lead this to be
+    // unsound (and may never because of the generics that would be problematic to
+    // make `unsafe`), but messing up the freelist is essentially a memory
+    // corruption issue anyways even if not causing language level UB
+
     /// Directly returns a mutable reference to the internal backing, for the
     /// purposes of accessing `ArenaBacking`-specific functions
     ///

@@ -10,6 +10,7 @@ ptr_struct!(P1);
 ptr_struct!(P2[NonZeroU32](NonZeroU8));
 
 /// helper for testing with arena generations
+#[derive(Debug)]
 pub struct TestGen<P: Ptr>(pub P::Gen);
 
 impl<P: Ptr> TestGen<P> {

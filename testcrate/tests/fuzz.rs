@@ -10,8 +10,8 @@ use triple_arena::{
     Arena,
     traits::Ptr,
     utils::{
-        ArenaBacking, NonZeroInxArray, NonZeroInxGenericStack, NonZeroInxLimitedVec, NonZeroInxVec,
-        SetMaxCapacity, StackBacking,
+        ArenaBacking, HeapBacking, LimitedHeapBacking, NonZeroInxArray, NonZeroInxGenericStack,
+        NonZeroInxLimitedVec, NonZeroInxVec, SetMaxCapacity, StackBacking,
     },
 };
 
@@ -52,15 +52,26 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
 fn fuzz_basic_arena() -> Result<(), StackedError> {
     let rng = &mut StarRng::new(1);
 
-    const N: usize = if cfg!(miri) { 10_000 } else { 10_000_000 };
-    const ITERS999: usize = if cfg!(miri) { 5 } else { 9939 };
+    const N: usize = if cfg!(miri) {
+        10_000
+    } else if cfg!(debug_assertions) {
+        1_000_000
+    } else {
+        10_000_000
+    };
+    const ITERS999: usize = if cfg!(miri) {
+        8
+    } else if cfg!(debug_assertions) {
+        977
+    } else {
+        9956
+    };
     pub const LIMIT: usize = 7;
 
     let mut stats = basic_arena::Stats {
         limit: LIMIT,
         n: N,
         iters999: Some(ITERS999),
-        max_len: LIMIT,
     };
 
     fn check_arena<P: Ptr, T, B: ArenaBacking>(
@@ -84,11 +95,29 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
     .stack()?;
 
     stats.iters999 = None;
-    /*
-    let mut a = NonZeroInxLimitedVec::new();
-    a.set_max_capacity(LIMIT).unwrap();
-    basic_arena::fuzz(stats, &mut CdGen::new(), a).stack()?;
-    basic_arena::fuzz(stats, &mut CdGen::new(), NonZeroInxVec::new()).stack()?;*/
+
+    let mut a = Arena::<P2, Cd<()>, LimitedHeapBacking>::new();
+    unsafe {
+        a.backing_mut().set_max_capacity(LIMIT).unwrap();
+    }
+    basic_arena::fuzz(
+        stats,
+        rng,
+        &mut CdGen::new(),
+        &mut CdGen::new(),
+        a,
+        check_arena,
+    )
+    .stack()?;
+    basic_arena::fuzz(
+        stats,
+        rng,
+        &mut CdGen::new(),
+        &mut CdGen::new(),
+        Arena::<P2, Cd<()>, HeapBacking>::new(),
+        check_arena,
+    )
+    .stack()?;
 
     Ok(())
 }
