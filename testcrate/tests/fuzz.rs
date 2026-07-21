@@ -121,3 +121,32 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
 
     Ok(())
 }
+
+// for testing `clone` and `clone_from_with` which interact between multiple
+// arenas, we just hardcode the heap backed arena in here
+#[test]
+fn fuzz_multi_arena() -> Result<(), StackedError> {
+    let mut rng = StarRng::new(2);
+
+    const N: usize = if cfg!(miri) {
+        10_000
+    } else if cfg!(debug_assertions) {
+        1_000_000
+    } else {
+        10_000_000
+    };
+    const MAX_LEN: usize = if cfg!(miri) {
+        8
+    } else if cfg!(debug_assertions) {
+        977
+    } else {
+        9956
+    };
+
+    let stats = basic_arena::MultiStats {
+        n: N,
+        max_len: Some(MAX_LEN),
+    };
+    basic_arena::fuzz_multi_arena(&mut rng, stats).stack()?;
+    Ok(())
+}

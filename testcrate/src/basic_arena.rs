@@ -9,7 +9,7 @@ use triple_arena::{
 };
 
 use crate::{
-    TestGen,
+    P2, TestGen,
     cdgen::{Cd, CdGen, CkMap},
 };
 
@@ -593,5 +593,115 @@ pub fn fuzz<
     if let Some(x) = stats.iters999 {
         ensure_eq!(iters999, x);
     }
+    Ok(())
+}
+
+pub fn fuzz_multi_arena_step<D: Copy + Default, P: Ptr>(
+    rng: &mut StarRng,
+    a: &mut Arena<P, Cd<D>, HeapBacking>,
+    g: &mut TestGen<P>,
+    b: &mut CkMap<D, P>,
+    cd_gen: &mut CdGen<D>,
+) -> Result<(), StackedError> {
+    let len = a.len();
+    ensure_eq!(len, b.len());
+    ensure_eq!(a.singular_generation(), g.0);
+    ensure_eq!(a.is_empty(), b.is_empty());
+    if !cfg!(miri) {
+        Arena::_check_invariants(a).unwrap();
+    }
+    match rng.next_u32() % 100 {
+        0..50 => {
+            // insert
+            let (k, t) = cd_gen.new_cd();
+            let p = a.insert(t);
+            b.insert(k, p);
+        }
+        50..99 => {
+            // remove
+            if len != 0 {
+                let (k, p) = b.remove_rand(rng).unwrap();
+                ensure_eq!(k, a.remove(p).unwrap().key());
+                g.invalidate();
+            }
+        }
+        99 => {
+            // clear and shrink
+            a.clear();
+            a.reallocate_min_capacity(0).unwrap();
+            g.invalidate();
+            b.clear();
+        }
+        100.. => unreachable!(),
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+pub struct MultiStats {
+    pub n: usize,
+    pub max_len: Option<usize>,
+}
+
+// for testing `clone_from_with` which interact between multiple arenas, we just
+// hardcode the heap backed arena in here
+pub fn fuzz_multi_arena(rng: &mut StarRng, stats: MultiStats) -> Result<(), StackedError> {
+    let mut a0 = Arena::<P2, Cd<()>, HeapBacking>::new();
+    let mut a1 = Arena::<P2, Cd<D1>, HeapBacking>::new();
+    let mut g0 = TestGen(a0.generation());
+    let mut g1 = TestGen(a1.generation());
+    let mut b0 = CkMap::<(), P2>::new();
+    let mut b1 = CkMap::<D1, P2>::new();
+    let mut cd_gen0 = CdGen::<()>::new();
+    let mut cd_gen1 = CdGen::<D1>::new();
+
+    // makes sure there is not some problem with the test harness itself or
+    // determinism
+    let mut max_len = 0;
+
+    for _ in 0..stats.n {
+        fuzz_multi_arena_step(rng, &mut a0, &mut g0, &mut b0, &mut cd_gen0).stack()?;
+        fuzz_multi_arena_step(rng, &mut a1, &mut g1, &mut b1, &mut cd_gen1).stack()?;
+        max_len = max(max_len, a0.len());
+        match rng.index(1000).unwrap() {
+            // do no major operations most of the time, rack up some random insertions and removals
+            // in `inner`
+            0..900 => (),
+            900..950 => {
+                b0.clear();
+                a0.clone_from_with_new(&a1, |p, u| {
+                    assert_eq!(a1.get(p).unwrap().key(), u.key());
+                    let (k, t) = cd_gen0.new_cd();
+                    b0.insert(k, p);
+                    t
+                })
+                .unwrap();
+                for p in a1.ptrs() {
+                    ensure!(a0.contains(p));
+                }
+                g0.0 = a1.singular_generation();
+            }
+            950..1000 => {
+                b1.clear();
+                a1.clone_from_with_new(&a0, |p, u| {
+                    assert_eq!(a0.get(p).unwrap().key(), u.key());
+                    let (k, t) = cd_gen1.new_cd();
+                    b1.insert(k, p);
+                    t
+                })
+                .unwrap();
+                for p in a0.ptrs() {
+                    ensure!(a1.contains(p));
+                }
+                g1.0 = a0.singular_generation();
+            }
+            1000.. => unreachable!(),
+        }
+    }
+    if let Some(max_len1) = stats.max_len {
+        ensure_eq!(max_len1, max_len);
+    }
+    a0.clear();
+    a1.clear();
     Ok(())
 }

@@ -428,9 +428,9 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     #[inline]
     pub(crate) fn inc_gen(&mut self) {
         let tmp = PtrGen::generational_inc(self.generation);
-        if tmp.1 {
-            panic!("FIXME");
-        }
+        //if tmp.1 {
+        //panic!("FIXME");
+        //}
         self.generation = tmp.0;
     }
 
