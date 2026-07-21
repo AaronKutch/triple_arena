@@ -1,11 +1,9 @@
-use std::{cmp::max, num::NonZeroUsize, slice::GetDisjointMutError};
+use std::{cmp::max, mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use star_rng::StarRng;
 use triple_arena::{
-    InvalidationResult,
-    traits::{ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena},
-    utils::{AllocError, PtrGen, PtrInx},
+    InvalidationResult, traits::{Advancer, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena}, utils::{AllocError, PtrGen, PtrInx},
 };
 
 use crate::{
@@ -361,6 +359,35 @@ pub fn fuzz<
                         }
                     }
                 }
+            }
+            900..910 => {
+                // advancer
+                let mut i = 0;
+                let mut rand_remove_i = if len == 0 {0} else { rng.index(len).unwrap()};
+                let mut rand_insert_i = if len == 0 {0} else { rng.index(len).unwrap()};
+                if a.len() == stats.limit && rand_remove_i > rand_insert_i {
+                    // need to remove before inserting again
+                    mem::swap(&mut rand_insert_i, &mut rand_remove_i);
+                }
+                let mut adv = a.advancer();
+                while let Some(p) = adv.advance(&a) {
+                    assert_eq!(p, *b.get(a.get(p).stack()?.key()).stack()?);
+
+                    // remove and insert at random times
+                    if i == rand_remove_i {
+                        let (k, p) = b.remove(i).unwrap();
+                        assert_eq!(k, a.remove(p).ok().unwrap().key());
+                        g.invalidate();
+                    }
+                    if i == rand_insert_i {
+                        let (k, t) = cd_gen.new_cd();
+                        let (p, _) = a.insert(t);
+                        b.insert(k, p);
+                    }
+                    i += 1;
+                }
+                // depends on the invalidated elements witnessed
+                assert!((i == len.saturating_sub(1)) || (i == len) || (i == (len + 1)));
             }
             900..999 => {}
             /*900..=909 => {
