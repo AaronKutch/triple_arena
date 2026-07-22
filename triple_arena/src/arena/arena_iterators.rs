@@ -9,7 +9,7 @@ use crate::{
     Arena,
     arena::{ArenaBacking, InternalSlot},
     traits::{Advancer, Ptr},
-    utils::{NonZeroInxGenericStack, PtrInx},
+    utils::traits::{NonZeroInxGenericStack, PtrInx},
 };
 
 /// An advancer over the valid `P`s of an `Arena`

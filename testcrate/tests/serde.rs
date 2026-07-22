@@ -5,7 +5,7 @@ use testcrate::{std_arena, std_chain, std_chain_no_gen, std_ord, std_surject};
 use triple_arena::{
     Arena, ChainArena, OrdArena, SurjectArena,
     traits::*,
-    utils::{ChainNoGenArena, PtrGen},
+    utils::{ChainNoGenArena, traits::PtrGen},
 };
 
 // RON version for debug

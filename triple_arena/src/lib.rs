@@ -1,8 +1,8 @@
-//! Note: there are "alloc" (enabled by default), "std", "serde_support", and
-//! "expose_internal_utils" feature flags. When the default "alloc" feature is
-//! enabled, the arenas have a defaulted
-//! `B: ArenaBacking = triple_arena::utils::HeapBacking` parameter, but when
-//! disabled the parameter must be specified.
+//! Note: there are "alloc" (enabled by default), "std", and "serde_support"
+//! feature flags. When the default "alloc" feature is enabled, the arenas have
+//! a defaulted `B: ArenaBacking = triple_arena::utils::HeapBacking` parameter,
+//! but when the alloc feature is optional, the parameter should always be
+//! specified.
 
 #![no_std]
 #![allow(clippy::type_complexity)]
@@ -24,22 +24,29 @@ pub use chain::{ChainArena, Link, chain_iterators};
 // always keep this for the serde documentation
 #[cfg(feature = "serde_support")]
 pub use fundamental::serde_docs;
-pub use fundamental::{InvalidationOption, InvalidationResult};
+pub use fundamental::{
+    AllocError, InvalidationOption, InvalidationResult, NotWithinCapacityError, ReallocationError,
+};
 pub use ord::{OrdArena, ord_iterators};
 pub use surject::{SurjectArena, surject_iterators};
 
+pub use crate::arena::StackBacking;
+#[cfg(feature = "alloc")]
+pub use crate::arena::{FixedHeapBacking, HeapBacking, LimitedHeapBacking};
+
 /// Special utilities for advanced usage
 pub mod utils {
-    #[cfg(feature = "expose_internal_utils")]
-    pub use crate::arena::{InternalSlot, NonZeroInxArray};
-    #[cfg(all(feature = "alloc", feature = "expose_internal_utils"))]
-    pub use crate::arena::{NonZeroInxLimitedVec, NonZeroInxVec};
-    // only intended for size_of tests and such
-    #[cfg(feature = "expose_internal_utils")]
+    #[cfg(feature = "alloc")]
+    pub use crate::arena::{
+        NonZeroInxBoxedSlice, NonZeroInxBoxedSlicePushEntry, NonZeroInxLimitedVec,
+        NonZeroInxLimitedVecPushEntry, NonZeroInxVec, NonZeroInxVecPushEntry,
+    };
+    // FIXME rename? or put in another module, do the same with InternalSlot
     pub use crate::ord::Node;
     pub use crate::{
+        arena::{InternalSlot, NonZeroInxArray, NonZeroInxArrayPushEntry},
         chain::{ChainNoGenArena, LinkNoGen, chain_no_gen_iterators},
-        fundamental::{PtrGen, PtrInx, PtrNoGen},
+        fundamental::PtrNoGen,
     };
     /// A reexport used by the macros
     #[cfg(feature = "serde_support")]
@@ -47,12 +54,21 @@ pub mod utils {
         pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
     }
 
-    #[cfg(feature = "alloc")]
-    pub use crate::arena::{HeapBacking, LimitedHeapBacking};
-    pub use crate::{
-        arena::{ArenaBacking, StackBacking},
-        fundamental::{AllocError, NonZeroInxGenericStack, SetMaxCapacity, ptrinx_unchecked},
-    };
+    pub use crate::fundamental::ptrinx_unchecked;
+
+    // `ArenaBacking` is rarely referenced directly so we put it in here
+
+    /// Traits for [crate::utils]
+    pub mod traits {
+        pub use crate::{
+            arena::ArenaBacking,
+            chain::{ChainNoGenArena, LinkNoGen, chain_no_gen_iterators},
+            fundamental::{
+                NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, PtrGen, PtrInx,
+                SetMaxCapacity, ptrinx_unchecked,
+            },
+        };
+    }
 }
 
 /// All the main traits, this can be glob imported
@@ -60,7 +76,7 @@ pub mod traits {
     pub use recasting::{Recast, Recaster};
 
     pub use crate::fundamental::{
-        Advancer, ArenaDirectInsertTrait, ArenaInsertTrait, ArenaTrait, Ptr,
-        SingularGenerationArena,
+        Advancer, ArenaDirectInsertTrait, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
+        SetMaxCapacity, SingularGenerationArena,
     };
 }

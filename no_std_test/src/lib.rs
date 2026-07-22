@@ -13,7 +13,7 @@ use alloc::vec::Vec;
 
 use triple_arena::{
     Arena, ptr_struct,
-    utils::{NonZeroInxGenericStack, NonZeroInxVec},
+    utils::{NonZeroInxVec, traits::NonZeroInxGenericStack},
 };
 
 ptr_struct!(P0());

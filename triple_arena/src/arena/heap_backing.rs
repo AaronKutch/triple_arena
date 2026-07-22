@@ -3,7 +3,10 @@
 use alloc::vec::Vec;
 use core::num::NonZeroUsize;
 
-use crate::utils::{AllocError, NonZeroInxGenericStack};
+use crate::{
+    AllocError, NotWithinCapacityError, ReallocationError,
+    utils::traits::{NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait},
+};
 
 // Note: an older version of `triple_arena` had manually managed allocations and
 // an extreme microoptimization where we pre-offset the allocation pointer so
@@ -18,10 +21,41 @@ pub struct NonZeroInxVec<T> {
     v: Vec<T>,
 }
 
+pub struct NonZeroInxVecPushEntry<'a, T> {
+    this: &'a mut NonZeroInxVec<T>,
+}
+
+impl<'a, T> NonZeroInxGenericStackPushEntryTrait<'a, T> for NonZeroInxVecPushEntry<'a, T> {
+    fn inx(&self) -> NonZeroUsize {
+        // note this assumes that `push` is the only other mutable function
+        // Safety: overflow from pushing was checked for before creating the entry
+        unsafe { NonZeroUsize::new_unchecked(self.this.v.len().wrapping_add(1)) }
+    }
+
+    fn push(self, t: T) {
+        let this = self.this;
+        this.v.push(t);
+    }
+}
+
 // Safety: we follow the requirements of the trait
 unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
+    type PushEntry<'a>
+        = NonZeroInxVecPushEntry<'a, T>
+    where
+        Self: 'a;
+
     fn new() -> Self {
         Self { v: Vec::new() }
+    }
+
+    fn with_min_capacity(min_capacity: usize) -> Result<Self, AllocError> {
+        // TODO change when `try_with_capacity` is stabilized
+
+        // the only stable way to do it
+        let mut v = Vec::new();
+        v.try_reserve(min_capacity).map_err(|_| AllocError)?;
+        Ok(Self { v })
     }
 
     fn len(&self) -> usize {
@@ -36,32 +70,31 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
         None
     }
 
-    fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), AllocError> {
+    fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), ReallocationError> {
         if min_capacity > self.capacity() {
             self.v
                 .try_reserve(min_capacity - self.len())
-                .map_err(|_| AllocError)?;
+                .map_err(|_| ReallocationError::AllocError)?;
         } else if min_capacity < self.capacity() {
             // TODO change when `try_shrink_to` is stabilized
 
             // the only stable way to do it
             let mut v = Vec::new();
-            v.try_reserve(min_capacity).map_err(|_| AllocError)?;
+            v.try_reserve(min_capacity)
+                .map_err(|_| ReallocationError::AllocError)?;
             v.append(&mut self.v);
             self.v = v;
         }
         Ok(())
     }
 
-    fn push_within_capacity(&mut self, t: T) -> Result<(NonZeroUsize, &mut T), T> {
+    fn entry_push_within_capacity(
+        &mut self,
+    ) -> Result<Self::PushEntry<'_>, NotWithinCapacityError> {
         if self.v.len() < self.v.capacity() {
-            self.v.push(t);
-            Ok((
-                unsafe { NonZeroUsize::new_unchecked(self.len()) },
-                self.v.last_mut().unwrap(),
-            ))
+            Ok(NonZeroInxVecPushEntry { this: self })
         } else {
-            Err(t)
+            Err(NotWithinCapacityError)
         }
     }
 

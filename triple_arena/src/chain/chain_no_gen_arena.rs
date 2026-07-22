@@ -10,7 +10,7 @@ use core::{
 use crate::{
     Arena, ChainArena, Link,
     traits::{Advancer, Ptr},
-    utils::ArenaBacking,
+    utils::traits::ArenaBacking,
 };
 
 /// The same as [crate::Link] except that the interlinks do not have a
@@ -65,7 +65,7 @@ impl<P: Ptr, T> LinkNoGen<P, T> {
 pub struct ChainNoGenArena<
     P: Ptr,
     T,
-    #[cfg(feature = "alloc")] B: ArenaBacking = crate::utils::HeapBacking,
+    #[cfg(feature = "alloc")] B: ArenaBacking = crate::HeapBacking,
     #[cfg(not(feature = "alloc"))] B: ArenaBacking,
 > {
     pub(crate) a: Arena<P, LinkNoGen<P, T>, B>,

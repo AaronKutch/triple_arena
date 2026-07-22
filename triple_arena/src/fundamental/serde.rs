@@ -15,7 +15,8 @@ use crate::{
     surject::{Key, Val},
     traits::Ptr,
     utils::{
-        ArenaBacking, ChainNoGenArena, LinkNoGen, NonZeroInxGenericStack, PtrGen, PtrInx, PtrNoGen,
+        ChainNoGenArena, LinkNoGen, PtrNoGen,
+        traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen, PtrInx},
     },
 };
 

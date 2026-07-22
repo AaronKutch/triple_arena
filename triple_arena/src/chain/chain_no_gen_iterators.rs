@@ -6,7 +6,7 @@ pub use crate::arena_iterators::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals
 use crate::{
     Arena, arena_iterators,
     traits::{Advancer, Ptr},
-    utils::{ArenaBacking, ChainNoGenArena, LinkNoGen},
+    utils::{ChainNoGenArena, LinkNoGen, traits::ArenaBacking},
 };
 
 /// An advancer over the valid `P`s of a `ChainNoGenArena`

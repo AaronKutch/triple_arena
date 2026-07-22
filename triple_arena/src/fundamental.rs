@@ -13,11 +13,16 @@ pub mod serde_docs;
 
 pub use advancer::Advancer;
 pub use arena_traits::{
-    ArenaDirectInsertTrait, ArenaInsertTrait, ArenaTrait, InvalidationOption, InvalidationResult,
-    SingularGenerationArena,
+    ArenaDirectInsertTrait, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
+    InvalidationOption, InvalidationResult, SingularGenerationArena,
 };
-pub use extra::{AllocError, IntoNonZeroUsizeIterator, nzusize_iter, ptrinx_unchecked};
-pub use nonzero_inx_generic_stack::{NonZeroInxGenericStack, SetMaxCapacity};
+pub use extra::{
+    AllocError, IntoNonZeroUsizeIterator, NotWithinCapacityError, ReallocationError, nzusize_iter,
+    ptrinx_unchecked,
+};
+pub use nonzero_inx_generic_stack::{
+    NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, SetMaxCapacity,
+};
 #[cfg(not(feature = "serde_support"))]
 pub use ptr::{Ptr, PtrGen, PtrInx, PtrNoGen};
 #[cfg(feature = "serde_support")]

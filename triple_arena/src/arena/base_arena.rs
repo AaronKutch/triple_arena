@@ -10,7 +10,10 @@ use crate::{
     InvalidationOption, InvalidationResult,
     arena::ArenaBacking,
     traits::{Advancer, Ptr},
-    utils::{NonZeroInxGenericStack, PtrGen, PtrInx, ptrinx_unchecked},
+    utils::{
+        ptrinx_unchecked,
+        traits::{NonZeroInxGenericStack, PtrGen, PtrInx},
+    },
 };
 
 // See REF(arena_terminology)

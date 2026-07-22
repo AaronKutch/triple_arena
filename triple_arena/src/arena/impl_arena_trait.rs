@@ -1,14 +1,18 @@
 use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
-    Arena, InvalidationOption, InvalidationResult,
+    AllocError, Arena, InvalidationOption, InvalidationResult, NotWithinCapacityError,
+    ReallocationError,
     arena::{
         ArenaBacking,
         InternalSlot::{self, *},
     },
     arena_iterators,
-    traits::{Advancer, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena},
-    utils::{AllocError, NonZeroInxGenericStack, PtrGen, PtrInx},
+    fundamental::NonZeroInxGenericStackPushEntryTrait,
+    traits::{
+        Advancer, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena,
+    },
+    utils::traits::{NonZeroInxGenericStack, PtrGen, PtrInx},
 };
 
 impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for Arena<P, T, B> {
@@ -29,6 +33,15 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         }
     }
 
+    fn with_min_capacity(min_capacity: usize) -> Result<Self, AllocError> {
+        Ok(Self {
+            len: 0,
+            m: B::Stack::with_min_capacity(min_capacity)?,
+            freelist_root: None,
+            generation: PtrGen::two(),
+        })
+    }
+
     fn capacity(&self) -> usize {
         self.m.capacity()
     }
@@ -37,7 +50,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         self.m.max_capacity()
     }
 
-    fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), AllocError> {
+    fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), ReallocationError> {
         // so that capacity on the end is not used up by unallocated slots, and just fix
         // up the freelist if this function was called under any circumstance, it is
         // understood that it is a `O(n)` operation anyway.
@@ -163,7 +176,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         &mut self,
         source: &A,
         mut map: F,
-    ) -> Result<(), AllocError> {
+    ) -> Result<(), ReallocationError> {
         let Some(last) = source.find_inx_last_ptr() else {
             // no entries
 
@@ -175,10 +188,11 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
             return Ok(());
         };
         // Be aware that `source` may not be linear and the `P`s coming from it can't be
-        // relied on, if this happens just return the `AllocError` which is logical
-        // anyways
+        // relied on, if this happens just return the `BeyondMaxCapacity` which is
+        // logical anyways
+        let e = Err(ReallocationError::BeyondMaxCapacity);
         let Some(raw_last) = P::Inx::try_into_usize(last.inx()) else {
-            return Err(AllocError);
+            return e;
         };
         if raw_last.get() > self.capacity() {
             self.reallocate_min_capacity(raw_last.get())?;
@@ -193,11 +207,11 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
             let mut adv = source.advancer();
             while let Some(p) = adv.advance(source) {
                 let Some(raw) = P::Inx::try_into_usize(p.inx()) else {
-                    break 'outer Err(AllocError);
+                    break 'outer e;
                 };
                 if raw.get() <= self.m.len() {
                     // the advancer is out of order
-                    break 'outer Err(AllocError);
+                    break 'outer e;
                 }
                 // insert free entries in gaps
                 while raw.get() - 1 > self.m.len() {
@@ -206,11 +220,11 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
                         .push_within_capacity(Free(P::invalid().inx()))
                         .is_err()
                     {
-                        break 'outer Err(AllocError);
+                        break 'outer e;
                     }
                 }
                 let Some(u) = source.get(p) else {
-                    break 'outer Err(AllocError);
+                    break 'outer e;
                 };
                 let t = map(p, u);
                 if self
@@ -218,7 +232,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
                     .push_within_capacity(Allocated(p.generation(), t))
                     .is_err()
                 {
-                    break 'outer Err(AllocError);
+                    break 'outer e;
                 }
                 self.len = self.len.wrapping_add(1);
             }
@@ -265,19 +279,52 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
 
 pub struct ArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
     this: &'a mut Arena<P, T, B>,
+    // this either points to a free slot or to one past `this.m.len()` where an allocation can be
+    // pushed successfully
     p: P,
-    t: &'a mut InternalSlot<P, T>,
 }
 
-impl<'a, P: Ptr, T, B: ArenaBacking> ArenaIn {}
+impl<'a, P: Ptr, T, B: ArenaBacking> ArenaInsertEntryTrait<'a, P, T>
+    for ArenaInsertEntry<'a, P, T, B>
+{
+    fn ptr(&'a self) -> P {
+        self.p
+    }
+
+    fn insert(self, t: T) {
+        let this = self.this;
+        let inx = Arena::<P, T, B>::into_checked(self.p.inx());
+        let generation = self.p.generation();
+        if let Some(slot) = this.m.get_mut(inx) {
+            let InternalSlot::Free(next) = mem::replace(slot, Allocated(generation, t)) else {
+                unreachable!()
+            };
+            if next == self.p.inx() {
+                // end of freelist
+                this.freelist_root = None;
+            } else {
+                // move to next node in the freelist
+                this.freelist_root = Some(next);
+            }
+        } else {
+            // freelist remains unset
+            this.m
+                .push_within_capacity(InternalSlot::Allocated(this.generation, t))
+                .ok()
+                .unwrap();
+        }
+        // safe by `isize::MAX` limits, the slots can never be ZSTs
+        this.len = this.len.wrapping_add(1);
+    }
+}
 
 impl<P: Ptr, T, B: ArenaBacking> ArenaInsertTrait<P, T> for Arena<P, T, B> {
-    type Entry<'a>
+    type InsertionEntry<'a>
         = ArenaInsertEntry<'a, P, T, B>
     where
         Self: 'a;
 
-    fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), T> {
+    fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), NotWithinCapacityError> {
         let generation = self.generation;
         if let Some(inx) = self.freelist_root {
             let slot = self.m.get_mut(Self::into_checked(inx)).unwrap();
@@ -300,86 +347,46 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaInsertTrait<P, T> for Arena<P, T, B> {
         } else {
             // see if capacity for slots remains, freelist remains unset if we push just
             // one thing
-            match self
-                .m
-                .push_within_capacity(InternalSlot::Allocated(self.generation, t))
-            {
-                // TODO Polonius cleans this up
-                Ok((raw_inx, _)) => {
-                    if let Some(inx) = P::Inx::try_from_usize(raw_inx) {
-                        let Some(InternalSlot::Allocated(_, t)) = self.m.get_mut(raw_inx) else {
-                            unreachable!()
-                        };
-                        self.len = self.len.wrapping_add(1);
-                        Ok((<P as Ptr>::_from_raw(inx, generation), t))
-                    } else {
-                        // undo
-                        let InternalSlot::Allocated(_, t) = self.m.pop().unwrap() else {
-                            unreachable!()
-                        };
-                        Err(t)
-                    }
-                }
-                Err(slot) => {
-                    let InternalSlot::Allocated(_, t) = slot else {
-                        unreachable!()
-                    };
-                    Err(t)
-                }
+            let entry = self.m.entry_push_within_capacity()?;
+            let raw_inx = entry.inx();
+            if let Some(inx) = P::Inx::try_from_usize(raw_inx) {
+                entry.push(InternalSlot::Allocated(self.generation, t));
+                let Some(InternalSlot::Allocated(_, t)) = self.m.get_mut(raw_inx) else {
+                    unreachable!()
+                };
+                self.len = self.len.wrapping_add(1);
+                Ok((<P as Ptr>::_from_raw(inx, generation), t))
+            } else {
+                drop(entry);
+                Err(NotWithinCapacityError)
             }
         }
     }
 
-    fn entry_insert_within_capacity(&mut self) -> Option<Self::Entry<'_>> {
+    fn entry_insert_within_capacity(
+        &mut self,
+    ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError> {
         let generation = self.generation;
         if let Some(inx) = self.freelist_root {
-            let slot = self.m.get_mut(Self::into_checked(inx)).unwrap();
-            let InternalSlot::Free(next) = mem::replace(slot, Allocated(generation, t)) else {
-                unreachable!()
-            };
-            if next == inx {
-                // end of freelist
-                self.freelist_root = None;
-            } else {
-                // move to next node in the freelist
-                self.freelist_root = Some(next);
-            }
-            // safe by `isize::MAX` limits, the slots can never be ZSTs
-            self.len = self.len.wrapping_add(1);
-            let InternalSlot::Allocated(_, t) = slot else {
-                unreachable!()
-            };
-            Ok((Ptr::_from_raw(inx, generation), t))
-        } else {
-            // see if capacity for slots remains, freelist remains unset if we push just
-            // one thing
-            match self
-                .m
-                .push_within_capacity(InternalSlot::Allocated(self.generation, t))
+            Ok(ArenaInsertEntry {
+                this: self,
+                p: Ptr::_from_raw(inx, generation),
+            })
+        } else if self.m.len() < self.m.capacity() {
+            // `push_within_capacity` would succeed, but check that the P::Inx conversion
+            // works
+            if let Some(inx) =
+                P::Inx::try_from_usize(NonZeroUsize::new(self.m.len().wrapping_add(1)).unwrap())
             {
-                // TODO Polonius cleans this up
-                Ok((raw_inx, _)) => {
-                    if let Some(inx) = P::Inx::try_from_usize(raw_inx) {
-                        let Some(InternalSlot::Allocated(_, t)) = self.m.get_mut(raw_inx) else {
-                            unreachable!()
-                        };
-                        self.len = self.len.wrapping_add(1);
-                        Ok((<P as Ptr>::_from_raw(inx, generation), t))
-                    } else {
-                        // undo
-                        let InternalSlot::Allocated(_, t) = self.m.pop().unwrap() else {
-                            unreachable!()
-                        };
-                        Err(t)
-                    }
-                }
-                Err(slot) => {
-                    let InternalSlot::Allocated(_, t) = slot else {
-                        unreachable!()
-                    };
-                    Err(t)
-                }
+                Ok(ArenaInsertEntry {
+                    this: self,
+                    p: Ptr::_from_raw(inx, generation),
+                })
+            } else {
+                Err(NotWithinCapacityError)
             }
+        } else {
+            Err(NotWithinCapacityError)
         }
     }
 }

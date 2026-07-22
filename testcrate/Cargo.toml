@@ -17,5 +17,6 @@ serde = "1.0"
 serde_derive = "1.0"
 stacked_errors = "0.7"
 star_rng = { path = "../../star_rng" }
-triple_arena = { path = "../triple_arena", features = ["expose_internal_utils"] }
+# FIXME turn default features off
+triple_arena = { path = "../triple_arena" }
 triple_arena_render = { path = "../triple_arena_render" }

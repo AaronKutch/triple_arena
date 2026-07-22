@@ -3,9 +3,9 @@ use std::{cmp::max, mem, num::NonZeroUsize, slice::GetDisjointMutError};
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use star_rng::StarRng;
 use triple_arena::{
-    Arena, InvalidationResult,
+    Arena, HeapBacking, InvalidationResult, NotWithinCapacityError, ReallocationError,
     traits::{Advancer, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena},
-    utils::{AllocError, HeapBacking, PtrGen, PtrInx},
+    utils::traits::{PtrGen, PtrInx},
 };
 
 use crate::{
@@ -129,10 +129,16 @@ pub fn fuzz<
                 // reallocate_min_capacity failure
                 let cap = a.capacity();
                 if limited {
-                    ensure_eq!(a.reallocate_min_capacity(stats.limit + 1), Err(AllocError));
+                    ensure_eq!(
+                        a.reallocate_min_capacity(stats.limit + 1),
+                        Err(ReallocationError::BeyondMaxCapacity)
+                    );
                 } else {
-                    // could fail for ZSTs
-                    ensure_eq!(a.reallocate_min_capacity(usize::MAX), Err(AllocError));
+                    // could succeed with ZSTs
+                    ensure_eq!(
+                        a.reallocate_min_capacity(usize::MAX),
+                        Err(ReallocationError::AllocError)
+                    );
                 }
                 ensure_eq!(cap, a.capacity());
             }
@@ -147,7 +153,10 @@ pub fn fuzz<
                     b.insert(k, p);
                 } else {
                     let (k, t) = cd_gen.new_cd();
-                    ensure!(a.insert_within_capacity(t).is_err_and(|t| t.key() == k));
+                    ensure_eq!(
+                        a.insert_within_capacity(t).map(|_| ()),
+                        Err(NotWithinCapacityError)
+                    );
                 }
             }
             200..250 => {
@@ -171,7 +180,10 @@ pub fn fuzz<
                     b.insert(k, p);
                 } else if limited {
                     let (k, t) = cd_gen.new_cd();
-                    ensure!(a.insert_reallocating(t).is_err_and(|t| t.key() == k));
+                    ensure_eq!(
+                        a.insert_reallocating(t).map(|_| ()),
+                        Err(ReallocationError::BeyondMaxCapacity)
+                    );
                 } else {
                     // do nothing
                 }

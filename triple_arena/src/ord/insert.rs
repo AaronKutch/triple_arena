@@ -3,7 +3,7 @@
 use core::{cmp::Ordering, mem};
 
 use super::ord_arena::Node;
-use crate::{OrdArena, traits::Ptr, utils::ArenaBacking};
+use crate::{OrdArena, traits::Ptr, utils::traits::ArenaBacking};
 
 impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Inserts key `v` with associated value `v` into `self` and returns a

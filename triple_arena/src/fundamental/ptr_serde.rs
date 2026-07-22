@@ -309,8 +309,8 @@ macro_rules! ptr_struct {
                 #[inline]
                 fn invalid() -> Self {
                     Self {
-                        _internal_inx: $crate::utils::PtrInx::best_effort_invalid(),
-                        _internal_gen: $crate::utils::PtrGen::one()
+                        _internal_inx: $crate::utils::traits::PtrInx::best_effort_invalid(),
+                        _internal_gen: $crate::utils::traits::PtrGen::one()
                     }
                 }
 
@@ -385,7 +385,7 @@ macro_rules! ptr_struct {
                         ::deserialize(deserializer)?;
                     Ok(<Self as $crate::traits::Ptr>::_from_raw(
                         p,
-                        <<Self as $crate::traits::Ptr>::Gen as $crate::utils::PtrGen>::two()
+                        <<Self as $crate::traits::Ptr>::Gen as $crate::utils::traits::PtrGen>::two()
                     ))
                 }
             }
@@ -422,8 +422,8 @@ macro_rules! ptr_struct {
                 #[inline]
                 fn invalid() -> Self {
                     Self {
-                        _internal_inx: $crate::utils::PtrInx::best_effort_invalid(),
-                        _internal_gen: $crate::utils::PtrGen::one()
+                        _internal_inx: $crate::utils::traits::PtrInx::best_effort_invalid(),
+                        _internal_gen: $crate::utils::traits::PtrGen::one()
                     }
                 }
 

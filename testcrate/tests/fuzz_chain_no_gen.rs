@@ -7,7 +7,7 @@ use rand_xoshiro::{
 use testcrate::P0;
 use triple_arena::{
     traits::*,
-    utils::{ChainNoGenArena, PtrGen},
+    utils::{ChainNoGenArena, traits::PtrGen},
 };
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };

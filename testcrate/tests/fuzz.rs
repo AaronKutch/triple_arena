@@ -7,11 +7,11 @@ use testcrate::{
     nonzero_inx_generic_stack,
 };
 use triple_arena::{
-    Arena,
+    Arena, HeapBacking, LimitedHeapBacking, StackBacking,
     traits::Ptr,
     utils::{
-        ArenaBacking, HeapBacking, LimitedHeapBacking, NonZeroInxArray, NonZeroInxGenericStack,
-        NonZeroInxLimitedVec, NonZeroInxVec, SetMaxCapacity, StackBacking,
+        NonZeroInxArray, NonZeroInxBoxedSlice, NonZeroInxLimitedVec, NonZeroInxVec,
+        traits::{ArenaBacking, NonZeroInxGenericStack, SetMaxCapacity},
     },
 };
 
@@ -44,6 +44,13 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
     a.set_max_capacity(LIMIT).unwrap();
     nonzero_inx_generic_stack::fuzz(stats, rng, &mut CdGen::new(), a).stack()?;
     nonzero_inx_generic_stack::fuzz(stats, rng, &mut CdGen::new(), NonZeroInxVec::new()).stack()?;
+    nonzero_inx_generic_stack::fuzz(
+        stats,
+        rng,
+        &mut CdGen::new(),
+        NonZeroInxBoxedSlice::with_min_capacity(LIMIT).stack()?,
+    )
+    .stack()?;
 
     Ok(())
 }

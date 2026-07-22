@@ -2,7 +2,9 @@ use std::{num::NonZeroUsize, slice::GetDisjointMutError};
 
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use star_rng::StarRng;
-use triple_arena::utils::{AllocError, NonZeroInxGenericStack};
+use triple_arena::{
+    AllocError, NotWithinCapacityError, ReallocationError, utils::traits::NonZeroInxGenericStack,
+};
 
 use crate::cdgen::{Cd, CdGen, Ck};
 
@@ -22,11 +24,11 @@ pub struct Stats {
 
 /// Use the [LIMIT] for fixed length types and as the limit for settable limit
 /// types, ignore otherwise
-pub fn fuzz(
+pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
     stats: Stats,
     rng: &mut StarRng,
     cd_gen: &mut CdGen<()>,
-    mut a: impl NonZeroInxGenericStack<Cd<()>>,
+    a: S,
 ) -> Result<(), StackedError> {
     ensure!(cd_gen.is_empty());
 
@@ -66,10 +68,21 @@ pub fn fuzz(
                 // reallocate_min_capacity failure
                 let cap = a.capacity();
                 if limited {
-                    ensure_eq!(a.reallocate_min_capacity(stats.limit + 1), Err(AllocError));
+                    ensure_eq!(
+                        a.reallocate_min_capacity(stats.limit + 1),
+                        Err(ReallocationError::BeyondMaxCapacity)
+                    );
+                    // could succeed for ZSTs
+                    ensure_eq!(
+                        a.reallocate_min_capacity(usize::MAX),
+                        Err(ReallocationError::BeyondMaxCapacity)
+                    );
                 } else {
-                    // could fail for ZSTs
-                    ensure_eq!(a.reallocate_min_capacity(usize::MAX), Err(AllocError));
+                    // could succeed for ZSTs
+                    ensure_eq!(
+                        a.reallocate_min_capacity(usize::MAX),
+                        Err(ReallocationError::AllocError)
+                    );
                 }
                 ensure_eq!(cap, a.capacity());
             }
@@ -84,8 +97,11 @@ pub fn fuzz(
                     };
                     ensure_eq!((inx1, t1.key()), (inx, k));
                 } else {
-                    let (k, t) = cd_gen.new_cd();
-                    ensure!(a.push_within_capacity(t).is_err_and(|t| t.key() == k));
+                    let (_, t) = cd_gen.new_cd();
+                    ensure_eq!(
+                        a.push_within_capacity(t).map(|_| ()),
+                        Err(NotWithinCapacityError)
+                    );
                 }
             }
             200..250 => {
@@ -111,7 +127,10 @@ pub fn fuzz(
                     ensure!(a.capacity() > cap);
                 } else if limited {
                     let (_, t) = cd_gen.new_cd();
-                    ensure!(a.push_reallocating(t).is_err());
+                    ensure_eq!(
+                        a.push_reallocating(t).map(|_| ()),
+                        Err(ReallocationError::BeyondMaxCapacity)
+                    );
                 } else {
                     // do nothing
                 }
@@ -154,7 +173,7 @@ pub fn fuzz(
                 ensure!(a.get(i).is_none());
                 ensure!(a.get_mut(i).is_none());
             }
-            950..999 => {
+            950..998 => {
                 // get_disjoint_unchecked_mut, get_disjoint_mut
 
                 let [] = a.get_disjoint_mut([]).stack()?;
@@ -194,10 +213,35 @@ pub fn fuzz(
                     }
                 }
             }
-            999 => {
+            998 => {
                 // clear
                 a.clear();
                 b.clear();
+            }
+            999 => {
+                // with_min_capacity
+                b.clear();
+                // test failure
+                if limited {
+                    ensure_eq!(
+                        S::with_min_capacity(stats.limit + 1),
+                        Err(AllocError)
+                    );
+                    // could succeed for ZSTs
+                    ensure_eq!(
+                        a.reallocate_min_capacity(usize::MAX),
+                        Err(ReallocationError::BeyondMaxCapacity)
+                    );
+                } else {
+                    // could succeed for ZSTs
+                    ensure_eq!(
+                        a.reallocate_min_capacity(usize::MAX),
+                        Err(ReallocationError::AllocError)
+                    );
+                }
+                S::with_min_capacity(min_capacity)
+
+                a = S::with_min_capacity(min_capacity)
                 iters999 += 1;
             }
             1000.. => unreachable!(),

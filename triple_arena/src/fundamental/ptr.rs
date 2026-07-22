@@ -302,8 +302,8 @@ macro_rules! ptr_struct {
                 #[inline]
                 fn invalid() -> Self {
                     Self {
-                        _internal_inx: $crate::utils::PtrInx::best_effort_invalid(),
-                        _internal_gen: $crate::utils::PtrGen::one()
+                        _internal_inx: $crate::utils::traits::PtrInx::best_effort_invalid(),
+                        _internal_gen: $crate::utils::traits::PtrGen::one()
                     }
                 }
 
@@ -392,8 +392,8 @@ macro_rules! ptr_struct {
                 #[inline]
                 fn invalid() -> Self {
                     Self {
-                        _internal_inx: $crate::utils::PtrInx::best_effort_invalid(),
-                        _internal_gen: $crate::utils::PtrGen::one()
+                        _internal_inx: $crate::utils::traits::PtrInx::best_effort_invalid(),
+                        _internal_gen: $crate::utils::traits::PtrGen::one()
                     }
                 }
 

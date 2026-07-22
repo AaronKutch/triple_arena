@@ -1,11 +1,13 @@
 use core::{iter::from_fn, slice::GetDisjointMutError};
 
 use crate::{
+    AllocError, NotWithinCapacityError, ReallocationError,
     traits::{Advancer, Ptr},
-    utils::AllocError,
 };
 
 /*
+See first the comments in nonzero_inx_generic_stack.rs
+
 REF(arena_terminology): Internally an arena has a main memory (usually `m`) of slots, usually a stack of free or allocated slots. I decide to use the terminology "slots" to refer to the actual internal stack elements that exist. "entries" for the public logical behavior docs and entry APIs may involve capacity in the internal stack that doesn't have a slot yet, or beyond. I use "root" for single linked lists.
 
 REF(exponential_double_buffer_blowup): In earlier versions of `triple_arena`, there was an invariant that we would keep all slots of the internal arena memory at least filled with free slots so that `self.m.capacity() == self.m.len()`. However, functions like `clone_from_with` exposed a flaw with this that is absolutely catastrophic for some use cases of this crate: `reserve` and `reserve_exact` are allowed to allocate inconsistently, e.x. one arena gets 32 capacity from doubling and another arena gets 24 from taking a half step (it happens that more recent versions of Rust's `Vec` reserve exactly, but this is not a guarantee for future versions to follow). If `clone_from` is called to copy the 24 capacity arena to the 32 capacity arena, then it must reserve 8 more capacity. `reserve_exact` can then choose to start allocating by only doubling, in which case the 24 capacity arena gets 24 additional capacity. If the new 48 capacity arena is cloned to the 32 capacity arena, it can get 32 more capacity to increase to 64 capacity despite nothing being inserted. If the arenas in a double buffer setup `clone_from` to each other in a loop, they leap frog each other exponentially. This means that there must be a detached internal length (in slots which is different from the Arena's logical length) from an internal capacity. The current version has introduced the philosophy around `NonZeroInxGenericStack::reallocate_min_capacity` which we use and follow at the arena level in order to prevent issues. We also canonicalize the freelist with certain operations, which in some cases means that compression isn't even necessary to guarantee compact arenas over time.
@@ -20,7 +22,11 @@ The defaulted iterator designs mean that concrete associated types can't be used
 
 `find_inx_first_ptr` and `find_inx_last_ptr` are weird from a more pure perspective, but they have a bunch of miscellanious uses in helping generics and in finding things like the last element's index etc. I termed them with "index first" and "index last" to avoid confusion with the orderings in more complicated arenas. On all nonlinear arenas I am aware of, it is still possible to have an ordering that corresponds to advancer ordering.
 
-We can almost avoid "entry" style function and structs, except that some downstream uses simply must know the `Ptr` slot that they will be inserted into, and not only that but they need to be able to cancel the insertion if some internal contruction using that `Ptr` also goes wrong. We decide to have "entry_insert*" functions and multiply them in parallel with the other insert functions. The other potential way to have done it is some "next_insertion_ptr" function (which might be added in parallel for other reasons, note that you have to be careful for randomly generated `Ptr` designs), however the entry style promotes better typing and reduces broken intermediate changes, also the signature is technically more optimized for the fallible cases. It also doesn't make sense to have a single "entry" function like maps because of direct insertion and
+We can almost avoid "entry" style function and structs, except that some downstream uses simply must know the `Ptr` slot that they will be inserted into, and not only that but they need to be able to cancel the insertion if some internal contruction using that `Ptr` also goes wrong, and also there is the case where `T` has to be specially constructed and users want to only do so once it is known an entry is guaranteed. We decide to have "entry_insert*" functions and multiply them in parallel with the other insert functions. The other potential way to have done it is some "next_insertion_ptr" function (which might be added in parallel for other reasons, note that you have to be careful for randomly generated `Ptr` designs), however the entry style promotes better typing and reduces broken intermediate changes, also the signature is technically more optimized for the fallible cases. It also doesn't make sense to have a single "entry" function like maps because of direct insertion and
+
+We call them "entry_insert*" in opposite order to the associated "InsertionEntry", because the method is an insert method with a modifier that it is of entry type (see also "direct_insert*"), and it returns an entry that is of the insertion kind (like "VacantEntry"). For direct insertion we only have an entry type method (needed even though the `P` is known, because construction of the `T` may not want to occur unless the entry is known to be available) and drop "direct" from the method name, otherwise we would have too many methods and the non-entry method would be too awkward with error handling. A panicking `direct_insert` function would be too fallible if it avoided returning a `Result` and panicked for reasons of slot collision, and if it returned any fallible enum we may as well return other errors.
+
+I would have signatures like `Result<..., T>` for nonentry fallible insertion methods, but since the entry methods exist (and often the `Result<..., T>` form promoted bad undo strategies anyways), I have made them all `Result<..., *Error>` instead.
 */
 
 /// Returned from operations that are infallible but could involve generation
@@ -151,12 +157,16 @@ pub trait SingularGenerationArena<P: Ptr> {
 /// invalidation operations. If the arena backing type is limited or you must
 /// handle allocation failures, then [ArenaInsertTrait::insert_reallocating] and
 /// similar should be used.
-pub trait ArenaTrait<P: Ptr, T> {
+pub trait ArenaTrait<P: Ptr, T>: Sized {
     // An advancer over the valid `Ptr`s of this arena
     type PtrAdvancer: Advancer<Self, Item = P>;
 
     /// Creates an empty arena, which may have any capacity to start with
     fn new() -> Self;
+
+    /// Creates an empty arena with a minimum capacity of at least
+    /// `min_capacity`. Returns an error upon allocation failure.
+    fn with_min_capacity(min_capacity: usize) -> Result<Self, AllocError>;
 
     /// Returns the existing capacity, in elements, already in memory for
     /// `self`. `self.capacity() - self.len()` elements can be inserted before
@@ -169,9 +179,9 @@ pub trait ArenaTrait<P: Ptr, T> {
     /// constant). Dynamically allocated types can also return a maximum, if
     /// they internally limit themselves in order to bound memory (and their
     /// [ArenaTrait::reallocate_min_capacity] behaves strictly to
-    /// avoid exceeding this limit). But most dynamically allocated types
-    /// would return `None` to indicate that they will try to increase in
-    /// length until memory allocation failure.
+    /// avoid `self.capacity()` exceeding this limit). But most dynamically
+    /// allocated types would return `None` to indicate that they will try
+    /// to increase in length until memory allocation failure.
     fn max_capacity(&self) -> Option<usize>;
 
     /// Reallocates in order to try and change `self.capacity()` to have a lower
@@ -196,7 +206,7 @@ pub trait ArenaTrait<P: Ptr, T> {
     /// than the requested capacity. Some implementors of this trait
     /// combined with certain allocator designs absolutely require being able to
     /// give back more than requested.
-    fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), AllocError>;
+    fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), ReallocationError>;
 
     /// Returns the number of elements in the arena
     fn len(&self) -> usize;
@@ -413,7 +423,7 @@ pub trait ArenaTrait<P: Ptr, T> {
         &mut self,
         source: &A,
         map: F,
-    ) -> Result<(), AllocError>;
+    ) -> Result<(), ReallocationError>;
 
     /// Compresses the arena as much as possible by moving all internal
     /// allocated indexes to be one after another with no unallocated gaps
@@ -445,7 +455,9 @@ pub trait ArenaTrait<P: Ptr, T> {
 }
 
 /// Dropping the struct cancels the insertion
+#[must_use]
 pub trait ArenaInsertEntryTrait<'a, P: Ptr, T> {
+    /// The `Ptr` at which this entry could be referenced, if inserted
     fn ptr(&'a self) -> P;
 
     fn insert(self, t: T);
@@ -457,19 +469,19 @@ pub trait ArenaInsertEntryTrait<'a, P: Ptr, T> {
 /// direct insertions would not be efficient on an arena with a one-way linked
 /// freelist.
 pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
-    type Entry<'a>: ArenaInsertEntryTrait<'a, P, T>
+    type InsertionEntry<'a>: ArenaInsertEntryTrait<'a, P, T>
     where
         Self: 'a;
 
     /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
-    /// it. Returns the `t` if there was no available capacity.
-    fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), T>;
+    /// it. Returns an error if there was no available capacity.
+    fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), NotWithinCapacityError>;
 
     /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
     /// it. Automatically reallocates if needing more capacity. Returns the `t`
     /// if an allocation error occurs or if [ArenaTrait::max_capacity] is used
     /// up.
-    fn insert_reallocating(&mut self, t: T) -> Result<(P, &mut T), T> {
+    fn insert_reallocating(&mut self, t: T) -> Result<(P, &mut T), ReallocationError> {
         if self.len() == self.capacity() {
             // REF(better_reallocation)
 
@@ -483,11 +495,16 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
             if let Some(max_capacity) = self.max_capacity() {
                 next = next.min(max_capacity);
             }
-            if self.reallocate_min_capacity(next).is_err() {
-                return Err(t);
+            if next <= self.capacity() {
+                // the max capacity is limiting us
+                return Err(ReallocationError::BeyondMaxCapacity);
             }
+            self.reallocate_min_capacity(next)?;
         }
+        // an error shouldn't happen, but if it does it is logically the allocator's
+        // fault
         self.insert_within_capacity(t)
+            .map_err(|NotWithinCapacityError| ReallocationError::AllocError)
     }
 
     /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
@@ -497,16 +514,24 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// # Panics
     ///
     /// This function can panic on allocation failure when needing to extend
-    /// capacity
+    /// capacity, or if `self.len()` is at the maximum capacity.
     #[track_caller]
     fn insert(&mut self, t: T) -> (P, &mut T) {
         self.insert_reallocating(t)
-            .ok()
             .expect("`ArenaInsertTrait::insert_reallocating` failed")
     }
 
-    fn entry_insert_within_capacity(&mut self) -> Option<Self::Entry<'_>>;
-    fn entry_insert_reallocating(&mut self) -> Result<Self::Entry<'_>, AllocError> {
+    /// If capacity is available, an insertion entry for inserting `t` into the
+    /// arena is returned. Returns `None` if there was no available capacity.
+    fn entry_insert_within_capacity(
+        &mut self,
+    ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError>;
+
+    /// Returns an insertion entry, reallocating if necessary and returning an
+    /// error if reallocation failed or if [ArenaTrait::max_capacity] is used
+    /// up. Be aware that any reallocation happens upon calling this method, and
+    /// the affects remain even if inserting into the arena is cancelled.
+    fn entry_insert_reallocating(&mut self) -> Result<Self::InsertionEntry<'_>, ReallocationError> {
         if self.len() == self.capacity() {
             // REF(better_reallocation)
 
@@ -520,34 +545,78 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
             if let Some(max_capacity) = self.max_capacity() {
                 next = next.min(max_capacity);
             }
-            if self.reallocate_min_capacity(next).is_err() {
-                return Err(AllocError);
+            if next <= self.capacity() {
+                // the max capacity is limiting us
+                return Err(ReallocationError::BeyondMaxCapacity);
             }
+            self.reallocate_min_capacity(next)?;
         }
-        self.entry_insert_within_capacity().ok_or(AllocError)
+        self.entry_insert_within_capacity()
+            .map_err(|NotWithinCapacityError| ReallocationError::AllocError)
     }
+
+    /// Returns an insertion entry, panicking if an allocation error occurs or
+    /// if [ArenaTrait::max_capacity] is used up.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure when needing to extend
+    /// capacity, or if `self.len()` is at the maximum capacity.
     #[track_caller]
-    fn entry_insert(&mut self) -> Self::Entry<'_> {
+    fn entry_insert(&mut self) -> Self::InsertionEntry<'_> {
         self.entry_insert_reallocating()
-            .ok()
             .expect("`ArenaInsertTrait::entry_insert_reallocating` failed")
     }
+}
+
+pub enum DirectInsertWithinCapacityError {
+    /// There would be a collision with an existing entry at the index
+    ExistingEntry,
+    /// The index would not be within existing capacity
+    NotWithinCapacity,
+}
+
+pub enum DirectInsertReallocatingError {
+    /// There would be a collision with an existing entry at the index
+    ExistingEntry,
+    /// There was an allocation error
+    AllocError,
+    /// The index would be beyond the max capacity limit
+    BeyondMaxCapacity,
+}
+
+/// Dropping the struct cancels the insertion
+#[must_use]
+pub trait ArenaDirectInsertEntryTrait<'a, P: Ptr, T> {
+    /// The `Ptr` at which this entry could be referenced, if inserted
+    fn ptr(&'a self) -> P;
+
+    fn insert(self, t: T);
 }
 
 /// See [ArenaInsertTrait], this mainly is for special arenas without a
 /// freelist, that are supposed to follow the state of another arena.
 pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
-    /// Inserts `t` directly at raw [PtrInx] `p` into the arena and returns a
-    /// valid `Ptr` and mutable reference to it. Returns an error with the `t`
-    /// if the index was beyond capacity or if there was an existing entry
-    /// at `p`.
-    fn insert_direct_inx(&mut self, p: P::Inx, t: T) -> Result<(P, &mut T), T>;
+    type DirectInsertionEntry<'a>: ArenaDirectInsertEntryTrait<'a, P, T>
+    where
+        Self: 'a;
 
     /// Inserts `t` directly at `p` into the arena, accepting `p` and its
     /// generation as the valid `Ptr` to the element, returning a mutable
     /// reference to it. Returns an error with the `t` if the index was beyond
     /// capacity or if there was an existing entry at `p.inx()`.
-    fn insert_direct(&mut self, p: P, t: T) -> Result<&mut T, T>;
+    fn direct_insert_within_capacity(&mut self, p: P, t: T) -> Result<&mut T, T>;
+
+    // this function can't be defaulted because the implementation needs to check if
+    // the direct slot is available or not before reallocating, etc
+
+    /// Inserts `t` directly at `p` into the arena, accepting `p` and its
+    /// generation as the valid `Ptr` to the element, returning a mutable
+    /// reference to it. Automatically reallocates if needing more capacity.
+    /// Returns an error with the `t` if there was an existing entry at
+    /// `p.inx()`, or if there was an allocation error, or if
+    /// [ArenaTrait::max_capacity] is used up.
+    fn direct_insert_reallocating(&mut self, p: P, t: T) -> Result<&mut T, T>;
 }
 
 /*

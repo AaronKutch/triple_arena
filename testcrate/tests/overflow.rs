@@ -1,6 +1,6 @@
 use std::num::{NonZeroU8, NonZeroU128};
 
-use triple_arena::{Arena, ptr_struct, traits::*, utils::HeapBacking};
+use triple_arena::{Arena, HeapBacking, ptr_struct, traits::*};
 
 ptr_struct!(P0[NonZeroU8]);
 ptr_struct!(P1(NonZeroU8));

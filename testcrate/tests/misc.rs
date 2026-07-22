@@ -4,7 +4,7 @@ use testcrate::P0;
 use triple_arena::{
     Arena, ptr_struct,
     traits::*,
-    utils::{PtrInx, PtrNoGen},
+    utils::{PtrNoGen, traits::PtrInx},
 };
 
 #[test]

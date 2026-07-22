@@ -1,6 +1,6 @@
 use core::{error::Error, fmt, num::NonZeroUsize};
 
-use crate::utils::PtrInx;
+use crate::utils::traits::PtrInx;
 
 // FIXME remove
 
@@ -25,6 +25,41 @@ impl fmt::Display for AllocError {
 }
 
 impl Error for AllocError {}
+
+/// The operation would not be within existing capacity
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct NotWithinCapacityError;
+
+impl fmt::Display for NotWithinCapacityError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("an operation would not be within existing capacity")
+    }
+}
+
+impl Error for NotWithinCapacityError {}
+
+/// For reallocating functions
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum ReallocationError {
+    /// Extending the capacity further to the required amount would exceed a max
+    /// capacity limit
+    BeyondMaxCapacity,
+    /// There was an allocation error when attempting to reallocate
+    AllocError,
+}
+
+impl fmt::Display for ReallocationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ReallocationError::BeyondMaxCapacity => {
+                f.write_str("a max capacity limit prevents growing the capacity")
+            }
+            ReallocationError::AllocError => f.write_str("a memory reallocation failed"),
+        }
+    }
+}
+
+impl Error for ReallocationError {}
 
 pub struct NonZeroUsizeIterator {
     // invariant: if `end_inclusive.is_some()`, `start <= end_inclusive.get()` must be true

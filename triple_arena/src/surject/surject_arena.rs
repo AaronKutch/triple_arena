@@ -6,7 +6,10 @@ use crate::{
     Arena, ChainArena,
     arena::InternalSlot,
     traits::{Advancer, Ptr},
-    utils::{ArenaBacking, ChainNoGenArena, LinkNoGen, NonZeroInxGenericStack, PtrInx, PtrNoGen},
+    utils::{
+        ChainNoGenArena, LinkNoGen, PtrNoGen,
+        traits::{ArenaBacking, NonZeroInxGenericStack, PtrInx},
+    },
 };
 
 #[derive(Clone)]
@@ -152,7 +155,7 @@ pub struct SurjectArena<
     P: Ptr,
     K,
     V,
-    #[cfg(feature = "alloc")] B: ArenaBacking = crate::utils::HeapBacking,
+    #[cfg(feature = "alloc")] B: ArenaBacking = crate::HeapBacking,
     #[cfg(not(feature = "alloc"))] B: ArenaBacking,
 > {
     pub(crate) keys: ChainNoGenArena<P, Key<P, K>, B>,

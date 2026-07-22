@@ -5,7 +5,7 @@ use recasting::{Recast, Recaster};
 use crate::{
     OrdArena,
     traits::{Advancer, Ptr},
-    utils::ArenaBacking,
+    utils::traits::ArenaBacking,
 };
 
 /// An advancer over the valid `P`s of an `OrdArena`

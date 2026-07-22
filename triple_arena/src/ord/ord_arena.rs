@@ -13,7 +13,10 @@ use crate::{
     Arena, ChainArena, Link,
     chain::LinkNoGen,
     traits::{Advancer, Ptr},
-    utils::{ArenaBacking, ChainNoGenArena, PtrInx},
+    utils::{
+        ChainNoGenArena,
+        traits::{ArenaBacking, PtrInx},
+    },
 };
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
@@ -145,7 +148,7 @@ pub struct OrdArena<
     P: Ptr,
     K,
     V,
-    #[cfg(feature = "alloc")] B: ArenaBacking = crate::utils::HeapBacking,
+    #[cfg(feature = "alloc")] B: ArenaBacking = crate::HeapBacking,
     #[cfg(not(feature = "alloc"))] B: ArenaBacking,
 > {
     pub(crate) root: P::Inx,

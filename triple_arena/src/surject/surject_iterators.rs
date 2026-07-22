@@ -8,7 +8,7 @@ use crate::{
     chain::ChainNoGenArena,
     surject::{Key, Val},
     traits::{Advancer, Ptr},
-    utils::{ArenaBacking, LinkNoGen, PtrNoGen, chain_no_gen_iterators},
+    utils::{LinkNoGen, PtrNoGen, chain_no_gen_iterators, traits::ArenaBacking},
 };
 
 /// An advancer over the valid `P`s of a `SurjectArena`

@@ -1,6 +1,6 @@
 use std::num::{NonZeroU8, NonZeroU32, NonZeroU128};
 
-use triple_arena::{ptr_struct, traits::Ptr, utils::PtrGen};
+use triple_arena::{ptr_struct, traits::Ptr, utils::traits::PtrGen};
 
 // This is constructed this way to guard against problems with stuff like
 // `PtrNoGen` and bad casts

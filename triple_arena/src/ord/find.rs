@@ -354,7 +354,7 @@ use std::path::PathBuf;
 use triple_arena::{ptr_struct, Arena, OrdArena};
 use triple_arena_render::{render_to_svg_file, DebugNode};
 // ...
-let debug_arena = a.debug_arena();
+let debug_arena = a._debug_arena();
 let mut debug_arena2 = Arena::new();
 let res = OrdArena::_check_invariants(&a);
 if res.is_err() {
@@ -387,13 +387,14 @@ res.unwrap();
 */
 
 /// Used for development debugging only, see find.rs for example
-#[cfg(all(feature = "alloc", feature = "expose_internal_utils"))]
+#[doc(hidden)]
+#[cfg(feature = "alloc")]
 #[allow(clippy::type_complexity)]
 impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug, B: ArenaBacking>
     OrdArena<P, K, V, B>
 {
-    pub fn debug_arena(&self) -> crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>), B> {
-        use crate::utils::PtrGen;
+    pub fn _debug_arena(&self) -> crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>), B> {
+        use crate::utils::traits::PtrGen;
 
         let mut res: crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>), B> =
             crate::Arena::new();
@@ -438,7 +439,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug, B
         res
     }
 
-    pub fn debug(&self) -> alloc::string::String {
+    pub fn _debug(&self) -> alloc::string::String {
         use core::fmt::Write;
         let mut s = alloc::string::String::new();
         writeln!(s, "root: {:?}", self.root).unwrap();
