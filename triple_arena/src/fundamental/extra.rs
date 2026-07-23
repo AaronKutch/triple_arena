@@ -68,15 +68,43 @@ pub enum ReallocationError {
 impl fmt::Display for ReallocationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ReallocationError::BeyondMaxCapacity => {
+            Self::BeyondMaxCapacity => {
                 f.write_str("a max capacity limit prevents growing the capacity")
             }
-            ReallocationError::AllocError => f.write_str("a memory reallocation failed"),
+            Self::AllocError => f.write_str("a memory reallocation failed"),
         }
     }
 }
 
 impl Error for ReallocationError {}
+
+/// For direct insertion arenas
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum DirectInsertionError {
+    /// The index points to an internal slot that does not fit within existing
+    /// capacity
+    NotWithinCapacity,
+    /// There is already an element existing at the index that would be directly
+    /// inserted into
+    ExistingElementAtIndex,
+}
+
+impl fmt::Display for DirectInsertionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotWithinCapacity => f.write_str(
+                "a direct insertion index points to an internal slot that does not fit within \
+                 existing capacity",
+            ),
+            Self::ExistingElementAtIndex => f.write_str(
+                "a direct insertion index points to an internal slot where there is already an \
+                 existing element",
+            ),
+        }
+    }
+}
+
+impl Error for DirectInsertionError {}
 
 pub struct NonZeroUsizeIterator {
     // invariant: if `end_inclusive.is_some()`, `start <= end_inclusive.get()` must be true

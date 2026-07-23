@@ -345,7 +345,8 @@ pub trait SetMaxCapacity {
     /// reallocation is not needed or used). Or, implementations may need to
     /// return an error from reducing the capacity depending on internal details
     /// (and invariants imply that all implementations must return an error if
-    /// requesting a `max_capacity` less than `self.len()`).
+    /// requesting a `max_capacity` less than `self.len()`). It is also possible
+    /// for `self.capacity()` to increase from increasing the maximum capacity.
     ///
     /// To reiterate, there can be 3 different values at play:
     /// - The logical capacity according to `self.capacity()`, which is what
@@ -372,7 +373,13 @@ pub trait SetMaxCapacity {
     ///
     /// If reducing the capacity, the internal allocated capacity does not
     /// change and memory usage will not actually be reduced until
-    /// `reallocate_min_capacity(self.capacity())` is called afterwards.
+    /// `reallocate_min_capacity(self.capacity())` is called afterwards. If
+    /// `self.capacity()` was limited by the maximum capacity, it is possible
+    /// for `self.capacity()` to increase by this method if the implementation
+    /// had available internal allocation capacity (this happens usually because
+    /// `self.capacity()` is calculated as the minimum of the internal allocated
+    /// capacity and the max capacity, and if the max capacity was the limiting
+    /// factor then increasing it increased the logical capacity.)
     ///
     /// The max capacity can be set to `usize::MAX`, but the allocation
     /// functions will usually fail before the capacity can actually reach the

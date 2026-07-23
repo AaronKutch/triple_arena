@@ -1,7 +1,7 @@
 use core::{iter::from_fn, slice::GetDisjointMutError};
 
 use crate::{
-    AllocError, NotWithinCapacityError, ReallocationError,
+    AllocError, DirectInsertionError, NotWithinCapacityError, ReallocationError,
     traits::{Advancer, Ptr},
 };
 
@@ -22,11 +22,13 @@ The defaulted iterator designs mean that concrete associated types can't be used
 
 `find_inx_first_ptr` and `find_inx_last_ptr` are weird from a more pure perspective, but they have a bunch of miscellanious uses in helping generics and in finding things like the last element's index etc. I termed them with "index first" and "index last" to avoid confusion with the orderings in more complicated arenas. On all nonlinear arenas I am aware of, it is still possible to have an ordering that corresponds to advancer ordering.
 
-We can almost avoid "entry" style function and structs, except that some downstream uses simply must know the `Ptr` slot that they will be inserted into, and not only that but they need to be able to cancel the insertion if some internal contruction using that `Ptr` also goes wrong, and also there is the case where `T` has to be specially constructed and users want to only do so once it is known an entry is guaranteed. We decide to have "entry_insert*" functions and multiply them in parallel with the other insert functions. The other potential way to have done it is some "next_insertion_ptr" function (which might be added in parallel for other reasons, note that you have to be careful for randomly generated `Ptr` designs), however the entry style promotes better typing and reduces broken intermediate changes, also the signature is technically more optimized for the fallible cases. It also doesn't make sense to have a single "entry" function like maps because of direct insertion and
+We can almost avoid "entry" style function and structs, except that some downstream uses simply must know the `Ptr` slot that they will be inserted into, and not only that but they need to be able to cancel the insertion if some internal contruction using that `Ptr` also goes wrong, and also there is the case where `T` has to be specially constructed and users want to only do so once it is known an entry is guaranteed. We decide to have "entry_insert*" functions and multiply them in parallel with the other insert functions. The other potential way to have done it is some "next_insertion_ptr" function (which might be added in parallel for other reasons, note that you have to be careful for randomly generated `Ptr` designs), however the entry style promotes better typing and reduces broken intermediate changes, also the signature is technically more optimized for the fallible cases.
 
 We call them "entry_insert*" in opposite order to the associated "InsertionEntry", because the method is an insert method with a modifier that it is of entry type (see also "direct_insert*"), and it returns an entry that is of the insertion kind (like "VacantEntry"). For direct insertion we only have an entry type method (needed even though the `P` is known, because construction of the `T` may not want to occur unless the entry is known to be available) and drop "direct" from the method name, otherwise we would have too many methods and the non-entry method would be too awkward with error handling. A panicking `direct_insert` function would be too fallible if it avoided returning a `Result` and panicked for reasons of slot collision, and if it returned any fallible enum we may as well return other errors.
 
 I would have signatures like `Result<..., T>` for nonentry fallible insertion methods, but since the entry methods exist (and often the `Result<..., T>` form promoted bad undo strategies anyways), I have made them all `Result<..., *Error>` instead.
+
+I decided to only have a `direct_insert_within_capacity` method for direct insertion, and no `_reallocating` or panicking variations. Capacity should be manually managed for such arenas, because in several contexts direct insertion would be used in, arbitrary indexes would easily lead to OOM. dealing with automatic reallocation fallibility in the signatures would also be annoying, and usually this is a mirror arena that will not have many places in the code calling direct insertion methods.
 */
 
 /// Returned from operations that are infallible but could involve generation
@@ -460,6 +462,7 @@ pub trait ArenaInsertEntryTrait<'a, P: Ptr, T> {
     /// The `Ptr` at which this entry could be referenced, if inserted
     fn ptr(&'a self) -> P;
 
+    /// Inserts `T` into the arena
     fn insert(self, t: T);
 }
 
@@ -521,7 +524,7 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
             .expect("`ArenaInsertTrait::insert_reallocating` failed")
     }
 
-    /// If capacity is available, an insertion entry for inserting `t` into the
+    /// If capacity is available, an insertion entry for inserting into the
     /// arena is returned. Returns `None` if there was no available capacity.
     fn entry_insert_within_capacity(
         &mut self,
@@ -569,28 +572,10 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     }
 }
 
-pub enum DirectInsertWithinCapacityError {
-    /// There would be a collision with an existing entry at the index
-    ExistingEntry,
-    /// The index would not be within existing capacity
-    NotWithinCapacity,
-}
-
-pub enum DirectInsertReallocatingError {
-    /// There would be a collision with an existing entry at the index
-    ExistingEntry,
-    /// There was an allocation error
-    AllocError,
-    /// The index would be beyond the max capacity limit
-    BeyondMaxCapacity,
-}
-
 /// Dropping the struct cancels the insertion
 #[must_use]
 pub trait ArenaDirectInsertEntryTrait<'a, P: Ptr, T> {
-    /// The `Ptr` at which this entry could be referenced, if inserted
-    fn ptr(&'a self) -> P;
-
+    /// Inserts `T` into the arena
     fn insert(self, t: T);
 }
 
@@ -601,22 +586,15 @@ pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     where
         Self: 'a;
 
-    /// Inserts `t` directly at `p` into the arena, accepting `p` and its
-    /// generation as the valid `Ptr` to the element, returning a mutable
-    /// reference to it. Returns an error with the `t` if the index was beyond
-    /// capacity or if there was an existing entry at `p.inx()`.
-    fn direct_insert_within_capacity(&mut self, p: P, t: T) -> Result<&mut T, T>;
-
-    // this function can't be defaulted because the implementation needs to check if
-    // the direct slot is available or not before reallocating, etc
-
-    /// Inserts `t` directly at `p` into the arena, accepting `p` and its
-    /// generation as the valid `Ptr` to the element, returning a mutable
-    /// reference to it. Automatically reallocates if needing more capacity.
-    /// Returns an error with the `t` if there was an existing entry at
-    /// `p.inx()`, or if there was an allocation error, or if
-    /// [ArenaTrait::max_capacity] is used up.
-    fn direct_insert_reallocating(&mut self, p: P, t: T) -> Result<&mut T, T>;
+    /// Returns an entry for direct insertion at `p.inx()`, if the index points
+    /// to an internal slot that fits within existing capacity, and there is not
+    /// already another element allocated at that index. `p.generation()` is
+    /// always accepted and used as the valid generation for use with this
+    /// entry.
+    fn direct_insert_within_capacity(
+        &mut self,
+        p: P,
+    ) -> Result<Self::DirectInsertionEntry<'_>, DirectInsertionError>;
 }
 
 /*

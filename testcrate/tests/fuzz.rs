@@ -19,8 +19,20 @@ use triple_arena::{
 fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
     let rng = &mut StarRng::new(0);
 
-    const N: usize = if cfg!(miri) { 10_000 } else { 10_000_000 };
-    const ITERS999: usize = if cfg!(miri) { 5 } else { 9826 };
+    const N: usize = if cfg!(miri) {
+        10_000
+    } else if cfg!(debug_assertions) {
+        1_000_000
+    } else {
+        10_000_000
+    };
+    const ITERS999: usize = if cfg!(miri) {
+        8
+    } else if cfg!(debug_assertions) {
+        944
+    } else {
+        9956
+    };
     pub const LIMIT: usize = 7;
 
     let mut stats = nonzero_inx_generic_stack::Stats {

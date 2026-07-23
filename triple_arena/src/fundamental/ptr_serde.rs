@@ -229,6 +229,10 @@ pub unsafe trait Ptr:
     /// Returns the generation of this `Ptr`.
     fn generation(self) -> Self::Gen;
 
+    // keep it as "_from_raw" even though there are more cases where manual
+    // construction is normal, it still violates soft invariants for ideal uses and
+    // so should be prefixed with an underscore
+
     /// Do not use this unless you are manually managing internal details
     fn _from_raw(inx: Self::Inx, generation: Self::Gen) -> Self;
 }

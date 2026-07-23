@@ -152,7 +152,7 @@ pub fn fuzz<
                     ensure_eq!(t1.key(), k);
                     b.insert(k, p);
                 } else {
-                    let (k, t) = cd_gen.new_cd();
+                    let (_, t) = cd_gen.new_cd();
                     ensure_eq!(
                         a.insert_within_capacity(t).map(|_| ()),
                         Err(NotWithinCapacityError)
@@ -179,7 +179,7 @@ pub fn fuzz<
                     ensure!(a.capacity() > cap);
                     b.insert(k, p);
                 } else if limited {
-                    let (k, t) = cd_gen.new_cd();
+                    let (_, t) = cd_gen.new_cd();
                     ensure_eq!(
                         a.insert_reallocating(t).map(|_| ()),
                         Err(ReallocationError::BeyondMaxCapacity)

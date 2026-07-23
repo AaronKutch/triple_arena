@@ -4,8 +4,6 @@
 ### Crate
 - Updated MSRV to 1.86
 
-FIXME rename `_from_raw` to `from_raw`
-
 ### Changes
 - All the Arenas have a new `B: ArenaBacking` third generic parameter that is defaulted so that existing uses use the same unlimited heap backing that they did before. Added stack backing (for which `const` support could be added in the future) and limited heap backing standard options.
 - Added new traits with new methods and put all traits under modules, they can be glob imported in some cases to preserve ease of use.
