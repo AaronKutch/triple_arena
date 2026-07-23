@@ -81,9 +81,9 @@ pub unsafe trait NonZeroInxGenericStack<T>: Sized {
     fn new() -> Self;
 
     /// Creates an empty stack with a minimum capacity of at least
-    /// `min_capacity`. The max capacity is also initialized to at least the
-    /// capacity of the returned stack. Returns an error upon allocation
-    /// failure.
+    /// `min_capacity`. The max capacity, if set, is also initialized to at
+    /// least the capacity of the returned stack. Returns an error upon
+    /// allocation failure.
     ///
     /// In most cases [NonZeroInxGenericStack::new] followed by
     /// [NonZeroInxGenericStack::reallocate_min_capacity] would be sufficient,
@@ -102,10 +102,10 @@ pub unsafe trait NonZeroInxGenericStack<T>: Sized {
     /// constant). Dynamically allocated types can also return a maximum, if
     /// they internally limit themselves in order to bound memory (and their
     /// [NonZeroInxGenericStack::reallocate_min_capacity] behaves strictly to
-    /// avoid exceeding this limit). But most dynamically allocated types
-    /// would return `None` to indicate that they will try to increase in
-    /// length until memory allocation failure. If set, `self.capacity() <=
-    /// self.max_capacity()` is always true.
+    /// avoid `self.capacity()` exceeding this limit). But most dynamically
+    /// allocated types would return `None` to indicate that they will try
+    /// to increase in length until memory allocation failure. If set,
+    /// `self.capacity() <= self.max_capacity()` is always true.
     fn max_capacity(&self) -> Option<usize>;
 
     /// Reallocates in order to try and change `self.capacity()` to have a lower

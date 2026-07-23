@@ -9,7 +9,7 @@ use core::{
 use crate::{
     InvalidationOption, InvalidationResult,
     arena::ArenaBacking,
-    traits::{Advancer, Ptr},
+    traits::{Advancer, Ptr, SetMaxCapacity},
     utils::{
         ptrinx_unchecked,
         traits::{NonZeroInxGenericStack, PtrGen, PtrInx},
@@ -1218,6 +1218,18 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for Arena<P, T, B> {
                 self.freelist_root = source.freelist_root;
             }
         }
+    }
+}
+
+impl<P: Ptr, T, B: ArenaBacking> SetMaxCapacity for Arena<P, T, B>
+where
+    <B as ArenaBacking>::Stack<InternalSlot<P, T>>: SetMaxCapacity,
+{
+    fn set_max_capacity(
+        &mut self,
+        max_capacity: usize,
+    ) -> Result<(), crate::MaxCapacityReductionError> {
+        self.m.set_max_capacity(max_capacity)
     }
 }
 

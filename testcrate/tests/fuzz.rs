@@ -125,9 +125,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
     stats.iters999 = None;
 
     let mut a = Arena::<P2, Cd<()>, LimitedHeapBacking>::new();
-    unsafe {
-        a.backing_mut().set_max_capacity(LIMIT).unwrap();
-    }
+    a.set_max_capacity(LIMIT).stack()?;
     basic_arena::fuzz(
         stats,
         rng,

@@ -166,8 +166,15 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// Creates an empty arena, which may have any capacity to start with
     fn new() -> Self;
 
-    /// Creates an empty arena with a minimum capacity of at least
-    /// `min_capacity`. Returns an error upon allocation failure.
+    /// Creates an empty stack with a minimum capacity of at least
+    /// `min_capacity`. The max capacity, if set, is also initialized to at
+    /// least the capacity of the returned stack. Returns an error upon
+    /// allocation failure.
+    ///
+    /// In most cases [NonZeroInxGenericStack::new] followed by
+    /// [NonZeroInxGenericStack::reallocate_min_capacity] would be sufficient,
+    /// but this function needs to exist for certain fixed capacity structures
+    /// that can only have their capacity set once at construction time.
     fn with_min_capacity(min_capacity: usize) -> Result<Self, AllocError>;
 
     /// Returns the existing capacity, in elements, already in memory for
@@ -183,7 +190,8 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// [ArenaTrait::reallocate_min_capacity] behaves strictly to
     /// avoid `self.capacity()` exceeding this limit). But most dynamically
     /// allocated types would return `None` to indicate that they will try
-    /// to increase in length until memory allocation failure.
+    /// to increase in length until memory allocation failure. If set,
+    /// `self.capacity() <= self.max_capacity()` is always true.
     fn max_capacity(&self) -> Option<usize>;
 
     /// Reallocates in order to try and change `self.capacity()` to have a lower
