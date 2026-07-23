@@ -148,19 +148,28 @@ pub fn fuzz<
                             ensure_eq!((*set_max_capacity)(&mut a, next), Ok(()));
                             // b_capacity left unchanged to check that capacity
                             // does not change
-                        } else if next >= a.len() {
-                            // the only type currently that implements `set_max_capacity` currently
-                            // follows the tight `next >= a.next()` bound
-                            ensure_eq!((*set_max_capacity)(&mut a, next), Ok(()));
-                            ensure!(a.capacity() < before);
-                            b_capacity = a.capacity();
                         } else {
-                            ensure_eq!(
-                                (*set_max_capacity)(&mut a, next),
-                                Err(MaxCapacityReductionError)
-                            );
-                            ensure_eq!(before, a.capacity());
-                            ensure_eq!(max_before, a.max_capacity().stack()?);
+                            // follows a tight bound to the last element
+                            let succeeds = if let Some(last) = a.find_inx_last_ptr() {
+                                P::Inx::try_into_usize(last.inx()).unwrap().get() <= next
+                            } else {
+                                true
+                            };
+                            if succeeds {
+                                // the only type currently that implements `set_max_capacity`
+                                // currently follows the tight `next
+                                // >= a.next()` bound
+                                ensure_eq!((*set_max_capacity)(&mut a, next), Ok(()));
+                                ensure!(a.capacity() < before);
+                                b_capacity = a.capacity();
+                            } else {
+                                ensure_eq!(
+                                    (*set_max_capacity)(&mut a, next),
+                                    Err(MaxCapacityReductionError)
+                                );
+                                ensure_eq!(before, a.capacity());
+                                ensure_eq!(max_before, a.max_capacity().stack()?);
+                            }
                         }
                     }
                     ensure!(a.capacity() <= a.max_capacity().stack()?);
@@ -460,9 +469,11 @@ pub fn fuzz<
                 let mut i = 0;
                 let mut rand_remove_i = if len == 0 { 0 } else { rng.index(len).unwrap() };
                 let mut rand_insert_i = if len == 0 { 0 } else { rng.index(len).unwrap() };
-                if let Some(cap) = stats.fixed_cap
-                    && a.len() == cap
-                    && rand_remove_i > rand_insert_i
+                let max_reached = a
+                    .max_capacity()
+                    .is_some_and(|max_capacity| max_capacity == len)
+                    || stats.fixed_cap.is_some_and(|cap| cap == len);
+                if max_reached && rand_remove_i > rand_insert_i
                 {
                     // need to remove before inserting again
                     mem::swap(&mut rand_insert_i, &mut rand_remove_i);
@@ -720,6 +731,7 @@ pub fn fuzz<
                 if stats.fixed_cap.is_some() {
                     stats.fixed_cap = Some(a.capacity());
                 }
+                g.0 = a.singular_generation();
                 b_capacity = a.capacity();
                 iters999 += 1;
             }

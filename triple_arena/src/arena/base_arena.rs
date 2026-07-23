@@ -1229,6 +1229,13 @@ where
         &mut self,
         max_capacity: usize,
     ) -> Result<(), crate::MaxCapacityReductionError> {
+        // Do it this way instead of against `self.m.len()` and always call
+        // `canonicalize_free_list` for determinism idealness, the reduction below
+        // capacity case is specifically special anyways for this method
+        if max_capacity < self.m.capacity() {
+            // FIXME use the trait when the old capacity has been removed
+            self.canonicalize_free_list();
+        }
         self.m.set_max_capacity(max_capacity)
     }
 }
