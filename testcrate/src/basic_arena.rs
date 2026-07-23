@@ -121,7 +121,7 @@ pub fn fuzz<
         match op_inx {
             0..75 => {
                 // reallocate_min_capacity success
-                let new_cap = rng.index(stats.limit + 1).unwrap();
+                let new_cap = rng.index_inclusive(stats.limit);
                 a.reallocate_min_capacity(new_cap).stack()?;
                 ensure!(a.capacity() >= new_cap)
             }

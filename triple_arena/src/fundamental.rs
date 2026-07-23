@@ -17,8 +17,8 @@ pub use arena_traits::{
     InvalidationOption, InvalidationResult, SingularGenerationArena,
 };
 pub use extra::{
-    AllocError, IntoNonZeroUsizeIterator, NotWithinCapacityError, ReallocationError, nzusize_iter,
-    ptrinx_unchecked,
+    AllocError, IntoNonZeroUsizeIterator, MaxCapacityReductionError, NotWithinCapacityError,
+    ReallocationError, nzusize_iter, ptrinx_unchecked,
 };
 pub use nonzero_inx_generic_stack::{
     NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, SetMaxCapacity,

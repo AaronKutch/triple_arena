@@ -3,7 +3,7 @@
 use core::{cmp::min, num::NonZeroUsize};
 
 use crate::{
-    AllocError, NotWithinCapacityError, ReallocationError,
+    AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError,
     arena::NonZeroInxVec,
     utils::{
         NonZeroInxVecPushEntry,
@@ -13,6 +13,12 @@ use crate::{
 
 /// The standard heap-based limited `max_capacity` implementation of
 /// [NonZeroInxGenericStack]
+///
+/// - `Self::new` starts with zero capacity and zero max capacity
+/// - `Self::with_min_capacity` starts with at least the requested capacity, and
+///   the max capacity limit is set to the initial capacity
+/// - `self.set_max_capacity` always succeeds in reducing the capacity and max
+///   capacity down to `self.len()`, but fails below that
 pub struct NonZeroInxLimitedVec<T> {
     v: NonZeroInxVec<T>,
     // N.B. it happens that the current impl of `Vec` as of writing has the ability to exactly
@@ -22,12 +28,14 @@ pub struct NonZeroInxLimitedVec<T> {
 }
 
 impl<T> SetMaxCapacity for NonZeroInxLimitedVec<T> {
-    fn set_max_capacity(&mut self, max_capacity: usize) -> Option<()> {
-        if max_capacity < self.capacity() {
-            None
+    fn set_max_capacity(&mut self, max_capacity: usize) -> Result<(), MaxCapacityReductionError> {
+        if max_capacity < self.v.len() {
+            Err(MaxCapacityReductionError)
         } else {
+            // `self.capacity` and insertion automatically follow this to enforce virtual
+            // capacity
             self.max_capacity = max_capacity;
-            Some(())
+            Ok(())
         }
     }
 }
@@ -61,10 +69,10 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxLimitedVec<T> {
     }
 
     fn with_min_capacity(min_capacity: usize) -> Result<Self, AllocError> {
-        Ok(Self {
-            v: NonZeroInxVec::with_min_capacity(min_capacity)?,
-            max_capacity: 0,
-        })
+        let v = NonZeroInxVec::with_min_capacity(min_capacity)?;
+        // N.B. use the actual capacity that was allocated
+        let max_capacity = v.capacity();
+        Ok(Self { v, max_capacity })
     }
 
     fn len(&self) -> usize {
@@ -72,6 +80,7 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxLimitedVec<T> {
     }
 
     fn capacity(&self) -> usize {
+        // virtualize if necessary
         min(self.v.capacity(), self.max_capacity)
     }
 

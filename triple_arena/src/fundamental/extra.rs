@@ -26,6 +26,23 @@ impl fmt::Display for AllocError {
 
 impl Error for AllocError {}
 
+/// Indicates that the max capacity limit could not be reduced, because the
+/// capacity would also need to be reduced to equal it, and the capacity could
+/// not be reduced in this case
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct MaxCapacityReductionError;
+
+impl fmt::Display for MaxCapacityReductionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(
+            "the max capacity limit could not be reduced, because the capacity would also need to \
+             be reduced to equal it, and the capacity could not be reduced in this case",
+        )
+    }
+}
+
+impl Error for MaxCapacityReductionError {}
+
 /// The operation would not be within existing capacity
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct NotWithinCapacityError;

@@ -25,7 +25,8 @@ pub use chain::{ChainArena, Link, chain_iterators};
 #[cfg(feature = "serde_support")]
 pub use fundamental::serde_docs;
 pub use fundamental::{
-    AllocError, InvalidationOption, InvalidationResult, NotWithinCapacityError, ReallocationError,
+    AllocError, InvalidationOption, InvalidationResult, MaxCapacityReductionError,
+    NotWithinCapacityError, ReallocationError,
 };
 pub use ord::{OrdArena, ord_iterators};
 pub use surject::{SurjectArena, surject_iterators};

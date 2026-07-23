@@ -20,11 +20,12 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
     let rng = &mut StarRng::new(0);
 
     const N: usize = if cfg!(miri) { 10_000 } else { 10_000_000 };
-    const ITERS999: usize = if cfg!(miri) { 5 } else { 9819 };
+    const ITERS999: usize = if cfg!(miri) { 5 } else { 9826 };
     pub const LIMIT: usize = 7;
 
     let mut stats = nonzero_inx_generic_stack::Stats {
-        limit: LIMIT,
+        test_limit: LIMIT,
+        fixed_cap: Some(LIMIT),
         n: N,
         iters999: Some(ITERS999),
     };
@@ -33,24 +34,32 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
         rng,
         &mut CdGen::new(),
         NonZeroInxArray::<_, { LIMIT }>::new(),
+        None,
     )
     .stack()?;
 
     // I could get a custom allocator to make this deterministic, but I think one
     // check is good enough
     stats.iters999 = None;
+    stats.fixed_cap = None;
 
     let mut a = NonZeroInxLimitedVec::new();
     a.set_max_capacity(LIMIT).unwrap();
-    nonzero_inx_generic_stack::fuzz(stats, rng, &mut CdGen::new(), a).stack()?;
-    nonzero_inx_generic_stack::fuzz(stats, rng, &mut CdGen::new(), NonZeroInxVec::new()).stack()?;
     nonzero_inx_generic_stack::fuzz(
         stats,
         rng,
         &mut CdGen::new(),
-        NonZeroInxBoxedSlice::with_min_capacity(LIMIT).stack()?,
+        a,
+        Some(|a, max_capacity| a.set_max_capacity(max_capacity)),
     )
     .stack()?;
+    nonzero_inx_generic_stack::fuzz(stats, rng, &mut CdGen::new(), NonZeroInxVec::new(), None)
+        .stack()?;
+
+    let a = NonZeroInxBoxedSlice::with_min_capacity(LIMIT).stack()?;
+    stats.fixed_cap = Some(a.capacity());
+
+    nonzero_inx_generic_stack::fuzz(stats, rng, &mut CdGen::new(), a, None).stack()?;
 
     Ok(())
 }
