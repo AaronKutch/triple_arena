@@ -5,7 +5,7 @@
 - Updated MSRV to 1.86
 
 ### Changes
-- All the Arenas have a new `B: ArenaBacking` third generic parameter that is defaulted so that existing uses use the same unlimited heap backing that they did before. Added stack backing (for which `const` support could be added in the future) and limited heap backing standard options.
+- All the Arenas have a new `B: ArenaBacking` third generic parameter that is defaulted so that existing uses use the same unlimited heap backing that they did before. Added stack backing (for which `const` support could be added in the future), limited heap backing, and fixed heap backing standard options.
 - Added new traits with new methods and put all traits under modules, they can be glob imported in some cases to preserve ease of use.
 - More ideal deterministic behavior, it should be stable for the forseeable future (but note however that the heap types can have nondeterminism in some capacity interactive cases from the allocator giving extra). For duplicating `Ptr` validities across arenas however, we recommend the new `ArenaDirectInsertTrait` and arenas that implement it to follow `ArenaInsertTrait` type arenas.
 - Generation overflow no longer panics, has the best possible behavior in the default case, and can be explicitly checked with various functions now.
@@ -14,7 +14,7 @@
 - `Collection` is now a trait parameter on `Advancer`
 - Added a required `Advancer::empty` method
 - The `Advancer` trait now specifies that implemenations should always fuse
-- The `Ptr` traits and `Advancer` now have a `'static` bound, they should never have lifetimes due to their entire purposes, and I don't know of any use for `dyn Ptr`.
+- The `Ptr` traits and `Advancer` now have `Sized + 'static` bounds, they should never have lifetimes due to their entire purposes, and I don't know of any use for `dyn Ptr`.
 - Removed `compress_and_shrink*` in favor of just `compress*` functions, `self.reallocate_min_capacity(self.len())` can be used afterwards to retain the original functionality
 - Removed the `remove_by`, `capacity_drain`, and `*_shrink` functions. With some backings, shrinking capacity is not actually possible. The `reallocate_min_capacity` method should be used in tandem with other functions instead.
 - Added `set_generation`, `inc_generation`, `find_first_ptr`, `find_inx_last_ptr`, and other low level manipulation functions

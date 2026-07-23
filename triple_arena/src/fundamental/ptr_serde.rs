@@ -33,6 +33,7 @@ pub trait PtrGen:
     + Recast<Self>
     + Serialize
     + DeserializeOwned
+    + Sized
     + 'static
 {
     /// Returns generation 1, which we designate as a representable invalid
@@ -116,6 +117,7 @@ pub trait PtrInx:
     + Recast<Self>
     + Serialize
     + DeserializeOwned
+    + Sized
     + 'static
 {
     /// This is used by "simple" arenas that expect a simple integer index that
@@ -202,6 +204,7 @@ pub unsafe trait Ptr:
     + Recast<Self>
     + Serialize
     + DeserializeOwned
+    + Sized
     + 'static
 {
     /// The recommended general purpose type for this is `usize`

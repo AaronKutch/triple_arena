@@ -65,7 +65,7 @@
 /// purpose detached and extremely flexible, and the `'static` bound has been
 /// added as well to the advancer type, which is not possible in almost any
 /// other kind of iterator.
-pub trait Advancer<Collection: ?Sized>: 'static {
+pub trait Advancer<Collection: ?Sized>: Sized + 'static {
     /// The item that this advancer returns
     type Item;
 

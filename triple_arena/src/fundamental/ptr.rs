@@ -30,6 +30,7 @@ pub trait PtrGen:
     + RefUnwindSafe
     + UnwindSafe
     + Recast<Self>
+    + Sized
     + 'static
 {
     /// Returns generation 1, which we designate as a representable invalid
@@ -111,6 +112,7 @@ pub trait PtrInx:
     + RefUnwindSafe
     + UnwindSafe
     + Recast<Self>
+    + Sized
     + 'static
 {
     /// This is used by "simple" arenas that expect a simple integer index that
@@ -195,6 +197,7 @@ pub unsafe trait Ptr:
     + RefUnwindSafe
     + UnwindSafe
     + Recast<Self>
+    + Sized
     + 'static
 {
     /// The recommended general purpose type for this is `usize`
