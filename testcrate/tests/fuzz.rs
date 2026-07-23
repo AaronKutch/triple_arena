@@ -7,8 +7,8 @@ use testcrate::{
     nonzero_inx_generic_stack,
 };
 use triple_arena::{
-    Arena, HeapBacking, LimitedHeapBacking, StackBacking,
-    traits::Ptr,
+    Arena, FixedHeapBacking, HeapBacking, LimitedHeapBacking, StackBacking,
+    traits::{ArenaTrait, Ptr},
     utils::{
         NonZeroInxArray, NonZeroInxBoxedSlice, NonZeroInxLimitedVec, NonZeroInxVec,
         traits::{ArenaBacking, NonZeroInxGenericStack, SetMaxCapacity},
@@ -97,7 +97,8 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
     pub const LIMIT: usize = 7;
 
     let mut stats = basic_arena::Stats {
-        limit: LIMIT,
+        test_limit: LIMIT,
+        fixed_cap: Some(LIMIT),
         n: N,
         iters999: Some(ITERS999),
     };
@@ -119,10 +120,12 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
         &mut CdGen::new(),
         Arena::<P2, Cd<()>, StackBacking<LIMIT>>::new(),
         check_arena,
+        None,
     )
     .stack()?;
 
     stats.iters999 = None;
+    stats.fixed_cap = None;
 
     let mut a = Arena::<P2, Cd<()>, LimitedHeapBacking>::new();
     a.set_max_capacity(LIMIT).stack()?;
@@ -133,6 +136,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
         &mut CdGen::new(),
         a,
         check_arena,
+        Some(|a, max_capacity| a.set_max_capacity(max_capacity)),
     )
     .stack()?;
     basic_arena::fuzz(
@@ -142,6 +146,21 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
         &mut CdGen::new(),
         Arena::<P2, Cd<()>, HeapBacking>::new(),
         check_arena,
+        None,
+    )
+    .stack()?;
+
+    let a = Arena::<P2, Cd<()>, FixedHeapBacking>::with_min_capacity(LIMIT).stack()?;
+    stats.fixed_cap = Some(a.capacity());
+
+    basic_arena::fuzz(
+        stats,
+        rng,
+        &mut CdGen::new(),
+        &mut CdGen::new(),
+        a,
+        check_arena,
+        None,
     )
     .stack()?;
 

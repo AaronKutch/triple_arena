@@ -195,6 +195,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
             return e;
         };
         if raw_last.get() > self.capacity() {
+            // max capacity is tested here
             self.reallocate_min_capacity(raw_last.get())?;
         }
         // start modifying after the fallible points that we can reasonably deal with

@@ -3,7 +3,8 @@ use std::{cmp::max, mem, num::NonZeroUsize, slice::GetDisjointMutError};
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use star_rng::StarRng;
 use triple_arena::{
-    Arena, HeapBacking, InvalidationResult, NotWithinCapacityError, ReallocationError,
+    AllocError, Arena, HeapBacking, InvalidationResult, MaxCapacityReductionError,
+    NotWithinCapacityError, ReallocationError,
     traits::{Advancer, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena},
     utils::traits::{PtrGen, PtrInx},
 };
@@ -15,7 +16,11 @@ use crate::{
 
 #[derive(Clone, Copy)]
 pub struct Stats {
-    pub limit: usize,
+    /// The limit that the test stays around (this is not necessarily exactly
+    /// followed)
+    pub test_limit: usize,
+    /// If the capacity is fixed
+    pub fixed_cap: Option<usize>,
     pub n: usize,
     pub iters999: Option<usize>,
 }
@@ -29,17 +34,20 @@ pub fn fuzz<
     P: Ptr,
     A: ArenaTrait<P, Cd<()>> + ArenaInsertTrait<P, Cd<()>> + SingularGenerationArena<P>,
 >(
-    stats: Stats,
+    mut stats: Stats,
     rng: &mut StarRng,
     cd_gen: &mut CdGen<()>,
     cd_gen1: &mut CdGen<D1>,
     mut a: A,
     mut check_invariants: impl FnMut(&mut A) -> Result<(), StackedError>,
+    // set iff `SetMaxCapacity` is implemented
+    mut set_max_capacity: Option<fn(&mut A, usize) -> Result<(), MaxCapacityReductionError>>,
 ) -> Result<(), StackedError> {
     ensure!(cd_gen.is_empty());
 
     // reference
     let mut b = CkMap::<(), P>::new();
+    let mut b_capacity = a.capacity();
     let mut g = TestGen::<P>(PtrGen::two());
 
     // set and used by the clone_from section
@@ -52,7 +60,6 @@ pub fn fuzz<
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut iters999 = 0;
-    let mut max_len = 0;
 
     // generate invalid `Ptr`s via `P::invalid()`, an existing allocation but with
     // wrong generation (incremented or gen 1), or index 1 in a free slot, and in
@@ -100,41 +107,96 @@ pub fn fuzz<
 
     for _ in 0..stats.n {
         let len = b.len();
-        ensure!(cd_gen.len() <= len);
+        ensure_eq!(cd_gen.len(), len);
         ensure_eq!(a.len(), len);
         ensure_eq!(a.is_empty(), b.is_empty());
-        max_len = max(max_len, len);
+        ensure_eq!(a.capacity(), b_capacity);
+        ensure!(len <= a.capacity());
+        if let Some(fixed_cap) = stats.fixed_cap {
+            ensure!(a.capacity() == fixed_cap);
+        }
+        if let Some(max_capacity) = a.max_capacity() {
+            ensure!(a.capacity() <= max_capacity);
+        }
         // if not incremented explicitly and the arena increments, then we get a
         // mismatch
         ensure_eq!(a.singular_generation(), g.0);
-        ensure!(len <= a.capacity());
-        let limited = a.max_capacity().is_some();
-        if let Some(limit) = a.max_capacity() {
-            // required for caller
-            ensure_eq!(limit, stats.limit);
-
-            ensure!(a.capacity() <= limit);
-        }
         check_invariants(&mut a).stack()?;
         op_inx = rng.index(1000).unwrap();
         // note: pushes and pops are balanced except for clears
         match op_inx {
-            0..75 => {
+            0..15 => {
+                // set_max_capacity
+
+                // except for changes, the invariants are checked at the beginning of the loop
+                if let Some(set_max_capacity) = &mut set_max_capacity {
+                    let before = a.capacity();
+                    let max_before = a.max_capacity().stack()?;
+                    if rng.next_bool() {
+                        ensure!((*set_max_capacity)(&mut a, usize::MAX).is_ok());
+                        // capacity can expand within the internal capacity
+                        ensure!(a.capacity() >= before);
+                        b_capacity = a.capacity();
+                    } else {
+                        let next = rng.index_inclusive(stats.test_limit);
+
+                        if next > before {
+                            // capacity can expand within the internal capacity
+                            ensure!(a.capacity() >= before);
+                            b_capacity = a.capacity();
+                        } else if next >= a.capacity() {
+                            ensure_eq!((*set_max_capacity)(&mut a, next), Ok(()));
+                            // b_capacity left unchanged to check that capacity
+                            // does not change
+                        } else if next >= a.len() {
+                            // the only type currently that implements `set_max_capacity` currently
+                            // follows the tight `next >= a.next()` bound
+                            ensure_eq!((*set_max_capacity)(&mut a, next), Ok(()));
+                            ensure!(a.capacity() < before);
+                            b_capacity = a.capacity();
+                        } else {
+                            ensure_eq!(
+                                (*set_max_capacity)(&mut a, next),
+                                Err(MaxCapacityReductionError)
+                            );
+                            ensure_eq!(before, a.capacity());
+                            ensure_eq!(max_before, a.max_capacity().stack()?);
+                        }
+                    }
+                    ensure!(a.capacity() <= a.max_capacity().stack()?);
+                }
+            }
+            15..75 => {
                 // reallocate_min_capacity success
-                let new_cap = rng.index_inclusive(stats.limit);
-                a.reallocate_min_capacity(new_cap).stack()?;
-                ensure!(a.capacity() >= new_cap)
+                if let Some(max_capacity) = a.max_capacity()
+                    && max_capacity < usize::MAX
+                {
+                    let new_cap = rng.index_inclusive(max_capacity);
+                    a.reallocate_min_capacity(new_cap).stack()?;
+                    ensure!(a.capacity() >= new_cap)
+                } else {
+                    let new_cap = rng.index_inclusive(stats.test_limit);
+                    a.reallocate_min_capacity(new_cap).stack()?;
+                    ensure!(a.capacity() >= new_cap)
+                }
+                b_capacity = a.capacity();
             }
             75..100 => {
                 // reallocate_min_capacity failure
                 let cap = a.capacity();
-                if limited {
+                if let Some(max_capacity) = a.max_capacity()
+                    && max_capacity < usize::MAX
+                {
                     ensure_eq!(
-                        a.reallocate_min_capacity(stats.limit + 1),
+                        a.reallocate_min_capacity(max_capacity + 1),
+                        Err(ReallocationError::BeyondMaxCapacity)
+                    );
+                    ensure_eq!(
+                        a.reallocate_min_capacity(usize::MAX),
                         Err(ReallocationError::BeyondMaxCapacity)
                     );
                 } else {
-                    // could succeed with ZSTs
+                    // could succeed for ZSTs
                     ensure_eq!(
                         a.reallocate_min_capacity(usize::MAX),
                         Err(ReallocationError::AllocError)
@@ -161,6 +223,12 @@ pub fn fuzz<
             }
             200..250 => {
                 // insert_reallocating
+
+                let max_reached = a
+                    .max_capacity()
+                    .is_some_and(|max_capacity| max_capacity == len)
+                    || stats.fixed_cap.is_some_and(|cap| cap == len);
+
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
                     let Ok((p, t1)) = a.insert_reallocating(t) else {
@@ -168,34 +236,44 @@ pub fn fuzz<
                     };
                     ensure_eq!(t1.key(), k);
                     b.insert(k, p);
-                } else if len < stats.limit {
-                    let (k, t) = cd_gen.new_cd();
-                    let cap = a.capacity();
-                    let Ok((p, t1)) = a.insert_reallocating(t) else {
-                        bail!("")
-                    };
-                    ensure_eq!(t1.key(), k);
-                    // check that capacity increased
-                    ensure!(a.capacity() > cap);
-                    b.insert(k, p);
-                } else if limited {
+                } else if max_reached {
                     let (_, t) = cd_gen.new_cd();
                     ensure_eq!(
                         a.insert_reallocating(t).map(|_| ()),
                         Err(ReallocationError::BeyondMaxCapacity)
                     );
-                } else {
+                } else if len >= stats.test_limit {
                     // do nothing
+                } else {
+                    // can increase capacity
+                    let (k, t) = cd_gen.new_cd();
+                    let cap = a.capacity();
+                    let Ok((p, t1)) = a.insert_reallocating(t) else {
+                        bail!("")
+                    };
+                    ensure_eq!(t1.key(), k);
+                    // check that capacity increased
+                    ensure!(a.capacity() > cap);
+                    b.insert(k, p);
+                    b_capacity = a.capacity();
                 }
             }
             250..300 => {
                 // insert
+
+                let max_reached = a
+                    .max_capacity()
+                    .is_some_and(|max_capacity| max_capacity == len)
+                    || stats.fixed_cap.is_some_and(|cap| cap == len);
+
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
                     let (p, t1) = a.insert(t);
                     ensure_eq!(t1.key(), k);
                     b.insert(k, p);
-                } else if len < stats.limit {
+                } else if max_reached || len >= stats.test_limit {
+                    // do nothing
+                } else {
                     let (k, t) = cd_gen.new_cd();
                     let cap = a.capacity();
                     let (p, t1) = a.insert(t);
@@ -203,8 +281,7 @@ pub fn fuzz<
                     // check that capacity increased
                     ensure!(a.capacity() > cap);
                     b.insert(k, p);
-                } else {
-                    // do nothing
+                    b_capacity = a.capacity();
                 }
             }
             300..500 => {
@@ -383,7 +460,10 @@ pub fn fuzz<
                 let mut i = 0;
                 let mut rand_remove_i = if len == 0 { 0 } else { rng.index(len).unwrap() };
                 let mut rand_insert_i = if len == 0 { 0 } else { rng.index(len).unwrap() };
-                if a.len() == stats.limit && rand_remove_i > rand_insert_i {
+                if let Some(cap) = stats.fixed_cap
+                    && a.len() == cap
+                    && rand_remove_i > rand_insert_i
+                {
                     // need to remove before inserting again
                     mem::swap(&mut rand_insert_i, &mut rand_remove_i);
                 }
@@ -495,7 +575,7 @@ pub fn fuzz<
                 ensure_eq!(i, len);
             }
             // future
-            930..995 => {
+            930..994 => {
                 if let Some((_, p)) = b.get_rand(rng) {
                     let p = *p;
                     ensure!(a.contains(p));
@@ -504,7 +584,7 @@ pub fn fuzz<
                     ensure!(!a.contains(p));
                 }
             }
-            995 => {
+            994 => {
                 // compress
                 ensure_eq!(a.compress().is_overflow(), g.invalidate());
                 b.clear();
@@ -520,7 +600,7 @@ pub fn fuzz<
                     );
                 }
             }
-            996 => {
+            995 => {
                 // compress_with
                 let mut new_map = vec![];
                 ensure_eq!(
@@ -544,7 +624,7 @@ pub fn fuzz<
                     );
                 }
             }
-            997 => {
+            996 => {
                 // clone_from_with, this is mainly tested in `multi_arena`, but we want
                 // them here to test if `self.m.len()` and `self.m.capacity()` detachments cause
                 // issues.
@@ -568,22 +648,45 @@ pub fn fuzz<
                     }
                     1 => {
                         b.clear();
-                        a.clone_from_with_new(&a1, |p, u| {
+                        // `a1` was unlimited, `a` can be limited and grow capacity and run into
+                        // changed limits
+
+                        if rng.next_bool() {
+                            // add a high `Ptr` for fixed capacity cases to deal
+                            // with FIXME
+
+                            // FIXME rename find_inx_last_ptr etc
+                        }
+
+                        let before = a.capacity();
+                        let max_before = a.max_capacity();
+                        let res = a.clone_from_with_new(&a1, |p, u| {
                             assert_eq!(a1.get(p).unwrap().key(), u.key());
                             let (k, t) = cd_gen.new_cd();
                             b.insert(k, p);
                             t
-                        })
-                        .unwrap();
-                        for p in a1.ptrs() {
-                            ensure!(a.contains(p));
+                        });
+                        if let Some(max) = max_before
+                            && let Some(last) = a1.find_inx_last_ptr()
+                            && P::Inx::try_into_usize(last.inx()).unwrap().get() > max
+                        {
+                            ensure_eq!(res, Err(ReallocationError::BeyondMaxCapacity));
+                        } else {
+                            ensure_eq!(res, Ok(()));
+                            for p in a1.ptrs() {
+                                ensure!(a.contains(p));
+                            }
+                            ensure_eq!(a.max_capacity(), max_before);
+                            ensure!(a.capacity() >= before);
+
+                            g.0 = a1.singular_generation();
+                            b_capacity = a.capacity();
                         }
-                        g.0 = a1.singular_generation();
                     }
                     _ => unreachable!(),
                 }
             }
-            998 => {
+            997 => {
                 // drain
                 for tmp in a.drain() {
                     ensure_eq!(tmp.is_overflow(), g.invalidate());
@@ -593,10 +696,31 @@ pub fn fuzz<
                 ensure!(a.is_empty());
                 b.clear();
             }
-            999 => {
+            998 => {
                 // clear
                 b.clear();
                 ensure_eq!(a.clear().is_overflow(), g.invalidate());
+                iters999 += 1;
+            }
+            999 => {
+                // with_min_capacity and the `Drop` impl
+                b.clear();
+                // note that we bypass max capacity limits since they are set to begin with in
+                // some cases from this function
+
+                // could succeed for ZSTs
+                ensure_eq!(
+                    A::with_min_capacity(usize::MAX).map(|_| ()),
+                    Err(AllocError)
+                );
+
+                let min_capacity = rng.index_inclusive(stats.test_limit);
+                a = A::with_min_capacity(min_capacity).stack()?;
+                ensure!(a.capacity() >= min_capacity);
+                if stats.fixed_cap.is_some() {
+                    stats.fixed_cap = Some(a.capacity());
+                }
+                b_capacity = a.capacity();
                 iters999 += 1;
             }
             1000.. => unreachable!(),

@@ -424,7 +424,9 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// indexes, if the `P::Inx` from the highest index is such that
     /// `source.find_inx_last_ptr().unwrap().inx().get() <= self.capacity()`,
     /// this is guaranteed to _not_ reallocate and the function is
-    /// infallible. Returns an error upon reallocation failure.
+    /// infallible. Does _not_ clone max capacity limits, and will fail if any
+    /// set limit on `self` is exceeded. Returns an error upon reallocation
+    /// failure.
     fn clone_from_with_new<
         U,
         A: ArenaTrait<P, U> + SingularGenerationArena<P>,
@@ -611,6 +613,10 @@ pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
 pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     fn get_link(&self, p: P) -> Option<&Link<P, T>>;
 }
+
+// FIXME put on `ArenaDirectInsertTrait` instead
+/// Note: A direct insertion version analogous to [ArenaDirectInsertEntryTrait] would not be feasible because of questions around intermediate validities, however it can be mimicked to arbitrary degrees by using a direct insertion arena and using the [Link] struct directly in custom values. The same can be used for
+ChainArenaInsertTrait
 
 // this will end up being entirely separate, will eventually want advanced
 // allocation control on key and value arenas

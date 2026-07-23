@@ -52,10 +52,10 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
 
     for _ in 0..stats.n {
         let len = b.len();
-        ensure!(cd_gen.len() == len);
+        ensure_eq!(cd_gen.len(), len);
         ensure_eq!(a.len(), len);
-        ensure_eq!(a.capacity(), b_capacity);
         ensure_eq!(a.is_empty(), b.is_empty());
+        ensure_eq!(a.capacity(), b_capacity);
         ensure!(len <= a.capacity());
         if let Some(fixed_cap) = stats.fixed_cap {
             ensure!(a.capacity() == fixed_cap);
@@ -132,7 +132,6 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                         a.reallocate_min_capacity(max_capacity + 1),
                         Err(ReallocationError::BeyondMaxCapacity)
                     );
-                    // could succeed for ZSTs
                     ensure_eq!(
                         a.reallocate_min_capacity(usize::MAX),
                         Err(ReallocationError::BeyondMaxCapacity)
@@ -294,7 +293,7 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                 b.clear();
             }
             999 => {
-                // with_min_capacity
+                // with_min_capacity and the `Drop` impl
                 b.clear();
                 // note that we bypass max capacity limits since they are set to begin with in
                 // some cases from this function
