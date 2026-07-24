@@ -191,8 +191,8 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         if this.generation() < P::Gen::two() {
             return Err("bad generation");
         }
-        if this.capacity() != this.m.len() {
-            return Err("virtual capacity != m_len");
+        if this.capacity() != this.m.capacity() {
+            return Err("virtual capacity != m.capacity()");
         }
         let mut n_allocated = 0usize;
         for i in this.nziter() {
@@ -404,16 +404,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     /// Returns if the arena is empty
     pub fn is_empty(&self) -> bool {
         self.len == 0
-    }
-
-    /// Returns the capacity of the arena.
-    ///
-    /// Technical note: This is usually equal to the true allocated capacity but
-    /// is sometimes less in order to prevent exponential capacity growth
-    /// with some combinations of functions (see the "Capacity" section in
-    /// lib.rs for details).
-    pub fn capacity(&self) -> usize {
-        self.m.len()
     }
 
     pub(crate) fn set_gen(&mut self, new_gen: P::Gen) {

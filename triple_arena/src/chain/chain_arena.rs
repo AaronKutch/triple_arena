@@ -8,9 +8,7 @@ use core::{
 };
 
 use crate::{
-    Arena,
-    traits::{Advancer, Ptr},
-    utils::traits::ArenaBacking,
+    Arena, traits::{Advancer, ArenaTrait, Ptr}, utils::traits::ArenaBacking,
 };
 
 /// This represents a link in a `ChainArena` that has a public `t: T` field and

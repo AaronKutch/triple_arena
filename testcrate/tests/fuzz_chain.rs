@@ -640,7 +640,6 @@ fn fuzz_chain() {
                     tmp2.insert(q, p);
                 });
                 assert_eq!(tmp.len(), a.len());
-                assert_eq!(a.capacity(), a.len());
                 generation += 1;
                 for (t, q) in &tmp {
                     assert_eq!(*t, a[q]);

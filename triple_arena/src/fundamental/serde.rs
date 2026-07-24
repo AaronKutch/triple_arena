@@ -9,12 +9,7 @@ use serde::{
 };
 
 use crate::{
-    Arena, ChainArena, Link, OrdArena, SurjectArena,
-    arena::InternalSlot,
-    ord::Node,
-    surject::{Key, Val},
-    traits::Ptr,
-    utils::{
+    Arena, ChainArena, Link, OrdArena, SurjectArena, arena::InternalSlot, ord::Node, surject::{Key, Val}, traits::{ Ptr}, utils::{
         ChainNoGenArena, LinkNoGen, PtrNoGen,
         traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen, PtrInx},
     },
@@ -169,13 +164,13 @@ where
 
         while let Some((p, t)) = access.next_entry::<P::Inx, T>()? {
             let i = PtrInx::try_into_usize(p).unwrap().get();
-            if i > a.capacity() {
-                for _ in 0..(i.wrapping_sub(a.capacity())) {
+            let slot_len = a.m.len();
+            if let Some(to_add) = i.checked_sub(slot_len) {
+                for _ in 0..to_add {
                     // the freelist is fixed later
 
-                    // FIXME
                     a.m.push_reallocating(InternalSlot::Free(
-                        PtrInx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap(),
+                        P::invalid().inx(),
                     ))
                     .map_err(|_| {
                         Error::custom(
@@ -201,27 +196,7 @@ where
         }
 
         // fix the freelist
-        let mut last_free = None;
-        for i in a.nziter() {
-            // FIXME
-            if let InternalSlot::Free(p) = a.m_get_mut(PtrInx::try_from_usize(i).unwrap()).unwrap()
-            {
-                if let Some(ref mut last_free) = last_free {
-                    *p = PtrInx::try_from_usize(*last_free).unwrap();
-                    *last_free = i;
-                } else {
-                    // points to itself
-                    *p = PtrInx::try_from_usize(i).unwrap();
-                    last_free = Some(i);
-                }
-            }
-        }
-        if let Some(last_free) = last_free {
-            // FIXME
-            a.freelist_root = Some(PtrInx::try_from_usize(last_free).unwrap());
-        } else {
-            a.freelist_root = None;
-        }
+        a.canonicalize_free_list();
 
         Ok(a)
     }
@@ -375,7 +350,7 @@ where
         let mut i = 1usize;
         let mut last = None;
         while let Some((k, v)) = access.next_entry::<K, V>()? {
-            // FIXME
+            // FIXME or should we delete the arena level serializations altogether?
             let p = PtrInx::try_from_usize(NonZeroUsize::new(i).unwrap()).unwrap();
             if let Some(last) = last {
                 a.get_inx_mut_unwrap(last).prev_next.1 = Some(p);

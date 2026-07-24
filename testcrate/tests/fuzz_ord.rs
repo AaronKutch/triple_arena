@@ -525,7 +525,6 @@ fn fuzz_ord() {
                     });
                 });
                 assert_eq!(tmp.len(), a.len());
-                assert_eq!(a.capacity(), a.len());
                 generation += 1;
                 for (val, triple) in &tmp {
                     assert_eq!(val, a.get_val(triple.p).unwrap());

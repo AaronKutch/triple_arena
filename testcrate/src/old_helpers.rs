@@ -6,7 +6,7 @@ use rand_xoshiro::{
 };
 use serde_derive::{Deserialize, Serialize};
 use triple_arena::{
-    Arena, ChainArena, OrdArena, SurjectArena, traits::Ptr, utils::ChainNoGenArena,
+    Arena, ChainArena, OrdArena, SurjectArena, traits::{ArenaTrait, Ptr}, utils::ChainNoGenArena,
 };
 use triple_arena_render::*;
 

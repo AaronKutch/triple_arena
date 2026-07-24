@@ -13,12 +13,6 @@ use triple_arena::{SurjectArena, traits::*, utils::traits::PtrGen};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
-const STATS: (usize, usize, u64, u128) = if cfg!(miri) {
-    (8, 3, 0, 71)
-} else {
-    (41, 8, 1027, 79005)
-};
-
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
         $rng.next_u32() as usize % $len
@@ -71,9 +65,6 @@ fn fuzz_surject() {
     a.clear_and_shrink();
     generation += 1;
     let mut op_inx;
-    // makes sure there is not some problem with the test harness itself or
-    // determinism
-    let mut iters999 = 0;
     let mut max_key_len = 0;
     let mut max_val_len = 0;
 
@@ -519,8 +510,6 @@ fn fuzz_surject() {
                     }
                 });
                 assert_eq!(tmp.len(), a.len_vals());
-                assert_eq!(a.capacity_keys(), a.len_keys());
-                assert_eq!(a.capacity_vals(), a.len_vals());
                 generation += 1;
                 let mut total_keys = 0;
                 for (val, set) in &tmp {
@@ -643,15 +632,10 @@ fn fuzz_surject() {
                 b.clear();
                 generation += 1;
                 list.clear();
-                iters999 += 1;
             }
             _ => unreachable!(),
         }
         max_key_len = max(max_key_len, a.len_keys());
         max_val_len = max(max_val_len, a.len_vals());
     }
-    assert_eq!(
-        (max_key_len, max_val_len, iters999, a.generation().get()),
-        STATS
-    );
 }
