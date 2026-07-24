@@ -583,8 +583,8 @@ impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> PartialEq<OrdArena<P, 
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
             if let Some(p1) = adv1.advance(other) {
-                let node0 = self.a.get_inx_unwrap(p0.inx());
-                let node1 = other.a.get_inx_unwrap(p1.inx());
+                let node0 = self.a.get_inx(p0.inx());
+                let node1 = other.a.get_inx(p1.inx());
                 if node0.t.k != node1.t.k {
                     return false;
                 }
@@ -616,8 +616,8 @@ impl<P: Ptr, K: PartialOrd, V: PartialOrd, B: ArenaBacking> PartialOrd<OrdArena<
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
             if let Some(p1) = adv1.advance(other) {
-                let node0 = self.a.get_inx_unwrap(p0.inx());
-                let node1 = other.a.get_inx_unwrap(p1.inx());
+                let node0 = self.a.get_inx(p0.inx());
+                let node1 = other.a.get_inx(p1.inx());
                 match node0.t.k.partial_cmp(&node1.t.k) {
                     Some(Ordering::Equal) => (),
                     ord => return ord,
@@ -649,8 +649,8 @@ impl<P: Ptr, K: Ord, V: Ord, B: ArenaBacking> Ord for OrdArena<P, K, V, B> {
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
             if let Some(p1) = adv1.advance(other) {
-                let node0 = self.a.get_inx_unwrap(p0.inx());
-                let node1 = other.a.get_inx_unwrap(p1.inx());
+                let node0 = self.a.get_inx(p0.inx());
+                let node1 = other.a.get_inx(p1.inx());
                 match node0.t.k.cmp(&node1.t.k) {
                     Ordering::Equal => (),
                     ord => return ord,

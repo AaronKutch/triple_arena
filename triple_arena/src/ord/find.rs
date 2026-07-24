@@ -113,7 +113,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             let node = &this.a.get(p).unwrap();
 
             let rank0 = if let Some(p_tree0) = node.p_tree0 {
-                this.a.get_inx_unwrap(p_tree0).t.rank
+                this.a.get_inx(p_tree0).t.rank
             } else {
                 0
             };
@@ -121,7 +121,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                 return Err("rank difference is zero or negative");
             }
             let rank1 = if let Some(p_tree1) = node.p_tree1 {
-                this.a.get_inx_unwrap(p_tree1).t.rank
+                this.a.get_inx(p_tree1).t.rank
             } else {
                 0
             };

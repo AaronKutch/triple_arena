@@ -753,19 +753,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    /// Like [Arena::get], except generation counters are ignored and the
-    /// result is unwrapped internally
-    #[doc(hidden)]
-    //#[track_caller]
-    pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
-        match self.m_get(p) {
-            Some(Allocated(_, t)) => t,
-            // if we use `panic` it induces stack management on every hot path according to the
-            // assembly
-            _ => unreachable!(), /* panic!("get_inx_unwrap of unallocated entry"), */
-        }
-    }
-
     /// Like [Arena::get_mut], except generation counters are ignored and the
     /// result is unwrapped internally
     #[doc(hidden)]

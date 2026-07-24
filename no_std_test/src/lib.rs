@@ -40,5 +40,5 @@ pub fn asm_arena_get_gen(a: &Arena<P1, u64>, inx: P1) -> u64 {
 
 // make sure this especially is minimal
 pub fn asm_arena_get_nogen(a: &Arena<P1, u64>, inx: NonZeroUsize) -> u64 {
-    *a.get_inx_unwrap(inx)
+    *a.get_inx(inx).unwrap().1
 }
