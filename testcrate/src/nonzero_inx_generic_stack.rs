@@ -1,5 +1,6 @@
 use std::{num::NonZeroUsize, slice::GetDisjointMutError};
 
+use expect_test::Expect;
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use triple_arena::{
     AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError,
@@ -19,7 +20,7 @@ pub struct Stats {
     /// If the capacity is fixed
     pub fixed_cap: Option<usize>,
     pub n: usize,
-    pub iters999: Option<usize>,
+    pub iters999: Option<Expect>,
     pub cd_gen: CdGen<()>,
 }
 
@@ -329,8 +330,8 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
             1000.. => unreachable!(),
         }
     }
-    if let Some(x) = stats.iters999 {
-        ensure_eq!(iters999, x);
+    if let Some(x) = &stats.iters999 {
+        x.assert_debug_eq(&iters999);
     }
     a.clear();
     Ok(())

@@ -11,6 +11,7 @@ alloc = ["triple_arena/alloc"]
 serde_support = ["triple_arena/serde_support"]
 
 [dependencies]
+expect-test = "1.5"
 postcard = { version = "1.0", features = ["alloc"] }
 rand_xoshiro = "0.8"
 serde = "1.0"

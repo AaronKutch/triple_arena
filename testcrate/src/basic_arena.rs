@@ -1,5 +1,6 @@
 use std::{cmp::max, mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
+use expect_test::Expect;
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use star_rng::StarRng;
 use triple_arena::{
@@ -23,7 +24,7 @@ pub struct Stats {
     /// If the capacity is fixed
     pub fixed_cap: Option<usize>,
     pub n: usize,
-    pub iters999: Option<usize>,
+    pub iters999: Option<Expect>,
     pub cd_gen: CdGen<()>,
     pub cd_gen1: CdGen<D1>,
 }
@@ -66,7 +67,6 @@ pub fn fuzz<
 
     // set and used by the clone_from section
     let mut a1 = Arena::<P, Cd<D1>, HeapBacking>::new();
-    let mut b1 = CkMap::<D1, P>::new();
 
     // makes sure there is not some problem with the test harness itself or
     // determinism
@@ -657,11 +657,9 @@ pub fn fuzz<
                     // `a1` and the like are set here, `a` will diverge again
                     0 => {
                         let mut i = 0;
-                        b1.clear();
                         a1.clone_from_with_new(a, |p, u| {
                             assert_eq!(a.get(p).unwrap().key(), u.key());
-                            let (k, t) = cd_gen1.new_cd();
-                            b1.insert(k, p);
+                            let (_, t) = cd_gen1.new_cd();
                             i += 1;
                             t
                         })
@@ -677,7 +675,11 @@ pub fn fuzz<
 
                         if rng.next_bool() {
                             // add a high `Ptr` for fixed capacity cases to deal
-                            // with FIXME
+                            // with
+
+                            for _ in 0..stats.test_limit {
+                                a1.insert(cd_gen1.new_cd().1);
+                            }
 
                             // FIXME rename find_inx_last_ptr etc
                         }
@@ -759,8 +761,8 @@ pub fn fuzz<
             1000.. => unreachable!(),
         }
     }
-    if let Some(x) = stats.iters999 {
-        ensure_eq!(iters999, x);
+    if let Some(x) = &stats.iters999 {
+        x.assert_debug_eq(&iters999);
     }
     a.clear().ok();
     Ok(())

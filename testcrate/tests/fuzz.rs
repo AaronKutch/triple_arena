@@ -1,3 +1,4 @@
+use expect_test::expect;
 use stacked_errors::{StackableErr, StackedError};
 use star_rng::StarRng;
 use testcrate::{
@@ -27,24 +28,28 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
     } else {
         10_000_000
     };
-    // I could get a custom allocator to make this deterministic, but I think one
-    // check is on arrays is good enough
-    const ITERS999: usize = if cfg!(miri) {
-        8
-    } else if cfg!(debug_assertions) {
-        944
-    } else {
-        9956
-    };
     pub const LIMIT: usize = 7;
 
     fn inner(meta: &mut Meta<nonzero_inx_generic_stack::Stats>) -> Result<(), StackedError> {
+        // I could get a custom allocator to make this deterministic, but I think one
+        // check is on non Miri arrays is good enough
+        let iters999 = if cfg!(miri) {
+            None
+        } else if cfg!(debug_assertions) {
+            Some(expect![[r#"
+                944
+            "#]])
+        } else {
+            Some(expect![[r#"
+                9826
+            "#]])
+        };
         meta.test(
             nonzero_inx_generic_stack::Stats {
                 test_limit: LIMIT,
                 fixed_cap: Some(LIMIT),
                 n: N,
-                iters999: Some(ITERS999),
+                iters999,
                 cd_gen: CdGen::new(),
             },
             |meta| {
@@ -117,18 +122,11 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
     let mut meta = Meta::new(7);
 
     const N: usize = if cfg!(miri) {
-        10_000
+        100
     } else if cfg!(debug_assertions) {
         1_000_000
     } else {
         10_000_000
-    };
-    const ITERS999: usize = if cfg!(miri) {
-        8
-    } else if cfg!(debug_assertions) {
-        1021
-    } else {
-        9956
     };
     pub const LIMIT: usize = 7;
 
@@ -143,12 +141,23 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
     }
 
     fn inner(meta: &mut Meta<basic_arena::Stats>) -> Result<(), StackedError> {
+        let iters999 = if cfg!(miri) {
+            None
+        } else if cfg!(debug_assertions) {
+            Some(expect![[r#"
+                1001
+            "#]])
+        } else {
+            Some(expect![[r#"
+                9886
+            "#]])
+        };
         meta.test(
             basic_arena::Stats {
                 test_limit: LIMIT,
                 fixed_cap: Some(LIMIT),
                 n: N,
-                iters999: Some(ITERS999),
+                iters999,
                 cd_gen: CdGen::new(),
                 cd_gen1: CdGen::new(),
             },
