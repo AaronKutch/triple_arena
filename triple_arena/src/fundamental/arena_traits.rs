@@ -159,7 +159,7 @@ pub trait SingularGenerationArena<P: Ptr> {
 /// invalidation operations. If the arena backing type is limited or you must
 /// handle allocation failures, then [ArenaInsertTrait::insert_reallocating] and
 /// similar should be used.
-pub trait ArenaTrait<P: Ptr, T>: Sized {
+pub trait ArenaTrait<P: Ptr, T>: Sized + IntoIterator<Item = (P, T)> {
     // An advancer over the valid `Ptr`s of this arena
     type PtrAdvancer: Advancer<Self, Item = P>;
 
@@ -367,26 +367,27 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     where
         T: 'a;
 
-    /// A draining iterator over `(P, T)` in the arena.
+    /// A draining iterator over `(P, T)` in the arena. This will run `self.clear()` (and any invalidation notifications will be lost) if the iterator is dropped.
     ///
     /// The `InvalidationOption` is returned per-element because of certain
     /// arena designs that have a generation per internal slot or domain instead
     /// of a global generation.
-    fn drain(&mut self) -> impl Iterator<Item = InvalidationOption<(P, T)>> {
-        let mut adv = self.advancer();
-        from_fn(move || {
-            let p = adv.advance(self)?;
-            // for global generation arenas, just do this for simplicity and so that the
-            // invalidation is associated with a particular element
-            match self.remove(p) {
-                InvalidationResult::Success(t) => Some(InvalidationOption::Success((p, t))),
-                InvalidationResult::GenerationOverflow(t) => {
-                    Some(InvalidationOption::GenerationOverflow((p, t)))
-                }
-                InvalidationResult::InvalidPtr => None,
+    fn drain(&mut self) -> impl Iterator<Item = InvalidationOption<(P, T)>>;
+    /* // Is logically this but also needs the clear-on-drop logic
+    let mut adv = self.advancer();
+    from_fn(move || {
+        let p = adv.advance(self)?;
+        // for global generation arenas, just do this for simplicity and so that the
+        // invalidation is associated with a particular element
+        match self.remove(p) {
+            InvalidationResult::Success(t) => Some(InvalidationOption::Success((p, t))),
+            InvalidationResult::GenerationOverflow(t) => {
+                Some(InvalidationOption::GenerationOverflow((p, t)))
             }
-        })
-    }
+            InvalidationResult::InvalidPtr => None,
+        }
+    })
+    */
 
     /// Invalidates all references to the `T` pointed to by `p`, and returns a
     /// new valid reference. Does no invalidation and returns `None` if `p` is

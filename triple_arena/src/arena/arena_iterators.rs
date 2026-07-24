@@ -6,10 +6,7 @@ use InternalSlot::*;
 use recasting::{Recast, Recaster};
 
 use crate::{
-    Arena,
-    arena::{ArenaBacking, InternalSlot},
-    traits::{Advancer, ArenaTrait, Ptr},
-    utils::traits::{NonZeroInxGenericStack, PtrInx},
+    Arena, InvalidationOption, InvalidationResult, arena::{ArenaBacking, InternalSlot}, traits::{Advancer, ArenaTrait, Ptr}, utils::traits::{NonZeroInxGenericStack, PtrInx},
 };
 
 /// An advancer over the valid `P`s of an `Arena`
@@ -137,6 +134,38 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterMut<'a, P, T, B> {
 
 /// A draining iterator over `(P, T)` in an `Arena`
 pub struct Drain<'a, P: Ptr, T, B: ArenaBacking> {
+    pub(crate) arena: &'a mut Arena<P, T, B>,
+    pub(crate) adv: PtrAdvancer<P>,
+}
+
+impl<P: Ptr, T, B: ArenaBacking> Drop for Drain<'_, P, T, B> {
+    fn drop(&mut self) {
+        self.arena.clear();
+    }
+}
+
+impl<P: Ptr, T, B: ArenaBacking> Iterator for Drain<'_, P, T, B> {
+    type Item = InvalidationOption<(P, T)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let p = self.adv.advance(self.arena)?;
+        // for global generation arenas, just do this for simplicity and so that the
+        // invalidation is associated with a particular element
+
+        //  FIXME
+        match ArenaTrait::remove(self.arena, p) {
+            InvalidationResult::Success(t) => Some(InvalidationOption::Success((p, t))),
+            InvalidationResult::GenerationOverflow(t) => {
+                Some(InvalidationOption::GenerationOverflow((p, t)))
+            }
+            InvalidationResult::InvalidPtr => None,
+        }
+    }
+}
+
+/*
+/// A draining iterator over `(P, T)` in an `Arena`
+pub struct Drain<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a mut Arena<P, T, B>,
     adv: PtrAdvancer<P>,
 }
@@ -160,7 +189,7 @@ impl<P: Ptr, T, B: ArenaBacking> Iterator for Drain<'_, P, T, B> {
             .advance(self.arena)
             .map(|p| (p, self.arena.remove_internal_inx_unwrap(p.inx(), false)))
     }
-}
+}*/
 
 /// A capacity draining iterator over `(P, T)` in an `Arena`
 pub struct CapacityDrain<P: Ptr, T, B: ArenaBacking> {
@@ -182,7 +211,7 @@ impl<P: Ptr, T, B: ArenaBacking> IntoIterator for Arena<P, T, B> {
     type IntoIter = CapacityDrain<P, T, B>;
     type Item = (P, T);
 
-    fn into_iter(self) -> Self::IntoIter {
+    fn into_iter(mut self) -> Self::IntoIter {
         self.capacity_drain()
     }
 }
@@ -278,19 +307,12 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         // NOTE: I have not thought fully about how our new invariants interact with
         // leaking the `Drain` struct, just use a normal advancer
 
-        self.inc_gen();
+        self.inc_generation().ok();
         let adv = self.advancer();
         Drain { arena: self, adv }
     }
 
     // This is needed for the `impl IntoIterator for Arena<T, P>` trait
-
-    /// By-value iteration with `(P, T)` tuples. Consumes all `T` and
-    /// capacity.
-    pub fn capacity_drain(self) -> CapacityDrain<P, T, B> {
-        let adv = self.advancer();
-        CapacityDrain { arena: self, adv }
-    }
 
     /// Performs [Arena::compress_and_shrink] and returns an `Arena<P, P>` that
     /// can be used for [Recast]ing

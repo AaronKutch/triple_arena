@@ -1,18 +1,12 @@
 use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
-    AllocError, Arena, InvalidationOption, InvalidationResult, NotWithinCapacityError,
-    ReallocationError,
-    arena::{
+    AllocError, Arena, InvalidationOption, InvalidationResult, NotWithinCapacityError, ReallocationError, arena::{
         ArenaBacking,
         InternalSlot::{self, *},
-    },
-    arena_iterators,
-    fundamental::NonZeroInxGenericStackPushEntryTrait,
-    traits::{
+    }, arena_iterators::{self, CapacityDrain, Drain}, fundamental::NonZeroInxGenericStackPushEntryTrait, traits::{
         Advancer, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena,
-    },
-    utils::traits::{NonZeroInxGenericStack, PtrGen, PtrInx},
+    }, utils::traits::{NonZeroInxGenericStack, PtrGen, PtrInx},
 };
 
 impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for Arena<P, T, B> {
@@ -157,15 +151,27 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         }
     }
 
+    fn drain(&mut self) -> impl Iterator<Item = InvalidationOption<(P, T)>> {
+        let adv = self.advancer();
+        Drain {arena: self, adv}
+    }
+
     fn remove(&mut self, p: P) -> InvalidationResult<T> {
         self.remove_internal(p.inx(), Some(p.generation()), true)
     }
 
     fn clear(&mut self) -> InvalidationOption<()> {
+        let was_empty = self.is_empty();
+        // always do these steps to make sure the freelist is clear (make it canonical, may be logically empty but still have a messed up freelist)
         self.m.clear();
         self.len = 0;
         self.freelist_root = None;
-        self.inc_generation()
+        if !was_empty {
+            // only if there was any element
+            self.inc_generation()
+        } else {
+            InvalidationOption::Success(())
+        }
     }
 
     fn clone_from_with_new<
