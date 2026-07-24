@@ -4,8 +4,8 @@ use std::{cell::RefCell, collections::HashMap, marker::PhantomData, num::NonZero
 use stacked_errors::StackedError;
 use star_rng::StarRng;
 
-pub trait TryDrop {
-    fn try_drop(self) -> Result<(), StackedError>;
+pub trait TryInternalDrop {
+    fn try_internal_drop(&mut self) -> Result<(), StackedError>;
 }
 
 // `CdGen<D>` could have potentially also been a combined random access list and
@@ -75,8 +75,8 @@ impl<D: Copy + Default> Drop for CdGen<D> {
     }
 }
 
-impl<D: Copy + Default> TryDrop for CdGen<D> {
-    fn try_drop(mut self) -> Result<(), StackedError> {
+impl<D: Copy + Default> TryInternalDrop for CdGen<D> {
+    fn try_internal_drop(&mut self) -> Result<(), StackedError> {
         self.internal_drop().map_err(|e| StackedError::from_err(e))
     }
 }

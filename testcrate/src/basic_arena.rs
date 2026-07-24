@@ -11,7 +11,7 @@ use triple_arena::{
 
 use crate::{
     P2, TestGen,
-    cdgen::{Cd, CdGen, CkMap, TryDrop},
+    cdgen::{Cd, CdGen, CkMap, TryInternalDrop},
     misc::{D1, Meta},
 };
 
@@ -28,10 +28,17 @@ pub struct Stats {
     pub cd_gen1: CdGen<D1>,
 }
 
-impl TryDrop for Stats {
-    fn try_drop(self) -> Result<(), StackedError> {
-        self.cd_gen.try_drop().stack()?;
-        self.cd_gen1.try_drop()
+impl TryInternalDrop for Stats {
+    fn try_internal_drop(&mut self) -> Result<(), StackedError> {
+        let res0 = self.cd_gen.try_internal_drop().stack();
+        if res0.is_err() {
+            return res0.stack_err(format!("{self:#?}"));
+        }
+        let res1 = self.cd_gen1.try_internal_drop().stack();
+        if res1.is_err() {
+            return res1.stack_err(format!("{self:#?}"));
+        }
+        Ok(())
     }
 }
 
@@ -755,6 +762,7 @@ pub fn fuzz<
     if let Some(x) = stats.iters999 {
         ensure_eq!(iters999, x);
     }
+    a.clear().ok();
     Ok(())
 }
 
