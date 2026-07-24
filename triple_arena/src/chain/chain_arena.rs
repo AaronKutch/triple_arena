@@ -770,7 +770,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         // memory.
         self.a.inc_gen();
         let generation = self.generation();
-        let mut new = Arena::<P, Link<P, T>, B>::with_capacity(self.len());
+        let mut new = Arena::<P, Link<P, T>, B>::with_min_capacity(self.len()).unwrap();
         new.set_gen(generation);
         let mut adv = self.a.advancer();
         'outer: while let Some(p_init) = adv.advance(&self.a) {

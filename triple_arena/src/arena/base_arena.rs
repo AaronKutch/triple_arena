@@ -378,13 +378,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    /// [Arena::new] but with the initial capacity set to at least `capacity`
-    pub fn with_capacity(capacity: usize) -> Self {
-        let mut res = Self::new();
-        res.reserve(capacity);
-        res
-    }
-
     /// Returns the number of `T` in the arena
     pub fn len(&self) -> usize {
         self.len

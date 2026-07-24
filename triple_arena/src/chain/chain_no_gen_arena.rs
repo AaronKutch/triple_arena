@@ -726,7 +726,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         // memory.
         self.a.inc_gen();
         let generation = self.generation();
-        let mut new = Arena::<P, LinkNoGen<P, T>, B>::with_capacity(self.len());
+        let mut new = Arena::<P, LinkNoGen<P, T>, B>::with_min_capacity(self.len()).unwrap();
         new.set_gen(generation);
         let mut adv = self.a.advancer();
         'outer: while let Some(p_init) = adv.advance(&self.a) {
@@ -811,7 +811,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
     ) {
         self.a.inc_gen();
         let generation = self.generation();
-        let mut new = Arena::<P, LinkNoGen<P, T>, B>::with_capacity(self.len());
+        let mut new = Arena::<P, LinkNoGen<P, T>, B>::with_min_capacity(self.len()).unwrap();
         new.set_gen(generation);
         let p_init = first_link;
         let link = self.a.remove(p_init).unwrap();
