@@ -722,36 +722,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    /// Swaps the `T` at indexes `p0` and `p1` and keeps the generation counters
-    /// as-is. If `p0 == p1` then nothing occurs. Returns `None` if `p0` or `p1`
-    /// are invalid.
-    #[must_use]
-    pub fn swap(&mut self, p0: P, p1: P) -> Option<()> {
-        if p0.inx() == p1.inx() {
-            if self.contains(p0) && self.contains(p1) {
-                Some(())
-            } else {
-                None
-            }
-        } else if let Ok([n0, n1]) = self.m.get_disjoint_mut([
-            P::Inx::try_into_usize(p0.inx())?,
-            P::Inx::try_into_usize(p1.inx())?,
-        ]) {
-            if let (Allocated(gen0, t0), Allocated(gen1, t1)) = (n0, n1) {
-                if (*gen0 == p0.generation()) && (*gen1 == p1.generation()) {
-                    mem::swap(t0, t1);
-                    Some(())
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
     // FIXME remove
 
     /// Performs an [Arena::clear] and resets capacity to 0
