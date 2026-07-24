@@ -143,7 +143,7 @@ pub struct Drain<'a, P: Ptr, T, B: ArenaBacking> {
 
 impl<P: Ptr, T, B: ArenaBacking> Drop for Drain<'_, P, T, B> {
     fn drop(&mut self) {
-        self.arena.clear().ok();
+        self.arena.clear().allow();
     }
 }
 
@@ -305,7 +305,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         // NOTE: I have not thought fully about how our new invariants interact with
         // leaking the `Drain` struct, just use a normal advancer
 
-        self.inc_generation().ok();
+        self.inc_generation().allow();
         let adv = self.advancer();
         Drain { arena: self, adv }
     }

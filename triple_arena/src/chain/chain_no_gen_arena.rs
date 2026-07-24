@@ -694,7 +694,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
     /// Drops all links from the arena and invalidates all pointers previously
     /// created from it. This has no effect on allocated capacity.
     pub fn clear(&mut self) {
-        self.a.clear().ok()
+        self.a.clear().allow()
     }
 
     /// Performs a [ChainNoGenArena::clear] and resets capacity to 0

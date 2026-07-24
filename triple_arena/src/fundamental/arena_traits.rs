@@ -31,6 +31,8 @@ I would have signatures like `Result<..., T>` for nonentry fallible insertion me
 I decided to only have a `direct_insert_within_capacity` method for direct insertion, and no `_reallocating` or panicking variations. Capacity should be manually managed for such arenas, because in several contexts direct insertion would be used in, arbitrary indexes would easily lead to OOM. dealing with automatic reallocation fallibility in the signatures would also be annoying, and usually this is a mirror arena that will not have many places in the code calling direct insertion methods.
 
 The `drain` function ends up allowing invalidating every element separately because of "certain arena designs that have a generation per internal slot or domain". For singular generation arenas I also considered maybe adding an invariant that the generation counter equals the number of element invalidations minus 2, but I don't know of a use for it and it costs more and it is awkward to deal with edge cases with `drain` iterator dropping. I decide that we just make `drain` dropping just guarantee a single unseen `clear` invalidation (if there are elements), and make `clear` do a single invalidation if there are any entries. `drain` individually dropping could also make more sense if it stopped part way through on iterator drop, but `clear` by default is safer. The `compress` functions make sense to only increment the generation once.
+
+I almost considered `fn ok` instead of `fn allow` but that could easily lead to confusion and would make finding these uses difficult
 */
 
 /// Returned from operations that are infallible but could involve generation
@@ -46,13 +48,10 @@ pub enum InvalidationOption<T> {
 }
 
 impl<T> InvalidationOption<T> {
-    // I chose this naming because it is very short and is what is wanted extremely
-    // often
-
     /// Maps both options to `T`. This is the preferred method for most uses
     /// that don't care about the incredible difficulty of
     /// reaching generation overflow with the default `NonZeroU64`.
-    pub fn ok(self) -> T {
+    pub fn allow(self) -> T {
         match self {
             Self::Success(t) => t,
             Self::GenerationOverflow(t) => t,
@@ -95,7 +94,7 @@ impl<T> InvalidationResult<T> {
     /// `InvalidPtr` to `None`. This is the preferred method for most uses
     /// that don't care about the incredible difficulty of
     /// reaching generation overflow with the default `NonZeroU64`.
-    pub fn ok(self) -> Option<T> {
+    pub fn allow(self) -> Option<T> {
         match self {
             Self::Success(t) => Some(t),
             Self::GenerationOverflow(t) => Some(t),
@@ -157,7 +156,7 @@ pub trait SingularGenerationArena<P: Ptr> {
 /// panic.
 ///
 /// For example, in most cases, you should just use [ArenaInsertTrait::insert]
-/// to insert elements into the arena and [InvalidationResult::ok] on
+/// to insert elements into the arena and [InvalidationResult::allow] on
 /// invalidation operations. If the arena backing type is limited or you must
 /// handle allocation failures, then [ArenaInsertTrait::insert_reallocating] and
 /// similar should be used.

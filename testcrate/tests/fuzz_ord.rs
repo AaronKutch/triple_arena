@@ -81,6 +81,7 @@ fn fuzz_ord() {
             true_len += set.len();
         }
         assert_eq!(true_len, a.len());
+        let _ = generation;
         assert_eq!(a.is_empty(), list.is_empty());
         let len = list.len();
         if !cfg!(miri)

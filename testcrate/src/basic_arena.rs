@@ -498,7 +498,7 @@ pub fn fuzz<
                     // remove and insert at random times
                     if i == rand_remove_i {
                         let (k, p) = b.remove(i).unwrap();
-                        assert_eq!(k, a.remove(p).ok().unwrap().key());
+                        assert_eq!(k, a.remove(p).allow().unwrap().key());
                         g.invalidate();
                     }
                     if i == rand_insert_i {
@@ -723,7 +723,7 @@ pub fn fuzz<
                 // drain
                 for tmp in a.drain() {
                     ensure_eq!(tmp.is_overflow(), g.invalidate());
-                    let (p, t) = tmp.ok();
+                    let (p, t) = tmp.allow();
                     ensure_eq!(*b.get(t.key()).stack()?, p);
                 }
                 ensure!(a.is_empty());
@@ -766,7 +766,7 @@ pub fn fuzz<
     if let Some(x) = &stats.iters999 {
         x.assert_debug_eq(&iters999);
     }
-    a.clear().ok();
+    a.clear().allow();
     Ok(())
 }
 

@@ -636,7 +636,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// capacities of keys or values.
     pub fn clear(&mut self) {
         self.keys.clear();
-        self.vals.clear().ok();
+        self.vals.clear().allow();
     }
 
     /// Performs a [SurjectArena::clear] and resets key and value capacities to

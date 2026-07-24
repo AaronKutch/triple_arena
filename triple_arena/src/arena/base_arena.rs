@@ -858,7 +858,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
 
     /// Performs an [Arena::clear] and resets capacity to 0
     pub fn clear_and_shrink(&mut self) {
-        self.clear().ok();
+        self.clear().allow();
         self.reallocate_min_capacity(0).unwrap();
     }
 

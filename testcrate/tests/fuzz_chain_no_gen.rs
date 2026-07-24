@@ -799,7 +799,7 @@ fn fuzz_chain_no_gen() {
             996 => {
                 // drain
                 let prev_cap = a.capacity();
-                for (ptr, link) in a.drain().map(|x| x.ok()) {
+                for (ptr, link) in a.drain().map(|x| x.allow()) {
                     assert_eq!(b[&link.t].0, ptr);
                     generation += 1;
                 }
