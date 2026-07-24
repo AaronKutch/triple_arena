@@ -600,7 +600,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// invalid.
     #[must_use]
     pub fn invalidate(&mut self, p: P) -> Option<P> {
-        let p_new = self.a.invalidate(p)?;
+        let p_new = self.a.invalidate(p).allow()?;
         // fix invalidated interlinks
         match self.a.get_inx_unwrap(p_new.inx()).prev_next() {
             (None, None) => (),

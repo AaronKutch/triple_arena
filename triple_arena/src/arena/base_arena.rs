@@ -674,59 +674,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    // FIXME delete this, just have a good entry advancer
-
-    /// For every `T` in the arena, `pred` is called with a tuple of the `Ptr`
-    /// to that `T` and a mutable reference to the `T`. If `pred` returns `true`
-    /// that `T` is dropped and pointers to it invalidated.
-    pub fn remove_by<F: FnMut(P, &mut T) -> bool>(&mut self, mut pred: F) {
-        for inx in self.nziter() {
-            let entry = self.m.get_mut(inx).unwrap();
-            // FIXME
-            let inx = P::Inx::try_from_usize(inx).unwrap();
-            if let Allocated(generation, t) = entry {
-                if pred(P::_from_raw(inx, *generation), t) {
-                    self.len = self.len.wrapping_sub(1);
-                    if let Some(free) = self.freelist_root {
-                        // point to previous root
-                        *entry = Free(free);
-                    } else {
-                        // point to self
-                        *entry = Free(inx);
-                    }
-                    self.freelist_root = Some(inx);
-                }
-            }
-        }
-        // we only need one increment
-        self.inc_gen();
-    }
-
-    /// Invalidates all references to the `T` pointed to by `p`, and returns a
-    /// new valid reference. Does no invalidation and returns `None` if `p` is
-    /// invalid.
-    #[must_use]
-    pub fn invalidate(&mut self, p: P) -> Option<P> {
-        match self.m_get(p.inx()) {
-            Some(Allocated(generation, _)) => {
-                if *generation != p.generation() {
-                    return None;
-                }
-            }
-            _ => return None,
-        }
-        // redo to get around borrowing issues
-        self.inc_gen();
-        let new_gen = self.generation();
-        match self.m_get_mut(p.inx()) {
-            Some(Allocated(generation, _)) => {
-                *generation = new_gen;
-                Some(P::_from_raw(p.inx(), self.generation()))
-            }
-            _ => unreachable!(),
-        }
-    }
-
     /// Replaces the `T` pointed to by `p` with `new`, returns the old `T`, and
     /// keeps the internal generation counter as-is so that previously
     /// constructed `Ptr`s to this allocation are still valid.
