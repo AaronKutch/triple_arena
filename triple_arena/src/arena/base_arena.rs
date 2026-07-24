@@ -378,16 +378,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    /// Returns the number of `T` in the arena
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    /// Returns if the arena is empty
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
     pub(crate) fn set_gen(&mut self, new_gen: P::Gen) {
         self.generation = new_gen;
     }
