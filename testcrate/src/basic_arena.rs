@@ -4,8 +4,8 @@ use expect_test::Expect;
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use star_rng::StarRng;
 use triple_arena::{
-    AllocError, Arena, HeapBacking, InvalidationResult, MaxCapacityReductionError,
-    NotWithinCapacityError, ReallocationError,
+    AllocError, Arena, HeapBacking, InvalidationOption, InvalidationResult,
+    MaxCapacityReductionError, NotWithinCapacityError, ReallocationError,
     traits::{Advancer, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena},
     utils::traits::{PtrGen, PtrInx},
 };
@@ -732,7 +732,11 @@ pub fn fuzz<
             998 => {
                 // clear
                 b.clear();
-                ensure_eq!(a.clear().is_overflow(), g.invalidate());
+                if a.is_empty() {
+                    ensure_eq!(a.clear(), InvalidationOption::Success(()));
+                } else {
+                    ensure_eq!(a.clear().is_overflow(), g.invalidate());
+                }
             }
             999 => {
                 // with_min_capacity and the `Drop` impl
@@ -797,9 +801,10 @@ pub fn fuzz_multi_arena_step<D: Copy + Default, P: Ptr>(
         }
         99 => {
             // clear and shrink
-            a.clear();
+            if !a.is_empty() {
+                ensure_eq!(a.clear().strict().is_err(), g.invalidate());
+            }
             a.reallocate_min_capacity(0).unwrap();
-            g.invalidate();
             b.clear();
         }
         100.. => unreachable!(),

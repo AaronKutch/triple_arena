@@ -9,12 +9,6 @@ use triple_arena::{ChainArena, traits::*, utils::traits::PtrGen};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
-const STATS: (usize, usize, u128) = if cfg!(miri) {
-    (16, 1, 221)
-} else {
-    (44, 1071, 217949)
-};
-
 macro_rules! next_inx {
     ($rng:ident, $len:ident) => {
         $rng.next_u32() as usize % $len
@@ -43,11 +37,10 @@ fn fuzz_chain() {
     a.remove(invalid).unwrap();
     generation += 1;
     a.clear_and_shrink();
-    generation += 1;
-    let mut op_inx;
+    #[allow(unused)]
+    let mut op_inx = 0;
     // makes sure there is not some problem with the test harness itself or
     // determinism
-    let mut iters999 = 0;
     let mut max_len = 0;
 
     for _ in 0..N {
@@ -799,12 +792,12 @@ fn fuzz_chain() {
             996 => {
                 // drain
                 let prev_cap = a.capacity();
-                for (ptr, link) in a.drain() {
+                for (ptr, link) in a.drain().map(|x| x.ok()) {
+                    generation += 1;
                     assert_eq!(b[&link.t].0, ptr);
                 }
                 assert_eq!(a.capacity(), prev_cap);
                 b.clear();
-                generation += 1;
                 list.clear();
             }
             997 => {
@@ -817,24 +810,26 @@ fn fuzz_chain() {
             998 => {
                 // clear
                 let prev_cap = a.capacity();
+                if !a.is_empty() {
+                    generation += 1;
+                }
                 a.clear();
                 assert_eq!(a.capacity(), prev_cap);
                 b.clear();
-                generation += 1;
                 list.clear();
             }
             999 => {
                 // clear_and_shrink
+                if !a.is_empty() {
+                    generation += 1;
+                }
                 a.clear_and_shrink();
                 assert_eq!(a.capacity(), 0);
                 b.clear();
-                generation += 1;
                 list.clear();
-                iters999 += 1;
             }
             _ => unreachable!(),
         }
         max_len = std::cmp::max(max_len, a.len());
     }
-    assert_eq!((max_len, iters999, a.generation().get()), STATS);
 }

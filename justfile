@@ -29,6 +29,10 @@ check:
 test *ARGS:
   {{cargo}} nextest run --all-features {{ARGS}}
 
+test_update *ARGS:
+  UPDATE_EXPECT=1 {{cargo}} nextest run --all-features {{ARGS}}
+  UPDATE_EXPECT=1 {{cargo}} nextest run --release --all-features {{ARGS}}
+
 test_all *ARGS:
   {{cargo}} sort -cw
   {{cargo}} doc --no-deps --all-features

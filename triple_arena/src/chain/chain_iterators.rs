@@ -227,24 +227,24 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
 
     /// Iteration over all valid `P`s in the arena
     pub fn ptrs(&self) -> Ptrs<'_, P, Link<P, T>, B> {
-        self.a.ptrs()
+        self.a.old_ptrs()
     }
 
     /// Iteration over `&Link<P, T>`
     pub fn vals(&self) -> Vals<'_, P, Link<P, T>, B> {
-        self.a.vals()
+        self.a.old_vals()
     }
 
     /// Mutable iteration over `Link<P, &mut T>`
     pub fn vals_mut(&mut self) -> ValsLinkMut<'_, P, T, B> {
         ValsLinkMut {
-            iter_mut: self.a.vals_mut(),
+            iter_mut: self.a.old_vals_mut(),
         }
     }
 
     /// Iteration over `(P, &Link<P, T>)` tuples
     pub fn iter(&self) -> Iter<'_, P, Link<P, T>, B> {
-        self.a.iter()
+        IntoIterator::into_iter(&self.a)
     }
 
     /// Iteration over `(P, &Link<P, T>)` tuples corresponding to all
@@ -258,18 +258,22 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// Mutable iteration over `(P, Link<P, &mut T>)` tuples
     pub fn iter_mut(&mut self) -> IterLinkMut<'_, P, T, B> {
         IterLinkMut {
-            iter_mut: self.a.iter_mut(),
+            iter_mut: IntoIterator::into_iter(&mut self.a),
         }
     }
 
     /// Same as [crate::Arena::drain]
     pub fn drain(&mut self) -> Drain<'_, P, Link<P, T>, B> {
-        self.a.drain()
+        let adv = self.a.advancer();
+        Drain {
+            arena: &mut self.a,
+            adv,
+        }
     }
 
     /// Same as [crate::Arena::capacity_drain]
     pub fn capacity_drain(self) -> CapacityDrain<P, Link<P, T>, B> {
-        self.a.capacity_drain()
+        IntoIterator::into_iter(self.a)
     }
 
     /// Performs [ChainArena::compress_and_shrink] and returns an `Arena<P, P>`

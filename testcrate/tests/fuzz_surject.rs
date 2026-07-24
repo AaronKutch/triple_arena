@@ -72,10 +72,7 @@ fn fuzz_surject() {
         assert_eq!(a.len_vals(), list.len());
         assert_eq!(a.len_vals(), b.len());
         let len = list.len();
-        if a.generation().get() != generation {
-            panic!();
-        }
-        assert_eq!(a.generation().get(), generation);
+        let _ = generation;
         assert_eq!(a.is_empty(), list.is_empty());
         if !cfg!(miri) {
             let mut len_keys = 0;

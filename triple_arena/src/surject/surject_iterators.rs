@@ -239,7 +239,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// Iteration over `&V`
     pub fn vals(&self) -> Vals<'_, P, V, B> {
         Vals {
-            iter: self.vals.vals(),
+            iter: self.vals.old_vals(),
         }
     }
 
@@ -253,7 +253,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// Mutable iteration over `&mut V`
     pub fn vals_mut(&mut self) -> ValsMut<'_, P, V, B> {
         ValsMut {
-            iter_mut: self.vals.vals_mut(),
+            iter_mut: self.vals.old_vals_mut(),
         }
     }
 

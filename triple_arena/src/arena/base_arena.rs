@@ -854,43 +854,12 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    /// Drops all `T` from the arena and invalidates all pointers previously
-    /// created from it. This has no effect on allocated capacity.
-    pub fn clear(&mut self) {
-        // drop all `T` and recreate the freelist
-        for i in self.nziter() {
-            // Safety: `isize::MAX` guarantee
-            unsafe {
-                let next = ptrinx_unchecked(i.get().wrapping_add(1));
-                // FIXME
-                *self.m_get_mut(P::Inx::try_from_usize(i).unwrap()).unwrap() = Free(next);
-            }
-        }
-        if !self.m.is_empty() {
-            // the last freelist node points to itself
-            // Safety: `isize::MAX` guarantee, and `!self.m.is_empty()`
-            unsafe {
-                let last = NonZeroUsize::new_unchecked(self.m.len());
-                // FIXME
-                *self.m.get_mut(last).unwrap() = Free(P::Inx::try_from_usize(last).unwrap());
-                self.freelist_root = Some(ptrinx_unchecked(1));
-            }
-        } else {
-            self.freelist_root = None;
-        }
-        self.inc_gen();
-        self.len = 0;
-    }
-
     // FIXME remove
 
     /// Performs an [Arena::clear] and resets capacity to 0
     pub fn clear_and_shrink(&mut self) {
-        self.m.clear();
-        self.m.reallocate_min_capacity(0).unwrap();
-        self.freelist_root = None;
-        self.inc_gen();
-        self.len = 0;
+        self.clear().ok();
+        self.reallocate_min_capacity(0).unwrap();
     }
 
     /// This is currently only used by `SurjectArena::compress_and_shrink_with`

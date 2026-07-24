@@ -29,6 +29,8 @@ We call them "entry_insert*" in opposite order to the associated "InsertionEntry
 I would have signatures like `Result<..., T>` for nonentry fallible insertion methods, but since the entry methods exist (and often the `Result<..., T>` form promoted bad undo strategies anyways), I have made them all `Result<..., *Error>` instead.
 
 I decided to only have a `direct_insert_within_capacity` method for direct insertion, and no `_reallocating` or panicking variations. Capacity should be manually managed for such arenas, because in several contexts direct insertion would be used in, arbitrary indexes would easily lead to OOM. dealing with automatic reallocation fallibility in the signatures would also be annoying, and usually this is a mirror arena that will not have many places in the code calling direct insertion methods.
+
+The `drain` function ends up allowing invalidating every element separately because of "certain arena designs that have a generation per internal slot or domain". For singular generation arenas I also considered maybe adding an invariant that the generation counter equals the number of element invalidations minus 2, but I don't know of a use for it and it costs more and it is awkward to deal with edge cases with `drain` iterator dropping. I decide that we just make `drain` dropping just guarantee a single unseen `clear` invalidation (if there are elements), and make `clear` do a single invalidation if there are any entries. `drain` individually dropping could also make more sense if it stopped part way through on iterator drop, but `clear` by default is safer. The `compress` functions make sense to only increment the generation once.
 */
 
 /// Returned from operations that are infallible but could involve generation
@@ -367,7 +369,9 @@ pub trait ArenaTrait<P: Ptr, T>: Sized + IntoIterator<Item = (P, T)> {
     where
         T: 'a;
 
-    /// A draining iterator over `(P, T)` in the arena. This will run `self.clear()` (and any invalidation notifications will be lost) if the iterator is dropped.
+    /// A draining iterator over `(P, T)` in the arena. This will run
+    /// `self.clear()` (and any invalidation notifications will be lost) if the
+    /// iterator is dropped.
     ///
     /// The `InvalidationOption` is returned per-element because of certain
     /// arena designs that have a generation per internal slot or domain instead
@@ -403,7 +407,9 @@ pub trait ArenaTrait<P: Ptr, T>: Sized + IntoIterator<Item = (P, T)> {
     /// created from it. This has no effect on allocated capacity. Returns if
     /// any generation overflow occured (for arena implementations that have
     /// generations per internal slot or domain, this will return overflow if
-    /// any single one overflowed)
+    /// any single one overflowed).
+    ///
+    /// Does not invalidate and is always successful if `self.is_empty()`.
     fn clear(&mut self) -> InvalidationOption<()>;
 
     // `clone_from_with_within_capacity() -> Option<()>` is getting ridiculous and
