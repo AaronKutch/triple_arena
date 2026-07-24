@@ -40,7 +40,7 @@ impl TryDrop for Stats {
 /// types, ignore otherwise
 pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
     meta: &mut Meta<Stats>,
-    mut a: &mut S,
+    a: &mut S,
     // set iff `SetMaxCapacity` is implemented
     mut set_max_capacity: Option<fn(&mut S, usize) -> Result<(), MaxCapacityReductionError>>,
 ) -> Result<(), StackedError> {
@@ -82,7 +82,7 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                     let before = a.capacity();
                     let max_before = a.max_capacity().stack()?;
                     if rng.next_bool() {
-                        ensure!((*set_max_capacity)(&mut a, usize::MAX).is_ok());
+                        ensure!((*set_max_capacity)(a, usize::MAX).is_ok());
                         // capacity can expand within the internal capacity
                         ensure!(a.capacity() >= before);
                         b_capacity = a.capacity();
@@ -94,18 +94,18 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                             ensure!(a.capacity() >= before);
                             b_capacity = a.capacity();
                         } else if next >= a.capacity() {
-                            ensure_eq!((*set_max_capacity)(&mut a, next), Ok(()));
+                            ensure_eq!((*set_max_capacity)(a, next), Ok(()));
                             // b_capacity left unchanged to check that capacity
                             // does not change
                         } else if next >= a.len() {
                             // the only type currently that implements `set_max_capacity` currently
                             // follows the tight `next >= a.next()` bound
-                            ensure_eq!((*set_max_capacity)(&mut a, next), Ok(()));
+                            ensure_eq!((*set_max_capacity)(a, next), Ok(()));
                             ensure!(a.capacity() < before);
                             b_capacity = a.capacity();
                         } else {
                             ensure_eq!(
-                                (*set_max_capacity)(&mut a, next),
+                                (*set_max_capacity)(a, next),
                                 Err(MaxCapacityReductionError)
                             );
                             ensure_eq!(before, a.capacity());

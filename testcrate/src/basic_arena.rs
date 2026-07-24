@@ -42,7 +42,7 @@ pub fn fuzz<
     A: ArenaTrait<P, Cd<()>> + ArenaInsertTrait<P, Cd<()>> + SingularGenerationArena<P>,
 >(
     meta: &mut Meta<Stats>,
-    mut a: &mut A,
+    a: &mut A,
     mut check_invariants: impl FnMut(&mut A) -> Result<(), StackedError>,
     // set iff `SetMaxCapacity` is implemented
     mut set_max_capacity: Option<fn(&mut A, usize) -> Result<(), MaxCapacityReductionError>>,
@@ -125,7 +125,7 @@ pub fn fuzz<
         // if not incremented explicitly and the arena increments, then we get a
         // mismatch
         ensure_eq!(a.singular_generation(), g.0);
-        check_invariants(&mut a).stack()?;
+        check_invariants(a).stack()?;
 
         meta.i = i;
         meta.op_inx = rng.index(1000).unwrap();
@@ -139,7 +139,7 @@ pub fn fuzz<
                     let before = a.capacity();
                     let max_before = a.max_capacity().stack()?;
                     if rng.next_bool() {
-                        ensure!((*set_max_capacity)(&mut a, usize::MAX).is_ok());
+                        ensure!((*set_max_capacity)(a, usize::MAX).is_ok());
                         // capacity can expand within the internal capacity
                         ensure!(a.capacity() >= before);
                         b_capacity = a.capacity();
@@ -151,7 +151,7 @@ pub fn fuzz<
                             ensure!(a.capacity() >= before);
                             b_capacity = a.capacity();
                         } else if next >= a.capacity() {
-                            ensure_eq!((*set_max_capacity)(&mut a, next), Ok(()));
+                            ensure_eq!((*set_max_capacity)(a, next), Ok(()));
                             // b_capacity left unchanged to check that capacity
                             // does not change
                         } else {
@@ -165,12 +165,12 @@ pub fn fuzz<
                                 // the only type currently that implements `set_max_capacity`
                                 // currently follows the tight `next
                                 // >= a.next()` bound
-                                ensure_eq!((*set_max_capacity)(&mut a, next), Ok(()));
+                                ensure_eq!((*set_max_capacity)(a, next), Ok(()));
                                 ensure!(a.capacity() < before);
                                 b_capacity = a.capacity();
                             } else {
                                 ensure_eq!(
-                                    (*set_max_capacity)(&mut a, next),
+                                    (*set_max_capacity)(a, next),
                                     Err(MaxCapacityReductionError)
                                 );
                                 ensure_eq!(before, a.capacity());
@@ -317,14 +317,14 @@ pub fn fuzz<
                         }
                     }
                 } else {
-                    let invalid = gen_invalid(rng, &a);
+                    let invalid = gen_invalid(rng, a);
                     ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr))
                 }
             }
             // we do these to test against when there are elements in the arena
             500..520 => {
                 // remove invalid
-                let invalid = gen_invalid(rng, &a);
+                let invalid = gen_invalid(rng, a);
                 ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr))
             }
             520..600 => {
@@ -344,7 +344,7 @@ pub fn fuzz<
                         }
                     }
                 } else {
-                    let invalid = gen_invalid(rng, &a);
+                    let invalid = gen_invalid(rng, a);
                     ensure!(matches!(
                         a.invalidate(invalid),
                         InvalidationResult::InvalidPtr
@@ -353,7 +353,7 @@ pub fn fuzz<
             }
             600..620 => {
                 // invalidate invalid
-                let invalid = gen_invalid(rng, &a);
+                let invalid = gen_invalid(rng, a);
                 ensure!(matches!(
                     a.invalidate(invalid),
                     InvalidationResult::InvalidPtr
@@ -377,7 +377,7 @@ pub fn fuzz<
                         Some((p.generation(), k))
                     );
                 } else {
-                    let p = gen_invalid(rng, &a);
+                    let p = gen_invalid(rng, a);
                     ensure!(!a.contains(p));
                     ensure!(a.get(p).is_none());
                     ensure!(a.get_mut(p).is_none());
@@ -387,7 +387,7 @@ pub fn fuzz<
             }
             800..820 => {
                 // contains, get, get_mut all invalid
-                let p = gen_invalid(rng, &a);
+                let p = gen_invalid(rng, a);
                 ensure!(!a.contains(p));
                 ensure!(a.get(p).is_none());
                 ensure!(a.get_mut(p).is_none());
@@ -485,7 +485,7 @@ pub fn fuzz<
                     mem::swap(&mut rand_insert_i, &mut rand_remove_i);
                 }
                 let mut adv = a.advancer();
-                while let Some(p) = adv.advance(&a) {
+                while let Some(p) = adv.advance(a) {
                     assert_eq!(p, *b.get(a.get(p).stack()?.key()).stack()?);
 
                     // remove and insert at random times
@@ -520,18 +520,18 @@ pub fn fuzz<
                     let rev = rng.next_bool();
                     let mut adv = a.ordered_advancer(ptrs[i].inx(), rev);
                     loop {
-                        let p = adv.advance(&a).stack()?;
+                        let p = adv.advance(a).stack()?;
                         ensure_eq!(ptrs[i], p);
                         if rev {
                             if i == 0 {
-                                ensure!(adv.advance(&a).is_none());
+                                ensure!(adv.advance(a).is_none());
                                 break;
                             }
                             i -= 1;
                         } else {
                             i += 1;
                             if i == len {
-                                ensure!(adv.advance(&a).is_none());
+                                ensure!(adv.advance(a).is_none());
                                 break;
                             }
                         }
@@ -539,17 +539,17 @@ pub fn fuzz<
                 } else {
                     let inx1 = P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap();
                     let mut adv = a.ordered_advancer(inx1, false);
-                    ensure!(adv.advance(&a).is_none());
+                    ensure!(adv.advance(a).is_none());
                     let mut adv = a.ordered_advancer(inx1, true);
-                    ensure!(adv.advance(&a).is_none());
+                    ensure!(adv.advance(a).is_none());
                     if a.capacity() > 0 {
                         let inx_last =
                             P::Inx::try_from_usize(NonZeroUsize::new(a.capacity()).unwrap())
                                 .unwrap();
                         let mut adv = a.ordered_advancer(inx_last, false);
-                        ensure!(adv.advance(&a).is_none());
+                        ensure!(adv.advance(a).is_none());
                         let mut adv = a.ordered_advancer(inx_last, true);
-                        ensure!(adv.advance(&a).is_none());
+                        ensure!(adv.advance(a).is_none());
                     }
                 }
             }
@@ -598,7 +598,7 @@ pub fn fuzz<
                     let p = *p;
                     ensure!(a.contains(p));
                 } else {
-                    let p = gen_invalid(rng, &a);
+                    let p = gen_invalid(rng, a);
                     ensure!(!a.contains(p));
                 }
             }
