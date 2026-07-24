@@ -33,6 +33,8 @@ I decided to only have a `direct_insert_within_capacity` method for direct inser
 The `drain` function ends up allowing invalidating every element separately because of "certain arena designs that have a generation per internal slot or domain". For singular generation arenas I also considered maybe adding an invariant that the generation counter equals the number of element invalidations minus 2, but I don't know of a use for it and it costs more and it is awkward to deal with edge cases with `drain` iterator dropping. I decide that we just make `drain` dropping just guarantee a single unseen `clear` invalidation (if there are elements), and make `clear` do a single invalidation if there are any entries. `drain` individually dropping could also make more sense if it stopped part way through on iterator drop, but `clear` by default is safer. The `compress` functions make sense to only increment the generation once.
 
 I almost considered `fn ok` instead of `fn allow` but that could easily lead to confusion and would make finding these uses difficult
+
+`insert` could have returned `(P, &mut T)` as an extension of what stacks do, but it definitely does not carry its weight and the entry methods replace most places where it would be used
 */
 
 /// Returned from operations that are infallible but could involve generation
