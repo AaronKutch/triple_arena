@@ -673,55 +673,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    /// Replaces the `T` pointed to by `p` with `new`, returns the old `T`, and
-    /// keeps the internal generation counter as-is so that previously
-    /// constructed `Ptr`s to this allocation are still valid.
-    ///
-    /// # Errors
-    ///
-    /// Returns ownership of `new` instead if `p` is invalid
-    pub fn replace_and_keep_gen(&mut self, p: P, new: T) -> Result<T, T> {
-        let old_gen = match self.m_get(p.inx()) {
-            Some(Allocated(generation, _)) => {
-                if *generation != p.generation() {
-                    return Err(new);
-                }
-                *generation
-            }
-            _ => return Err(new),
-        };
-        let old = mem::replace(self.m_get_mut(p.inx()).unwrap(), Allocated(old_gen, new));
-        match old {
-            Allocated(_, old_gen) => Ok(old_gen),
-            _ => unreachable!(),
-        }
-    }
-
-    /// Replaces the `T` pointed to by `p` with `new`, returns a tuple of the
-    /// old `T` and new `Ptr`, and updates the internal generation counter so
-    /// that previous `Ptr`s to this allocation are invalidated.
-    ///
-    /// # Errors
-    ///
-    /// Does no invalidation and returns ownership of `new` if `p` is invalid
-    pub fn replace_and_update_gen(&mut self, p: P, new: T) -> Result<(T, P), T> {
-        match self.m_get(p.inx()) {
-            Some(Allocated(generation, _)) => {
-                if *generation != p.generation() {
-                    return Err(new);
-                }
-            }
-            _ => return Err(new),
-        }
-        self.inc_gen();
-        let new_gen = self.generation();
-        let old = mem::replace(self.m_get_mut(p.inx()).unwrap(), Allocated(new_gen, new));
-        match old {
-            Allocated(_, old) => Ok((old, P::_from_raw(p.inx(), new_gen))),
-            _ => unreachable!(),
-        }
-    }
-
     // FIXME remove
 
     /// Performs an [Arena::clear] and resets capacity to 0
