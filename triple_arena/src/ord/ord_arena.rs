@@ -12,7 +12,7 @@ use core::{
 use crate::{
     Arena, ChainArena, Link,
     chain::LinkNoGen,
-    traits::{Advancer, Ptr},
+    traits::{Advancer, ArenaTrait, Ptr},
     utils::{
         ChainNoGenArena,
         traits::{ArenaBacking, PtrInx},
@@ -494,7 +494,9 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         arena: &mut Arena<P, U, B>,
         mut map: F,
     ) {
-        arena.clone_from_with(&self.a.a, |p, link| map(p, &link.t.k, &link.t.v));
+        arena
+            .clone_from_with(&self.a.a, |p, link| map(p, &link.t.k, &link.t.v))
+            .unwrap();
     }
 }
 

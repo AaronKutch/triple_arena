@@ -39,17 +39,11 @@ fn clone_from_to_recast() {
     // do not take the variations for granted, some specializations were broken
     // before
     let a0 = std_arena();
-    let a1 = a0.clone();
-    assert_eq!(a0, a1);
-    assert_eq!(a1, a0);
+    let _a1 = a0.clone();
     let mut a1 = Arena::new();
     a0.clone_into(&mut a1);
-    assert_eq!(a0, a1);
-    assert_eq!(a1, a0);
     let mut a1 = Arena::new();
     a1.clone_from(&a0);
-    assert_eq!(a0, a1);
-    assert_eq!(a1, a0);
     let recaster = a1.compress_and_shrink_recaster();
     assert_eq!(recaster.len(), a0.len());
     for (p, q) in recaster {
@@ -57,17 +51,11 @@ fn clone_from_to_recast() {
     }
 
     let a0 = std_chain();
-    let a1 = a0.clone();
-    assert_eq!(a0, a1);
-    assert_eq!(a1, a0);
+    let _a1 = a0.clone();
     let mut a1 = ChainArena::new();
     a0.clone_into(&mut a1);
-    assert_eq!(a0, a1);
-    assert_eq!(a1, a0);
     let mut a1 = ChainArena::new();
     a1.clone_from(&a0);
-    assert_eq!(a0, a1);
-    assert_eq!(a1, a0);
     let recaster = a1.compress_and_shrink_recaster();
     assert_eq!(recaster.len(), a0.len());
     for (p, q) in recaster {
@@ -80,17 +68,11 @@ fn clone_from_to_recast() {
     });
 
     let a0 = std_chain_no_gen();
-    let a1 = a0.clone();
-    assert_eq!(a0, a1);
-    assert_eq!(a1, a0);
+    let _a1 = a0.clone();
     let mut a1 = ChainNoGenArena::new();
     a0.clone_into(&mut a1);
-    assert_eq!(a0, a1);
-    assert_eq!(a1, a0);
     let mut a1 = ChainNoGenArena::new();
     a1.clone_from(&a0);
-    assert_eq!(a0, a1);
-    assert_eq!(a1, a0);
     let recaster = a1.compress_and_shrink_recaster();
     assert_eq!(recaster.len(), a0.len());
     for (p, q) in recaster {

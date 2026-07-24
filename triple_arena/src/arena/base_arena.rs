@@ -1,6 +1,5 @@
 use core::{
     borrow::Borrow,
-    cmp::max,
     fmt, mem,
     num::NonZeroUsize,
     ops::{Index, IndexMut},
@@ -9,7 +8,7 @@ use core::{
 use crate::{
     InvalidationOption, InvalidationResult,
     arena::ArenaBacking,
-    traits::{Advancer, ArenaTrait, Ptr, SetMaxCapacity},
+    traits::{ArenaTrait, Ptr, SetMaxCapacity},
     utils::{
         ptrinx_unchecked,
         traits::{NonZeroInxGenericStack, PtrGen, PtrInx},
@@ -813,75 +812,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         self.freelist_root = None;
     }
 
-    // FIXME there are no default type parameters yet, need to have a separate
-    // function for cloning to arenas with different backing (or maybe use
-    // `ArenaTrait` level source generics?)
-
-    /// Like [Arena::clone_from] except the `Clone` bound is not required
-    /// and `source` can have arbitrary `U`. For every `U`, the `P` pointing to
-    /// that `U` and a reference to itself is passed to `map` to generate
-    /// the corresponding `T` in `self`. Validity is cloned with a `P`
-    /// being able to reference `U` in the `source` arena and `T` in `self`.
-    pub fn clone_from_with<U, F: FnMut(P, &U) -> T>(
-        &mut self,
-        source: &Arena<P, U, B>,
-        mut map: F,
-    ) {
-        // exponential growth mitigation factor, absolutely do not use `self.m.capacity`
-        // in the extra freelist additions
-        let old_virt_cap = self.m.len();
-        self.generation = source.generation;
-        self.len = source.len;
-        // Invariants are temporarily broken, use only methods on `m`.
-        // clearing first makes `self.m.reserve` cheaper by not needing to copy
-        self.m.clear();
-        self.m
-            .reallocate_min_capacity(max(old_virt_cap, source.capacity()))
-            .unwrap();
-        for i in source.nziter() {
-            let new = match source.m.get(i).unwrap() {
-                // copy `source` freelist
-                Free(inx) => Free(*inx),
-                // map `source` allocated
-                Allocated(generation, u) => Allocated(
-                    *generation,
-                    // FIXME bad `try_from_usize` usage
-                    map(
-                        P::_from_raw(P::Inx::try_from_usize(i).unwrap(), *generation),
-                        u,
-                    ),
-                ),
-            };
-            self.m.push_within_capacity(new).ok().unwrap();
-        }
-
-        // Safety: `isize::MAX` guarantee
-        unsafe {
-            for i in self.m.len().wrapping_add(2)..old_virt_cap.wrapping_add(1) {
-                // point to next
-                self.m
-                    .push_within_capacity(Free(ptrinx_unchecked(i)))
-                    .ok()
-                    .unwrap();
-            }
-            if self.m.len() < old_virt_cap {
-                // new root starting at extension of `self.m` beyond `source.m`
-                self.freelist_root = Some(ptrinx_unchecked(source.m.len().wrapping_add(1)));
-                self.m
-                    .push_within_capacity(match source.freelist_root {
-                        // points to old root
-                        Some(inx) => Free(inx),
-                        // points to itself
-                        None => Free(ptrinx_unchecked(self.m.len().wrapping_add(1))),
-                    })
-                    .ok()
-                    .unwrap();
-            } else {
-                self.freelist_root = source.freelist_root;
-            }
-        }
-    }
-
     /// Like [Arena::get], except generation counters are ignored and the
     /// existing generation is returned.
     #[doc(hidden)]
@@ -985,19 +915,10 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for Arena<P, T, B> {
     /// Invalidations will continue independently, so the meaning of the `Ptr`
     /// with respect to the different arenas can diverge.
     fn clone(&self) -> Self {
-        let mut m = B::Stack::new();
-        let _ = m.reallocate_min_capacity(self.m.len());
-        for i in self.nziter() {
-            m.push_within_capacity(self.m.get(i).unwrap().clone())
-                .ok()
-                .unwrap();
-        }
-        Self {
-            len: self.len,
-            m,
-            freelist_root: self.freelist_root,
-            generation: self.generation,
-        }
+        let mut res = Self::new();
+        res.clone_from_with(self, |_, t| t.clone())
+            .expect("failed when cloning arena");
+        res
     }
 
     /// Overwrites `self` (dropping all preexisting `T` and overwriting the
@@ -1005,49 +926,8 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for Arena<P, T, B> {
     /// property of arena cloning, but now the capacity of `self` is reused.
     /// Allocations may happen if the capacity of `self` is not large enough.
     fn clone_from(&mut self, source: &Self) {
-        // exponential growth mitigation factor, absolutely do not use `self.m.capacity`
-        // in the extra freelist additions
-        let old_virt_cap = self.m.len();
-        self.generation = source.generation;
-        self.len = source.len;
-        // Invariants are temporarily broken, use only methods on `m`.
-        // clearing first makes `self.m.reserve` cheaper by not needing to copy
-        self.m.clear();
-        self.m
-            .reallocate_min_capacity(max(old_virt_cap, source.capacity()))
-            .unwrap();
-        for i in source.nziter() {
-            self.m
-                .push_within_capacity(source.m.get(i).unwrap().clone())
-                .ok()
-                .unwrap();
-        }
-
-        // Safety: `isize::MAX` guarantee
-        unsafe {
-            for i in self.m.len().wrapping_add(2)..old_virt_cap.wrapping_add(1) {
-                // point to next
-                self.m
-                    .push_within_capacity(Free(ptrinx_unchecked(i)))
-                    .ok()
-                    .unwrap();
-            }
-            if self.m.len() < old_virt_cap {
-                // new root starting at extension of `self.m` beyond `source.m`
-                self.freelist_root = Some(ptrinx_unchecked(source.m.len().wrapping_add(1)));
-                self.m
-                    .push_within_capacity(match source.freelist_root {
-                        // points to old root
-                        Some(inx) => Free(inx),
-                        // points to itself
-                        None => Free(ptrinx_unchecked(self.m.len().wrapping_add(1))),
-                    })
-                    .ok()
-                    .unwrap();
-            } else {
-                self.freelist_root = source.freelist_root;
-            }
-        }
+        self.clone_from_with(source, |_, t| t.clone())
+            .expect("failed when cloning arena");
     }
 }
 
@@ -1076,30 +956,3 @@ where
         self.m.set_max_capacity(max_capacity)
     }
 }
-
-// FIXME remove this, I don't know of any use case and it can be recreated
-
-impl<P: Ptr, T: PartialEq, B: ArenaBacking> PartialEq<Arena<P, T, B>> for Arena<P, T, B> {
-    /// Checks if all `(P, T)` pairs are equal. This is sensitive to `Ptr`
-    /// indexes and generation counters, but does not compare arena capacities
-    /// or `self.generation()`.
-    fn eq(&self, other: &Arena<P, T, B>) -> bool {
-        let mut adv0 = self.advancer();
-        let mut adv1 = other.advancer();
-        while let Some(p0) = adv0.advance(self) {
-            if let Some(p1) = adv1.advance(other) {
-                if p0 != p1 {
-                    return false;
-                }
-                if self.get_inx_unwrap(p0.inx()) != other.get_inx_unwrap(p1.inx()) {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        }
-        adv1.advance(other).is_none()
-    }
-}
-
-impl<P: Ptr, T: Eq, B: ArenaBacking> Eq for Arena<P, T, B> {}

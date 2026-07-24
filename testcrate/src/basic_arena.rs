@@ -657,7 +657,7 @@ pub fn fuzz<
                     // `a1` and the like are set here, `a` will diverge again
                     0 => {
                         let mut i = 0;
-                        a1.clone_from_with_new(a, |p, u| {
+                        a1.clone_from_with(a, |p, u| {
                             assert_eq!(a.get(p).unwrap().key(), u.key());
                             let (_, t) = cd_gen1.new_cd();
                             i += 1;
@@ -685,7 +685,7 @@ pub fn fuzz<
                         let before = a.capacity();
                         let max_before = a.max_capacity();
                         let mut on_first_call = true;
-                        let res = a.clone_from_with_new(&a1, |p, u| {
+                        let res = a.clone_from_with(&a1, |p, u| {
                             assert_eq!(a1.get(p).unwrap().key(), u.key());
                             if on_first_call {
                                 b.clear();
@@ -847,7 +847,7 @@ pub fn fuzz_multi_arena(
             0..900 => (),
             900..950 => {
                 b0.clear();
-                a0.clone_from_with_new(&a1, |p, u| {
+                a0.clone_from_with(&a1, |p, u| {
                     assert_eq!(a1.get(p).unwrap().key(), u.key());
                     let (k, t) = cd_gen0.new_cd();
                     b0.insert(k, p);
@@ -861,7 +861,7 @@ pub fn fuzz_multi_arena(
             }
             950..1000 => {
                 b1.clear();
-                a1.clone_from_with_new(&a0, |p, u| {
+                a1.clone_from_with(&a0, |p, u| {
                     assert_eq!(a0.get(p).unwrap().key(), u.key());
                     let (k, t) = cd_gen1.new_cd();
                     b1.insert(k, p);

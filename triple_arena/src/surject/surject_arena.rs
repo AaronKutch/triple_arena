@@ -182,7 +182,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     pub fn _check_surjects(this: &Self) -> Result<(), &'static str> {
         // there should be exactly one key chain associated with each val
         let mut count = Arena::<PtrNoGen<P>, usize, B>::new();
-        count.clone_from_with(&this.vals, |_, _| 0);
+        count.clone_from_with(&this.vals, |_, _| 0).unwrap();
         for link in this.keys.vals() {
             match count.get_mut(link.t.p_val) {
                 Some(len) => *len = len.checked_add(1).unwrap(),
@@ -763,13 +763,15 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
                 p_val: Ptr::_from_raw(p.inx(), ()),
             }
         });
-        self.vals.clone_from_with(&source.vals, |_, val| {
-            let v = map_val(val.key_count, &val.v);
-            Val {
-                v,
-                key_count: val.key_count,
-            }
-        });
+        self.vals
+            .clone_from_with(&source.vals, |_, val| {
+                let v = map_val(val.key_count, &val.v);
+                Val {
+                    v,
+                    key_count: val.key_count,
+                }
+            })
+            .unwrap();
     }
 
     /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the

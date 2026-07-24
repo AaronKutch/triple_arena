@@ -75,7 +75,8 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                 .collect(),
             ..Default::default()
         }
-    });
+    })
+    .unwrap();
 
     // We need to unelide nonexistant sinks that have a corresponding source, and
     // vice versa. This also checks for invalid pointers.
@@ -471,7 +472,8 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     ptr_struct!(Q());
     let mut chain_lens = Arena::<Q, usize>::new();
     let mut tmp = Arena::<P, Link<P, Q>>::new();
-    tmp.clone_from_with(&dag, |_, _| Link::new((None, None), chain_lens.insert(0)));
+    tmp.clone_from_with(&dag, |_, _| Link::new((None, None), chain_lens.insert(0)))
+        .unwrap();
     let mut total_ordering = ChainArena::<P, Q>::from_arena(tmp).unwrap();
     while let Some(Reverse((_, p0, p1))) = prioritize.pop() {
         let q0 = *total_ordering.get(p0).unwrap();

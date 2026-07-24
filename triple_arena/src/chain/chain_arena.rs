@@ -859,10 +859,12 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         source: &ChainArena<P, U, B>,
         mut map: F,
     ) {
-        self.a.clone_from_with(&source.a, |p, link| {
-            let t = map(p, link);
-            Link::new(link.prev_next(), t)
-        })
+        self.a
+            .clone_from_with(&source.a, |p, link| {
+                let t = map(p, link);
+                Link::new(link.prev_next(), t)
+            })
+            .unwrap()
     }
 
     /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
@@ -873,7 +875,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         arena: &mut Arena<P, U, B>,
         map: F,
     ) {
-        arena.clone_from_with(&self.a, map);
+        arena.clone_from_with(&self.a, map).unwrap();
     }
 
     /// Like [ChainArena::get], except generation counters are ignored and the
@@ -1032,14 +1034,3 @@ impl<P: Ptr, T, B: ArenaBacking> Default for ChainArena<P, T, B> {
         Self::new()
     }
 }
-
-impl<P: Ptr, T: PartialEq, B: ArenaBacking> PartialEq<ChainArena<P, T, B>> for ChainArena<P, T, B> {
-    /// Checks if all `(P, Link<P, T>)` pairs are equal. This is sensitive to
-    /// `Ptr` indexes and generation counters, but does not compare arena
-    /// capacities or `self.generation()`.
-    fn eq(&self, other: &ChainArena<P, T, B>) -> bool {
-        self.a == other.a
-    }
-}
-
-impl<P: Ptr, T: Eq, B: ArenaBacking> Eq for ChainArena<P, T, B> {}

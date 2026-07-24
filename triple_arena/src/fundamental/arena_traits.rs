@@ -433,11 +433,7 @@ pub trait ArenaTrait<P: Ptr, T>: Sized + IntoIterator<Item = (P, T)> {
     /// infallible. Does _not_ clone max capacity limits, and will fail if any
     /// set limit on `self` is exceeded. Returns an error upon reallocation
     /// failure.
-    fn clone_from_with_new<
-        U,
-        A: ArenaTrait<P, U> + SingularGenerationArena<P>,
-        F: FnMut(P, &U) -> T,
-    >(
+    fn clone_from_with<U, A: ArenaTrait<P, U> + SingularGenerationArena<P>, F: FnMut(P, &U) -> T>(
         &mut self,
         source: &A,
         map: F,

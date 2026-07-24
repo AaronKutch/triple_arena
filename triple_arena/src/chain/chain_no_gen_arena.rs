@@ -853,10 +853,12 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         source: &ChainNoGenArena<P, U, B>,
         mut map: F,
     ) {
-        self.a.clone_from_with(&source.a, |p, link| {
-            let t = map(p, link);
-            LinkNoGen::new(link.prev_next(), t)
-        })
+        self.a
+            .clone_from_with(&source.a, |p, link| {
+                let t = map(p, link);
+                LinkNoGen::new(link.prev_next(), t)
+            })
+            .unwrap()
     }
 
     /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
@@ -867,21 +869,24 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         chain_arena: &mut ChainArena<P, U, B>,
         mut map: F,
     ) {
-        chain_arena.a.clone_from_with(&self.a, |p, link| {
-            let prev = if let Some(prev) = link.prev() {
-                let (generation, _) = self.a.get_no_gen(prev).unwrap();
-                Some(Ptr::_from_raw(prev, generation))
-            } else {
-                None
-            };
-            let next = if let Some(next) = link.next() {
-                let (generation, _) = self.a.get_no_gen(next).unwrap();
-                Some(Ptr::_from_raw(next, generation))
-            } else {
-                None
-            };
-            Link::new((prev, next), map(p, &link.t))
-        });
+        chain_arena
+            .a
+            .clone_from_with(&self.a, |p, link| {
+                let prev = if let Some(prev) = link.prev() {
+                    let (generation, _) = self.a.get_no_gen(prev).unwrap();
+                    Some(Ptr::_from_raw(prev, generation))
+                } else {
+                    None
+                };
+                let next = if let Some(next) = link.next() {
+                    let (generation, _) = self.a.get_no_gen(next).unwrap();
+                    Some(Ptr::_from_raw(next, generation))
+                } else {
+                    None
+                };
+                Link::new((prev, next), map(p, &link.t))
+            })
+            .unwrap();
     }
 
     /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
@@ -892,7 +897,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         arena: &mut Arena<P, U, B>,
         map: F,
     ) {
-        arena.clone_from_with(&self.a, map);
+        arena.clone_from_with(&self.a, map).unwrap();
     }
 
     /// Like [ChainNoGenArena::get], except generation counters are ignored and
@@ -1051,16 +1056,3 @@ impl<P: Ptr, T, B: ArenaBacking> Default for ChainNoGenArena<P, T, B> {
         Self::new()
     }
 }
-
-impl<P: Ptr, T: PartialEq, B: ArenaBacking> PartialEq<ChainNoGenArena<P, T, B>>
-    for ChainNoGenArena<P, T, B>
-{
-    /// Checks if all `(P, LinkNoGen<P, T>)` pairs are equal. This is sensitive
-    /// to `Ptr` indexes and generation counters, but does not compare arena
-    /// capacities or `self.generation()`.
-    fn eq(&self, other: &ChainNoGenArena<P, T, B>) -> bool {
-        self.a == other.a
-    }
-}
-
-impl<P: Ptr, T: Eq, B: ArenaBacking> Eq for ChainNoGenArena<P, T, B> {}

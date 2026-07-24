@@ -181,7 +181,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         }
     }
 
-    fn clone_from_with_new<
+    fn clone_from_with<
         U,
         A: ArenaTrait<P, U> + SingularGenerationArena<P>,
         F: FnMut(P, &U) -> T,
