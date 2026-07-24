@@ -39,18 +39,18 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
     pub const LIMIT: usize = 7;
 
     fn inner(meta: &mut Meta<nonzero_inx_generic_stack::Stats>) -> Result<(), StackedError> {
-        meta.reset(
+        meta.test(
             nonzero_inx_generic_stack::Stats {
                 test_limit: LIMIT,
                 fixed_cap: Some(LIMIT),
                 n: N,
                 iters999: Some(ITERS999),
+                cd_gen: CdGen::new(),
             },
             |meta| {
                 nonzero_inx_generic_stack::fuzz(
                     meta,
-                    &mut CdGen::new(),
-                    NonZeroInxArray::<_, { LIMIT }>::new(),
+                    &mut NonZeroInxArray::<_, { LIMIT }>::new(),
                     None,
                 )
             },
@@ -59,53 +59,53 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
 
         let mut a = NonZeroInxLimitedVec::new();
         a.set_max_capacity(LIMIT).unwrap();
-        meta.reset(
+        meta.test(
             nonzero_inx_generic_stack::Stats {
                 test_limit: LIMIT,
                 fixed_cap: None,
                 n: N,
                 iters999: None,
+                cd_gen: CdGen::new(),
             },
             |meta| {
                 nonzero_inx_generic_stack::fuzz(
                     meta,
-                    &mut CdGen::new(),
-                    a,
+                    &mut a,
                     Some(|a, max_capacity| a.set_max_capacity(max_capacity)),
                 )
             },
         )
         .stack()?;
 
-        meta.reset(
+        meta.test(
             nonzero_inx_generic_stack::Stats {
                 test_limit: LIMIT,
                 fixed_cap: None,
                 n: N,
                 iters999: None,
+                cd_gen: CdGen::new(),
             },
-            |meta| {
-                nonzero_inx_generic_stack::fuzz(meta, &mut CdGen::new(), NonZeroInxVec::new(), None)
-            },
+            |meta| nonzero_inx_generic_stack::fuzz(meta, &mut NonZeroInxVec::new(), None),
         )
         .stack()?;
 
-        let a = NonZeroInxBoxedSlice::with_min_capacity(LIMIT).stack()?;
+        let mut a = NonZeroInxBoxedSlice::with_min_capacity(LIMIT).stack()?;
         let stats = nonzero_inx_generic_stack::Stats {
             test_limit: LIMIT,
             fixed_cap: Some(a.capacity()),
             n: N,
             iters999: None,
+            cd_gen: CdGen::new(),
         };
-        meta.reset(stats, |meta| {
-            nonzero_inx_generic_stack::fuzz(meta, &mut CdGen::new(), a, None)
+        meta.test(stats, |meta| {
+            nonzero_inx_generic_stack::fuzz(meta, &mut a, None)
         })
         .stack()?;
 
         Ok(())
     }
 
-    if let Err(e) = inner(&mut meta).stack_err(meta) {
+    if let Err(e) = inner(&mut meta).stack_err(format!("{meta:#?}")) {
         Err(e)
     } else {
         Ok(())
@@ -114,7 +114,7 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
 
 #[test]
 fn fuzz_basic_arena() -> Result<(), StackedError> {
-    let mut meta = Meta::new(1);
+    let mut meta = Meta::new(7);
 
     const N: usize = if cfg!(miri) {
         10_000
@@ -143,19 +143,19 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
     }
 
     fn inner(meta: &mut Meta<basic_arena::Stats>) -> Result<(), StackedError> {
-        meta.reset(
+        meta.test(
             basic_arena::Stats {
                 test_limit: LIMIT,
                 fixed_cap: Some(LIMIT),
                 n: N,
                 iters999: Some(ITERS999),
+                cd_gen: CdGen::new(),
+                cd_gen1: CdGen::new(),
             },
             |meta| {
                 basic_arena::fuzz(
                     meta,
-                    &mut CdGen::new(),
-                    &mut CdGen::new(),
-                    Arena::<P2, Cd<()>, StackBacking<LIMIT>>::new(),
+                    &mut Arena::<P2, Cd<()>, StackBacking<LIMIT>>::new(),
                     check_arena,
                     None,
                 )
@@ -165,19 +165,19 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
 
         let mut a = Arena::<P2, Cd<()>, LimitedHeapBacking>::new();
         a.set_max_capacity(LIMIT).stack()?;
-        meta.reset(
+        meta.test(
             basic_arena::Stats {
                 test_limit: LIMIT,
                 fixed_cap: None,
                 n: N,
                 iters999: None,
+                cd_gen: CdGen::new(),
+                cd_gen1: CdGen::new(),
             },
             |meta| {
                 basic_arena::fuzz(
                     meta,
-                    &mut CdGen::new(),
-                    &mut CdGen::new(),
-                    a,
+                    &mut a,
                     check_arena,
                     Some(|a, max_capacity| a.set_max_capacity(max_capacity)),
                 )
@@ -185,19 +185,19 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
         )
         .stack()?;
 
-        meta.reset(
+        meta.test(
             basic_arena::Stats {
                 test_limit: LIMIT,
                 fixed_cap: None,
                 n: N,
                 iters999: None,
+                cd_gen: CdGen::new(),
+                cd_gen1: CdGen::new(),
             },
             |meta| {
                 basic_arena::fuzz(
                     meta,
-                    &mut CdGen::new(),
-                    &mut CdGen::new(),
-                    Arena::<P2, Cd<()>, HeapBacking>::new(),
+                    &mut Arena::<P2, Cd<()>, HeapBacking>::new(),
                     check_arena,
                     None,
                 )
@@ -205,29 +205,24 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
         )
         .stack()?;
 
-        let a = Arena::<P2, Cd<()>, FixedHeapBacking>::with_min_capacity(LIMIT).stack()?;
+        let mut a = Arena::<P2, Cd<()>, FixedHeapBacking>::with_min_capacity(LIMIT).stack()?;
         let stats = basic_arena::Stats {
             test_limit: LIMIT,
             fixed_cap: Some(ArenaTrait::capacity(&a)), // FIXME
             n: N,
             iters999: None,
+            cd_gen: CdGen::new(),
+            cd_gen1: CdGen::new(),
         };
-        meta.reset(stats, |meta| {
-            basic_arena::fuzz(
-                meta,
-                &mut CdGen::new(),
-                &mut CdGen::new(),
-                a,
-                check_arena,
-                None,
-            )
+        meta.test(stats, |meta| {
+            basic_arena::fuzz(meta, &mut a, check_arena, None)
         })
         .stack()?;
 
         Ok(())
     }
 
-    if let Err(e) = inner(&mut meta).stack_err(meta) {
+    if let Err(e) = inner(&mut meta).stack_err(format!("{meta:#?}")) {
         Err(e)
     } else {
         Ok(())

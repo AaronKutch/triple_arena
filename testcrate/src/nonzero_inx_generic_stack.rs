@@ -7,7 +7,7 @@ use triple_arena::{
 };
 
 use crate::{
-    cdgen::{Cd, CdGen, Ck},
+    cdgen::{Cd, CdGen, Ck, TryDrop},
     misc::Meta,
 };
 
@@ -20,6 +20,13 @@ pub struct Stats {
     pub fixed_cap: Option<usize>,
     pub n: usize,
     pub iters999: Option<usize>,
+    pub cd_gen: CdGen<()>,
+}
+
+impl TryDrop for Stats {
+    fn try_drop(self) -> Result<(), StackedError> {
+        self.cd_gen.try_drop()
+    }
 }
 
 // The `CdGen` is passed in, because otherwise it can be dropped upon returning
@@ -33,14 +40,13 @@ pub struct Stats {
 /// types, ignore otherwise
 pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
     meta: &mut Meta<Stats>,
-    cd_gen: &mut CdGen<()>,
-    mut a: S,
+    mut a: &mut S,
     // set iff `SetMaxCapacity` is implemented
     mut set_max_capacity: Option<fn(&mut S, usize) -> Result<(), MaxCapacityReductionError>>,
 ) -> Result<(), StackedError> {
     let rng = &mut meta.rng;
     let stats = meta.stats.as_mut().stack()?;
-    ensure!(cd_gen.is_empty());
+    let cd_gen = &mut stats.cd_gen;
 
     // reference
     let mut b: Vec<Ck<()>> = vec![];
@@ -308,7 +314,7 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                 );
 
                 let min_capacity = rng.index_inclusive(stats.test_limit);
-                a = S::with_min_capacity(min_capacity).stack()?;
+                *a = S::with_min_capacity(min_capacity).stack()?;
                 ensure!(a.capacity() >= min_capacity);
                 if stats.fixed_cap.is_some() {
                     stats.fixed_cap = Some(a.capacity());

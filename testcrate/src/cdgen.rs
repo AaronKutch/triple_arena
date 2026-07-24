@@ -1,7 +1,12 @@
 use core::fmt;
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData, num::NonZeroU64, rc::Rc};
 
+use stacked_errors::StackedError;
 use star_rng::StarRng;
+
+pub trait TryDrop {
+    fn try_drop(self) -> Result<(), StackedError>;
+}
 
 // `CdGen<D>` could have potentially also been a combined random access list and
 // map type that many tests use such that the `D` is what is mapped to, but
@@ -50,6 +55,8 @@ struct Inner<D: Copy> {
     slots: Vec<(NonZeroU64, Option<D>)>,
     // unused indexes
     freelist: Vec<usize>,
+    // prevent panic on drop if manually handled
+    drop_handled: bool,
 }
 
 /// When this drops, this panics if not all [Cd]s have been dropped. Dhe `D`
@@ -60,13 +67,23 @@ pub struct CdGen<D: Copy + Default> {
 
 impl<D: Copy + Default> Drop for CdGen<D> {
     fn drop(&mut self) {
-        let inner = &mut self.inner.borrow_mut();
-        if inner.freelist.len() != inner.slots.len() && !std::thread::panicking() {
-            panic!(
-                "A CdGen test struct generator has been dropped without all of its generated \
-                 `Cd`s being dropped first"
-            );
+        if !self.inner.borrow().drop_handled
+            && let Err(e) = self.internal_drop()
+        {
+            panic!("{e}");
         }
+    }
+}
+
+impl<D: Copy + Default> TryDrop for CdGen<D> {
+    fn try_drop(mut self) -> Result<(), StackedError> {
+        self.internal_drop().map_err(|e| StackedError::from_err(e))
+    }
+}
+
+impl<D: Copy + Default> fmt::Debug for CdGen<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CdGen").finish()
     }
 }
 
@@ -77,6 +94,7 @@ impl<D: Copy + Default> CdGen<D> {
                 counter: NonZeroU64::new(2).unwrap(),
                 slots: vec![],
                 freelist: vec![],
+                drop_handled: false,
             })),
         }
     }
@@ -109,6 +127,19 @@ impl<D: Copy + Default> CdGen<D> {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    fn internal_drop(&mut self) -> Result<(), &'static str> {
+        let inner = &mut self.inner.borrow_mut();
+        if inner.freelist.len() != inner.slots.len() && !std::thread::panicking() {
+            inner.drop_handled = true;
+            Err(
+                "A CdGen test struct generator has been dropped without all of its generated \
+                 `Cd`s being dropped first",
+            )
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -156,6 +187,7 @@ impl<D: Copy> Drop for Cd<D> {
 }
 
 /// Used for recording a set of `Ck`s and O(1) random selection
+#[derive(Debug)]
 pub struct CkMap<D: Copy, T> {
     map: HashMap<Ck<D>, T>,
     list: Vec<Ck<D>>,

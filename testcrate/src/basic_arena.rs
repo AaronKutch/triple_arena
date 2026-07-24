@@ -11,7 +11,7 @@ use triple_arena::{
 
 use crate::{
     P2, TestGen,
-    cdgen::{Cd, CdGen, CkMap},
+    cdgen::{Cd, CdGen, CkMap, TryDrop},
     misc::{D1, Meta},
 };
 
@@ -24,6 +24,15 @@ pub struct Stats {
     pub fixed_cap: Option<usize>,
     pub n: usize,
     pub iters999: Option<usize>,
+    pub cd_gen: CdGen<()>,
+    pub cd_gen1: CdGen<D1>,
+}
+
+impl TryDrop for Stats {
+    fn try_drop(self) -> Result<(), StackedError> {
+        self.cd_gen.try_drop().stack()?;
+        self.cd_gen1.try_drop()
+    }
 }
 
 /// Use the [LIMIT] for fixed length types and as the limit for settable limit
@@ -33,17 +42,15 @@ pub fn fuzz<
     A: ArenaTrait<P, Cd<()>> + ArenaInsertTrait<P, Cd<()>> + SingularGenerationArena<P>,
 >(
     meta: &mut Meta<Stats>,
-    cd_gen: &mut CdGen<()>,
-    cd_gen1: &mut CdGen<D1>,
-    mut a: A,
+    mut a: &mut A,
     mut check_invariants: impl FnMut(&mut A) -> Result<(), StackedError>,
     // set iff `SetMaxCapacity` is implemented
     mut set_max_capacity: Option<fn(&mut A, usize) -> Result<(), MaxCapacityReductionError>>,
 ) -> Result<(), StackedError> {
     let rng = &mut meta.rng;
     let stats = meta.stats.as_mut().stack()?;
-    ensure!(cd_gen.is_empty());
-    ensure!(cd_gen1.is_empty());
+    let cd_gen = &mut stats.cd_gen;
+    let cd_gen1 = &mut stats.cd_gen1;
 
     // reference
     let mut b = CkMap::<(), P>::new();
@@ -644,7 +651,7 @@ pub fn fuzz<
                     0 => {
                         let mut i = 0;
                         b1.clear();
-                        a1.clone_from_with_new(&a, |p, u| {
+                        a1.clone_from_with_new(a, |p, u| {
                             assert_eq!(a.get(p).unwrap().key(), u.key());
                             let (k, t) = cd_gen1.new_cd();
                             b1.insert(k, p);
@@ -733,7 +740,7 @@ pub fn fuzz<
                 );
 
                 let min_capacity = rng.index_inclusive(stats.test_limit);
-                a = A::with_min_capacity(min_capacity).stack()?;
+                *a = A::with_min_capacity(min_capacity).stack()?;
                 ensure!(a.capacity() >= min_capacity);
                 if stats.fixed_cap.is_some() {
                     stats.fixed_cap = Some(a.capacity());
