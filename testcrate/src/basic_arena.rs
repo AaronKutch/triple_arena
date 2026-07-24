@@ -79,12 +79,12 @@ pub fn fuzz<
         match rng.index(16).unwrap() {
             0 => return P::invalid(),
             1..4 => {
-                if let Some(p) = arena.find_inx_first_ptr() {
+                if let Some(p) = arena.find_first_inx_ptr() {
                     return P::_from_raw(p.inx(), P::Gen::generational_inc(p.generation()).0);
                 }
             }
             4..8 => {
-                if let Some(p) = arena.find_inx_first_ptr() {
+                if let Some(p) = arena.find_first_inx_ptr() {
                     return P::_from_raw(p.inx(), P::Gen::one());
                 }
             }
@@ -163,7 +163,7 @@ pub fn fuzz<
                             // does not change
                         } else {
                             // follows a tight bound to the last element
-                            let succeeds = if let Some(last) = a.find_inx_last_ptr() {
+                            let succeeds = if let Some(last) = a.find_last_inx_ptr() {
                                 P::Inx::try_into_usize(last.inx()).unwrap().get() <= next
                             } else {
                                 true
@@ -513,15 +513,15 @@ pub fn fuzz<
                 b_capacity = a.capacity();
             }
             910..920 => {
-                // ptrs, ordered_advancer, find_inx_last_ptr, find_inx_first_ptr
+                // ptrs, ordered_advancer, find_last_inx_ptr, find_first_inx_ptr
                 let ptrs: Vec<P> = a.ptrs().collect();
                 ensure_eq!(len, ptrs.len());
                 if len > 0 {
-                    ensure_eq!(a.find_inx_first_ptr().stack()?, *ptrs.first().stack()?);
-                    ensure_eq!(a.find_inx_last_ptr().stack()?, *ptrs.last().stack()?);
+                    ensure_eq!(a.find_first_inx_ptr().stack()?, *ptrs.first().stack()?);
+                    ensure_eq!(a.find_last_inx_ptr().stack()?, *ptrs.last().stack()?);
                 } else {
-                    ensure!(a.find_inx_first_ptr().is_none());
-                    ensure!(a.find_inx_last_ptr().is_none());
+                    ensure!(a.find_first_inx_ptr().is_none());
+                    ensure!(a.find_last_inx_ptr().is_none());
                 }
                 if let Some(mut i) = rng.index(ptrs.len()) {
                     let rev = rng.next_bool();
@@ -618,7 +618,7 @@ pub fn fuzz<
                 }
                 if len > 0 {
                     ensure_eq!(
-                        P::Inx::try_into_usize(a.find_inx_last_ptr().stack()?.inx())
+                        P::Inx::try_into_usize(a.find_last_inx_ptr().stack()?.inx())
                             .unwrap()
                             .get(),
                         a.len()
@@ -642,7 +642,7 @@ pub fn fuzz<
                 }
                 if len > 0 {
                     ensure_eq!(
-                        P::Inx::try_into_usize(a.find_inx_last_ptr().stack()?.inx())
+                        P::Inx::try_into_usize(a.find_last_inx_ptr().stack()?.inx())
                             .unwrap()
                             .get(),
                         a.len()
@@ -680,8 +680,6 @@ pub fn fuzz<
                             for _ in 0..stats.test_limit {
                                 a1.insert(cd_gen1.new_cd().1);
                             }
-
-                            // FIXME rename find_inx_last_ptr etc
                         }
 
                         let before = a.capacity();
@@ -698,7 +696,7 @@ pub fn fuzz<
                             t
                         });
                         if let Some(max) = max_before
-                            && let Some(last) = a1.find_inx_last_ptr()
+                            && let Some(last) = a1.find_last_inx_ptr()
                             && P::Inx::try_into_usize(last.inx()).unwrap().get() > max
                         {
                             ensure!(on_first_call);

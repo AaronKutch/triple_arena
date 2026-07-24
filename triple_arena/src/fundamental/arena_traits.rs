@@ -20,7 +20,7 @@ Originally there were complementary `replace_and_update_gen` and `replace_and_ke
 
 The defaulted iterator designs mean that concrete associated types can't be used, but the advancer can do anything so we just have it as the associated type
 
-`find_inx_first_ptr` and `find_inx_last_ptr` are weird from a more pure perspective, but they have a bunch of miscellanious uses in helping generics and in finding things like the last element's index etc. I termed them with "index first" and "index last" to avoid confusion with the orderings in more complicated arenas. On all nonlinear arenas I am aware of, it is still possible to have an ordering that corresponds to advancer ordering.
+`find_first_inx_ptr` and `find_last_inx_ptr` are weird from a more pure perspective, but they have a bunch of miscellanious uses in helping generics and in finding things like the last element's index etc. On all nonlinear arenas I am aware of, it is still possible to have an ordering that corresponds to advancer ordering.
 
 We can almost avoid "entry" style function and structs, except that some downstream uses simply must know the `Ptr` slot that they will be inserted into, and not only that but they need to be able to cancel the insertion if some internal contruction using that `Ptr` also goes wrong, and also there is the case where `T` has to be specially constructed and users want to only do so once it is known an entry is guaranteed. We decide to have "entry_insert*" functions and multiply them in parallel with the other insert functions. The other potential way to have done it is some "next_insertion_ptr" function (which might be added in parallel for other reasons, note that you have to be careful for randomly generated `Ptr` designs), however the entry style promotes better typing and reduces broken intermediate changes, also the signature is technically more optimized for the fallible cases.
 
@@ -297,11 +297,11 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
 
     /// Finds the index-first valid `Ptr` in terms of the `P::Inx` ordering, be
     /// aware that this can be an `O(n)` operation on some implementations
-    fn find_inx_first_ptr(&self) -> Option<P>;
+    fn find_first_inx_ptr(&self) -> Option<P>;
 
     /// Finds the index-last valid `Ptr` in terms of the `P::Inx` ordering, be
     /// aware that this can be an `O(n)` operation on some implementations
-    fn find_inx_last_ptr(&self) -> Option<P>;
+    fn find_last_inx_ptr(&self) -> Option<P>;
 
     /// Advances over every valid `Ptr` in `self` starting from the first.
     ///
@@ -310,7 +310,7 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// during the loop. The `Ptr`s of insertions that occur during the loop
     /// can both be witnessed or not witnessed before the loop terminates.
     fn advancer(&self) -> Self::PtrAdvancer {
-        if let Some(first) = self.find_inx_first_ptr() {
+        if let Some(first) = self.find_first_inx_ptr() {
             self.ordered_advancer(first.inx(), false)
         } else {
             Self::PtrAdvancer::empty()
@@ -422,7 +422,7 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// precisely the valid `Ptr` to its mapped `T`. Reallocation occurs if
     /// the capacity of `self` is not large enough. With simple arenas and
     /// indexes, if the `P::Inx` from the highest index is such that
-    /// `source.find_inx_last_ptr().unwrap().inx().get() <= self.capacity()`,
+    /// `source.find_last_inx_ptr().unwrap().inx().get() <= self.capacity()`,
     /// this is guaranteed to _not_ reallocate and the function is
     /// infallible. Does _not_ clone max capacity limits, and will fail if any
     /// set limit on `self` is exceeded. Returns an error upon reallocation

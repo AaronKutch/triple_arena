@@ -103,7 +103,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         }
     }
 
-    fn find_inx_first_ptr(&self) -> Option<P> {
+    fn find_first_inx_ptr(&self) -> Option<P> {
         for inx in self.nziter() {
             if let Allocated(generation, _) = self.m.get(inx).unwrap() {
                 return Some(P::_from_raw(Self::from_checked(inx), *generation));
@@ -112,7 +112,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         None
     }
 
-    fn find_inx_last_ptr(&self) -> Option<P> {
+    fn find_last_inx_ptr(&self) -> Option<P> {
         for inx in self.nziter().into_iter().rev() {
             if let Allocated(generation, _) = self.m.get(inx).unwrap() {
                 return Some(P::_from_raw(Self::from_checked(inx), *generation));
@@ -177,7 +177,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         source: &A,
         mut map: F,
     ) -> Result<(), ReallocationError> {
-        let Some(last) = source.find_inx_last_ptr() else {
+        let Some(last) = source.find_last_inx_ptr() else {
             // no entries
 
             // same as `clear` but the generation is copied over
