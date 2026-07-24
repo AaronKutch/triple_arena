@@ -394,7 +394,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug, B
     OrdArena<P, K, V, B>
 {
     pub fn _debug_arena(&self) -> crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>), B> {
-        use crate::utils::traits::PtrGen;
+        use crate::{traits::ArenaTrait, utils::traits::PtrGen};
 
         let mut res: crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>), B> =
             crate::Arena::new();

@@ -7,7 +7,7 @@ use std::{
 
 use triple_arena::{
     Arena, ChainArena, Link, OrdArena, ptr_struct,
-    traits::{Advancer, Ptr},
+    traits::{Advancer, ArenaTrait, Ptr},
 };
 
 use crate::{DebugNodeTrait, RenderError, render_grid::RenderGrid};

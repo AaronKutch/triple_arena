@@ -4,7 +4,7 @@ use recasting::{Recast, Recaster};
 
 use crate::{
     OrdArena,
-    traits::{Advancer, Ptr},
+    traits::{Advancer, ArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 

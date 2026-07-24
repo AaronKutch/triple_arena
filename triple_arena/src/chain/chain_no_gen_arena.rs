@@ -8,7 +8,9 @@ use core::{
 };
 
 use crate::{
-    Arena, ChainArena, Link, traits::{Advancer, ArenaTrait, Ptr}, utils::traits::ArenaBacking,
+    Arena, ChainArena, Link,
+    traits::{Advancer, ArenaTrait, Ptr},
+    utils::traits::ArenaBacking,
 };
 
 /// The same as [crate::Link] except that the interlinks do not have a

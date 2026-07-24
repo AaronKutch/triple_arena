@@ -7,7 +7,7 @@ use rand_xoshiro::{
     rand_core::{Rng, SeedableRng},
 };
 use testcrate::*;
-use triple_arena::Arena;
+use triple_arena::{Arena, traits::ArenaTrait};
 use triple_arena_render::*;
 
 fn main() {

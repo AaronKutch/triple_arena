@@ -378,17 +378,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    /// Creates a new arena of type `T`, which are pointed to by `P`s. The arena
-    /// will not allocate until elements are inserted.
-    pub fn new() -> Self {
-        Self {
-            len: 0,
-            m: B::Stack::new(),
-            freelist_root: None,
-            generation: PtrGen::two(),
-        }
-    }
-
     /// [Arena::new] but with the initial capacity set to at least `capacity`
     pub fn with_capacity(capacity: usize) -> Self {
         let mut res = Self::new();

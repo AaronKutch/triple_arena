@@ -9,7 +9,7 @@ use std::{collections::BTreeMap, hint::black_box};
 use rand_xoshiro::{Xoshiro128StarStar, rand_core::SeedableRng};
 use test::Bencher;
 use testcrate::{A, P1, fuzz_fill_inst_bench, get_next_seed};
-use triple_arena::{Arena, OrdArena};
+use triple_arena::{Arena, OrdArena, traits::ArenaTrait};
 
 fn get_std_bench_insts(seed: u64) -> Vec<Result<(u128, u128), usize>> {
     let mut rng = Xoshiro128StarStar::seed_from_u64(seed);

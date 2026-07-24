@@ -9,7 +9,12 @@ use serde::{
 };
 
 use crate::{
-    Arena, ChainArena, Link, OrdArena, SurjectArena, arena::InternalSlot, ord::Node, surject::{Key, Val}, traits::{ Ptr}, utils::{
+    Arena, ChainArena, Link, OrdArena, SurjectArena,
+    arena::InternalSlot,
+    ord::Node,
+    surject::{Key, Val},
+    traits::{ArenaTrait, Ptr},
+    utils::{
         ChainNoGenArena, LinkNoGen, PtrNoGen,
         traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen, PtrInx},
     },
@@ -169,14 +174,13 @@ where
                 for _ in 0..to_add {
                     // the freelist is fixed later
 
-                    a.m.push_reallocating(InternalSlot::Free(
-                        P::invalid().inx(),
-                    ))
-                    .map_err(|_| {
-                        Error::custom(
-                            "when deserializing a `triple_arena` arena, ran into allocation error",
-                        )
-                    })?;
+                    a.m.push_reallocating(InternalSlot::Free(P::invalid().inx()))
+                        .map_err(|_| {
+                            Error::custom(
+                                "when deserializing a `triple_arena` arena, ran into allocation \
+                                 error",
+                            )
+                        })?;
                 }
             }
             let entry = a.m_get_mut(p).unwrap();

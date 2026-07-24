@@ -8,7 +8,7 @@ use recasting::{Recast, Recaster};
 use crate::{
     Arena,
     arena::{ArenaBacking, InternalSlot},
-    traits::{Advancer, Ptr},
+    traits::{Advancer, ArenaTrait, Ptr},
     utils::traits::{NonZeroInxGenericStack, PtrInx},
 };
 
