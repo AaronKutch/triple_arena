@@ -639,13 +639,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         self.vals.clear().allow();
     }
 
-    /// Performs a [SurjectArena::clear] and resets key and value capacities to
-    /// 0
-    pub fn clear_and_shrink(&mut self) {
-        self.keys.clear_and_shrink();
-        self.vals.clear_and_shrink();
-    }
-
     /// Compresses the arena by moving around entries to be able to shrink the
     /// capacities of the keys and values down to their respective lengths. All
     /// surject relations remain, but all `Ptr`s are invalidated. New `Ptr`s

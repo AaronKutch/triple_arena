@@ -697,11 +697,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         self.a.clear().allow()
     }
 
-    /// Performs a [ChainNoGenArena::clear] and resets capacity to 0
-    pub fn clear_and_shrink(&mut self) {
-        self.a.clear_and_shrink()
-    }
-
     /// Compresses the arena by moving around entries to be able to shrink the
     /// capacity down to the length. All links and link prev-next relations
     /// remain, but all `Ptr`s and interlinks are invalidated. New `Ptr`s to

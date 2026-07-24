@@ -39,7 +39,7 @@ fn fuzz_chain_no_gen() {
     let invalid = a.insert_new(u64::MAX);
     a.remove(invalid).unwrap();
     generation += 1;
-    a.clear_and_shrink();
+    a.clear();
     generation += 1;
     let mut op_inx;
     let mut max_len = 0;
@@ -825,8 +825,7 @@ fn fuzz_chain_no_gen() {
             }
             999 => {
                 // clear_and_shrink
-                a.clear_and_shrink();
-                assert_eq!(a.capacity(), 0);
+                a.clear();
                 b.clear();
                 generation += 1;
                 list.clear();

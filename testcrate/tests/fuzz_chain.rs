@@ -36,7 +36,7 @@ fn fuzz_chain() {
     let invalid = a.insert_new(u64::MAX);
     a.remove(invalid).unwrap();
     generation += 1;
-    a.clear_and_shrink();
+    a.clear();
     #[allow(unused)]
     let mut op_inx = 0;
     // makes sure there is not some problem with the test harness itself or
@@ -823,8 +823,7 @@ fn fuzz_chain() {
                 if !a.is_empty() {
                     generation += 1;
                 }
-                a.clear_and_shrink();
-                assert_eq!(a.capacity(), 0);
+                a.clear();
                 b.clear();
                 list.clear();
             }

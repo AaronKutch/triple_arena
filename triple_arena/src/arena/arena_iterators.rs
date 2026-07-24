@@ -312,12 +312,13 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         Drain { arena: self, adv }
     }
 
-    /// Performs [Arena::compress_and_shrink] and returns an `Arena<P, P>` that
+    /// Performs [Arena::compress] and returns an `Arena<P, P>` that
     /// can be used for [Recast]ing
-    pub fn compress_and_shrink_recaster(&mut self) -> Arena<P, P, B> {
+    pub fn compress_recaster(&mut self) -> Arena<P, P, B> {
         let mut res = Arena::<P, P, B>::new();
         res.clone_from_with(self, |_, _| P::invalid()).unwrap();
-        self.compress_and_shrink_with(|p, _, q| *res.get_mut(p).unwrap() = q);
+        self.compress_with(|p, _, q| *res.get_mut(p).unwrap() = q)
+            .allow();
         res
     }
 }

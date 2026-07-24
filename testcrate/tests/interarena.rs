@@ -44,7 +44,7 @@ fn clone_from_to_recast() {
     a0.clone_into(&mut a1);
     let mut a1 = Arena::new();
     a1.clone_from(&a0);
-    let recaster = a1.compress_and_shrink_recaster();
+    let recaster = a1.compress_recaster();
     assert_eq!(recaster.len(), a0.len());
     for (p, q) in recaster {
         assert_eq!(a0.get(p).unwrap(), a1.get(q).unwrap());

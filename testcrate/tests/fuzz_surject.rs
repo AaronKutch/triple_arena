@@ -62,7 +62,7 @@ fn fuzz_surject() {
     let invalid = a.insert(Key::MAX, Val { v: u64::MAX });
     a.remove_key(invalid).unwrap();
     generation += 1;
-    a.clear_and_shrink();
+    a.clear();
     generation += 1;
     let mut op_inx;
     let mut max_key_len = 0;
@@ -623,9 +623,7 @@ fn fuzz_surject() {
             }
             999 => {
                 // clear_and_shrink
-                a.clear_and_shrink();
-                assert_eq!(a.capacity_keys(), 0);
-                assert_eq!(a.capacity_vals(), 0);
+                a.clear();
                 b.clear();
                 generation += 1;
                 list.clear();

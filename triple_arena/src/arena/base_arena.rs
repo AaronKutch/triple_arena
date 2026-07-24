@@ -673,14 +673,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    // FIXME remove
-
-    /// Performs an [Arena::clear] and resets capacity to 0
-    pub fn clear_and_shrink(&mut self) {
-        self.clear().allow();
-        self.reallocate_min_capacity(0).unwrap();
-    }
-
     /// This is currently only used by `SurjectArena::compress_and_shrink_with`
     /// in a way that avoids a broken freelist.
     pub(crate) fn raw_entry_swap_special(&mut self, i0: NonZeroUsize, i1: NonZeroUsize) {
@@ -688,49 +680,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             let [entry0, entry1] = self.m.get_disjoint_mut([i0, i1]).unwrap();
             mem::swap(entry0, entry1);
         }
-    }
-
-    /// Compresses the arena by moving around entries to be able to shrink the
-    /// capacity down to the length. All entries remain, but all `Ptr`s are
-    /// invalidated. New `Ptr`s to the entries can be found again by iterators
-    /// and advancers.
-    pub fn compress_and_shrink(&mut self) {
-        self.compress_and_shrink_with(|_, _, _| ())
-    }
-
-    /// The same as [Arena::compress_and_shrink] except that `map` is run on
-    /// `(P, &mut T, P)`, with the first `P` being the old `Ptr` and the last
-    /// `P` being the new `Ptr`.
-    pub fn compress_and_shrink_with<F: FnMut(P, &mut T, P)>(&mut self, mut map: F) {
-        self.inc_gen();
-        let generation = self.generation();
-        let mut new_m = B::Stack::<InternalSlot<P, T>>::new();
-        let _ = new_m.reallocate_min_capacity(self.len());
-        let mut j = 1;
-        for i in self.nziter() {
-            // FIXME bad `try_from_usize` usage
-            let entry = mem::replace(
-                self.m.get_mut(i).unwrap(),
-                Free(P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap()),
-            );
-            if let Allocated(old_gen, mut t) = entry {
-                map(
-                    Ptr::_from_raw(P::Inx::try_from_usize(i).unwrap(), old_gen),
-                    &mut t,
-                    Ptr::_from_raw(
-                        P::Inx::try_from_usize(NonZeroUsize::new(j).unwrap()).unwrap(),
-                        generation,
-                    ),
-                );
-                new_m
-                    .push_within_capacity(Allocated(generation, t))
-                    .ok()
-                    .unwrap();
-                j = j.wrapping_add(1);
-            }
-        }
-        self.m = new_m;
-        self.freelist_root = None;
     }
 
     /// Like [Arena::get], except generation counters are ignored and the

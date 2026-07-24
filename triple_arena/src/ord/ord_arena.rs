@@ -368,11 +368,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         self.a.clear();
     }
 
-    /// Performs an [OrdArena::clear] and resets capacity to 0
-    pub fn clear_and_shrink(&mut self) {
-        self.a.clear_and_shrink();
-    }
-
     /// Compresses the arena by moving around entries to be able to shrink the
     /// capacity down to the length. All key-value relations remain, but all
     /// `Ptr`s are invalidated. New `Ptr`s to the entries can be found again
@@ -398,7 +393,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                 });
             self.raw_rebalance_assuming_compressed();
         } else {
-            self.a.clear_and_shrink();
+            //self.a.clear_and_shrink();
         }
     }
 
