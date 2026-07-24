@@ -126,7 +126,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
     const ITERS999: usize = if cfg!(miri) {
         8
     } else if cfg!(debug_assertions) {
-        980
+        1021
     } else {
         9956
     };

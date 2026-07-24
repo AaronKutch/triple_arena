@@ -194,7 +194,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         let Some(raw_last) = P::Inx::try_into_usize(last.inx()) else {
             return e;
         };
-        if raw_last.get() > self.capacity() {
+        if raw_last.get() > self.m.capacity() {
             // max capacity is tested here
             self.reallocate_min_capacity(raw_last.get())?;
         }
