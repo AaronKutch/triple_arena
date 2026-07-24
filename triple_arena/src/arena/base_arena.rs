@@ -9,7 +9,7 @@ use core::{
 use crate::{
     InvalidationOption, InvalidationResult,
     arena::ArenaBacking,
-    traits::{Advancer, Ptr, SetMaxCapacity},
+    traits::{Advancer, ArenaTrait, Ptr, SetMaxCapacity},
     utils::{
         ptrinx_unchecked,
         traits::{NonZeroInxGenericStack, PtrGen, PtrInx},
@@ -1229,11 +1229,18 @@ where
         &mut self,
         max_capacity: usize,
     ) -> Result<(), crate::MaxCapacityReductionError> {
-        // Do it this way instead of against `self.m.len()` and always call
-        // `canonicalize_free_list` for determinism idealness, the reduction below
-        // capacity case is specifically special anyways for this method
-        if max_capacity < self.m.capacity() {
-            // FIXME use the trait when the old capacity has been removed
+        // If reducing below the logical `self.capacity()`, we may need to pop off free
+        // slots off the end to achieve the ideal, instead of special casing it do this
+        // and always call `canonicalize_free_list` for determinism idealness,
+        // the reduction below capacity case is specifically special anyways by
+        // the documentation of `set_max_capacity`
+
+        // FIXME use the trait when the old capacity has been removed
+        if self
+            .max_capacity()
+            .is_some_and(|old_max| max_capacity < old_max)
+            && max_capacity < self.m.capacity()
+        {
             self.canonicalize_free_list();
         }
         self.m.set_max_capacity(max_capacity)

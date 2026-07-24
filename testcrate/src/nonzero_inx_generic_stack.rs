@@ -230,6 +230,7 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                     b_capacity = a.capacity();
                 }
             }
+            // FIXME entry versions
             300..500 => {
                 // pop
                 ensure_eq!(a.pop().map(|t| t.key()), b.pop());

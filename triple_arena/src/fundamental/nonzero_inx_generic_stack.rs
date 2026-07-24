@@ -389,5 +389,10 @@ pub trait SetMaxCapacity {
     /// self.max_capacity()` at runtime, and does not warn for fixed width
     /// unreachabilities and cannot be relied upon for reallocation
     /// infallibility.
+    ///
+    /// This is usually an `O(1)` operation, but if `self.capacity()` reduces it
+    /// can be an `O(n)` operation (not because it reallocates, but because of
+    /// things like freelist canonicalization in order to achieve the lowest
+    /// possible capacity).
     fn set_max_capacity(&mut self, max_capacity: usize) -> Result<(), MaxCapacityReductionError>;
 }

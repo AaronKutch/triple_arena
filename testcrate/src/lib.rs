@@ -4,6 +4,7 @@
 pub mod basic_arena;
 pub mod cdgen;
 pub mod nonzero_inx_generic_stack;
+pub mod misc;
 // FIXME remove what is unused
 pub mod old_helpers;
 mod ptrs;

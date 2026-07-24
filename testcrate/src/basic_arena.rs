@@ -12,9 +12,10 @@ use triple_arena::{
 use crate::{
     P2, TestGen,
     cdgen::{Cd, CdGen, CkMap},
+    misc::{D1, Meta},
 };
 
-#[derive(Clone, Copy)]
+#[derive(Debug)]
 pub struct Stats {
     /// The limit that the test stays around (this is not necessarily exactly
     /// followed)
@@ -25,17 +26,13 @@ pub struct Stats {
     pub iters999: Option<usize>,
 }
 
-#[derive(Clone, Copy, Default)]
-pub struct D1;
-
 /// Use the [LIMIT] for fixed length types and as the limit for settable limit
 /// types, ignore otherwise
 pub fn fuzz<
     P: Ptr,
     A: ArenaTrait<P, Cd<()>> + ArenaInsertTrait<P, Cd<()>> + SingularGenerationArena<P>,
 >(
-    mut stats: Stats,
-    rng: &mut StarRng,
+    meta: &mut Meta<Stats>,
     cd_gen: &mut CdGen<()>,
     cd_gen1: &mut CdGen<D1>,
     mut a: A,
@@ -43,6 +40,8 @@ pub fn fuzz<
     // set iff `SetMaxCapacity` is implemented
     mut set_max_capacity: Option<fn(&mut A, usize) -> Result<(), MaxCapacityReductionError>>,
 ) -> Result<(), StackedError> {
+    let rng = &mut meta.rng;
+    let stats = meta.stats.as_mut().stack()?;
     ensure!(cd_gen.is_empty());
 
     // reference
@@ -54,9 +53,6 @@ pub fn fuzz<
     let mut a1 = Arena::<P, Cd<D1>, HeapBacking>::new();
     let mut b1 = CkMap::<D1, P>::new();
 
-    // for temporary debug changes
-    #[allow(unused)]
-    let mut op_inx = usize::MAX;
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut iters999 = 0;
@@ -105,7 +101,7 @@ pub fn fuzz<
         P::invalid()
     };
 
-    for _ in 0..stats.n {
+    for i in 0..stats.n {
         let len = b.len();
         ensure_eq!(cd_gen.len(), len);
         ensure_eq!(a.len(), len);
@@ -113,7 +109,7 @@ pub fn fuzz<
         ensure_eq!(a.capacity(), b_capacity);
         ensure!(len <= a.capacity());
         if let Some(fixed_cap) = stats.fixed_cap {
-            ensure!(a.capacity() == fixed_cap);
+            ensure_eq!(a.capacity(), fixed_cap);
         }
         if let Some(max_capacity) = a.max_capacity() {
             ensure!(a.capacity() <= max_capacity);
@@ -122,9 +118,11 @@ pub fn fuzz<
         // mismatch
         ensure_eq!(a.singular_generation(), g.0);
         check_invariants(&mut a).stack()?;
-        op_inx = rng.index(1000).unwrap();
+
+        meta.i = i;
+        meta.op_inx = rng.index(1000).unwrap();
         // note: pushes and pops are balanced except for clears
-        match op_inx {
+        match meta.op_inx {
             0..15 => {
                 // set_max_capacity
 
@@ -267,6 +265,7 @@ pub fn fuzz<
                     b_capacity = a.capacity();
                 }
             }
+            // FIXME entry versions
             250..300 => {
                 // insert
 
@@ -473,8 +472,7 @@ pub fn fuzz<
                     .max_capacity()
                     .is_some_and(|max_capacity| max_capacity == len)
                     || stats.fixed_cap.is_some_and(|cap| cap == len);
-                if max_reached && rand_remove_i > rand_insert_i
-                {
+                if max_reached && rand_remove_i > rand_insert_i {
                     // need to remove before inserting again
                     mem::swap(&mut rand_insert_i, &mut rand_remove_i);
                 }
@@ -497,6 +495,7 @@ pub fn fuzz<
                 }
                 // depends on the invalidated elements witnessed
                 assert!((i == len.saturating_sub(1)) || (i == len) || (i == (len + 1)));
+                b_capacity = a.capacity();
             }
             910..920 => {
                 // ptrs, ordered_advancer, find_inx_last_ptr, find_inx_first_ptr
@@ -658,7 +657,6 @@ pub fn fuzz<
                         }
                     }
                     1 => {
-                        b.clear();
                         // `a1` was unlimited, `a` can be limited and grow capacity and run into
                         // changed limits
 
@@ -671,8 +669,13 @@ pub fn fuzz<
 
                         let before = a.capacity();
                         let max_before = a.max_capacity();
+                        let mut on_first_call = true;
                         let res = a.clone_from_with_new(&a1, |p, u| {
                             assert_eq!(a1.get(p).unwrap().key(), u.key());
+                            if on_first_call {
+                                b.clear();
+                                on_first_call = false;
+                            }
                             let (k, t) = cd_gen.new_cd();
                             b.insert(k, p);
                             t
@@ -681,15 +684,19 @@ pub fn fuzz<
                             && let Some(last) = a1.find_inx_last_ptr()
                             && P::Inx::try_into_usize(last.inx()).unwrap().get() > max
                         {
+                            ensure!(on_first_call);
                             ensure_eq!(res, Err(ReallocationError::BeyondMaxCapacity));
                         } else {
+                            // if `a1` was empty
+                            if on_first_call {
+                                b.clear();
+                            }
                             ensure_eq!(res, Ok(()));
                             for p in a1.ptrs() {
                                 ensure!(a.contains(p));
                             }
                             ensure_eq!(a.max_capacity(), max_before);
                             ensure!(a.capacity() >= before);
-
                             g.0 = a1.singular_generation();
                             b_capacity = a.capacity();
                         }
@@ -711,7 +718,6 @@ pub fn fuzz<
                 // clear
                 b.clear();
                 ensure_eq!(a.clear().is_overflow(), g.invalidate());
-                iters999 += 1;
             }
             999 => {
                 // with_min_capacity and the `Drop` impl
