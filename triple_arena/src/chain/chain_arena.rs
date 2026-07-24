@@ -799,7 +799,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
             let mut q_prev = q_init;
             loop {
                 p_next = if let Some(p_next) = p_next {
-                    let p_gen = self.a.get_no_gen(p_next).unwrap().0;
+                    let p_gen = self.a.get_inx(p_next).unwrap().0;
                     let p = Ptr::_from_raw(p_next, p_gen);
                     let link = self.a.remove(p).allow().unwrap();
                     let tmp_next = link.next().map(|p| p.inx());
@@ -826,7 +826,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
             let mut q_next = q_init;
             loop {
                 p_prev = if let Some(p_prev) = p_prev {
-                    let p_gen = self.a.get_no_gen(p_prev).unwrap().0;
+                    let p_gen = self.a.get_inx(p_prev).unwrap().0;
                     let p = Ptr::_from_raw(p_prev, p_gen);
                     let link = self.a.remove(p).allow().unwrap();
                     let tmp_prev = link.prev().map(|p| p.inx());
@@ -882,7 +882,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// existing generation is returned.
     #[doc(hidden)]
     pub fn get_no_gen(&self, p: P::Inx) -> Option<(P::Gen, &Link<P, T>)> {
-        self.a.get_no_gen(p)
+        self.a.get_inx(p)
     }
 
     /// Like [ChainArena::get_mut], except generation counters are ignored and
@@ -890,7 +890,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     #[doc(hidden)]
     pub fn get_no_gen_mut(&mut self, p: P::Inx) -> Option<(P::Gen, Link<P, &mut T>)> {
         self.a
-            .get_no_gen_mut(p)
+            .get_inx_mut(p)
             .map(|(generation, link)| (generation, Link::new(link.prev_next(), &mut link.t)))
     }
 

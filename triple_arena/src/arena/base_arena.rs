@@ -734,26 +734,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     }
 
     /// Like [Arena::get], except generation counters are ignored and the
-    /// existing generation is returned.
-    #[doc(hidden)]
-    pub fn get_no_gen(&self, p: P::Inx) -> Option<(P::Gen, &T)> {
-        match self.m_get(p) {
-            Some(Allocated(generation, t)) => Some((*generation, t)),
-            _ => None,
-        }
-    }
-
-    /// Like [Arena::get_mut], except generation counters are ignored and the
-    /// existing generation is returned.
-    #[doc(hidden)]
-    pub fn get_no_gen_mut(&mut self, p: P::Inx) -> Option<(P::Gen, &mut T)> {
-        match self.m_get_mut(p) {
-            Some(Allocated(generation, t)) => Some((*generation, t)),
-            _ => None,
-        }
-    }
-
-    /// Like [Arena::get], except generation counters are ignored and the
     /// result is unwrapped internally
     #[doc(hidden)]
     //#[track_caller]

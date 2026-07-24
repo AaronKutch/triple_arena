@@ -101,7 +101,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             // cyclic chains, because we _must_ not rely on any kind of induction (any set
             // of interlinks could be bad or misplaced at the same time).
             if let Some(prev) = link.prev() {
-                if let Some((_, prev)) = this.a.get_no_gen(prev) {
+                if let Some((_, prev)) = this.a.get_inx(prev) {
                     if let Some(next) = prev.next() {
                         if p.inx() != next {
                             return err;
@@ -122,7 +122,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             // there are going to be duplicate checks but this must be done for invariant
             // breaking cases
             if let Some(next) = link.next() {
-                if let Some((_, next)) = this.a.get_no_gen(next) {
+                if let Some((_, next)) = this.a.get_inx(next) {
                     if let Some(prev) = next.prev() {
                         if p.inx() != prev {
                             return err;
@@ -200,7 +200,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             (None, None) => Ok(self.a.insert(LinkNoGen::new((None, None), t))),
             (None, Some(p1)) => {
                 // if there is a failure it cannot result in a node being inserted
-                if let Some((_, link)) = self.a.get_no_gen(p1) {
+                if let Some((_, link)) = self.a.get_inx(p1) {
                     if let Some(p0) = link.prev() {
                         // insert into middle of chain
                         let res = self.a.insert(LinkNoGen::new((Some(p0), Some(p1)), t));
@@ -217,7 +217,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
                 }
             }
             (Some(p0), None) => {
-                if let Some((_, link)) = self.a.get_no_gen(p0) {
+                if let Some((_, link)) = self.a.get_inx(p0) {
                     if let Some(p1) = link.next() {
                         // insert into middle of chain
                         let res = self.a.insert(LinkNoGen::new((Some(p0), Some(p1)), t));
@@ -264,7 +264,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             ),
             (None, Some(p1)) => {
                 // if there is a failure it cannot result in a node being inserted
-                if let Some((_, link)) = self.a.get_no_gen(p1) {
+                if let Some((_, link)) = self.a.get_inx(p1) {
                     if let Some(p0) = link.prev() {
                         // insert into middle of chain
                         let res = self
@@ -285,7 +285,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
                 }
             }
             (Some(p0), None) => {
-                if let Some((_, link)) = self.a.get_no_gen(p0) {
+                if let Some((_, link)) = self.a.get_inx(p0) {
                     if let Some(p1) = link.next() {
                         // insert into middle of chain
                         let res = self
@@ -415,7 +415,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
     /// The same as [ChainNoGenArena::are_neighbors] but with `P::Inx`
     pub fn are_neighbors_inx(&self, p_prev: P::Inx, p_next: P::Inx) -> bool {
         let mut are_neighbors = false;
-        if let Some((_, l0)) = self.a.get_no_gen(p_prev) {
+        if let Some((_, l0)) = self.a.get_inx(p_prev) {
             if let Some(p) = l0.next() {
                 if p == p_next {
                     // `p1` must implicitly exist if the invariants hold
@@ -756,7 +756,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             let mut q_prev = q_init;
             loop {
                 p_next = if let Some(p_next) = p_next {
-                    let p_gen = self.a.get_no_gen(p_next).unwrap().0;
+                    let p_gen = self.a.get_inx(p_next).unwrap().0;
                     let p = Ptr::_from_raw(p_next, p_gen);
                     let link = self.a.remove(p).allow().unwrap();
                     let tmp_next = link.next();
@@ -784,7 +784,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             let mut q_next = q_init;
             loop {
                 p_prev = if let Some(p_prev) = p_prev {
-                    let p_gen = self.a.get_no_gen(p_prev).unwrap().0;
+                    let p_gen = self.a.get_inx(p_prev).unwrap().0;
                     let p = Ptr::_from_raw(p_prev, p_gen);
                     let link = self.a.remove(p).allow().unwrap();
                     let tmp_prev = link.prev();
@@ -820,7 +820,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         map(p_init, &mut new.get_inx_mut_unwrap(q_prev.inx()).t, q_prev);
         loop {
             p_next = if let Some(p_next) = p_next {
-                let p_gen = self.a.get_no_gen(p_next).unwrap().0;
+                let p_gen = self.a.get_inx(p_next).unwrap().0;
                 let p = Ptr::_from_raw(p_next, p_gen);
                 let link = self.a.remove(p).allow().unwrap();
                 let tmp_next = link.next();
@@ -873,13 +873,13 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             .a
             .clone_from_with(&self.a, |p, link| {
                 let prev = if let Some(prev) = link.prev() {
-                    let (generation, _) = self.a.get_no_gen(prev).unwrap();
+                    let (generation, _) = self.a.get_inx(prev).unwrap();
                     Some(Ptr::_from_raw(prev, generation))
                 } else {
                     None
                 };
                 let next = if let Some(next) = link.next() {
-                    let (generation, _) = self.a.get_no_gen(next).unwrap();
+                    let (generation, _) = self.a.get_inx(next).unwrap();
                     Some(Ptr::_from_raw(next, generation))
                 } else {
                     None
@@ -904,7 +904,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
     /// the existing generation is returned.
     #[doc(hidden)]
     pub fn get_no_gen(&self, p: P::Inx) -> Option<(P::Gen, &LinkNoGen<P, T>)> {
-        self.a.get_no_gen(p)
+        self.a.get_inx(p)
     }
 
     /// Like [ChainNoGenArena::get_mut], except generation counters are ignored
@@ -912,7 +912,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
     #[doc(hidden)]
     pub fn get_no_gen_mut(&mut self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &mut T>)> {
         self.a
-            .get_no_gen_mut(p)
+            .get_inx_mut(p)
             .map(|(generation, link)| (generation, LinkNoGen::new(link.prev_next(), &mut link.t)))
     }
 
