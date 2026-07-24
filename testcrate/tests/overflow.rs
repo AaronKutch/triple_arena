@@ -54,7 +54,7 @@ fn overflow_cap() {
     let mut a = Arena::<P1, ()>::new();
     for _ in 0..253 {
         let p = a.insert(());
-        a.remove(p).unwrap();
+        a.remove(p).allow().unwrap();
     }
 }
 

@@ -549,7 +549,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// chain remains continuous. Returns `None` if `p` is not valid.
     #[must_use]
     pub fn remove(&mut self, p: P) -> Option<Link<P, T>> {
-        let link = self.a.remove(p)?;
+        let link = self.a.remove(p).allow()?;
         match link.prev_next() {
             (None, None) => (),
             (None, Some(p1)) => {
@@ -777,7 +777,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
             // an initial prelude is absolutely required to link up cyclic chains and handle
             // SLCCs
             let p = p_init;
-            let link = self.a.remove(p_init).unwrap();
+            let link = self.a.remove(p_init).allow().unwrap();
             let p_init = p_init.inx();
             let mut p_init_prev = None;
             let mut p_next = link.next().map(|p| p.inx());
@@ -801,7 +801,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
                 p_next = if let Some(p_next) = p_next {
                     let p_gen = self.a.get_no_gen(p_next).unwrap().0;
                     let p = Ptr::_from_raw(p_next, p_gen);
-                    let link = self.a.remove(p).unwrap();
+                    let link = self.a.remove(p).allow().unwrap();
                     let tmp_next = link.next().map(|p| p.inx());
                     let t = link.t;
                     if Some(p_next) == p_init_prev {
@@ -828,7 +828,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
                 p_prev = if let Some(p_prev) = p_prev {
                     let p_gen = self.a.get_no_gen(p_prev).unwrap().0;
                     let p = Ptr::_from_raw(p_prev, p_gen);
-                    let link = self.a.remove(p).unwrap();
+                    let link = self.a.remove(p).allow().unwrap();
                     let tmp_prev = link.prev().map(|p| p.inx());
                     let t = link.t;
                     let q = new.insert(Link::new((None, Some(q_next)), t));

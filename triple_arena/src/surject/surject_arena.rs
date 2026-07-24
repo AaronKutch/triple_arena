@@ -566,7 +566,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         let key_count = self.vals.get_inx_unwrap(p_val.inx()).key_count.get();
         if key_count == 1 {
             // last key, remove the value
-            Some((k, Some(self.vals.remove(p_val).unwrap().v)))
+            Some((k, Some(self.vals.remove(p_val).allow().unwrap().v)))
         } else {
             // decrement the key count
             self.vals.get_inx_mut_unwrap(p_val.inx()).key_count =
@@ -583,7 +583,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     pub fn remove(&mut self, p: P) -> Option<V> {
         let p_val = self.keys.get(p)?.p_val;
         self.keys.remove_cyclic_chain_internal(p.inx(), true);
-        Some(self.vals.remove(p_val).unwrap().v)
+        Some(self.vals.remove(p_val).allow().unwrap().v)
     }
 
     /// Invalidates the `Ptr` `p` (no other `Ptr`s to keys in the key set are

@@ -319,7 +319,7 @@ pub fn std_arena() -> Arena<P1, (CKey, CVal)> {
                 repr_inxs.push(a.insert(pair));
             }
             Err(inx) => {
-                a.remove(repr_inxs.swap_remove(inx)).unwrap();
+                a.remove(repr_inxs.swap_remove(inx)).allow().unwrap();
                 repr.swap_remove(inx);
             }
         }

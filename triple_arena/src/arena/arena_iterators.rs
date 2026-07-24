@@ -121,6 +121,7 @@ pub struct IterMut<'a, P: Ptr, T, B: ArenaBacking> {
     pub(in crate::arena) adv: PtrAdvancer<P>,
 }
 
+// FIXME this is unsound, make `PtrInx` in particular unsafe
 impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterMut<'a, P, T, B> {
     type Item = (P, &'a mut T);
 
@@ -204,9 +205,10 @@ impl<P: Ptr, T, B: ArenaBacking> Iterator for CapacityDrain<P, T, B> {
     type Item = (P, T);
 
     fn next(&mut self) -> Option<Self::Item> {
+        // ignore generation overflows
         self.adv
             .advance(&self.arena)
-            .map(|p| (p, self.arena.remove(p).unwrap()))
+            .map(|p| (p, self.arena.remove(p).allow().unwrap()))
     }
 }
 

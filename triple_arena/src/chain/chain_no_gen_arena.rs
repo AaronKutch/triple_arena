@@ -488,7 +488,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
     /// chain remains continuous. Returns `None` if `p` is not valid.
     #[must_use]
     pub fn remove(&mut self, p: P) -> Option<LinkNoGen<P, T>> {
-        let link = self.a.remove(p)?;
+        let link = self.a.remove(p).allow()?;
         match link.prev_next() {
             (None, None) => (),
             (None, Some(p1)) => {
@@ -733,7 +733,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             // an initial prelude is absolutely required to link up cyclic chains and handle
             // SLCCs
             let p = p_init;
-            let link = self.a.remove(p_init).unwrap();
+            let link = self.a.remove(p_init).allow().unwrap();
             let p_init = p_init.inx();
             let mut p_init_prev = None;
             let mut p_next = link.next();
@@ -758,7 +758,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
                 p_next = if let Some(p_next) = p_next {
                     let p_gen = self.a.get_no_gen(p_next).unwrap().0;
                     let p = Ptr::_from_raw(p_next, p_gen);
-                    let link = self.a.remove(p).unwrap();
+                    let link = self.a.remove(p).allow().unwrap();
                     let tmp_next = link.next();
                     let t = link.t;
                     if Some(p_next) == p_init_prev {
@@ -786,7 +786,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
                 p_prev = if let Some(p_prev) = p_prev {
                     let p_gen = self.a.get_no_gen(p_prev).unwrap().0;
                     let p = Ptr::_from_raw(p_prev, p_gen);
-                    let link = self.a.remove(p).unwrap();
+                    let link = self.a.remove(p).allow().unwrap();
                     let tmp_prev = link.prev();
                     let t = link.t;
                     let q = new.insert(LinkNoGen::new((None, Some(q_next.inx())), t));
@@ -814,7 +814,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         let mut new = Arena::<P, LinkNoGen<P, T>, B>::with_min_capacity(self.len()).unwrap();
         new.set_gen(generation);
         let p_init = first_link;
-        let link = self.a.remove(p_init).unwrap();
+        let link = self.a.remove(p_init).allow().unwrap();
         let mut p_next = link.next();
         let mut q_prev = new.insert(LinkNoGen::new((None, None), link.t));
         map(p_init, &mut new.get_inx_mut_unwrap(q_prev.inx()).t, q_prev);
@@ -822,7 +822,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             p_next = if let Some(p_next) = p_next {
                 let p_gen = self.a.get_no_gen(p_next).unwrap().0;
                 let p = Ptr::_from_raw(p_next, p_gen);
-                let link = self.a.remove(p).unwrap();
+                let link = self.a.remove(p).allow().unwrap();
                 let tmp_next = link.next();
                 let t = link.t;
                 let q = new.insert(LinkNoGen::new((Some(q_prev.inx()), None), t));

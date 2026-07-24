@@ -24,7 +24,7 @@ fn test_inst_framework() {
                 repr_inxs.push(a.insert(pair));
             }
             Err(inx) => {
-                a.remove(repr_inxs.swap_remove(inx)).unwrap();
+                a.remove(repr_inxs.swap_remove(inx)).allow().unwrap();
                 repr.swap_remove(inx);
             }
         }

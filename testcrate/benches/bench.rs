@@ -73,7 +73,7 @@ fn arena(bencher: &mut Bencher) {
                     repr_inxs.push(a.insert(*pair));
                 }
                 Err(inx) => {
-                    a.remove(repr_inxs.swap_remove(*inx)).unwrap();
+                    a.remove(repr_inxs.swap_remove(*inx)).allow().unwrap();
                 }
             }
         }

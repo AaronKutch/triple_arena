@@ -795,7 +795,7 @@ pub fn fuzz_multi_arena_step<D: Copy + Default, P: Ptr>(
             // remove
             if len != 0 {
                 let (k, p) = b.remove_rand(rng).unwrap();
-                ensure_eq!(k, a.remove(p).unwrap().key());
+                ensure_eq!(k, a.remove(p).allow().unwrap().key());
                 g.invalidate();
             }
         }

@@ -590,46 +590,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         ptr
     }
 
-    /// Returns if `p` is a valid `Ptr`
-    pub fn contains(&self, p: P) -> bool {
-        match self.m_get(p.inx()) {
-            Some(Allocated(generation, _)) => *generation == p.generation(),
-            _ => false,
-        }
-    }
-
-    /// Returns a reference to a `T` pointed to by `p`. Returns `None` if `p` is
-    /// invalid.
-    #[must_use]
-    pub fn get(&self, p: P) -> Option<&T> {
-        match self.m_get(p.inx()) {
-            Some(Allocated(generation, t)) => {
-                if *generation == p.generation() {
-                    Some(t)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
-    /// Returns a mutable reference to a `T` pointed to by `p`. Returns `None`
-    /// if `p` is invalid.
-    #[must_use]
-    pub fn get_mut(&mut self, p: P) -> Option<&mut T> {
-        match self.m_get_mut(p.inx()) {
-            Some(Allocated(generation, t)) => {
-                if *generation == p.generation() {
-                    Some(t)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
     /// Gets two `&mut T` references pointed to by `p0` and `p1`. If `p0 == p1`
     /// or a pointer is invalid, `None` is returned.
     #[must_use]
@@ -712,14 +672,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                 old_t
             }
         }
-    }
-
-    /// Removes the `T` pointed to by `p`, returns the `T`, and invalidates old
-    /// `Ptr`s to the `T`. Does no invalidation and returns `None` if `p` is
-    /// invalid.
-    #[must_use]
-    pub fn remove(&mut self, p: P) -> Option<T> {
-        self.remove_internal_old(p, true)
     }
 
     // FIXME delete this, just have a good entry advancer

@@ -75,10 +75,10 @@ fn advancer() {
     let p2 = a.insert(2);
     let p3 = a.insert(3);
     let p4 = a.insert(4);
-    a.remove(p1).unwrap();
+    a.remove(p1).allow().unwrap();
     let p5 = a.insert(5);
-    a.remove(p3).unwrap();
-    a.remove(p0).unwrap();
+    a.remove(p3).allow().unwrap();
+    a.remove(p0).allow().unwrap();
 
     let mut v = vec![];
     let mut adv = a.advancer();

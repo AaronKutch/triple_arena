@@ -1,5 +1,7 @@
 // note: for README version keep limit at 70 characters and change `out_file`
 
+// FIXME recopy
+
 use triple_arena::{Arena, ptr_struct, traits::*};
 use triple_arena_render::{DebugNode, DebugNodeTrait, render_to_svg_file};
 
@@ -78,7 +80,7 @@ fn main() {
     let _sum = a.insert(Summation(vec![neg_lit42, inner_sum, will_be_removed]));
 
     // example of an invalid `Ptr` in a graph
-    a.remove(will_be_removed).unwrap();
+    a.remove(will_be_removed).allow().unwrap();
 
     render_to_svg_file(
         &a,

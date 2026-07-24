@@ -13,8 +13,11 @@ use alloc::vec::Vec;
 
 use triple_arena::{
     Arena, ptr_struct,
+    traits::*,
     utils::{NonZeroInxVec, traits::NonZeroInxGenericStack},
 };
+
+// FIXME reinspect
 
 ptr_struct!(P0());
 ptr_struct!(P1);

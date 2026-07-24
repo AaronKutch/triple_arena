@@ -496,7 +496,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             let q1_len = *chain_lens.get(q1).unwrap();
             // q1 is erased, but need to update the length of q0
             *chain_lens.get_mut(q0).unwrap() += q1_len;
-            chain_lens.remove(q1).unwrap();
+            chain_lens.remove(q1).allow().unwrap();
         }
     }
 
