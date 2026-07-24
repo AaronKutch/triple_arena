@@ -1,15 +1,17 @@
 use std::{num::NonZeroUsize, slice::GetDisjointMutError};
 
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
-use star_rng::StarRng;
 use triple_arena::{
     AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError,
     utils::traits::NonZeroInxGenericStack,
 };
 
-use crate::cdgen::{Cd, CdGen, Ck};
+use crate::{
+    cdgen::{Cd, CdGen, Ck},
+    misc::Meta,
+};
 
-#[derive(Clone, Copy)]
+#[derive(Debug)]
 pub struct Stats {
     /// The limit that the test stays around (this is not necessarily exactly
     /// followed)
@@ -30,27 +32,25 @@ pub struct Stats {
 /// Use the [LIMIT] for fixed length types and as the limit for settable limit
 /// types, ignore otherwise
 pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
-    mut stats: Stats,
-    rng: &mut StarRng,
+    meta: &mut Meta<Stats>,
     cd_gen: &mut CdGen<()>,
     mut a: S,
     // set iff `SetMaxCapacity` is implemented
     mut set_max_capacity: Option<fn(&mut S, usize) -> Result<(), MaxCapacityReductionError>>,
 ) -> Result<(), StackedError> {
+    let rng = &mut meta.rng;
+    let stats = meta.stats.as_mut().stack()?;
     ensure!(cd_gen.is_empty());
 
     // reference
     let mut b: Vec<Ck<()>> = vec![];
     let mut b_capacity = a.capacity();
 
-    // for temporary debug changes
-    #[allow(unused)]
-    let mut op_inx = usize::MAX;
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut iters999 = 0;
 
-    for _ in 0..stats.n {
+    for i in 0..stats.n {
         let len = b.len();
         ensure_eq!(cd_gen.len(), len);
         ensure_eq!(a.len(), len);
@@ -63,9 +63,11 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
         if let Some(max_capacity) = a.max_capacity() {
             ensure!(a.capacity() <= max_capacity);
         }
-        op_inx = rng.index(1000).unwrap();
+
+        meta.i = i;
+        meta.op_inx = rng.index(1000).unwrap();
         // note: pushes and pops are balanced except for clears
-        match op_inx {
+        match meta.op_inx {
             0..15 => {
                 // set_max_capacity
 

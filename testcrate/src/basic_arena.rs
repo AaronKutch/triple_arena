@@ -43,6 +43,7 @@ pub fn fuzz<
     let rng = &mut meta.rng;
     let stats = meta.stats.as_mut().stack()?;
     ensure!(cd_gen.is_empty());
+    ensure!(cd_gen1.is_empty());
 
     // reference
     let mut b = CkMap::<(), P>::new();

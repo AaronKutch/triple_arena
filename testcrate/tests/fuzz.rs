@@ -18,7 +18,7 @@ use triple_arena::{
 
 #[test]
 fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
-    let rng = &mut StarRng::new(0);
+    let mut meta = Meta::new(0);
 
     const N: usize = if cfg!(miri) {
         10_000
@@ -27,6 +27,8 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
     } else {
         10_000_000
     };
+    // I could get a custom allocator to make this deterministic, but I think one
+    // check is on arrays is good enough
     const ITERS999: usize = if cfg!(miri) {
         8
     } else if cfg!(debug_assertions) {
@@ -36,45 +38,78 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
     };
     pub const LIMIT: usize = 7;
 
-    let mut stats = nonzero_inx_generic_stack::Stats {
-        test_limit: LIMIT,
-        fixed_cap: Some(LIMIT),
-        n: N,
-        iters999: Some(ITERS999),
-    };
-    nonzero_inx_generic_stack::fuzz(
-        stats,
-        rng,
-        &mut CdGen::new(),
-        NonZeroInxArray::<_, { LIMIT }>::new(),
-        None,
-    )
-    .stack()?;
-
-    // I could get a custom allocator to make this deterministic, but I think one
-    // check is good enough
-    stats.iters999 = None;
-    stats.fixed_cap = None;
-
-    let mut a = NonZeroInxLimitedVec::new();
-    a.set_max_capacity(LIMIT).unwrap();
-    nonzero_inx_generic_stack::fuzz(
-        stats,
-        rng,
-        &mut CdGen::new(),
-        a,
-        Some(|a, max_capacity| a.set_max_capacity(max_capacity)),
-    )
-    .stack()?;
-    nonzero_inx_generic_stack::fuzz(stats, rng, &mut CdGen::new(), NonZeroInxVec::new(), None)
+    fn inner(meta: &mut Meta<nonzero_inx_generic_stack::Stats>) -> Result<(), StackedError> {
+        meta.reset(
+            nonzero_inx_generic_stack::Stats {
+                test_limit: LIMIT,
+                fixed_cap: Some(LIMIT),
+                n: N,
+                iters999: Some(ITERS999),
+            },
+            |meta| {
+                nonzero_inx_generic_stack::fuzz(
+                    meta,
+                    &mut CdGen::new(),
+                    NonZeroInxArray::<_, { LIMIT }>::new(),
+                    None,
+                )
+            },
+        )
         .stack()?;
 
-    let a = NonZeroInxBoxedSlice::with_min_capacity(LIMIT).stack()?;
-    stats.fixed_cap = Some(a.capacity());
+        let mut a = NonZeroInxLimitedVec::new();
+        a.set_max_capacity(LIMIT).unwrap();
+        meta.reset(
+            nonzero_inx_generic_stack::Stats {
+                test_limit: LIMIT,
+                fixed_cap: None,
+                n: N,
+                iters999: None,
+            },
+            |meta| {
+                nonzero_inx_generic_stack::fuzz(
+                    meta,
+                    &mut CdGen::new(),
+                    a,
+                    Some(|a, max_capacity| a.set_max_capacity(max_capacity)),
+                )
+            },
+        )
+        .stack()?;
 
-    nonzero_inx_generic_stack::fuzz(stats, rng, &mut CdGen::new(), a, None).stack()?;
+        meta.reset(
+            nonzero_inx_generic_stack::Stats {
+                test_limit: LIMIT,
+                fixed_cap: None,
+                n: N,
+                iters999: None,
+            },
+            |meta| {
+                nonzero_inx_generic_stack::fuzz(meta, &mut CdGen::new(), NonZeroInxVec::new(), None)
+            },
+        )
+        .stack()?;
 
-    Ok(())
+        let a = NonZeroInxBoxedSlice::with_min_capacity(LIMIT).stack()?;
+        let stats = nonzero_inx_generic_stack::Stats {
+            test_limit: LIMIT,
+            fixed_cap: Some(a.capacity()),
+            n: N,
+            iters999: None,
+        };
+        meta.reset(stats, |meta| {
+            nonzero_inx_generic_stack::fuzz(meta, &mut CdGen::new(), a, None)
+        })
+        .stack()?;
+
+        Ok(())
+    }
+
+    if let Err(e) = inner(&mut meta).stack_err(meta) {
+        Err(e)
+    } else {
+        Ok(())
+    }
 }
 
 #[test]
