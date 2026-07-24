@@ -230,10 +230,9 @@ pub fn fuzz<
                 // insert_within_capacity
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
-                    let Ok((p, t1)) = a.insert_within_capacity(t) else {
+                    let Ok(p) = a.insert_within_capacity(t) else {
                         bail!("")
                     };
-                    ensure_eq!(t1.key(), k);
                     b.insert(k, p);
                 } else {
                     let (_, t) = cd_gen.new_cd();
@@ -253,10 +252,9 @@ pub fn fuzz<
 
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
-                    let Ok((p, t1)) = a.insert_reallocating(t) else {
+                    let Ok(p) = a.insert_reallocating(t) else {
                         bail!("")
                     };
-                    ensure_eq!(t1.key(), k);
                     b.insert(k, p);
                 } else if max_reached {
                     let (_, t) = cd_gen.new_cd();
@@ -270,10 +268,9 @@ pub fn fuzz<
                     // can increase capacity
                     let (k, t) = cd_gen.new_cd();
                     let cap = a.capacity();
-                    let Ok((p, t1)) = a.insert_reallocating(t) else {
+                    let Ok(p) = a.insert_reallocating(t) else {
                         bail!("")
                     };
-                    ensure_eq!(t1.key(), k);
                     // check that capacity increased
                     ensure!(a.capacity() > cap);
                     b.insert(k, p);
@@ -291,16 +288,14 @@ pub fn fuzz<
 
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
-                    let (p, t1) = a.insert(t);
-                    ensure_eq!(t1.key(), k);
+                    let p = a.insert(t);
                     b.insert(k, p);
                 } else if max_reached || len >= stats.test_limit {
                     // do nothing
                 } else {
                     let (k, t) = cd_gen.new_cd();
                     let cap = a.capacity();
-                    let (p, t1) = a.insert(t);
-                    ensure_eq!(t1.key(), k);
+                    let p = a.insert(t);
                     // check that capacity increased
                     ensure!(a.capacity() > cap);
                     b.insert(k, p);
@@ -503,7 +498,7 @@ pub fn fuzz<
                     }
                     if i == rand_insert_i {
                         let (k, t) = cd_gen.new_cd();
-                        let (p, _) = a.insert(t);
+                        let p = a.insert(t);
                         b.insert(k, p);
                     }
                     i += 1;

@@ -488,15 +488,15 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     where
         Self: 'a;
 
-    /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
-    /// it. Returns an error if there was no available capacity.
-    fn insert_within_capacity(&mut self, t: T) -> Result<(P, &mut T), NotWithinCapacityError>;
+    /// Inserts `t` into the arena and returns a `Ptr` to it. Returns an error
+    /// if there was no available capacity.
+    fn insert_within_capacity(&mut self, t: T) -> Result<P, NotWithinCapacityError>;
 
-    /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
-    /// it. Automatically reallocates if needing more capacity. Returns the `t`
+    /// Inserts `t` into the arena and returns a `Ptr` to it. Automatically
+    /// reallocates if needing more capacity. Returns the `t`
     /// if an allocation error occurs or if [ArenaTrait::max_capacity] is used
     /// up.
-    fn insert_reallocating(&mut self, t: T) -> Result<(P, &mut T), ReallocationError> {
+    fn insert_reallocating(&mut self, t: T) -> Result<P, ReallocationError> {
         if self.len() == self.capacity() {
             // REF(better_reallocation)
 
@@ -522,16 +522,15 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
             .map_err(|NotWithinCapacityError| ReallocationError::AllocError)
     }
 
-    /// Inserts `t` into the arena and returns a `Ptr` and mutable reference to
-    /// it. Panics if an allocation error occurs or if
-    /// [ArenaTrait::max_capacity] is used up.
+    /// Inserts `t` into the arena and returns a `Ptr` to it. Panics if an
+    /// allocation error occurs or if [ArenaTrait::max_capacity] is used up.
     ///
     /// # Panics
     ///
     /// This function can panic on allocation failure when needing to extend
     /// capacity, or if `self.len()` is at the maximum capacity.
     #[track_caller]
-    fn insert(&mut self, t: T) -> (P, &mut T) {
+    fn insert(&mut self, t: T) -> P {
         self.insert_reallocating(t)
             .expect("`ArenaInsertTrait::insert_reallocating` failed")
     }
