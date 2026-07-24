@@ -572,7 +572,10 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// might only include itself). Returns the length of the chain. Returns
     /// `None` if `p` is not valid.
     pub fn remove_chain(&mut self, p: P) -> Option<usize> {
-        let init = self.a.remove_internal_old(p, false)?;
+        let init = self
+            .a
+            .remove_internal(p.inx(), Some(p.generation()), false)
+            .allow()?;
         let mut len = 1;
         self.a.inc_gen();
         let mut tmp = init.next();
@@ -581,12 +584,22 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
                 // cyclical
                 return Some(len);
             }
-            tmp = self.a.remove_internal_inx_unwrap(next.inx(), false).next();
+            tmp = self
+                .a
+                .remove_internal(next.inx(), None, false)
+                .allow()
+                .unwrap()
+                .next();
             len = len.wrapping_add(1);
         }
         let mut tmp = init.prev();
         while let Some(prev) = tmp {
-            tmp = self.a.remove_internal_inx_unwrap(prev.inx(), false).prev();
+            tmp = self
+                .a
+                .remove_internal(prev.inx(), None, false)
+                .allow()
+                .unwrap()
+                .prev();
             len = len.wrapping_add(1);
         }
         Some(len)

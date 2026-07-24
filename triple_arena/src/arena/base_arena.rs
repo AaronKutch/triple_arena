@@ -611,68 +611,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    /// `remove` but with optional generation counter increment
-    #[must_use]
-    pub(crate) fn remove_internal_old(&mut self, p: P, inc_gen: bool) -> Option<T> {
-        let freelist_ptr = if let Some(free) = self.freelist_root {
-            // points to previous root
-            free
-        } else {
-            // points to itself
-            p.inx()
-        };
-        let allocation = self.m.get_mut(P::Inx::try_into_usize(p.inx())?)?;
-        match allocation {
-            // invalid by being already free
-            Free(_) => None,
-            Allocated(generation, _) => {
-                if *generation != p.generation() {
-                    // invalid by generation
-                    None
-                } else {
-                    // in both cases the new root is the entry we just removed
-                    self.freelist_root = Some(p.inx());
-                    self.len = self.len.wrapping_sub(1);
-                    let Allocated(_, old_t) = mem::replace(allocation, Free(freelist_ptr)) else {
-                        unreachable!()
-                    };
-                    if inc_gen {
-                        self.inc_gen();
-                    }
-                    Some(old_t)
-                }
-            }
-        }
-    }
-
-    /// Same as [Arena::remove_internal] but using an `P::Inx` and panicking if
-    /// `p` is invalid
-    pub(crate) fn remove_internal_inx_unwrap(&mut self, p: P::Inx, inc_gen: bool) -> T {
-        let freelist_ptr = if let Some(free) = self.freelist_root {
-            // points to previous root
-            free
-        } else {
-            // points to itself
-            p
-        };
-        let allocation = self.m_get_mut(p).unwrap();
-        let old = mem::replace(allocation, Free(freelist_ptr));
-        match old {
-            Free(_) => {
-                unreachable!()
-            }
-            Allocated(_, old_t) => {
-                // in both cases the new root is the entry we just removed
-                self.freelist_root = Some(p);
-                self.len = self.len.wrapping_sub(1);
-                if inc_gen {
-                    self.inc_gen();
-                }
-                old_t
-            }
-        }
-    }
-
     /// This is currently only used by `SurjectArena::compress_and_shrink_with`
     /// in a way that avoids a broken freelist.
     pub(crate) fn raw_entry_swap_special(&mut self, i0: NonZeroUsize, i1: NonZeroUsize) {

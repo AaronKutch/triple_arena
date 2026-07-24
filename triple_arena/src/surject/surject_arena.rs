@@ -548,7 +548,11 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         self.vals.get_inx_mut_unwrap(p_val0.inx()).key_count =
             NonZeroUsize::new(len0.wrapping_add(len1)).unwrap();
         Some((
-            self.vals.remove_internal_inx_unwrap(p_val1.inx(), false).v,
+            self.vals
+                .remove_internal(p_val1.inx(), None, false)
+                .allow()
+                .unwrap()
+                .v,
             p0,
         ))
     }
