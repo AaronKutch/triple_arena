@@ -536,34 +536,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    /// Inserts `t` into the arena and returns a `Ptr` to it. This function
-    /// allocates if capacity in the arena runs out.
-    pub fn insert(&mut self, t: T) -> P {
-        match self.try_insert(t) {
-            Ok(inx) => inx,
-            Err(t) => {
-                // double the allocation size
-                let mut additional = self.m.len();
-                if additional == 0 {
-                    // need at least one
-                    additional = 1;
-                }
-                // FIXME
-                // make sure to not make `reserve` panic
-                let new_len = self.len().saturating_add(additional);
-                additional = new_len.wrapping_sub(self.len());
-                self.reserve(additional);
-                // can't unwrap unless T: Debug
-                match self.try_insert(t) {
-                    Ok(p) => p,
-                    Err(_) => panic!(
-                        "called `insert` on an `Arena<P, T>` with maximum length `P::Inx::max()`"
-                    ),
-                }
-            }
-        }
-    }
-
     /// Inserts the `T` returned by `create` into the arena and returns a `Ptr`
     /// to it. `create` is given the the same `Ptr` that is returned, which is
     /// useful for initialization of immutable structures that need to reference

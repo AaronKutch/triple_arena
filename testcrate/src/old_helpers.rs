@@ -5,11 +5,7 @@ use rand_xoshiro::{
     rand_core::{Rng, SeedableRng},
 };
 use serde_derive::{Deserialize, Serialize};
-use triple_arena::{
-    Arena, ChainArena, OrdArena, SurjectArena,
-    traits::{ArenaTrait, Ptr},
-    utils::ChainNoGenArena,
-};
+use triple_arena::{Arena, ChainArena, OrdArena, SurjectArena, traits::*, utils::ChainNoGenArena};
 use triple_arena_render::*;
 
 use crate::P1;

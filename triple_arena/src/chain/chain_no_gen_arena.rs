@@ -9,7 +9,7 @@ use core::{
 
 use crate::{
     Arena, ChainArena, Link,
-    traits::{Advancer, ArenaTrait, Ptr},
+    traits::{Advancer, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 
@@ -749,26 +749,28 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             // an initial prelude is absolutely required to link up cyclic chains and handle
             // SLCCs
             let p = p_init;
-            let link = self.a.remove(p_init).allow().unwrap();
+            let mut link = self.a.remove(p_init).allow().unwrap();
             let p_init = p_init.inx();
             let mut p_init_prev = None;
             let mut p_next = link.next();
-            let q_init = if let Some(prev) = link.prev() {
+            let entry = if let Some(prev) = link.prev() {
                 if prev == p_init {
                     // SLCC
-                    let q =
-                        new.insert_with(|q| LinkNoGen::new((Some(q.inx()), Some(q.inx())), link.t));
-                    map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
+                    let entry = new.entry_insert();
+                    let q = entry.ptr();
+                    map(p, &mut link.t, q);
+                    entry.insert(LinkNoGen::new((Some(q.inx()), Some(q.inx())), link.t));
                     continue 'outer;
                 } else {
-                    let q = new.insert(LinkNoGen::new((None, None), link.t));
                     p_init_prev = Some(prev);
-                    q
+                    new.entry_insert()
                 }
             } else {
-                new.insert(LinkNoGen::new((None, None), link.t))
+                new.entry_insert()
             };
-            map(p, &mut new.get_inx_mut_unwrap(q_init.inx()).t, q_init);
+            let q_init = entry.ptr();
+            map(p, &mut link.t, q_init);
+            entry.insert(LinkNoGen::new((None, None), link.t));
             let mut q_prev = q_init;
             loop {
                 p_next = if let Some(p_next) = p_next {
@@ -776,18 +778,21 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
                     let p = Ptr::_from_raw(p_next, p_gen);
                     let link = self.a.remove(p).allow().unwrap();
                     let tmp_next = link.next();
-                    let t = link.t;
+                    let mut t = link.t;
                     if Some(p_next) == p_init_prev {
                         // cyclic chain, connect in one step
-                        let q =
-                            new.insert(LinkNoGen::new((Some(q_prev.inx()), Some(q_init.inx())), t));
-                        map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
+                        let entry = new.entry_insert();
+                        let q = entry.ptr();
+                        map(p, &mut t, q);
+                        entry.insert(LinkNoGen::new((Some(q_prev.inx()), Some(q_init.inx())), t));
                         new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q.inx());
                         new.get_inx_mut_unwrap(q_init.inx()).prev_next.0 = Some(q.inx());
                         continue 'outer;
                     }
-                    let q = new.insert(LinkNoGen::new((Some(q_prev.inx()), None), t));
-                    map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
+                    let entry = new.entry_insert();
+                    let q = entry.ptr();
+                    map(p, &mut t, q);
+                    entry.insert(LinkNoGen::new((Some(q_prev.inx()), None), t));
                     new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q.inx());
                     q_prev = q;
                     tmp_next
@@ -804,9 +809,11 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
                     let p = Ptr::_from_raw(p_prev, p_gen);
                     let link = self.a.remove(p).allow().unwrap();
                     let tmp_prev = link.prev();
-                    let t = link.t;
-                    let q = new.insert(LinkNoGen::new((None, Some(q_next.inx())), t));
-                    map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
+                    let mut t = link.t;
+                    let entry = new.entry_insert();
+                    let q = entry.ptr();
+                    map(p, &mut t, q);
+                    entry.insert(LinkNoGen::new((None, Some(q_next.inx())), t));
                     new.get_inx_mut_unwrap(q_next.inx()).prev_next.0 = Some(q.inx());
                     q_next = q;
                     tmp_prev
@@ -830,19 +837,23 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         let mut new = Arena::<P, LinkNoGen<P, T>, B>::with_min_capacity(self.len()).unwrap();
         new.set_gen(generation);
         let p_init = first_link;
-        let link = self.a.remove(p_init).allow().unwrap();
+        let mut link = self.a.remove(p_init).allow().unwrap();
         let mut p_next = link.next();
-        let mut q_prev = new.insert(LinkNoGen::new((None, None), link.t));
-        map(p_init, &mut new.get_inx_mut_unwrap(q_prev.inx()).t, q_prev);
+        let entry = new.entry_insert();
+        let mut q_prev = entry.ptr();
+        map(p_init, &mut link.t, q_prev);
+        entry.insert(LinkNoGen::new((None, None), link.t));
         loop {
             p_next = if let Some(p_next) = p_next {
                 let p_gen = self.a.get_inx(p_next).unwrap().0;
                 let p = Ptr::_from_raw(p_next, p_gen);
                 let link = self.a.remove(p).allow().unwrap();
                 let tmp_next = link.next();
-                let t = link.t;
-                let q = new.insert(LinkNoGen::new((Some(q_prev.inx()), None), t));
-                map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
+                let mut t = link.t;
+                let entry = new.entry_insert();
+                let q = entry.ptr();
+                map(p, &mut t, q);
+                entry.insert(LinkNoGen::new((Some(q_prev.inx()), None), t));
                 new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q.inx());
                 q_prev = q;
                 tmp_next

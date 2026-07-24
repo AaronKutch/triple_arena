@@ -5,9 +5,7 @@ use rand_xoshiro::{
 use testcrate::{
     A, CKey, CVal, P1, fuzz_fill_inst, std_arena, std_chain, std_chain_no_gen, std_ord, std_surject,
 };
-use triple_arena::{
-    Arena, ChainArena, OrdArena, SurjectArena, traits::ArenaTrait, utils::ChainNoGenArena,
-};
+use triple_arena::{Arena, ChainArena, OrdArena, SurjectArena, traits::*, utils::ChainNoGenArena};
 
 #[test]
 fn test_inst_framework() {

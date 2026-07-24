@@ -5,7 +5,7 @@ use fmt::Debug;
 use crate::{
     Arena, ChainArena,
     arena::InternalSlot,
-    traits::{Advancer, ArenaTrait, Ptr},
+    traits::{Advancer, ArenaInsertTrait, ArenaTrait, Ptr},
     utils::{
         ChainNoGenArena, LinkNoGen, PtrNoGen,
         traits::{ArenaBacking, NonZeroInxGenericStack, PtrInx},

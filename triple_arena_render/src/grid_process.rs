@@ -5,10 +5,7 @@ use std::{
     num::NonZeroU64,
 };
 
-use triple_arena::{
-    Arena, ChainArena, Link, OrdArena, ptr_struct,
-    traits::{Advancer, ArenaTrait, Ptr},
-};
+use triple_arena::{Arena, ChainArena, Link, OrdArena, ptr_struct, traits::*};
 
 use crate::{DebugNodeTrait, RenderError, render_grid::RenderGrid};
 
