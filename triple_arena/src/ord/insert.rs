@@ -111,7 +111,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             Ordering::Less => {
                 // first need to linear step to a node with a `None` in the right position if
                 // needed
-                let link = self.a.get_inx(p);
+                let link = self.a.get_inx_unwrap(p);
                 if link.t.p_tree0.is_some() {
                     (link.prev().unwrap(), true)
                 } else {
@@ -127,7 +127,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                 );
             }
             Ordering::Greater => {
-                let link = self.a.get_inx(p);
+                let link = self.a.get_inx_unwrap(p);
                 if link.t.p_tree1.is_some() {
                     (link.next().unwrap(), false)
                 } else {
@@ -183,7 +183,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         // We also keep the direction of the two edges between the nodes in
         // order to know exactly what trinode restructuring to choose
         let mut p0 = p;
-        let n0 = self.a.get_inx(p0);
+        let n0 = self.a.get_inx_unwrap(p0);
 
         //  ? (1,2)
         //    /
@@ -237,7 +237,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                 //    /     \
                 // n0 (1)  s0 (0)
             }
-            (self.a.get_inx(p1), p1)
+            (self.a.get_inx_unwrap(p1), p1)
         } else {
             // single node tree, inserted node was inserted as rank 1 which is immediately
             // correct
@@ -254,7 +254,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             //    /    \
             //   /      \
             // n0 (1)  s0 (0)
-            (self.a.get_inx(p2), p2)
+            (self.a.get_inx_unwrap(p2), p2)
         } else {
             // height 2 tree, ranks are guaranteed correct because the root is at rank 2
 
@@ -279,9 +279,9 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             //
             // (also `d01` and `d12` can alternate, but that only becomes
             // important during restructuring)
-            let n0 = self.a.get_inx(p0);
-            let n1 = self.a.get_inx(p1);
-            let n2 = self.a.get_inx(p2);
+            let n0 = self.a.get_inx_unwrap(p0);
+            let n1 = self.a.get_inx_unwrap(p1);
+            let n2 = self.a.get_inx_unwrap(p2);
             let p3 = n2.t.p_back;
 
             let rank0 = n0.t.rank;
@@ -314,7 +314,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             // lower height violations.
             let p_s1 = if d12 { n2.t.p_tree0 } else { n2.t.p_tree1 };
             let rank_s1 = if let Some(p_s1) = p_s1 {
-                self.a.get_inx(p_s1).t.rank
+                self.a.get_inx_unwrap(p_s1).t.rank
             } else {
                 0
             };
@@ -378,7 +378,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                     p1 = p2;
                     p2 = p3;
                     d01 = d12;
-                    d12 = self.a.get_inx(p2).t.p_tree1 == Some(p1);
+                    d12 = self.a.get_inx_unwrap(p2).t.p_tree1 == Some(p1);
                     continue;
                 } else {
                     // n2 was the root, the rest of the tree is ok

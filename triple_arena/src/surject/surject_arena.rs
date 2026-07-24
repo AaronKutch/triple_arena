@@ -265,7 +265,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     #[must_use]
     pub fn len_key_set(&self, p: P) -> Option<NonZeroUsize> {
         let p_val = self.keys.get(p)?.p_val;
-        Some(self.vals.get_inx(p_val.inx()).unwrap().1.key_count)
+        Some(self.vals.get_inx_unwrap(p_val.inx()).key_count)
     }
 
     /// Returns if the arena is empty (`self.len_keys() == 0` if and only if
@@ -342,9 +342,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         };
         self.vals[p_val].key_count = NonZeroUsize::new(
             self.vals
-                .get_inx(p_val.inx())
-                .unwrap()
-                .1
+                .get_inx_unwrap(p_val.inx())
                 .key_count
                 .get()
                 .wrapping_add(1),
@@ -366,9 +364,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         let p_val = self.keys.get(p)?.p_val;
         self.vals[p_val].key_count = NonZeroUsize::new(
             self.vals
-                .get_inx(p_val.inx())
-                .unwrap()
-                .1
+                .get_inx_unwrap(p_val.inx())
                 .key_count
                 .get()
                 .wrapping_add(1),
@@ -406,14 +402,14 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     #[must_use]
     pub fn get_val(&self, p: P) -> Option<&V> {
         let p_val = self.keys.get(p)?.p_val;
-        Some(&self.vals.get_inx(p_val.inx()).unwrap().1.v)
+        Some(&self.vals.get_inx_unwrap(p_val.inx()).v)
     }
 
     /// Returns a reference to the key-value pair pointed to by `p`
     #[must_use]
     pub fn get(&self, p: P) -> Option<(&K, &V)> {
         let key = self.keys.get(p)?;
-        Some((&key.k, &self.vals.get_inx(key.p_val.inx()).unwrap().1.v))
+        Some((&key.k, &self.vals.get_inx_unwrap(key.p_val.inx()).v))
     }
 
     /// Returns a mutable reference to the value pointed to by `p`
@@ -528,8 +524,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             // corresponds to same set
             return None;
         }
-        let len0 = self.vals.get_inx(p_val0.inx()).unwrap().1.key_count.get();
-        let len1 = self.vals.get_inx(p_val1.inx()).unwrap().1.key_count.get();
+        let len0 = self.vals.get_inx_unwrap(p_val0.inx()).key_count.get();
+        let len1 = self.vals.get_inx_unwrap(p_val1.inx()).key_count.get();
         if len0 < len1 {
             mem::swap(&mut p_val0, &mut p_val1);
             mem::swap(&mut p0, &mut p1);
@@ -538,7 +534,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         let mut tmp = p1.inx();
         loop {
             self.keys.get_inx_mut_unwrap_t(tmp).p_val = p_val0;
-            tmp = self.keys.get_inx(tmp).next().unwrap();
+            tmp = self.keys.get_inx_unwrap(tmp).next().unwrap();
             if tmp == p1.inx() {
                 break;
             }
@@ -567,7 +563,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         let key = self.keys.remove(p)?.t;
         let p_val = key.p_val;
         let k = key.k;
-        let key_count = self.vals.get_inx(p_val.inx()).unwrap().1.key_count.get();
+        let key_count = self.vals.get_inx_unwrap(p_val.inx()).key_count.get();
         if key_count == 1 {
             // last key, remove the value
             Some((k, Some(self.vals.remove(p_val).allow().unwrap().v)))
@@ -844,3 +840,45 @@ impl<P: Ptr, K, V, B: ArenaBacking> Default for SurjectArena<P, K, V, B> {
         Self::new()
     }
 }
+
+impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> PartialEq<SurjectArena<P, K, V, B>>
+    for SurjectArena<P, K, V, B>
+{
+    /// Checks if all `(P, K, V)` pairs are equal. This is sensitive to
+    /// `Ptr` indexes, generation counters, and some hidden key set relations,
+    /// but does not compare arena capacities, `self.generation()`, or hidden
+    /// value pointers.
+    fn eq(&self, other: &SurjectArena<P, K, V, B>) -> bool {
+        // first the keys
+        let mut adv0 = self.advancer();
+        let mut adv1 = other.advancer();
+        while let Some(p0) = adv0.advance(self) {
+            if let Some(p1) = adv1.advance(other) {
+                if p0 != p1 {
+                    return false;
+                }
+                let key0 = self.keys.get_inx_unwrap(p0.inx());
+                let key1 = self.keys.get_inx_unwrap(p1.inx());
+                // make sure not to depend on `p_val`
+                if key0.prev_next() != key1.prev_next() {
+                    return false;
+                }
+                if key0.t.k != key1.t.k {
+                    return false;
+                }
+                // the surject composition is implicitly checked by the `prev_next`
+                // checks
+                if self.vals.get_inx_unwrap(key0.t.p_val.inx()).v
+                    != other.vals.get_inx_unwrap(key1.t.p_val.inx()).v
+                {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        adv1.advance(other).is_none()
+    }
+}
+
+impl<P: Ptr, K: Eq, V: Eq, B: ArenaBacking> Eq for SurjectArena<P, K, V, B> {}

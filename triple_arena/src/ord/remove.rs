@@ -162,13 +162,13 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         }
 
         loop {
-            let n1 = self.a.get_inx(p1);
+            let n1 = self.a.get_inx_unwrap(p1);
             let rank1 = n1.t.rank;
             let d01 = n1.t.p_tree1 == p0;
             let p2 = n1.t.p_back;
 
             let rank0 = if let Some(p0) = p0 {
-                self.a.get_inx(p0).t.rank
+                self.a.get_inx_unwrap(p0).t.rank
             } else {
                 0
             };
@@ -179,7 +179,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                     // no violation
                     break;
                 }
-                let s0 = self.a.get_inx(p_s0);
+                let s0 = self.a.get_inx_unwrap(p_s0);
                 let rank_s0 = s0.t.rank;
 
                 if rank_s0.wrapping_add(2) == rank1 {
@@ -219,12 +219,12 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                 };
 
                 let rank_a = if let Some(p_a) = p_a {
-                    self.a.get_inx(p_a).t.rank
+                    self.a.get_inx_unwrap(p_a).t.rank
                 } else {
                     0
                 };
                 let rank_b = if let Some(p_b) = p_b {
-                    self.a.get_inx(p_b).t.rank
+                    self.a.get_inx_unwrap(p_b).t.rank
                 } else {
                     0
                 };
@@ -368,7 +368,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                 // also handles invariant 1
 
                 let p_a = p_a.unwrap();
-                let a = self.a.get_inx(p_a);
+                let a = self.a.get_inx_unwrap(p_a);
                 let (p_c, p_d) = if d01 {
                     (a.t.p_tree1, a.t.p_tree0)
                 } else {

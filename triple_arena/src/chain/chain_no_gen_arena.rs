@@ -558,7 +558,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         let p_res = self.a.invalidate(p).allow()?;
         let p_new = p_res.inx();
         // fix invalidated interlinks
-        match self.a.get_inx(p_new).unwrap().1.prev_next() {
+        match self.a.get_inx_unwrap(p_new).prev_next() {
             (None, None) => (),
             (None, Some(p1)) => {
                 self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p_new);
@@ -679,8 +679,8 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
     pub fn exchange_next(&mut self, p0: P, p1: P) -> Option<()> {
         if self.contains(p0) && self.contains(p1) {
             // get downstream links
-            let d0 = self.a.get_inx(p0.inx()).unwrap().1.next()?;
-            let d1 = self.a.get_inx(p1.inx()).unwrap().1.next()?;
+            let d0 = self.a.get_inx_unwrap(p0.inx()).next()?;
+            let d1 = self.a.get_inx_unwrap(p1.inx()).next()?;
             self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(d1);
             self.a.get_inx_mut_unwrap(p1.inx()).prev_next.1 = Some(d0);
             self.a.get_inx_mut_unwrap(d0).prev_next.0 = Some(p1.inx());
@@ -920,8 +920,8 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
     /// the result is unwrapped internally
     #[doc(hidden)]
     //#[track_caller]
-    pub fn get_inx(&self, p: P::Inx) -> &LinkNoGen<P, T> {
-        self.a.get_inx(p).unwrap().1
+    pub fn get_inx_unwrap(&self, p: P::Inx) -> &LinkNoGen<P, T> {
+        self.a.get_inx_unwrap(p)
     }
 
     // do not make a `get_inx_unwrap_t`, we do not want to incur extra offsets
