@@ -470,28 +470,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         self.m.get_mut(P::Inx::try_into_usize(inx)?)
     }
 
-    /// Gets two `&mut T` references pointed to by `p0` and `p1`. If `p0 == p1`
-    /// or a pointer is invalid, `None` is returned.
-    #[must_use]
-    pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<(&mut T, &mut T)> {
-        if let Ok([n0, n1]) = self.m.get_disjoint_mut([
-            P::Inx::try_into_usize(p0.inx())?,
-            P::Inx::try_into_usize(p1.inx())?,
-        ]) {
-            if let (Allocated(gen0, t0), Allocated(gen1, t1)) = (n0, n1) {
-                if (*gen0 == p0.generation()) && (*gen1 == p1.generation()) {
-                    Some((t0, t1))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
     /// This is currently only used by `SurjectArena::compress_and_shrink_with`
     /// in a way that avoids a broken freelist.
     pub(crate) fn raw_entry_swap_special(&mut self, i0: NonZeroUsize, i1: NonZeroUsize) {

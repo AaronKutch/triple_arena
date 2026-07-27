@@ -457,10 +457,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     pub fn get2_val_mut(&mut self, p0: P, p1: P) -> Option<(&mut V, &mut V)> {
         let p_val0 = self.keys.get(p0)?.p_val;
         let p_val1 = self.keys.get(p1)?.p_val;
-        match self.vals.get2_mut(p_val0, p_val1) {
-            Some((val0, val1)) => Some((&mut val0.v, &mut val1.v)),
-            None => None,
-        }
+        let [val0, val1] = self.vals.get_disjoint_mut([p_val0, p_val1]).ok()?;
+        Some((&mut val0.v, &mut val1.v))
     }
 
     /// Gets two mutable references to the key-value pairs pointed to by `p0`
@@ -469,15 +467,9 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     #[must_use]
     #[allow(clippy::type_complexity)]
     pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<((&mut K, &mut V), (&mut K, &mut V))> {
-        match self.keys.get2_mut(p0, p1) {
-            Some((key0, key1)) => match self.vals.get2_mut(key0.p_val, key1.p_val) {
-                Some((val0, val1)) => {
-                    Some(((&mut key0.k, &mut val0.v), (&mut key1.k, &mut val1.v)))
-                }
-                None => None,
-            },
-            None => None,
-        }
+        let (key0, key1) = self.keys.get2_mut(p0, p1)?;
+        let [val0, val1] = self.vals.get_disjoint_mut([key0.p_val, key1.p_val]).ok()?;
+        Some(((&mut key0.k, &mut val0.v), (&mut key1.k, &mut val1.v)))
     }
 
     /// Returns the generation associated with `p` and a `LinkNoGen<P, &K>`, the
@@ -629,7 +621,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         let p_val1 = self.keys.get(p1)?.p_val;
         if p_val0 != p_val1 {
             // we only want to swap the `V` and not the ref counts
-            let (lhs, rhs) = self.vals.get2_mut(p_val0, p_val1).unwrap();
+            let [lhs, rhs] = self.vals.get_disjoint_mut([p_val0, p_val1]).unwrap();
             mem::swap(&mut lhs.v, &mut rhs.v);
         } // else no-op and we also checked for containment earlier
         Some(())

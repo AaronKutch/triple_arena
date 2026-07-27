@@ -519,12 +519,15 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     #[allow(clippy::type_complexity)]
     #[must_use]
     pub fn get2_link_mut(&mut self, p0: P, p1: P) -> Option<(Link<P, &mut T>, Link<P, &mut T>)> {
-        self.a.get2_mut(p0, p1).map(|(link0, link1)| {
-            (
-                Link::new(link0.prev_next(), &mut link0.t),
-                Link::new(link1.prev_next(), &mut link1.t),
-            )
-        })
+        self.a
+            .get_disjoint_mut([p0, p1])
+            .map(|[link0, link1]| {
+                (
+                    Link::new(link0.prev_next(), &mut link0.t),
+                    Link::new(link1.prev_next(), &mut link1.t),
+                )
+            })
+            .ok()
     }
 
     /// Returns a `&T` reference pointed to by `p`. Returns
@@ -547,8 +550,9 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     #[must_use]
     pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<(&mut T, &mut T)> {
         self.a
-            .get2_mut(p0, p1)
-            .map(|(link0, link1)| (&mut link0.t, &mut link1.t))
+            .get_disjoint_mut([p0, p1])
+            .ok()
+            .map(|[link0, link1]| (&mut link0.t, &mut link1.t))
     }
 
     /// Removes the link at `p`. If the link is in the middle of the chain, the
@@ -689,7 +693,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
                 None
             }
         } else {
-            let (lhs, rhs) = self.a.get2_mut(p0, p1)?;
+            let [lhs, rhs] = self.a.get_disjoint_mut([p0, p1]).ok()?;
             mem::swap(&mut lhs.t, &mut rhs.t);
             Some(())
         }
