@@ -238,6 +238,8 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         Ok(())
     }
 
+    // FIXME we may want `unreachable` for assembly perf, see u32 Ptr case
+
     /// We assume that if a slot has been successfully pushed before (implying
     /// that `P::Inx::try_from_usize` has succeeded with this exact value
     /// before), then passing the same raw index again to this will not fail,
@@ -456,19 +458,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    // FIXME remove these
-
-    #[must_use]
-    #[inline]
-    pub(crate) fn m_get(&self, inx: P::Inx) -> Option<&InternalSlot<P, T>> {
-        self.m.get(P::Inx::try_into_usize(inx)?)
-    }
-
-    #[must_use]
-    #[inline]
-    pub(crate) fn m_get_mut(&mut self, inx: P::Inx) -> Option<&mut InternalSlot<P, T>> {
-        self.m.get_mut(P::Inx::try_into_usize(inx)?)
-    }
+    // FIXME remove this if possible
 
     /// This is currently only used by `SurjectArena::compress_and_shrink_with`
     /// in a way that avoids a broken freelist.
@@ -484,7 +474,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     #[doc(hidden)]
     //#[track_caller]
     pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
-        match self.m_get(p) {
+        match self.m.get(Self::into_checked(p)) {
             Some(Allocated(_, t)) => t,
             // if we use `panic` it induces stack management on every hot path according to the
             // assembly
@@ -497,7 +487,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     #[doc(hidden)]
     //#[track_caller]
     pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
-        match self.m_get_mut(p) {
+        match self.m.get_mut(Self::into_checked(p)) {
             Some(Allocated(_, t)) => t,
             _ => unreachable!(), /* panic!("get_inx_mut_unwrap of unallocated entry"), */
         }

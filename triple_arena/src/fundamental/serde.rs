@@ -27,7 +27,7 @@ impl<P: Ptr, T: Serialize, B: ArenaBacking> Serialize for Arena<P, T, B> {
     {
         let mut s = serializer.serialize_map(Some(self.len()))?;
         for (p, t) in self {
-            s.serialize_entry(&p.inx(), t)?;
+            s.serialize_entry(&p, t)?;
         }
         s.end()
     }
@@ -163,14 +163,21 @@ where
         M: MapAccess<'de>,
     {
         let mut a = Arena::<P, T, B>::new();
+        // FIXME
+        //a.set_generation(new_gen);
         if let Some(hint) = access.size_hint() {
             let _ = a.m.reallocate_min_capacity(hint);
         }
 
-        while let Some((p, t)) = access.next_entry::<P::Inx, T>()? {
-            let i = PtrInx::try_into_usize(p).unwrap().get();
+        while let Some((p, t)) = access.next_entry::<P, T>()? {
+            let Some(i) = PtrInx::try_into_usize(p.inx()) else {
+                return Err(Error::custom(
+                    "when deserializing a `triple_arena` arena, `PtrInx::try_into_usize` failed \
+                     likely meaning that the `Ptr` type is not linear",
+                ));
+            };
             let slot_len = a.m.len();
-            if let Some(to_add) = i.checked_sub(slot_len) {
+            if let Some(to_add) = i.get().checked_sub(slot_len) {
                 for _ in 0..to_add {
                     // the freelist is fixed later
 
@@ -183,7 +190,7 @@ where
                         })?;
                 }
             }
-            let entry = a.m_get_mut(p).unwrap();
+            let entry = a.m.get_mut(i).unwrap();
             match entry {
                 InternalSlot::Free(_) => {
                     entry.replace_free_with_allocated(PtrGen::two(), t).unwrap();
@@ -354,7 +361,7 @@ where
         let mut i = 1usize;
         let mut last = None;
         while let Some((k, v)) = access.next_entry::<K, V>()? {
-            // FIXME or should we delete the arena level serializations altogether?
+            // FIXME
             let p = PtrInx::try_from_usize(NonZeroUsize::new(i).unwrap()).unwrap();
             if let Some(last) = last {
                 a.get_inx_mut_unwrap(last).prev_next.1 = Some(p);

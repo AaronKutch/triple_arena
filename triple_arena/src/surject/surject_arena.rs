@@ -657,10 +657,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         // do a special kind of manual compression on the values
         let mut first_unallocated = None;
         for i in self.vals.nziter() {
-            if matches!(
-                self.vals.m_get(P::Inx::try_from_usize(i).unwrap()).unwrap(),
-                InternalSlot::Free(_)
-            ) {
+            if matches!(self.vals.m.get(i).unwrap(), InternalSlot::Free(_)) {
                 first_unallocated = Some(i);
                 break;
             }
@@ -689,12 +686,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
                                 break;
                             }
                             let j_nz = NonZeroUsize::new(j).unwrap();
-                            if matches!(
-                                self.vals
-                                    .m_get(P::Inx::try_from_usize(j_nz).unwrap())
-                                    .unwrap(),
-                                InternalSlot::Free(_)
-                            ) {
+                            if matches!(self.vals.m.get(j_nz).unwrap(), InternalSlot::Free(_)) {
                                 first_unallocated = Some(j_nz);
                                 break;
                             }
