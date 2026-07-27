@@ -291,10 +291,11 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             Free(_) => InvalidationResult::InvalidPtr,
             Allocated(generation1, _) => {
                 if let Some(generation) = generation
-                    && *generation1 != generation
                 {
-                    // invalid by generation
-                    return InvalidationResult::InvalidPtr;
+                    if *generation1 != generation {
+                        // invalid by generation
+                        return InvalidationResult::InvalidPtr;
+                    }
                 }
 
                 let old_t = if len == raw_inx.get() {

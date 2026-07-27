@@ -98,9 +98,12 @@ unsafe impl<T, const LIMIT: usize> NonZeroInxGenericStack<T> for NonZeroInxArray
     ) -> Result<Self::PushEntry<'_>, NotWithinCapacityError> {
         // need to account for `T` being a ZST, can't rely on isize::MAX limits
         if let Some(next_len) = self.len.checked_add(1)
-            && next_len <= LIMIT
         {
-            Ok(NonZeroInxArrayPushEntry { this: self })
+            if next_len <= LIMIT {
+                Ok(NonZeroInxArrayPushEntry { this: self })
+            } else {
+            Err(NotWithinCapacityError)
+            }
         } else {
             Err(NotWithinCapacityError)
         }
