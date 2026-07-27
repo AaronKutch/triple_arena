@@ -6,7 +6,9 @@ use star_rng::StarRng;
 use triple_arena::{
     AllocError, Arena, HeapBacking, InvalidationOption, InvalidationResult,
     MaxCapacityReductionError, NotWithinCapacityError, ReallocationError,
-    traits::{Advancer, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena},
+    traits::{
+        Advancer, ArenaCloneFromWith, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena,
+    },
     utils::traits::{PtrGen, PtrInx},
 };
 
@@ -43,11 +45,9 @@ impl TryInternalDrop for Stats {
     }
 }
 
-/// Use the [LIMIT] for fixed length types and as the limit for settable limit
-/// types, ignore otherwise
 pub fn fuzz<
     P: Ptr,
-    A: ArenaTrait<P, Cd<()>> + ArenaInsertTrait<P, Cd<()>> + SingularGenerationArena<P>,
+    A: ArenaCloneFromWith<P, Cd<()>> + SingularGenerationArena<P> + ArenaInsertTrait<P, Cd<()>>,
 >(
     meta: &mut Meta<Stats>,
     a: &mut A,
@@ -606,7 +606,14 @@ pub fn fuzz<
             }
             994 => {
                 // compress
-                ensure_eq!(a.compress().is_overflow(), g.invalidate());
+                let reset = rng.next_bool();
+                let o = a.compress(reset).is_overflow();
+                if reset {
+                    g.0 = P::Gen::two();
+                    ensure!(!o);
+                } else {
+                    ensure_eq!(o, g.invalidate());
+                }
                 b.clear();
                 for (p, t) in a.iter() {
                     b.insert(t.key(), p);
@@ -623,15 +630,23 @@ pub fn fuzz<
             995 => {
                 // compress_with
                 let mut new_map = vec![];
-                ensure_eq!(
-                    a.compress_with(|p_old, t, p_new| {
+                let reset = rng.next_bool();
+                let o = a
+                    .compress_with(reset, |p_old, t, p_new| {
                         assert_eq!(*b.get(t.key()).unwrap(), p_old);
                         new_map.push((p_new, t.key()));
                     })
-                    .is_overflow(),
-                    g.invalidate()
-                );
+                    .is_overflow();
+                if reset {
+                    g.0 = P::Gen::two();
+                    ensure!(!o);
+                } else {
+                    ensure_eq!(o, g.invalidate());
+                }
                 b.clear();
+                if reset {
+                    g.0 = P::Gen::two();
+                }
                 for (p, k) in new_map {
                     b.insert(k, p);
                 }

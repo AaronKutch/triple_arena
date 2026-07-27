@@ -379,7 +379,10 @@ macro_rules! ptr_struct {
                 where
                     S: $crate::utils::serde::Serializer,
                 {
-                    <Self as $crate::traits::Ptr>::inx(*self).serialize(serializer)
+                    (
+                        <Self as $crate::traits::Ptr>::inx(*self),
+                        <Self as $crate::traits::Ptr>::generation(*self)
+                    ).serialize(serializer)
                 }
             }
 
@@ -388,12 +391,11 @@ macro_rules! ptr_struct {
                 where
                     D: $crate::utils::serde::Deserializer<'de>,
                 {
-                    let p = <<Self as $crate::traits::Ptr>::Inx as $crate::utils::serde::Deserialize>
-                        ::deserialize(deserializer)?;
-                    Ok(<Self as $crate::traits::Ptr>::_from_raw(
-                        p,
-                        <<Self as $crate::traits::Ptr>::Gen as $crate::utils::traits::PtrGen>::two()
-                    ))
+                    let (inx, generation): (
+                        <$struct_name as $crate::traits::Ptr>::Inx,
+                        <$struct_name as $crate::traits::Ptr>::Gen,
+                    ) = $crate::utils::serde::Deserialize::deserialize(deserializer)?;
+                    Ok(<Self as $crate::traits::Ptr>::_from_raw(inx, generation))
                 }
             }
         )*

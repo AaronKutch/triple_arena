@@ -8,11 +8,8 @@ use core::{
 use crate::{
     InvalidationOption, InvalidationResult,
     arena::ArenaBacking,
-    traits::{ArenaTrait, Ptr, SetMaxCapacity},
-    utils::{
-        ptrinx_unchecked,
-        traits::{NonZeroInxGenericStack, PtrGen, PtrInx},
-    },
+    traits::{ArenaCloneFromWith, ArenaTrait, Ptr, SetMaxCapacity},
+    utils::traits::{NonZeroInxGenericStack, PtrGen, PtrInx},
 };
 
 // See REF(arena_terminology)
@@ -32,22 +29,6 @@ pub enum InternalSlot<P: Ptr, T> {
     Allocated(P::Gen, T),
 }
 
-// FIXME remove
-impl<P: Ptr, T> InternalSlot<P, T> {
-    #[inline]
-    pub fn replace_free_with_allocated(&mut self, generation: P::Gen, t: T) -> Option<P::Inx> {
-        let free = mem::replace(self, Allocated(generation, t));
-        if let Free(free) = free {
-            Some(free)
-        } else {
-            None
-        }
-    }
-
-    // no `replace_allocated_with_free`, it is too easy to introduce invariant
-    // breakage
-}
-
 use InternalSlot::*;
 
 /// An arena supporting non-Clone `T` (`T` has no requirements other than
@@ -64,7 +45,7 @@ use InternalSlot::*;
 /// See also the documentation on [ArenaTrait].
 ///
 /// ```
-/// use triple_arena::{Arena, ptr_struct, traits::Ptr};
+/// use triple_arena::{Arena, ptr_struct, traits::*};
 ///
 /// // In implementations that always use valid indexes and only want the
 /// // generation counter in debug mode, we can use `cfg`s like this:
@@ -105,8 +86,13 @@ use InternalSlot::*;
 /// assert_eq!(arena[hello_ptr], "hello");
 ///
 /// // Remove objects. The `Arena` uses internal freelists to keep the capacity
-/// // for future inserts to reuse.
-/// let removed = arena.remove(test_ptr).unwrap();
+/// // for future inserts to reuse. Invalidation functions like
+/// // `ArenaTrait::remove` return an `InvalidationResult` or
+/// // `InvalidationOption` that allow checking for generation overflow. For
+/// // most use cases with the default generation counter size, however, you
+/// // should just use `.allow()` to allow generation overflow because it is
+/// // practically impossible to reach.
+/// let removed = arena.remove(test_ptr).allow().unwrap();
 /// assert_eq!(removed, "test");
 ///
 /// // When using generation counters, invalidated pointers are guaranteed to
@@ -135,7 +121,7 @@ use InternalSlot::*;
 ///     // error: expected type parameter `P0`, found type parameter `P1`
 ///     //let _ = a0.remove(p1);
 ///
-///     a0.insert(a1.remove(p1).unwrap());
+///     a0.insert(a1.remove(p1).allow().unwrap());
 /// }
 ///
 /// let mut arena3: Arena<Q2, String> = Arena::new();
@@ -361,7 +347,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     }
 
     /// Returns the singular arena generation counter, the same as
-    /// [SingularGenerationArena::singular_generation]
+    /// [crate::traits::SingularGenerationArena::singular_generation]
     #[inline]
     pub fn generation(&self) -> P::Gen {
         self.generation
@@ -383,78 +369,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             InvalidationOption::GenerationOverflow(())
         } else {
             InvalidationOption::Success(())
-        }
-    }
-
-    // FIXME
-
-    /// Reserves capacity such that `self.capacity()` becomes at least
-    /// `self.len() + additional`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the new capacity exceeds `P::Inx::MAX`.
-    pub fn reserve(&mut self, additional: usize) {
-        let old_virt_cap = self.m.len();
-        let old_real_cap = self.m.capacity();
-        let target = old_virt_cap
-            .checked_add(additional)
-            .expect(" wanted arena capacity exceeds `P::Inx::MAX`");
-        if let Some(target) = NonZeroUsize::new(target)
-            && <P::Inx as PtrInx>::try_from_usize(target).is_none()
-        {
-            panic!("wanted arena capacity exceeds `P::Inx::MAX`");
-        }
-        // then determine if we need to reserve any real capacity
-        let reserve_amt = if target <= old_real_cap {
-            // this both handles the overflow case and prevents the exponential capacity
-            // growth problem, because if the real capacity is greater than target virtual
-            // capacity, then this is reached.
-            0
-        } else {
-            // nonoverflowing and nonzero since `target > old_real_cap`
-            target.wrapping_sub(old_real_cap)
-        };
-        // check for greater than zero, `reserve(0)` can trigger allocation and thus
-        // exponential growth problems
-        if reserve_amt > 0 {
-            let _ = self.m.reallocate_min_capacity(target);
-        }
-        // Get to `target` virtual capacity and no more, do not go all way to
-        // `self.m.capacity()`. Nonoverflowing since `target` is a checked add on
-        // `old_virt_cap`.
-        let remaining = target.wrapping_sub(old_virt_cap);
-        if remaining > 0 {
-            // Safety: `old_virt_cap` cannot be more than `isize::MAX`,
-            // `target > 0` because `remaining > 0`, `isize::MAX` guarantees
-            unsafe {
-                let old_root = self.freelist_root;
-                // we can choose the new root to go anywhere in the new capacity, but we choose
-                // to point at the previous virtual capacity.
-                self.freelist_root = Some(ptrinx_unchecked(old_virt_cap.wrapping_add(1)));
-                // initialize the freelist with each entry pointing to the next
-                for i in old_virt_cap.wrapping_add(2)
-                    ..old_virt_cap.wrapping_add(remaining).wrapping_add(1)
-                {
-                    self.m
-                        .push_within_capacity(Free(ptrinx_unchecked(i)))
-                        .ok()
-                        .unwrap();
-                }
-                match old_root {
-                    Some(old_root) => {
-                        // The last `Free` points to the old root
-                        self.m.push_within_capacity(Free(old_root)).ok().unwrap();
-                    }
-                    None => {
-                        // the last `Free` points to itself
-                        self.m
-                            .push_within_capacity(Free(ptrinx_unchecked(target)))
-                            .ok()
-                            .unwrap();
-                    }
-                }
-            }
         }
     }
 

@@ -14,6 +14,7 @@ serde_support = ["triple_arena/serde_support"]
 expect-test = "1.5"
 postcard = { version = "1.0", features = ["alloc"] }
 rand_xoshiro = "0.8"
+ron = { version = "0.12", features = ["integer128"] }
 serde = "1.0"
 serde_derive = "1.0"
 stacked_errors = "0.7"

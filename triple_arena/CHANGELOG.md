@@ -19,7 +19,9 @@
 - Removed `compress_and_shrink*` in favor of just `compress*` functions, `self.reallocate_min_capacity(self.len())` can be used afterwards to retain the original functionality
 - Removed the `remove_by`, `capacity_drain`, and `*_shrink` functions. With some backings, shrinking capacity is not actually possible. The `reallocate_min_capacity` method should be used in tandem with other functions instead.
 - Added `set_generation`, `inc_generation`, `find_first_ptr`, `find_last_inx_ptr`, and other low level manipulation functions
-- Removed `FromIterator` impls because they were awkward and hide various kinds of fallibility
+- Removed direct serialization on the arenas (but kept serialization of `PtrInx`, `PtrGen`, `Ptr`, and some other types like `Link`s). Directly serializing the arenas was almost always a bad idea for explosive capacity reasons, and almost always should have a manual implementation customized for the particular purpose. See the revised `serde_docs` for more.
+- Removed `FromIterator` impls for much the same reason, they were awkward and hide multiple kinds of fallibility
+- Removed `compress_recaster` because there were simply too many variables that can be tweaked, added documentation on `ArenaTrait::compress_with` on how to recreate a custom version
 
 ## [0.14.0] - 2025-02-10
 ### Changes

@@ -9,6 +9,7 @@ use crate::cdgen::TryInternalDrop;
 /// For inspecting state right before a failure
 #[derive(Debug)]
 pub struct Meta<T: fmt::Debug + TryInternalDrop> {
+    /// The `StarRng` is passed in so that more is fuzzed across multiple calls
     pub rng: StarRng,
     pub i: usize,
     pub op_inx: usize,

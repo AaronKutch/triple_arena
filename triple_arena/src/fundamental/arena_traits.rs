@@ -116,17 +116,6 @@ impl<T> InvalidationResult<T> {
     }
 }
 
-/// A type that implements this trait becomes usable in functions like
-/// [ArenaTrait::clone_from_with]. Some arenas do not have a global generation,
-/// or at least some singular generation that could be chosen for functions like
-/// [ArenaTrait::clone_from_with] to use when selecting a generation to be used
-/// for ABA prevention.
-pub trait SingularGenerationArena<P: Ptr> {
-    /// Returns a singular generation for the arena, that is usually the
-    /// generation of the latest valid entries
-    fn singular_generation(&self) -> P::Gen;
-}
-
 /// The base trait for `triple_arena` style Arenas. See [crate::Arena] for the
 /// standard implementor.
 ///
@@ -174,8 +163,8 @@ pub trait ArenaTrait<P: Ptr, T>: Sized + IntoIterator<Item = (P, T)> {
     /// least the capacity of the returned stack. Returns an error upon
     /// allocation failure.
     ///
-    /// In most cases [NonZeroInxGenericStack::new] followed by
-    /// [NonZeroInxGenericStack::reallocate_min_capacity] would be sufficient,
+    /// In most cases [ArenaTrait::new] followed by
+    /// [ArenaTrait::reallocate_min_capacity] would be sufficient,
     /// but this function needs to exist for certain fixed capacity structures
     /// that can only have their capacity set once at construction time.
     fn with_min_capacity(min_capacity: usize) -> Result<Self, AllocError>;
@@ -242,7 +231,7 @@ pub trait ArenaTrait<P: Ptr, T>: Sized + IntoIterator<Item = (P, T)> {
             .and_then(|(generation, t)| (generation == p.generation()).then_some(t))
     }
 
-    /// Like [Arena::get], except generation counters are ignored and the
+    /// Like [ArenaTrait::get], except generation counters are ignored and the
     /// existing generation is returned.
     fn get_inx(&self, p: P::Inx) -> Option<(P::Gen, &T)>;
 
@@ -283,15 +272,15 @@ pub trait ArenaTrait<P: Ptr, T>: Sized + IntoIterator<Item = (P, T)> {
             .map(|a| a.map(|(_, t)| t))
     }
 
-    /// Like [Arena::get_mut], except generation counters are ignored and the
-    /// existing generation is returned.
+    /// Like [ArenaTrait::get_mut], except generation counters are ignored and
+    /// the existing generation is returned.
     fn get_inx_mut(&mut self, p: P::Inx) -> Option<(P::Gen, &mut T)> {
         let [res] = self.get_disjoint_inx_mut([p]).ok()?;
         Some(res)
     }
 
-    /// Like [Arena::get_disjoint_mut], except generation counters are ignored
-    /// and the existing generations are returned with the mutable
+    /// Like [ArenaTrait::get_disjoint_mut], except generation counters are
+    /// ignored and the existing generations are returned with the mutable
     /// references.
     fn get_disjoint_inx_mut<const N: usize>(
         &mut self,
@@ -413,6 +402,138 @@ pub trait ArenaTrait<P: Ptr, T>: Sized + IntoIterator<Item = (P, T)> {
     /// Does not invalidate and is always successful if `self.is_empty()`.
     fn clear(&mut self) -> InvalidationOption<()>;
 
+    /// Compresses the arena as much as possible by moving all internal
+    /// allocated indexes to be one after another with no unallocated gaps
+    /// between them, such that `self.reallocate_min_capacity(self.len())` would
+    /// reduce the capacity as much as possible. After this, the capacity can be
+    /// reduced as much as possible with
+    /// `self.reallocate_min_capacity(self.len())`. All `T` remains, but all
+    /// `Ptr`s are logically invalidated. New `Ptr`s to the entries can be found
+    /// again by advancers and iterators. If all extant `Ptr`s are recast or
+    /// invalidated `Ptr`s will not be a problem, `reset_generation` should be
+    /// set in order to reset the generation counter on all of the new `Ptr`s
+    /// (and `InvalidationOption::Success` will always be returned).
+    fn compress(&mut self, reset_generation: bool) -> InvalidationOption<()> {
+        self.compress_with(reset_generation, |_, _, _| ())
+    }
+
+    /// The same as [ArenaTrait::compress] except that `map` is run on
+    /// `(P, &mut T, P)`, with the first `P` being the old `Ptr` and the last
+    /// `P` being the new `Ptr` that points to the `T` after compression. If all
+    /// extant `Ptr`s are recast or invalidated `Ptr`s will not be a problem,
+    /// `reset_generation` should be set in order to reset the generation
+    /// counter on all of the new `Ptr`s (and `InvalidationOption::Success` will
+    /// always be returned).
+    ///
+    /// This can be used to create a custom [Recaster] for recasting external
+    /// `Ptr`s:
+    /// ```
+    /// use triple_arena::{Arena, HeapBacking, ptr_struct, traits::*};
+    ///
+    /// // (This would be a standard function, except there are far too many choices to
+    /// // make on the backing of the recaster arena and how fallibility should be
+    /// // handled)
+    /// fn compress_recaster<
+    ///     P: Ptr,
+    ///     T,
+    ///     A: ArenaTrait<P, T> + SingularGenerationArena<P> + ArenaCloneFromWith<P, T>,
+    /// >(
+    ///     this: &mut A,
+    ///     reset_generation: bool,
+    /// ) -> Arena<P, P, HeapBacking> {
+    ///     // this arena will be a recaster in which we create a mapping from the old `Ptr`
+    ///     // domain to the new one
+    ///     let mut res = Arena::<P, P, HeapBacking>::new();
+    ///     // this sets all the keys of the mapping by cloning the `Ptr` validities of the
+    ///     // pre-compression `self` into the recaster and puts in invalid placeholders for
+    ///     // the new domain
+    ///     res.clone_from_with(this, |_, _| P::invalid()).unwrap();
+    ///     // compress and write the new `Ptr`s at the indexes of the corresponding old
+    ///     // ones, completing the mapping
+    ///     this.compress_with(reset_generation, |p, _, q| *res.get_mut(p).unwrap() = q)
+    ///         .allow();
+    ///     res
+    /// }
+    ///
+    /// ptr_struct!(P0);
+    ///
+    /// impl Recast<P0> for (u64, Option<P0>) {
+    ///     fn recast<R: Recaster<Item = P0>>(
+    ///         &mut self,
+    ///         recaster: &R,
+    ///     ) -> Result<(), <R as Recaster>::Item> {
+    ///         self.1.recast(recaster)?;
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// let mut a = Arena::<P0, (u64, Option<P0>)>::new();
+    ///
+    /// let p0 = a.insert((0, None));
+    /// let p42 = a.insert((42, None));
+    /// let p1 = a.insert((1, None));
+    /// a.insert((1337, Some(p42)));
+    /// // make some internal slots unallocated
+    /// a.remove(p0).allow().unwrap();
+    /// a.remove(p1).allow().unwrap();
+    ///
+    /// assert_eq!(
+    ///     &format!("{a:?}"),
+    ///     "{P0[2](2): (42, None), P0[4](2): (1337, Some(P0[2](2)))}"
+    /// );
+    ///
+    /// // This is what the `Recast` trait is for. We call this before
+    /// // serialization. This fixes both the indexes of the `Ptr` keys
+    /// // and the indexes inside the values of the arena, so that
+    /// // relations are preserved.
+    /// let recaster = compress_recaster(&mut a, false);
+    /// a.recast(&recaster).unwrap();
+    /// // the recaster had this
+    /// assert_eq!(
+    ///     &format!("{recaster:?}"),
+    ///     "{P0[2](2): P0[1](5), P0[4](2): P0[2](5)}"
+    /// );
+    /// // now the allocated slots are compressed and we could shrink capacity or use
+    /// // this for compact serialization
+    /// assert_eq!(
+    ///     &format!("{a:?}"),
+    ///     "{P0[1](5): (42, None), P0[2](5): (1337, Some(P0[1](5)))}"
+    /// );
+    ///
+    /// // try again but with resetting the generation, useful in some cases
+    /// let recaster = compress_recaster(&mut a, true);
+    /// a.recast(&recaster).unwrap();
+    /// // maps all the generations down to a minimal value
+    /// assert_eq!(
+    ///     &format!("{recaster:?}"),
+    ///     "{P0[1](5): P0[1](2), P0[2](5): P0[2](2)}"
+    /// );
+    /// assert_eq!(
+    ///     &format!("{a:?}"),
+    ///     "{P0[1](2): (42, None), P0[2](2): (1337, Some(P0[1](2)))}"
+    /// );
+    /// ```
+    fn compress_with<F: FnMut(P, &mut T, P)>(
+        &mut self,
+        reset_generation: bool,
+        map: F,
+    ) -> InvalidationOption<()>;
+}
+
+/// Implemented for most "simple" arenas. Some arenas do not have a global
+/// generation (which also usually comes along with a complex `P::Inx` that
+/// would not be suitable for things like [ArenaCloneFromWith::clone_from_with],
+/// although that trait is separate because there are other conditions), and
+/// thus should not implement this.
+pub trait SingularGenerationArena<P: Ptr> {
+    /// Returns a singular generation for the arena, that is usually the
+    /// generation of entries that would be inserted now
+    fn singular_generation(&self) -> P::Gen;
+}
+
+/// A type implementing this can have a fully generic mapping clone operation
+/// from another type implementing this.
+pub trait ArenaCloneFromWith<P: Ptr, T>: ArenaTrait<P, T> {
     // `clone_from_with_within_capacity() -> Option<()>` is getting ridiculous and
     // the fallible return is only for if it was called in a trivially checkable
     // state, just make this one reallocating with a condition that it will never
@@ -421,53 +542,31 @@ pub trait ArenaTrait<P: Ptr, T>: Sized + IntoIterator<Item = (P, T)> {
     // allocated slot in `source`, this solves certain double buffering exponential
     // growth problems that early versions of `triple_arena` ran into.
 
-    // FIXME rename
+    // This function is fundamentally problematic in some scenarios, we have put it
+    // on its own trait and restrict the source to also require it. Wrappers can be
+    // used where needed.
 
     /// Overwrites `self` with a clone of `source` (dropping all preexisting `T`
-    /// and overwriting the singular generation counter with
-    /// `source.singular_generation()`). The `Ptr` validities are also
-    /// cloned so that the `P` associated with a `U` in `source` is also
-    /// precisely the valid `Ptr` to its mapped `T`. Reallocation occurs if
-    /// the capacity of `self` is not large enough. With simple arenas and
-    /// indexes, if the `P::Inx` from the highest index is such that
-    /// `source.find_last_inx_ptr().unwrap().inx().get() <= self.capacity()`,
-    /// this is guaranteed to _not_ reallocate and the function is
-    /// infallible. Does _not_ clone max capacity limits, and will fail if any
-    /// set limit on `self` is exceeded. Returns an error upon reallocation
-    /// failure.
-    fn clone_from_with<U, A: ArenaTrait<P, U> + SingularGenerationArena<P>, F: FnMut(P, &U) -> T>(
+    /// and overwriting the singular generation counter if any with
+    /// `source.singular_generation()`. The `Ptr` validities are also cloned so
+    /// that the `P` associated with a `U` in `source` is also precisely the
+    /// valid `Ptr` to its mapped `T`. Reallocation occurs if the capacity
+    /// of `self` is not large enough. With simple arenas and indexes, if
+    /// the `P::Inx` from the highest index is such that
+    /// `source.find_last_inx_ptr(). unwrap().inx().get() <=
+    /// self.capacity()`, this is guaranteed to _not_ reallocate and the
+    /// function is infallible. Does _not_ clone max capacity limits, and
+    /// will fail if any set limit on `self` is exceeded. Returns an error
+    /// upon reallocation failure.
+    fn clone_from_with<
+        U,
+        A: ArenaCloneFromWith<P, U> + SingularGenerationArena<P>,
+        F: FnMut(P, &U) -> T,
+    >(
         &mut self,
         source: &A,
         map: F,
     ) -> Result<(), ReallocationError>;
-
-    /// Compresses the arena as much as possible by moving all internal
-    /// allocated indexes to be one after another with no unallocated gaps
-    /// between them, such that `self.reallocate_min_capacity(self.len())` would
-    /// reduce the capacity as much as possible. After this, the capacity can be
-    /// reduced as much as possible with
-    /// `self.reallocate_min_capacity(self.len())`. All `T` remains, but all
-    /// `Ptr`s are invalidated. New `Ptr`s to the entries can be found again
-    /// by advancers and iterators.
-    fn compress(&mut self) -> InvalidationOption<()> {
-        self.compress_with(|_, _, _| ())
-    }
-
-    /// The same as [Arena::compress_and_shrink] except that `map` is run on
-    /// `(P, &mut T, P)`, with the first `P` being the old `Ptr` and the last
-    /// `P` being the new `Ptr` that points to the `T` after compression.
-    ///
-    /// This can be used to create a custom [Recaster] for recasting external
-    /// `Ptr`s:
-    /// ```text
-    /// // this recaster will create a mapping from the old `Ptr` domain to the new one
-    /// let mut recaster = Arena::<P, P>::new();
-    /// // this clones all the entries and `Ptr` validities of the pre-compression `self` into the recaster and puts in invalid placeholders for the new domain
-    /// recaster.clone_from_with(self, |_, _| P::invalid());
-    /// // compress and write the new `Ptr`s at the indexes of the old ones
-    /// self.compress_with(|p, _, q| *recaster.get_mut(p).unwrap() = q);
-    /// ```
-    fn compress_with<F: FnMut(P, &mut T, P)>(&mut self, map: F) -> InvalidationOption<()>;
 }
 
 /// Dropping the struct cancels the insertion

@@ -5,7 +5,9 @@ use fmt::Debug;
 use crate::{
     Arena, ChainArena,
     arena::InternalSlot,
-    traits::{Advancer, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr},
+    traits::{
+        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
+    },
     utils::{
         ChainNoGenArena, LinkNoGen, PtrNoGen,
         traits::{ArenaBacking, NonZeroInxGenericStack, PtrInx},
@@ -296,7 +298,9 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
 
     /// Follows [Arena::reserve] just for values
     pub fn reserve_vals(&mut self, additional: usize) {
-        self.vals.reserve(additional)
+        self.vals
+            .reallocate_min_capacity(self.vals.len() + additional)
+            .unwrap();
     }
 
     /// Inserts a new key and associated value. Returns a `Ptr` to the key.

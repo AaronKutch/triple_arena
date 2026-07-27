@@ -9,7 +9,9 @@ use core::{
 
 use crate::{
     Arena, ChainArena, Link,
-    traits::{Advancer, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr},
+    traits::{
+        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
+    },
     utils::traits::ArenaBacking,
 };
 
@@ -176,7 +178,9 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
 
     /// Follows [Arena::reserve]
     pub fn reserve(&mut self, additional: usize) {
-        self.a.reserve(additional)
+        self.a
+            .reallocate_min_capacity(self.len() + additional)
+            .unwrap();
     }
 
     /// If `prev_next.0.is_none() && prev_next.1.is_none()` then a new chain is

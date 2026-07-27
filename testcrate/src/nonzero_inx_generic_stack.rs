@@ -12,6 +12,11 @@ use crate::{
     misc::Meta,
 };
 
+// The `CdGen` is passed in, because otherwise it can be dropped upon returning
+// an error (because it will get dropped first because of bad drop ordering that
+// is verbose to correct) and give another error, all the `Cd`s will be dropped
+// by the time the function returns so that the `CdGen` can be dropped then.
+
 #[derive(Debug)]
 pub struct Stats {
     /// The limit that the test stays around (this is not necessarily exactly
@@ -34,15 +39,6 @@ impl TryInternalDrop for Stats {
     }
 }
 
-// The `CdGen` is passed in, because otherwise it can be dropped upon returning
-// an error (because it will get dropped first because of bad drop ordering that
-// is verbose to correct) and give another error, all the `Cd`s will be dropped
-// by the time the function returns so that the `CdGen` can be dropped then.
-
-// The `StarRng` is passed in so that more is fuzzed across multiple calls
-
-/// Use the [LIMIT] for fixed length types and as the limit for settable limit
-/// types, ignore otherwise
 pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
     meta: &mut Meta<Stats>,
     a: &mut S,

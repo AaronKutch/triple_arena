@@ -8,7 +8,7 @@ use crate::{arena::NonZeroInxArray, utils::traits::NonZeroInxGenericStack};
 ///
 /// In addition to what [NonZeroInxGenericStack] requires, the `Stack` type must
 /// not have certain kinds of internal mutability that would make functions like
-/// [ArenaTrait::backing] unsound.
+/// [Arena::backing] unsound.
 pub unsafe trait ArenaBacking {
     type Stack<U>: NonZeroInxGenericStack<U>;
 }

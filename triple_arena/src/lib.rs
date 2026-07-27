@@ -21,7 +21,7 @@ mod surject;
 // reexport for the macros to use
 pub use arena::{Arena, arena_iterators};
 pub use chain::{ChainArena, Link, chain_iterators};
-// always keep this for the serde documentation
+/// Documentation on arenas and serialization
 #[cfg(feature = "serde_support")]
 pub use fundamental::serde_docs;
 pub use fundamental::{
@@ -55,8 +55,6 @@ pub mod utils {
         pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
     }
 
-    pub use crate::fundamental::ptrinx_unchecked;
-
     // `ArenaBacking` is rarely referenced directly so we put it in here
 
     /// Traits for [crate::utils]
@@ -66,7 +64,7 @@ pub mod utils {
             chain::{ChainNoGenArena, LinkNoGen, chain_no_gen_iterators},
             fundamental::{
                 NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, PtrGen, PtrInx,
-                SetMaxCapacity, ptrinx_unchecked,
+                SetMaxCapacity,
             },
         };
     }
@@ -77,7 +75,7 @@ pub mod traits {
     pub use recasting::{Recast, Recaster};
 
     pub use crate::fundamental::{
-        Advancer, ArenaDirectInsertTrait, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
-        SetMaxCapacity, SingularGenerationArena,
+        Advancer, ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaInsertEntryTrait,
+        ArenaInsertTrait, ArenaTrait, Ptr, SetMaxCapacity, SingularGenerationArena,
     };
 }

@@ -1,18 +1,5 @@
 use core::{error::Error, fmt, num::NonZeroUsize};
 
-use crate::utils::traits::PtrInx;
-
-// FIXME remove
-
-/// Shorthand for `PtrInx::new(NonZeroUsize::new_unchecked(x))`.
-///
-/// # Safety
-///
-/// `x` must not be 0 and must be within the `PtrInx` limits
-pub unsafe fn ptrinx_unchecked<P: PtrInx>(x: usize) -> P {
-    PtrInx::try_from_usize(NonZeroUsize::new(x).unwrap()).unwrap()
-}
-
 // TODO
 /// Placeholder until `allocator_api` stabilizes
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -166,7 +153,6 @@ impl IntoIterator for IntoNonZeroUsizeIterator {
     }
 }
 
-/// Starts from 1
 #[inline]
 pub fn nzusize_iter(
     start: NonZeroUsize,

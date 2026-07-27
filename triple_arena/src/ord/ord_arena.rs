@@ -12,7 +12,7 @@ use core::{
 use crate::{
     Arena, ChainArena, Link,
     chain::LinkNoGen,
-    traits::{Advancer, ArenaTrait, Ptr},
+    traits::{Advancer, ArenaCloneFromWith, Ptr},
     utils::{
         ChainNoGenArena,
         traits::{ArenaBacking, PtrInx},

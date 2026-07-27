@@ -8,6 +8,8 @@ ptr_struct!(P0[NonZeroU32](NonZeroU128));
 ptr_struct!(P1);
 // for testing generation overflow
 ptr_struct!(P2[NonZeroU32](NonZeroU8));
+// for generationless
+ptr_struct!(P3[NonZeroU32]());
 
 /// helper for testing with arena generations
 #[derive(Debug)]

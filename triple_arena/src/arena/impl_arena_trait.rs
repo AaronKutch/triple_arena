@@ -10,16 +10,11 @@ use crate::{
     arena_iterators::{self, Drain},
     fundamental::NonZeroInxGenericStackPushEntryTrait,
     traits::{
-        Advancer, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena,
+        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
+        SingularGenerationArena,
     },
     utils::traits::{NonZeroInxGenericStack, PtrGen, PtrInx},
 };
-
-impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for Arena<P, T, B> {
-    fn singular_generation(&self) -> <P as Ptr>::Gen {
-        self.generation
-    }
-}
 
 impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     type PtrAdvancer = arena_iterators::PtrAdvancer<P>;
@@ -183,9 +178,59 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         }
     }
 
+    fn compress_with<F: FnMut(P, &mut T, P)>(
+        &mut self,
+        reset_generation: bool,
+        mut map: F,
+    ) -> InvalidationOption<()> {
+        let res = if reset_generation {
+            self.generation = P::Gen::two();
+            InvalidationOption::Success(())
+        } else {
+            self.inc_generation()
+        };
+        let new_gen = self.generation;
+        // we are moving from `j` to `i`
+        let mut i = NonZeroUsize::new(1).unwrap();
+        for j in self.nziter() {
+            let entry = mem::replace(
+                self.m.get_mut(j).unwrap(),
+                // this will be overwritten or dropped
+                Free(P::invalid().inx()),
+            );
+            if let Allocated(old_gen, mut t) = entry {
+                map(
+                    Ptr::_from_raw(Self::from_checked(j), old_gen),
+                    &mut t,
+                    Ptr::_from_raw(Self::from_checked(i), new_gen),
+                );
+                let _ = mem::replace(self.m.get_mut(i).unwrap(), Allocated(new_gen, t));
+                i = i.checked_add(1).unwrap();
+            }
+        }
+        // remove free slots off the end
+        for inx in self.nziter().into_iter().rev() {
+            if let Free(_) = self.m.get(inx).unwrap() {
+                self.m.pop();
+            } else {
+                break;
+            }
+        }
+        self.freelist_root = None;
+        res
+    }
+}
+
+impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for Arena<P, T, B> {
+    fn singular_generation(&self) -> <P as Ptr>::Gen {
+        self.generation
+    }
+}
+
+impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for Arena<P, T, B> {
     fn clone_from_with<
         U,
-        A: ArenaTrait<P, U> + SingularGenerationArena<P>,
+        A: ArenaCloneFromWith<P, U> + SingularGenerationArena<P>,
         F: FnMut(P, &U) -> T,
     >(
         &mut self,
@@ -256,39 +301,6 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         };
         // has to be done with reverse iteration anyways
         self.canonicalize_free_list();
-        res
-    }
-
-    fn compress_with<F: FnMut(P, &mut T, P)>(&mut self, mut map: F) -> InvalidationOption<()> {
-        let res = self.inc_generation();
-        let new_gen = self.generation;
-        // we are moving from `j` to `i`
-        let mut i = NonZeroUsize::new(1).unwrap();
-        for j in self.nziter() {
-            let entry = mem::replace(
-                self.m.get_mut(j).unwrap(),
-                // this will be overwritten or dropped
-                Free(P::invalid().inx()),
-            );
-            if let Allocated(old_gen, mut t) = entry {
-                map(
-                    Ptr::_from_raw(Self::from_checked(j), old_gen),
-                    &mut t,
-                    Ptr::_from_raw(Self::from_checked(i), new_gen),
-                );
-                let _ = mem::replace(self.m.get_mut(i).unwrap(), Allocated(new_gen, t));
-                i = i.checked_add(1).unwrap();
-            }
-        }
-        // remove free slots off the end
-        for inx in self.nziter().into_iter().rev() {
-            if let Free(_) = self.m.get(inx).unwrap() {
-                self.m.pop();
-            } else {
-                break;
-            }
-        }
-        self.freelist_root = None;
         res
     }
 }
