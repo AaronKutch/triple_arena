@@ -132,8 +132,10 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     where
         T: 'a,
     {
-        let adv = self.advancer();
-        arena_iterators::IterMut { arena: self, adv }
+        arena_iterators::IterMut {
+            arena: self,
+            inx: Some(NonZeroUsize::new(1).unwrap()),
+        }
     }
 
     fn invalidate(&mut self, p: P) -> InvalidationResult<P> {

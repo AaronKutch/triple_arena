@@ -79,23 +79,19 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for Vals<'a, P, T, B> {
     }
 }
 
+// REF(mutable_iterator_soundness)
+// But FIXME I think we will remove a bunch of these in favor of the impl Traits
+
 /// A mutable iterator over `&mut T` in an `Arena`
 pub struct ValsMut<'a, P: Ptr, T, B: ArenaBacking> {
-    arena: &'a mut Arena<P, T, B>,
-    adv: PtrAdvancer<P>,
+    iter: IterMut<'a, P, T, B>,
 }
 
 impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for ValsMut<'a, P, T, B> {
     type Item = &'a mut T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(p) = self.adv.advance(self.arena) {
-            let tmp = self.arena.get_mut(p).unwrap();
-            // safety: subsequent calls to `next` will not access the same data
-            unsafe { Some(&mut *(tmp as *mut T)) }
-        } else {
-            None
-        }
+        Some(self.iter.next()?.1)
     }
 }
 
@@ -115,10 +111,15 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for Iter<'a, P, T, B> {
     }
 }
 
+/*
+REF(mutable_iterator_soundness)
+We have to be very careful or else the mutable iterator implementation will be unsound due to `PtrInx` being a safe trait (we would rather not make it unsafe for various reasons). We can rely on the backing stack since `NonZeroInxGenericStack` is unsafe and strict. As long as we directly use and only increment or decrement a NonZeroUsize and don't roundtrip `P::Inx` after initialization, it is safe. But other iterators want to use `P::Inx` because it is more compact in some cases. We only need to special case `IterMut` and anything else mutable can safely inherit from it
+*/
+
 /// A mutable iterator over `(P, &mut T)` in an `Arena`
 pub struct IterMut<'a, P: Ptr, T, B: ArenaBacking> {
     pub(in crate::arena) arena: &'a mut Arena<P, T, B>,
-    pub(in crate::arena) adv: PtrAdvancer<P>,
+    pub(in crate::arena) inx: Option<NonZeroUsize>,
 }
 
 // FIXME this is unsound, make `PtrInx` in particular unsafe
@@ -126,12 +127,19 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterMut<'a, P, T, B> {
     type Item = (P, &'a mut T);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(p) = self.adv.advance(self.arena) {
-            let tmp = self.arena.get_mut(p).unwrap();
-            // safety: subsequent calls to `next` will not access the same data
-            unsafe { Some((p, &mut *(tmp as *mut T))) }
-        } else {
-            None
+        loop {
+            let inx = self.inx?;
+            // If the `Ptr` is not linear then this will always return `None` and the
+            // iterator will be empty like it should
+            let p_inx = P::Inx::try_from_usize(inx)?;
+            // before other fallible points
+            self.inx = inx.checked_add(1);
+            let allocation = self.arena.m.get_mut(inx)?;
+            if let Allocated(g, t) = allocation {
+                let p = P::_from_raw(p_inx, *g);
+                // safety: subsequent calls to `next` will not access the same data
+                return unsafe { Some((p, &mut *(t as *mut T))) };
+            }
         }
     }
 }
@@ -240,8 +248,10 @@ impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a mut Arena<P, T, B> {
 
     /// This returns an `IterMut`. Use `Arena::drain` for by-value consumption.
     fn into_iter(self) -> Self::IntoIter {
-        let adv = self.advancer();
-        IterMut { arena: self, adv }
+        IterMut {
+            arena: self,
+            inx: Some(NonZeroUsize::new(1).unwrap()),
+        }
     }
 }
 
@@ -279,8 +289,12 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
 
     /// Mutable iteration over `&mut T`
     pub fn old_vals_mut(&mut self) -> ValsMut<'_, P, T, B> {
-        let adv = self.advancer();
-        ValsMut { arena: self, adv }
+        ValsMut {
+            iter: IterMut {
+                arena: self,
+                inx: Some(NonZeroUsize::new(1).unwrap()),
+            },
+        }
     }
 
     /// Iteration over `(P, &T)` tuples
@@ -293,8 +307,10 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
 
     /// Mutable iteration over `(P, &mut T)` tuples
     pub fn old_iter_mut(&mut self) -> IterMut<'_, P, T, B> {
-        let adv = self.advancer();
-        IterMut { arena: self, adv }
+        IterMut {
+            arena: self,
+            inx: Some(NonZeroUsize::new(1).unwrap()),
+        }
     }
 
     /// By-value iteration over `(P, T)` tuples. Consumes all `T` in
