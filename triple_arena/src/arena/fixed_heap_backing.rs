@@ -107,12 +107,11 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxBoxedSlice<T> {
         &mut self,
     ) -> Result<Self::PushEntry<'_>, NotWithinCapacityError> {
         // need to account for `T` being a ZST, can't rely on isize::MAX limits
-        if let Some(next_len) = self.len.checked_add(1)
-        {
+        if let Some(next_len) = self.len.checked_add(1) {
             if next_len <= self.v.len() {
                 Ok(NonZeroInxBoxedSlicePushEntry { this: self })
             } else {
-            Err(NotWithinCapacityError)
+                Err(NotWithinCapacityError)
             }
         } else {
             Err(NotWithinCapacityError)

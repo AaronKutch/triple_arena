@@ -13,6 +13,5 @@ resolver = "3"
 
 [dependencies]
 panic-halt = "1"
-rand_xoshiro = "0.8"
 riscv-minimal-rt = "0.5"
 triple_arena = { path = "../triple_arena", default-features = false, features = ["serde_support"] }

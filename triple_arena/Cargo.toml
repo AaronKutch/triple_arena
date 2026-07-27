@@ -19,13 +19,13 @@ categories = ["memory-management", "data-structures", "no-std"]
 default = ["alloc"]
 # When disabled, there is no longer a default backing generic parameter on the `Arena`s,
 # so they must be explicitly specified
-alloc = []
+alloc = ["recasting/alloc"]
 std = ["alloc", "recasting/std"]
 serde_support = ["serde"]
 
 [dependencies]
-#recasting = { path = "../../recasting", default-features = false, features = ["alloc"] }
-recasting = { version = "0.2", default-features = false, features = ["alloc"] }
+#recasting = { path = "../../recasting", default-features = false }
+recasting = { version = "0.2", default-features = false }
 serde = { version = "1.0", default-features = false, optional = true }
 
 [dev-dependencies]

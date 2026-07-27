@@ -290,8 +290,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             // invalid by being already free
             Free(_) => InvalidationResult::InvalidPtr,
             Allocated(generation1, _) => {
-                if let Some(generation) = generation
-                {
+                if let Some(generation) = generation {
                     if *generation1 != generation {
                         // invalid by generation
                         return InvalidationResult::InvalidPtr;
