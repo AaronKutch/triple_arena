@@ -258,51 +258,46 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
     ) -> Option<P> {
         match prev_next {
             // new chain
-            (None, None) => Some(
-                self.a
-                    .insert_with(|p| LinkNoGen::new((None, None), create(p))),
-            ),
+            (None, None) => {
+                let entry = self.a.entry_insert();
+                let p = entry.ptr();
+                let t = create(p);
+                entry.insert(LinkNoGen::new((None, None), t));
+                Some(p)
+            }
             (None, Some(p1)) => {
                 // if there is a failure it cannot result in a node being inserted
-                if let Some((_, link)) = self.a.get_inx(p1) {
-                    if let Some(p0) = link.prev() {
-                        // insert into middle of chain
-                        let res = self
-                            .a
-                            .insert_with(|p| LinkNoGen::new((Some(p0), Some(p1)), create(p)));
-                        self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(res.inx());
-                        self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(res.inx());
-                        Some(res)
-                    } else {
-                        let res = self
-                            .a
-                            .insert_with(|p| LinkNoGen::new((None, Some(p1)), create(p)));
-                        self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(res.inx());
-                        Some(res)
-                    }
+                let prev = self.a.get_inx(p1)?.1.prev();
+                let entry = self.a.entry_insert();
+                let p = entry.ptr();
+                let t = create(p);
+                if let Some(p0) = prev {
+                    // insert into middle of chain
+                    entry.insert(LinkNoGen::new((Some(p0), Some(p1)), t));
+                    self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p.inx());
+                    self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p.inx());
+                    Some(p)
                 } else {
-                    None
+                    entry.insert(LinkNoGen::new((None, Some(p1)), t));
+                    self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p.inx());
+                    Some(p)
                 }
             }
             (Some(p0), None) => {
-                if let Some((_, link)) = self.a.get_inx(p0) {
-                    if let Some(p1) = link.next() {
-                        // insert into middle of chain
-                        let res = self
-                            .a
-                            .insert_with(|p| LinkNoGen::new((Some(p0), Some(p1)), create(p)));
-                        self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(res.inx());
-                        self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(res.inx());
-                        Some(res)
-                    } else {
-                        let res = self
-                            .a
-                            .insert_with(|p| LinkNoGen::new((Some(p0), None), create(p)));
-                        self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(res.inx());
-                        Some(res)
-                    }
+                let next = self.a.get_inx(p0)?.1.next();
+                let entry = self.a.entry_insert();
+                let p = entry.ptr();
+                let t = create(p);
+                if let Some(p1) = next {
+                    // insert into middle of chain
+                    entry.insert(LinkNoGen::new((Some(p0), Some(p1)), t));
+                    self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p.inx());
+                    self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p.inx());
+                    Some(p)
                 } else {
-                    None
+                    entry.insert(LinkNoGen::new((Some(p0), None), t));
+                    self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p.inx());
+                    Some(p)
                 }
             }
             (Some(p0), Some(p1)) => {
@@ -310,12 +305,13 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
                 if !self.are_neighbors_inx(p0, p1) {
                     return None;
                 }
-                let res = self
-                    .a
-                    .insert_with(|p| LinkNoGen::new((Some(p0), Some(p1)), create(p)));
-                self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(res.inx());
-                self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(res.inx());
-                Some(res)
+                let entry = self.a.entry_insert();
+                let p = entry.ptr();
+                let t = create(p);
+                entry.insert(LinkNoGen::new((Some(p0), Some(p1)), t));
+                self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p.inx());
+                self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p.inx());
+                Some(p)
             }
         }
     }
@@ -330,21 +326,27 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
     /// `Ptr` that is returned, which is useful for initialization of
     /// immutable structures that need to reference themselves.
     pub fn insert_new_with<F: FnOnce(P) -> T>(&mut self, create: F) -> P {
-        self.a
-            .insert_with(|p| LinkNoGen::new((None, None), create(p)))
+        let entry = self.a.entry_insert();
+        let p = entry.ptr();
+        entry.insert(LinkNoGen::new((None, None), create(p)));
+        p
     }
 
     /// Inserts `t` as a single link cyclical chain and returns a `Ptr` to it
     pub fn insert_new_cyclic(&mut self, t: T) -> P {
-        self.a
-            .insert_with(|p| LinkNoGen::new((Some(p.inx()), Some(p.inx())), t))
+        let entry = self.a.entry_insert();
+        let p = entry.ptr();
+        entry.insert(LinkNoGen::new((Some(p.inx()), Some(p.inx())), t));
+        p
     }
 
     /// Like [ChainNoGenArena::insert_new_with] but with a single link cyclical
     /// chain.
     pub fn insert_new_cyclic_with<F: FnOnce(P) -> T>(&mut self, create: F) -> P {
-        self.a
-            .insert_with(|p| LinkNoGen::new((Some(p.inx()), Some(p.inx())), create(p)))
+        let entry = self.a.entry_insert();
+        let p = entry.ptr();
+        entry.insert(LinkNoGen::new((Some(p.inx()), Some(p.inx())), create(p)));
+        p
     }
 
     /// Inserts `t` as a new start link of a chain which has `p_start` as its

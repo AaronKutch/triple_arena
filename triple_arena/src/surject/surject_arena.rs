@@ -5,7 +5,7 @@ use fmt::Debug;
 use crate::{
     Arena, ChainArena,
     arena::InternalSlot,
-    traits::{Advancer, ArenaInsertTrait, ArenaTrait, Ptr},
+    traits::{Advancer, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr},
     utils::{
         ChainNoGenArena, LinkNoGen, PtrNoGen,
         traits::{ArenaBacking, NonZeroInxGenericStack, PtrInx},
@@ -314,19 +314,19 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// useful for initialization of immutable structures that need to reference
     /// themselves.
     pub fn insert_with<F: FnOnce(P) -> (K, V)>(&mut self, create_k_v: F) -> P {
+        let entry = self.vals.entry_insert();
+        let p_val = entry.ptr();
         let mut res = P::invalid();
-        self.vals.insert_with(|p_val| {
-            let mut created_v = None;
-            self.keys.insert_new_cyclic_with(|p| {
-                res = p;
-                let (k, v) = create_k_v(p);
-                created_v = Some(v);
-                Key { k, p_val }
-            });
-            Val {
-                v: created_v.unwrap(),
-                key_count: NonZeroUsize::new(1).unwrap(),
-            }
+        let mut created_v = None;
+        self.keys.insert_new_cyclic_with(|p| {
+            res = p;
+            let (k, v) = create_k_v(p);
+            created_v = Some(v);
+            Key { k, p_val }
+        });
+        entry.insert(Val {
+            v: created_v.unwrap(),
+            key_count: NonZeroUsize::new(1).unwrap(),
         });
         res
     }

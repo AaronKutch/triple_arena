@@ -11,6 +11,7 @@
 - Generation overflow no longer panics, has the best possible behavior in the default case, and can be explicitly checked with various functions now.
 - The `PtrInx` and `PtrGen` traits have been changed to be safe, and have stricter semantics around conversion now
 - Removed `swap`, `replace_and_update_gen`, and `replace_and_keep_gen` because they were barely used, would have very awkward signatures with the new design, and wouldn't work with potential future `!Overwrite` abilities
+- Removed a bunch of `try_insert`, insert_with`, etc functions in favor of entry methods that are more general
 - `Collection` is now a trait parameter on `Advancer`
 - Added a required `Advancer::empty` method
 - The `Advancer` trait now specifies that implemenations should always fuse
