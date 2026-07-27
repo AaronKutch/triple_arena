@@ -1,14 +1,7 @@
 use std::cell::RefCell;
 
-use rand_xoshiro::{
-    Xoshiro128StarStar,
-    rand_core::{Rng, SeedableRng},
-};
-use serde_derive::{Deserialize, Serialize};
-use triple_arena::{Arena, ChainArena, OrdArena, SurjectArena, traits::*, utils::ChainNoGenArena};
-use triple_arena_render::*;
-
-use crate::P1;
+use rand_xoshiro::{Xoshiro128StarStar, rand_core::Rng};
+use triple_arena::traits::*;
 
 #[cfg(miri)]
 pub const A: u64 = 1 << 4;
@@ -32,9 +25,10 @@ impl<P: Ptr> MyNode<P> {
     }
 }
 
-impl<P: Ptr> DebugNodeTrait<P> for MyNode<P> {
-    fn debug_node(_p_this: P, this: &Self) -> DebugNode<P> {
-        DebugNode {
+#[cfg(feature = "alloc")]
+impl<P: Ptr> triple_arena_render::DebugNodeTrait<P> for MyNode<P> {
+    fn debug_node(_p_this: P, this: &Self) -> triple_arena_render::DebugNode<P> {
+        triple_arena_render::DebugNode {
             sources: this.sources.clone(),
             center: this.center.clone(),
             sinks: this.sinks.clone(),
@@ -80,7 +74,7 @@ pub fn inc_cmp_count() {
 }
 
 /// Counts `Clone`s and comparisons
-#[derive(Debug, Eq, Serialize, Deserialize)]
+#[derive(Debug, Eq)]
 pub struct CKey {
     pub k: u64,
 }
@@ -121,7 +115,7 @@ impl Ord for CKey {
 }
 
 /// Counts `Clone`s
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CVal {
     pub v: u64,
 }
@@ -299,6 +293,9 @@ pub fn fuzz_fill_inst_bench(
     (insts, repr_sim)
 }
 
+// FIXME?
+
+/*
 pub fn std_arena() -> Arena<P1, (CKey, CVal)> {
     let mut rng = Xoshiro128StarStar::seed_from_u64(0);
 
@@ -453,3 +450,4 @@ pub fn std_ord() -> OrdArena<P1, CKey, CVal> {
     assert!(a.capacity() >= (2 * A as usize));
     a
 }
+*/

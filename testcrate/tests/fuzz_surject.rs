@@ -1,3 +1,5 @@
+#![cfg(feature = "alloc")]
+
 use std::{
     cmp::max,
     collections::{HashMap, HashSet},

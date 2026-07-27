@@ -4,10 +4,20 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 
+[[bin]]
+name = "render0"
+path = "./src/bin/render0.rs"
+required-features = ["alloc"]
+
+[[bin]]
+name = "render1"
+path = "./src/bin/render1.rs"
+required-features = ["alloc"]
+
 # separate feature because we need to test the `ptr_struct` macro both ways and make sure we got configuration correct
 [features]
 default = ["serde_support"]
-alloc = ["triple_arena/alloc"]
+alloc = ["triple_arena/alloc", "triple_arena_render"]
 serde_support = ["triple_arena/serde_support"]
 
 [dependencies]
@@ -15,10 +25,8 @@ expect-test = "1.5"
 postcard = { version = "1.0", features = ["alloc"] }
 rand_xoshiro = "0.8"
 ron = { version = "0.12", features = ["integer128"] }
-serde = "1.0"
-serde_derive = "1.0"
 stacked_errors = "0.7"
 star_rng = { path = "../../star_rng" }
 # FIXME turn default features off
-triple_arena = { path = "../triple_arena" }
-triple_arena_render = { path = "../triple_arena_render" }
+triple_arena = { path = "../triple_arena", default-features = false }
+triple_arena_render = { path = "../triple_arena_render", optional = true }

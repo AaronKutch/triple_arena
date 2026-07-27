@@ -261,7 +261,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         self.a.generation()
     }
 
-    /// Follows [Arena::reserve]
     pub fn reserve(&mut self, additional: usize) {
         self.a
             .reallocate_min_capacity(self.len() + additional)

@@ -4,8 +4,8 @@ use expect_test::Expect;
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use star_rng::StarRng;
 use triple_arena::{
-    AllocError, Arena, HeapBacking, InvalidationOption, InvalidationResult,
-    MaxCapacityReductionError, NotWithinCapacityError, ReallocationError,
+    AllocError, Arena, InvalidationOption, InvalidationResult, MaxCapacityReductionError,
+    NotWithinCapacityError, ReallocationError, StackBacking,
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena,
     },
@@ -66,7 +66,7 @@ pub fn fuzz<
     let mut g = TestGen::<P>(PtrGen::two());
 
     // set and used by the clone_from section
-    let mut a1 = Arena::<P, Cd<D1>, HeapBacking>::new();
+    let mut a1 = Arena::<P, Cd<D1>, StackBacking<128>>::new();
 
     // makes sure there is not some problem with the test harness itself or
     // determinism
@@ -782,12 +782,12 @@ pub fn fuzz<
 
 pub fn fuzz_multi_arena_step<D: Copy + Default, P: Ptr>(
     rng: &mut StarRng,
-    a: &mut Arena<P, Cd<D>, HeapBacking>,
+    a: &mut Arena<P, Cd<D>, StackBacking<128>>,
     g: &mut TestGen<P>,
     b: &mut CkMap<D, P>,
     cd_gen: &mut CdGen<D>,
 ) -> Result<(), StackedError> {
-    let len = a.len();
+    let len: usize = a.len();
     ensure_eq!(len, b.len());
     ensure_eq!(a.singular_generation(), g.0);
     ensure_eq!(a.is_empty(), b.is_empty());
@@ -836,8 +836,8 @@ pub fn fuzz_multi_arena(
     cd_gen0: &mut CdGen<()>,
     cd_gen1: &mut CdGen<D1>,
 ) -> Result<(), StackedError> {
-    let mut a0 = Arena::<P2, Cd<()>, HeapBacking>::new();
-    let mut a1 = Arena::<P2, Cd<D1>, HeapBacking>::new();
+    let mut a0 = Arena::<P2, Cd<()>, StackBacking<128>>::new();
+    let mut a1 = Arena::<P2, Cd<D1>, StackBacking<128>>::new();
     let mut g0 = TestGen(a0.generation());
     let mut g1 = TestGen(a1.generation());
     let mut b0 = CkMap::<(), P2>::new();

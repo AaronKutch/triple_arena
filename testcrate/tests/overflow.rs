@@ -1,6 +1,6 @@
 use std::num::{NonZeroU8, NonZeroU128};
 
-use triple_arena::{Arena, HeapBacking, ptr_struct, traits::*};
+use triple_arena::{Arena, StackBacking, ptr_struct, traits::*};
 
 ptr_struct!(P0[NonZeroU8]);
 ptr_struct!(P1(NonZeroU8));
@@ -15,7 +15,7 @@ ptr_struct!(PLargeInx[NonZeroU128]());
 // `NonZeroUsize` index).
 #[test]
 fn ptr_inx_no_truncate() {
-    let mut a = Arena::<PLargeInx, (), HeapBacking>::new();
+    let mut a = Arena::<PLargeInx, (), StackBacking<128>>::new();
     a.insert(());
     let p = Ptr::_from_raw(NonZeroU128::new(7 << 64).unwrap(), ());
     assert!(a.get(p).is_none());
@@ -43,7 +43,7 @@ fn overflow_inx() {
 #[test]
 #[should_panic]
 fn overflow_inx_panic() {
-    let mut a = Arena::<P0, ()>::new();
+    let mut a = Arena::<P0, (), StackBacking<512>>::new();
     for _ in 0..256 {
         a.insert(());
     }
@@ -51,7 +51,7 @@ fn overflow_inx_panic() {
 
 #[test]
 fn overflow_cap() {
-    let mut a = Arena::<P1, ()>::new();
+    let mut a = Arena::<P1, (), StackBacking<512>>::new();
     for _ in 0..253 {
         let p = a.insert(());
         a.remove(p).allow().unwrap();

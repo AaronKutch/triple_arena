@@ -2,7 +2,7 @@ use std::num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZe
 
 use testcrate::P0;
 use triple_arena::{
-    Arena, ptr_struct,
+    Arena, StackBacking, ptr_struct,
     traits::*,
     utils::{PtrNoGen, traits::PtrInx},
 };
@@ -65,7 +65,7 @@ fn ptr_display() {
 // overflow tests
 #[test]
 fn advancer() {
-    let mut a = Arena::<P0, u8>::new();
+    let mut a = Arena::<P0, u8, StackBacking<5>>::new();
 
     let mut adv = a.advancer();
     assert!(adv.advance(&a).is_none());

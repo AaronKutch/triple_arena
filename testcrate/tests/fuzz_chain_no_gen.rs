@@ -1,3 +1,5 @@
+#![cfg(feature = "alloc")]
+
 use std::collections::{HashMap, HashSet};
 
 use rand_xoshiro::{

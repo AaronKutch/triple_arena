@@ -6,17 +6,15 @@
 //! helper structs as intermediates in serialization. There are a few different
 //! things that should be considered:
 //!
-//! - Whether compression and recasting should be used (highly preferred)
-//!
-//! In many cases, you should be using [Recast] and [ArenaTrait::]
-//!
-//! There are about 3 cases. First, you will often want to avoid directly
-//! serializing arenas in the first case, because any
-//! In many cases, you will first want to use
-//! Serialization drops generation counters and deserialization sets them to
-//! 2. It is highly recommended to run [Arena::compress_and_shrink] or
-//! [Arena::compress_and_shrink_recaster] and use the [recasting::Recast]
-//! trait before serializing the arena, or else excess capacity may be
-//! forced upon the deserializer.
-//!
-//! Note that `OrdArena` requires that it is compressed before being serialized.
+//! - Whether compression and recasting should be used (highly preferred, note
+//!   that `reset_generation` options should be set when possible, see the
+//!   example on [crate::traits::ArenaTrait::compress_with])
+//! - If [crate::traits::ArenaDirectInsertTrait]-based arenas should be used
+//! - If generation counters should be omitted
+//! - If indexes can be implicit. After compression on a simple arena, the
+//!   entries have no gaps between them, and the entries could be simply read
+//!   out in a simple list. Then when deserializing, they can be inserted in
+//!   order and will pick up the correct indexes (again, at least in simple
+//!   arenas).
+
+// TODO more examples

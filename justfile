@@ -37,6 +37,7 @@ test_all *ARGS:
   {{cargo}} sort -cw
   {{cargo}} doc --no-deps --all-features
   {{cargo}} nextest run --all-features {{ARGS}}
+  {{cargo}} nextest run --no-default-features {{ARGS}}
   {{cargo}} t --doc --all-features {{ARGS}}
   {{cargo}} r --bin render0
   {{cargo}} r --bin render1
@@ -47,13 +48,15 @@ test_all *ARGS:
 
 # Needs to be run with the MSRV toolchain
 test_for_msrv:
-  {{cargo}} build --no-default-features
+  {{cargo}} b -p triple_arena --no-default-features
+  {{cargo}} b -p triple_arena --all-features
+  {{cargo}} b -p triple_arena_render
 
 miri *ARGS:
   MIRIFLAGS="-Zmiri-tree-borrows -Zmiri-strict-provenance" {{cargo}} miri test --all-features {{ARGS}}
 
 bench *ARGS:
-  {{cargo}} bench -p testcrate {{ARGS}}
+  {{cargo}} bench -p testcrate --features=alloc {{ARGS}}
 
 run *ARGS:
   {{cargo}} r --bin {{ARGS}}

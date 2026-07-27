@@ -1,3 +1,5 @@
+#![cfg(feature = "alloc")]
+
 use rand_xoshiro::{Xoshiro128StarStar, rand_core::SeedableRng};
 use testcrate::{A, CKey, CVal, P1, fuzz_fill_inst, get_cmp_count};
 use triple_arena::OrdArena;
@@ -14,6 +16,8 @@ fn get_std_insts() -> Vec<Result<(CKey, CVal), usize>> {
     assert!(tmp.1.is_empty());
     insts
 }
+
+// FIXME we do want to keep this
 
 #[test]
 fn ord_arena_count() {

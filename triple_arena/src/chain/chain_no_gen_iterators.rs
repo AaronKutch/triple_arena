@@ -272,7 +272,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         }
     }
 
-    /// Same as [crate::Arena::capacity_drain]
     pub fn capacity_drain(self) -> CapacityDrain<P, LinkNoGen<P, T>, B> {
         IntoIterator::into_iter(self.a)
     }

@@ -1,3 +1,4 @@
+#![cfg(feature = "alloc")]
 #![feature(test)]
 
 // TODO: rework these benchmarks, can I make the iter work over all the

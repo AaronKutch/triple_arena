@@ -5,4 +5,4 @@ edition = "2024"
 publish = false
 
 [dependencies]
-triple_arena = { path = "../triple_arena", default-features = false }
+triple_arena = { path = "../triple_arena", default-features = false, features = ["alloc"] }

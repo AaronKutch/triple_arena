@@ -9,12 +9,17 @@ use testcrate::{
     nonzero_inx_generic_stack,
 };
 use triple_arena::{
-    Arena, FixedHeapBacking, HeapBacking, LimitedHeapBacking, StackBacking,
+    Arena, StackBacking,
     traits::{ArenaTrait, Ptr},
     utils::{
-        NonZeroInxArray, NonZeroInxBoxedSlice, NonZeroInxLimitedVec, NonZeroInxVec,
-        traits::{ArenaBacking, NonZeroInxGenericStack, SetMaxCapacity},
+        NonZeroInxArray,
+        traits::{ArenaBacking, NonZeroInxGenericStack},
     },
+};
+#[cfg(feature = "alloc")]
+use triple_arena::{
+    FixedHeapBacking, HeapBacking, LimitedHeapBacking,
+    utils::{NonZeroInxBoxedSlice, NonZeroInxLimitedVec, NonZeroInxVec, traits::SetMaxCapacity},
 };
 
 #[test]
@@ -62,50 +67,53 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
         )
         .stack()?;
 
-        let mut a = NonZeroInxLimitedVec::new();
-        a.set_max_capacity(LIMIT).unwrap();
-        meta.test(
-            nonzero_inx_generic_stack::Stats {
+        #[cfg(feature = "alloc")]
+        {
+            let mut a = NonZeroInxLimitedVec::new();
+            a.set_max_capacity(LIMIT).unwrap();
+            meta.test(
+                nonzero_inx_generic_stack::Stats {
+                    test_limit: LIMIT,
+                    fixed_cap: None,
+                    n: N,
+                    iters999: None,
+                    cd_gen: CdGen::new(),
+                },
+                |meta| {
+                    nonzero_inx_generic_stack::fuzz(
+                        meta,
+                        &mut a,
+                        Some(|a, max_capacity| a.set_max_capacity(max_capacity)),
+                    )
+                },
+            )
+            .stack()?;
+
+            meta.test(
+                nonzero_inx_generic_stack::Stats {
+                    test_limit: LIMIT,
+                    fixed_cap: None,
+                    n: N,
+                    iters999: None,
+                    cd_gen: CdGen::new(),
+                },
+                |meta| nonzero_inx_generic_stack::fuzz(meta, &mut NonZeroInxVec::new(), None),
+            )
+            .stack()?;
+
+            let mut a = NonZeroInxBoxedSlice::with_min_capacity(LIMIT).stack()?;
+            let stats = nonzero_inx_generic_stack::Stats {
                 test_limit: LIMIT,
-                fixed_cap: None,
+                fixed_cap: Some(a.capacity()),
                 n: N,
                 iters999: None,
                 cd_gen: CdGen::new(),
-            },
-            |meta| {
-                nonzero_inx_generic_stack::fuzz(
-                    meta,
-                    &mut a,
-                    Some(|a, max_capacity| a.set_max_capacity(max_capacity)),
-                )
-            },
-        )
-        .stack()?;
-
-        meta.test(
-            nonzero_inx_generic_stack::Stats {
-                test_limit: LIMIT,
-                fixed_cap: None,
-                n: N,
-                iters999: None,
-                cd_gen: CdGen::new(),
-            },
-            |meta| nonzero_inx_generic_stack::fuzz(meta, &mut NonZeroInxVec::new(), None),
-        )
-        .stack()?;
-
-        let mut a = NonZeroInxBoxedSlice::with_min_capacity(LIMIT).stack()?;
-        let stats = nonzero_inx_generic_stack::Stats {
-            test_limit: LIMIT,
-            fixed_cap: Some(a.capacity()),
-            n: N,
-            iters999: None,
-            cd_gen: CdGen::new(),
-        };
-        meta.test(stats, |meta| {
-            nonzero_inx_generic_stack::fuzz(meta, &mut a, None)
-        })
-        .stack()?;
+            };
+            meta.test(stats, |meta| {
+                nonzero_inx_generic_stack::fuzz(meta, &mut a, None)
+            })
+            .stack()?;
+        }
 
         Ok(())
     }
@@ -172,61 +180,64 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
         )
         .stack()?;
 
-        let mut a = Arena::<P2, Cd<()>, LimitedHeapBacking>::new();
-        a.set_max_capacity(LIMIT).stack()?;
-        meta.test(
-            basic_arena::Stats {
+        #[cfg(feature = "alloc")]
+        {
+            let mut a = Arena::<P2, Cd<()>, LimitedHeapBacking>::new();
+            a.set_max_capacity(LIMIT).stack()?;
+            meta.test(
+                basic_arena::Stats {
+                    test_limit: LIMIT,
+                    fixed_cap: None,
+                    n: N,
+                    iters999: None,
+                    cd_gen: CdGen::new(),
+                    cd_gen1: CdGen::new(),
+                },
+                |meta| {
+                    basic_arena::fuzz(
+                        meta,
+                        &mut a,
+                        check_arena,
+                        Some(|a, max_capacity| a.set_max_capacity(max_capacity)),
+                    )
+                },
+            )
+            .stack()?;
+
+            meta.test(
+                basic_arena::Stats {
+                    test_limit: LIMIT,
+                    fixed_cap: None,
+                    n: N,
+                    iters999: None,
+                    cd_gen: CdGen::new(),
+                    cd_gen1: CdGen::new(),
+                },
+                |meta| {
+                    basic_arena::fuzz(
+                        meta,
+                        &mut Arena::<P2, Cd<()>, HeapBacking>::new(),
+                        check_arena,
+                        None,
+                    )
+                },
+            )
+            .stack()?;
+
+            let mut a = Arena::<P2, Cd<()>, FixedHeapBacking>::with_min_capacity(LIMIT).stack()?;
+            let stats = basic_arena::Stats {
                 test_limit: LIMIT,
-                fixed_cap: None,
+                fixed_cap: Some(ArenaTrait::capacity(&a)), // FIXME
                 n: N,
                 iters999: None,
                 cd_gen: CdGen::new(),
                 cd_gen1: CdGen::new(),
-            },
-            |meta| {
-                basic_arena::fuzz(
-                    meta,
-                    &mut a,
-                    check_arena,
-                    Some(|a, max_capacity| a.set_max_capacity(max_capacity)),
-                )
-            },
-        )
-        .stack()?;
-
-        meta.test(
-            basic_arena::Stats {
-                test_limit: LIMIT,
-                fixed_cap: None,
-                n: N,
-                iters999: None,
-                cd_gen: CdGen::new(),
-                cd_gen1: CdGen::new(),
-            },
-            |meta| {
-                basic_arena::fuzz(
-                    meta,
-                    &mut Arena::<P2, Cd<()>, HeapBacking>::new(),
-                    check_arena,
-                    None,
-                )
-            },
-        )
-        .stack()?;
-
-        let mut a = Arena::<P2, Cd<()>, FixedHeapBacking>::with_min_capacity(LIMIT).stack()?;
-        let stats = basic_arena::Stats {
-            test_limit: LIMIT,
-            fixed_cap: Some(ArenaTrait::capacity(&a)), // FIXME
-            n: N,
-            iters999: None,
-            cd_gen: CdGen::new(),
-            cd_gen1: CdGen::new(),
-        };
-        meta.test(stats, |meta| {
-            basic_arena::fuzz(meta, &mut a, check_arena, None)
-        })
-        .stack()?;
+            };
+            meta.test(stats, |meta| {
+                basic_arena::fuzz(meta, &mut a, check_arena, None)
+            })
+            .stack()?;
+        }
 
         Ok(())
     }

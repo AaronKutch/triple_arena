@@ -425,8 +425,8 @@ pub trait ArenaTrait<P: Ptr, T>: Sized + IntoIterator<Item = (P, T)> {
     /// counter on all of the new `Ptr`s (and `InvalidationOption::Success` will
     /// always be returned).
     ///
-    /// This can be used to create a custom [Recaster] for recasting external
-    /// `Ptr`s:
+    /// This can be used to create a custom [crate::traits::Recaster] for
+    /// recasting external `Ptr`s:
     /// ```
     /// use triple_arena::{Arena, HeapBacking, ptr_struct, traits::*};
     ///

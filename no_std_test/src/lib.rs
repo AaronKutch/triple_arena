@@ -12,7 +12,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use triple_arena::{
-    Arena, ptr_struct,
+    Arena, HeapBacking, ptr_struct,
     traits::*,
     utils::{NonZeroInxVec, traits::NonZeroInxGenericStack},
 };
@@ -30,15 +30,15 @@ pub fn asm_nzvec(v: &NonZeroInxVec<u64>, inx: NonZeroUsize) -> u64 {
     *v.get(inx).unwrap()
 }
 
-pub fn asm_arena_get(a: &Arena<P0, u64>, inx: P0) -> u64 {
+pub fn asm_arena_get(a: &Arena<P0, u64, HeapBacking>, inx: P0) -> u64 {
     *a.get(inx).unwrap()
 }
 
-pub fn asm_arena_get_gen(a: &Arena<P1, u64>, inx: P1) -> u64 {
+pub fn asm_arena_get_gen(a: &Arena<P1, u64, HeapBacking>, inx: P1) -> u64 {
     *a.get(inx).unwrap()
 }
 
 // make sure this especially is minimal
-pub fn asm_arena_get_nogen(a: &Arena<P1, u64>, inx: NonZeroUsize) -> u64 {
+pub fn asm_arena_get_nogen(a: &Arena<P1, u64, HeapBacking>, inx: NonZeroUsize) -> u64 {
     *a.get_inx_unwrap(inx)
 }

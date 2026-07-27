@@ -196,7 +196,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         self.a.generation()
     }
 
-    /// Follows [Arena::reserve]
     pub fn reserve(&mut self, additional: usize) {
         self.a.reserve(additional);
     }
