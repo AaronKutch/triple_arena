@@ -358,6 +358,13 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
+    /// Returns the singular arena generation counter, the same as
+    /// [SingularGenerationArena::singular_generation]
+    #[inline]
+    pub fn generation(&self) -> P::Gen {
+        self.generation
+    }
+
     /// Manually set the singular arena generation counter. This can break some
     /// soft invariants such as ABA problem prevention and `P::invalid`
     /// always being invalid with generation counters.
@@ -375,27 +382,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         } else {
             InvalidationOption::Success(())
         }
-    }
-
-    pub(crate) fn set_gen(&mut self, new_gen: P::Gen) {
-        self.generation = new_gen;
-    }
-
-    /// Return the arena generation counter (unless `P::Gen` is `()` in which
-    /// case there is no generation counting), which is equal to the number of
-    /// invalidation operations performed on this arena plus 2
-    #[inline]
-    pub fn generation(&self) -> P::Gen {
-        self.generation
-    }
-
-    #[inline]
-    pub(crate) fn inc_gen(&mut self) {
-        let tmp = PtrGen::generational_inc(self.generation);
-        //if tmp.1 {
-        //panic!("FIXME");
-        //}
-        self.generation = tmp.0;
     }
 
     // FIXME

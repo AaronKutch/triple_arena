@@ -527,7 +527,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
                 .unwrap();
         }
         if inc_gen {
-            self.a.inc_gen();
+            self.a.inc_generation().allow();
         }
     }
 
@@ -540,7 +540,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             .remove_internal(p.inx(), Some(p.generation()), false)
             .allow()?;
         let mut len = 1;
-        self.a.inc_gen();
+        self.a.inc_generation().allow();
         let mut tmp = init.next();
         while let Some(next) = tmp {
             if next == p.inx() {
@@ -740,10 +740,10 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         // arbitrary prev or next node has an unknown back interlink. We use this method
         // because it has the added benefit of bringing in order links together in
         // memory.
-        self.a.inc_gen();
+        self.a.inc_generation().allow();
         let generation = self.generation();
         let mut new = Arena::<P, LinkNoGen<P, T>, B>::with_min_capacity(self.len()).unwrap();
-        new.set_gen(generation);
+        new.set_generation(generation);
         let mut adv = self.a.advancer();
         'outer: while let Some(p_init) = adv.advance(&self.a) {
             // an initial prelude is absolutely required to link up cyclic chains and handle
@@ -832,10 +832,10 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         first_link: P,
         mut map: F,
     ) {
-        self.a.inc_gen();
+        self.a.inc_generation().allow();
         let generation = self.generation();
         let mut new = Arena::<P, LinkNoGen<P, T>, B>::with_min_capacity(self.len()).unwrap();
-        new.set_gen(generation);
+        new.set_generation(generation);
         let p_init = first_link;
         let mut link = self.a.remove(p_init).allow().unwrap();
         let mut p_next = link.next();
