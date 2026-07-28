@@ -29,7 +29,7 @@ We call them "entry_insert*" in opposite order to the associated "InsertionEntry
 
 I would have signatures like `Result<..., T>` for nonentry fallible insertion methods, but since the entry methods exist (and often the `Result<..., T>` form promoted bad undo strategies anyways), I have made them all `Result<..., *Error>` instead.
 
-I decided to only have a `direct_insert_within_capacity` method for direct insertion, and no `_reallocating` or panicking variations. Capacity should be manually managed for such arenas, because in several contexts direct insertion would be used in, arbitrary indexes would easily lead to OOM. dealing with automatic reallocation fallibility in the signatures would also be annoying, and usually this is a mirror arena that will not have many places in the code calling direct insertion methods.
+I decided to only have a `direct_insert_within_capacity` method for direct insertion, and no `_reallocating` or panicking variations. Capacity should be manually managed for such arenas, because in several contexts direct insertion would be used in, arbitrary indexes would easily lead to OOM. dealing with automatic reallocation fallibility in the signatures would also be annoying, and usually this is a mirror arena that will not have many places in the code calling direct insertion methods. Similar logic for why we only have the `_within_capacity` and `_reallocating` variants for chain arena insertion that involves more than one link.
 
 The `drain` function ends up allowing invalidating every element separately because of "certain arena designs that have a generation per internal slot or domain". For singular generation arenas I also considered maybe adding an invariant that the generation counter equals the number of element invalidations minus 2, but I don't know of a use for it and it costs more and it is awkward to deal with edge cases with `drain` iterator dropping. I decide that we just make `drain` dropping just guarantee a single unseen `clear` invalidation (if there are elements), and make `clear` do a single invalidation if there are any entries. `drain` individually dropping could also make more sense if it stopped part way through on iterator drop, but `clear` by default is safer. The `compress` functions make sense to only increment the generation once.
 
@@ -586,6 +586,31 @@ pub trait ArenaCloneFromWith<P: Ptr, T>: ArenaTrait<P, T> {
     ) -> Result<(), ReallocationError>;
 }
 
+fn handle_reallocation<P: Ptr, T, A: ArenaTrait<P, T>>(
+    this: &mut A,
+) -> Result<(), ReallocationError> {
+    if this.len() == this.capacity() {
+        // REF(better_reallocation)
+
+        // follow `RawVec`
+        let mut next = if this.capacity() == 0 {
+            if size_of::<T>() <= 1024 { 4 } else { 1 }
+        } else {
+            this.capacity().saturating_mul(2)
+        };
+        // but be able to saturate max capacity before causing an error
+        if let Some(max_capacity) = this.max_capacity() {
+            next = next.min(max_capacity);
+        }
+        if next <= this.capacity() {
+            // the max capacity is limiting us
+            return Err(ReallocationError::BeyondMaxCapacity);
+        }
+        this.reallocate_min_capacity(next)?;
+    }
+    Ok(())
+}
+
 /// Dropping the struct cancels the insertion
 #[must_use]
 pub trait ArenaInsertEntryTrait<'a, P: Ptr, T> {
@@ -615,25 +640,7 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// if an allocation error occurs or if [ArenaTrait::max_capacity] is used
     /// up.
     fn insert_reallocating(&mut self, t: T) -> Result<P, ReallocationError> {
-        if self.len() == self.capacity() {
-            // REF(better_reallocation)
-
-            // follow `RawVec`
-            let mut next = if self.capacity() == 0 {
-                if size_of::<T>() <= 1024 { 4 } else { 1 }
-            } else {
-                self.capacity().saturating_mul(2)
-            };
-            // but be able to saturate max capacity before causing an error
-            if let Some(max_capacity) = self.max_capacity() {
-                next = next.min(max_capacity);
-            }
-            if next <= self.capacity() {
-                // the max capacity is limiting us
-                return Err(ReallocationError::BeyondMaxCapacity);
-            }
-            self.reallocate_min_capacity(next)?;
-        }
+        handle_reallocation(self)?;
         // an error shouldn't happen, but if it does it is logically the allocator's
         // fault
         self.insert_within_capacity(t)
@@ -664,25 +671,7 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// up. Be aware that any reallocation happens upon calling this method, and
     /// the affects remain even if inserting into the arena is cancelled.
     fn entry_insert_reallocating(&mut self) -> Result<Self::InsertionEntry<'_>, ReallocationError> {
-        if self.len() == self.capacity() {
-            // REF(better_reallocation)
-
-            // follow `RawVec`
-            let mut next = if self.capacity() == 0 {
-                if size_of::<T>() <= 1024 { 4 } else { 1 }
-            } else {
-                self.capacity().saturating_mul(2)
-            };
-            // but be able to saturate max capacity before causing an error
-            if let Some(max_capacity) = self.max_capacity() {
-                next = next.min(max_capacity);
-            }
-            if next <= self.capacity() {
-                // the max capacity is limiting us
-                return Err(ReallocationError::BeyondMaxCapacity);
-            }
-            self.reallocate_min_capacity(next)?;
-        }
+        handle_reallocation(self)?;
         self.entry_insert_within_capacity()
             .map_err(|NotWithinCapacityError| ReallocationError::AllocError)
     }
@@ -821,8 +810,50 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         cyclical: bool,
     ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError>;
 
-    // FIXME the other `entry_insert_new`s
+    /// The same as [ChainArenaTrait::entry_insert_new_within_capacity], but
+    /// reallocates if necessary and returns an error if reallocation failed
+    /// or if [ArenaTrait::max_capacity] is used up. Be aware that any
+    /// reallocation happens upon calling this method, and the affects
+    /// remain even if inserting into the arena is cancelled.
+    fn entry_insert_new_reallocating(
+        &mut self,
+        cyclical: bool,
+    ) -> Result<Self::InsertionEntry<'_>, ReallocationError> {
+        handle_reallocation(self)?;
+        self.entry_insert_new_within_capacity(cyclical)
+            .map_err(|NotWithinCapacityError| ReallocationError::AllocError)
+    }
 
+    /// The same as [ChainArenaTrait::entry_insert_new_reallocating], but panics
+    /// if an allocation error occurs or if [ArenaTrait::max_capacity] is
+    /// used up.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure when needing to extend
+    /// capacity, or if `self.len()` is at the maximum capacity.
+    #[track_caller]
+    fn entry_insert_new(&mut self, cyclical: bool) -> Self::InsertionEntry<'_> {
+        self.entry_insert_new_reallocating(cyclical)
+            .expect("`ChainArenaTrait::entry_insert_new_reallocating` failed")
+    }
+
+    /// An entry insertion method that can also connect the new link to an
+    /// existing chain in the same step. If `prev_next.0.is_none() &&
+    /// prev_next.1.is_none()` then a new chain is started in the arena. If
+    /// `prev_next.0.is_some() || prev_next.1.is_some()` then the link is
+    /// inserted in an existing chain and the neighboring interlinks reroute to
+    /// the new link. `prev_next.0.is_some() && prev_next.1.is_none()`
+    /// and the reverse is allowed even if the link is not at the start or
+    /// end of the chain; this function will detect this and derive the
+    /// unknown `Ptr`, inserting in the middle of the chain as usual.
+    ///
+    /// # Errors
+    ///
+    /// If a `Ptr` is invalid, or `prev_next.0.is_some() &&
+    /// prev_next.1.is_some() && !self.are_neighbors(prev, next)`, this will
+    /// return `None`. `Some(Err(NotWithinCapacityError))` is returned if
+    /// `self.len() == self.capacity()`
     fn entry_insert_within_capacity(
         &mut self,
         prev_next: (Option<P>, Option<P>),
@@ -843,7 +874,19 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         ))
     }
 
-    // Invalid, NotWithinCapacityError or the two ReallocationError's
+    /// The same as [ChainArenaTrait::entry_insert_within_capacity] but
+    /// automatically reallocating with the same semantics as other
+    /// `*_reallocating` functions.
+    fn entry_insert_reallocating(
+        &mut self,
+        prev_next: (Option<P>, Option<P>),
+    ) -> Option<Result<Self::InsertionEntry<'_>, ReallocationError>> {
+        if let Err(e) = handle_reallocation(self) {
+            return Some(Err(e));
+        }
+        self.entry_insert_within_capacity(prev_next)
+            .map(|r| r.map_err(|NotWithinCapacityError| ReallocationError::AllocError))
+    }
 
     /// If capacity is available, an insertion entry for inserting into the
     /// arena is returned. Returns `None` if there was no available capacity.
@@ -851,6 +894,20 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         &mut self,
         prev_next: (Option<P::Inx>, Option<P::Inx>),
     ) -> Option<Result<Self::InsertionEntry<'_>, NotWithinCapacityError>>;
+
+    /// The same as [ChainArenaTrait::entry_insert_inx_within_capacity] but
+    /// automatically reallocating with the same semantics as other
+    /// `*_reallocating` functions.
+    fn entry_insert_inx_reallocating(
+        &mut self,
+        prev_next: (Option<P::Inx>, Option<P::Inx>),
+    ) -> Option<Result<Self::InsertionEntry<'_>, ReallocationError>> {
+        if let Err(e) = handle_reallocation(self) {
+            return Some(Err(e));
+        }
+        self.entry_insert_inx_within_capacity(prev_next)
+            .map(|r| r.map_err(|NotWithinCapacityError| ReallocationError::AllocError))
+    }
 
     /// Connects the interlinks of `p_prev` and `p_next` such that `p_prev` will
     /// be previous to `p_next`. Returns `None` if `p_prev` has an existing next
