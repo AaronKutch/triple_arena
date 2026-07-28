@@ -292,7 +292,9 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     }
 
     pub fn reserve_keys(&mut self, additional: usize) {
-        self.keys.reserve(additional)
+        self.keys
+            .reallocate_min_capacity(self.keys.len() + additional)
+            .unwrap()
     }
 
     pub fn reserve_vals(&mut self, additional: usize) {

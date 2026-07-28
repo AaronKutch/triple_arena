@@ -12,7 +12,7 @@ use core::{
 use crate::{
     Arena, ChainArena, Link,
     chain::LinkNoGen,
-    traits::{Advancer, ArenaCloneFromWith, Ptr},
+    traits::{Advancer, ArenaCloneFromWith, ArenaTrait, Ptr},
     utils::{
         ChainNoGenArena,
         traits::{ArenaBacking, PtrInx},
@@ -197,7 +197,9 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     }
 
     pub fn reserve(&mut self, additional: usize) {
-        self.a.reserve(additional);
+        self.a
+            .reallocate_min_capacity(self.a.len() + additional)
+            .unwrap();
     }
 
     /// Returns the `Ptr` to the minimum key. Runs in `O(1)` time. Returns

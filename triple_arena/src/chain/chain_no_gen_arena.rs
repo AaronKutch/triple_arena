@@ -8,7 +8,8 @@ use core::{
 };
 
 use crate::{
-    Arena, ChainArena, Link,
+    Arena, ChainArena, InvalidationOption, Link,
+    arena::InternalSlot,
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
     },
@@ -146,40 +147,87 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         Ok(())
     }
 
-    pub fn new() -> Self {
-        Self { a: Arena::new() }
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        let mut res = Self::new();
-        res.reserve(capacity);
-        res
-    }
-
-    /// Returns the number of links in the arena
-    pub fn len(&self) -> usize {
-        self.a.len()
-    }
-
-    /// Returns if the arena is empty
-    pub fn is_empty(&self) -> bool {
-        self.a.is_empty()
-    }
-
-    /// Returns the capacity of the arena
-    pub fn capacity(&self) -> usize {
-        self.a.capacity()
-    }
-
-    /// Follows [Arena::generation]
+    /// Returns the singular arena generation counter, the same as
+    /// [crate::traits::SingularGenerationArena::singular_generation]
+    #[inline]
     pub fn generation(&self) -> P::Gen {
         self.a.generation()
     }
 
-    pub fn reserve(&mut self, additional: usize) {
+    /// Manually set the singular arena generation counter. This can break some
+    /// soft invariants such as ABA problem prevention and `P::invalid`
+    /// always being invalid with generation counters.
+    pub fn set_generation(&mut self, new_gen: P::Gen) {
+        self.a.set_generation(new_gen);
+    }
+
+    /// Increment the singular arena generation counter, returning if generation
+    /// overflow occurred.
+    pub fn inc_generation(&mut self) -> InvalidationOption<()> {
+        self.a.inc_generation()
+    }
+
+    /// Like [ChainNoGenArena::get], except generation counters are ignored and
+    /// the existing generation is returned.
+    #[doc(hidden)]
+    pub fn get_no_gen(&self, p: P::Inx) -> Option<(P::Gen, &LinkNoGen<P, T>)> {
+        self.a.get_inx(p)
+    }
+
+    /// Like [ChainNoGenArena::get_mut], except generation counters are ignored
+    /// and the existing generation is returned.
+    #[doc(hidden)]
+    pub fn get_no_gen_mut(&mut self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &mut T>)> {
         self.a
-            .reallocate_min_capacity(self.len() + additional)
-            .unwrap();
+            .get_inx_mut(p)
+            .map(|(generation, link)| (generation, LinkNoGen::new(link.prev_next(), &mut link.t)))
+    }
+
+    /// Like [ChainNoGenArena::get], except generation counters are ignored and
+    /// the result is unwrapped internally
+    #[doc(hidden)]
+    //#[track_caller]
+    pub fn get_inx_unwrap(&self, p: P::Inx) -> &LinkNoGen<P, T> {
+        self.a.get_inx_unwrap(p)
+    }
+
+    // do not make a `get_inx_unwrap_t`, we do not want to incur extra offsets
+
+    /// Like [ChainNoGenArena::get_mut], except generation counters are ignored
+    /// and the result is unwrapped internally
+    #[doc(hidden)]
+    //#[track_caller]
+    pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> LinkNoGen<P, &mut T> {
+        let link = self.a.get_inx_mut_unwrap(p);
+        LinkNoGen::new(link.prev_next(), &mut link.t)
+    }
+
+    /// Like [ChainNoGenArena::get_mut], except generation counters are ignored
+    /// and the result is unwrapped internally, and only the `&mut T` is
+    /// returned
+    #[doc(hidden)]
+    //#[track_caller]
+    pub fn get_inx_mut_unwrap_t(&mut self, p: P::Inx) -> &mut T {
+        &mut self.a.get_inx_mut_unwrap(p).t
+    }
+
+    /// Directly returns a reference to the internal backing, for the purposes
+    /// of accessing `ArenaBacking`-specific functions
+    pub fn backing(&self) -> &B::Stack<InternalSlot<P, LinkNoGen<P, T>>> {
+        self.a.backing()
+    }
+
+    /// Directly returns a mutable reference to the internal backing, for the
+    /// purposes of accessing `ArenaBacking`-specific functions
+    ///
+    /// # Safety
+    ///
+    /// The `InternalEntry` allocation state must not be modified, or else the
+    /// freelist or entry length could be broken. The `LinkNoGen` interlinks
+    /// must also not be modified, or else chain invariants could be broken.
+    pub unsafe fn backing_mut(&mut self) -> &mut B::Stack<InternalSlot<P, LinkNoGen<P, T>>> {
+        // Safety: called in `unsafe` function with same invariants and added invariants
+        unsafe { self.a.backing_mut() }
     }
 
     /// If `prev_next.0.is_none() && prev_next.1.is_none()` then a new chain is
@@ -934,50 +982,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         map: F,
     ) {
         arena.clone_from_with(&self.a, map).unwrap();
-    }
-
-    /// Like [ChainNoGenArena::get], except generation counters are ignored and
-    /// the existing generation is returned.
-    #[doc(hidden)]
-    pub fn get_no_gen(&self, p: P::Inx) -> Option<(P::Gen, &LinkNoGen<P, T>)> {
-        self.a.get_inx(p)
-    }
-
-    /// Like [ChainNoGenArena::get_mut], except generation counters are ignored
-    /// and the existing generation is returned.
-    #[doc(hidden)]
-    pub fn get_no_gen_mut(&mut self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &mut T>)> {
-        self.a
-            .get_inx_mut(p)
-            .map(|(generation, link)| (generation, LinkNoGen::new(link.prev_next(), &mut link.t)))
-    }
-
-    /// Like [ChainNoGenArena::get], except generation counters are ignored and
-    /// the result is unwrapped internally
-    #[doc(hidden)]
-    //#[track_caller]
-    pub fn get_inx_unwrap(&self, p: P::Inx) -> &LinkNoGen<P, T> {
-        self.a.get_inx_unwrap(p)
-    }
-
-    // do not make a `get_inx_unwrap_t`, we do not want to incur extra offsets
-
-    /// Like [ChainNoGenArena::get_mut], except generation counters are ignored
-    /// and the result is unwrapped internally
-    #[doc(hidden)]
-    //#[track_caller]
-    pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> LinkNoGen<P, &mut T> {
-        let link = self.a.get_inx_mut_unwrap(p);
-        LinkNoGen::new(link.prev_next(), &mut link.t)
-    }
-
-    /// Like [ChainNoGenArena::get_mut], except generation counters are ignored
-    /// and the result is unwrapped internally, and only the `&mut T` is
-    /// returned
-    #[doc(hidden)]
-    //#[track_caller]
-    pub fn get_inx_mut_unwrap_t(&mut self, p: P::Inx) -> &mut T {
-        &mut self.a.get_inx_mut_unwrap(p).t
     }
 }
 

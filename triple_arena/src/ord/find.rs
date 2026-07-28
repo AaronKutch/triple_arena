@@ -3,7 +3,7 @@ use core::cmp::{Ordering, min};
 use crate::{
     OrdArena,
     arena::ArenaBacking,
-    traits::{Advancer, Ptr},
+    traits::{Advancer, ArenaTrait, Ptr},
     utils::ChainNoGenArena,
 };
 
