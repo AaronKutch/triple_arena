@@ -124,7 +124,7 @@ pub struct ChainArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
 impl<'a, P: Ptr, T, B: ArenaBacking> ArenaInsertEntryTrait<'a, P, T>
     for ChainArenaInsertEntry<'a, P, T, B>
 {
-    fn ptr(&'a self) -> P {
+    fn ptr(&self) -> P {
         self.p
     }
 

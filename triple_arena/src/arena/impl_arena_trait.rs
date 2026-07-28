@@ -315,7 +315,7 @@ pub struct ArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
 impl<'a, P: Ptr, T, B: ArenaBacking> ArenaInsertEntryTrait<'a, P, T>
     for ArenaInsertEntry<'a, P, T, B>
 {
-    fn ptr(&'a self) -> P {
+    fn ptr(&self) -> P {
         self.p
     }
 
