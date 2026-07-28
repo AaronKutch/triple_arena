@@ -3,7 +3,7 @@ use core::cmp::{Ordering, min};
 use crate::{
     OrdArena,
     arena::ArenaBacking,
-    traits::{Advancer, ArenaTrait, Ptr},
+    traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
     utils::ChainNoGenArena,
 };
 
@@ -17,8 +17,8 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             return Ok(());
         }
         // check the root
-        if let Some((_, root)) = this.a.get_no_gen(this.root) {
-            if root.t.p_back.is_some() {
+        if let Some((_, root)) = this.a.get_inx(this.root) {
+            if root.p_back.is_some() {
                 return Err("root node has a back pointer");
             }
         } else {
@@ -27,7 +27,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         // first check the chain and ordering
         let mut count = 0usize;
         let mut prev: Option<P> = None;
-        if let Some((_, link)) = this.a.get_no_gen(this.first) {
+        if let Some((_, link)) = this.a.get_inx_link_no_gen(this.first) {
             if link.prev().is_some() {
                 return Err("this.first is broken");
             }
@@ -43,8 +43,8 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             }
             if let Some(prev) = prev {
                 if Ord::cmp(
-                    &this.a.get_no_gen(prev.inx()).unwrap().1.t.k,
-                    &this.a.get_no_gen(p.inx()).unwrap().1.t.k,
+                    &this.a.get_inx(prev.inx()).unwrap().1.k,
+                    &this.a.get_inx(p.inx()).unwrap().1.k,
                 ) == Ordering::Greater
                 {
                     return Err("incorrect ordering");
@@ -65,8 +65,8 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         while let Some(p) = adv.advance(&this.a) {
             let node = &this.a.get(p).unwrap();
             if let Some(p_back) = node.p_back {
-                if let Some((_, parent)) = this.a.get_no_gen(p_back) {
-                    if (parent.t.p_tree0 != Some(p.inx())) && (parent.t.p_tree1 != Some(p.inx())) {
+                if let Some((_, parent)) = this.a.get_inx(p_back) {
+                    if (parent.p_tree0 != Some(p.inx())) && (parent.p_tree1 != Some(p.inx())) {
                         return Err("broken tree");
                     }
                 } else {
@@ -83,11 +83,11 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                 if Some(p_tree0) == node.p_tree1 {
                     return Err("`p_tree0` and `p_tree1` are the same");
                 }
-                if let Some((_, child0)) = this.a.get_no_gen(p_tree0) {
-                    if child0.t.p_back != Some(p.inx()) {
+                if let Some((_, child0)) = this.a.get_inx(p_tree0) {
+                    if child0.p_back != Some(p.inx()) {
                         return Err("broken tree");
                     }
-                    if child0.t.p_back == Some(p_tree0) {
+                    if child0.p_back == Some(p_tree0) {
                         return Err("cycle");
                     }
                 } else {
@@ -95,11 +95,11 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                 }
             }
             if let Some(p_tree1) = node.p_tree1 {
-                if let Some((_, child1)) = this.a.get_no_gen(p_tree1) {
-                    if child1.t.p_back != Some(p.inx()) {
+                if let Some((_, child1)) = this.a.get_inx(p_tree1) {
+                    if child1.p_back != Some(p.inx()) {
                         return Err("broken tree");
                     }
-                    if child1.t.p_back == Some(p_tree1) {
+                    if child1.p_back == Some(p_tree1) {
                         return Err("cycle");
                     }
                 } else {
@@ -113,7 +113,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             let node = &this.a.get(p).unwrap();
 
             let rank0 = if let Some(p_tree0) = node.p_tree0 {
-                this.a.get_inx_unwrap(p_tree0).t.rank
+                this.a.get_inx_unwrap(p_tree0).rank
             } else {
                 0
             };
@@ -121,7 +121,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                 return Err("rank difference is zero or negative");
             }
             let rank1 = if let Some(p_tree1) = node.p_tree1 {
-                this.a.get_inx_unwrap(p_tree1).t.rank
+                this.a.get_inx_unwrap(p_tree1).rank
             } else {
                 0
             };
@@ -147,8 +147,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         }
         let mut p = self.root;
         loop {
-            let (generation, link) = self.a.get_no_gen(p).unwrap();
-            let node = &link.t;
+            let (generation, node) = self.a.get_inx(p).unwrap();
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => p = node.p_tree0?,
                 Ordering::Equal => break Some(Ptr::_from_raw(p, generation)),
@@ -173,7 +172,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         let mut p = p_init.inx();
         let mut direction = None;
         for _ in 0..num {
-            let (generation, link) = self.a.get_no_gen(p).unwrap();
+            let (generation, link) = self.a.get_inx_link_no_gen(p).unwrap();
             let node = &link.t;
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
@@ -219,8 +218,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         }
         let mut p = self.root;
         loop {
-            let (generation, link) = self.a.get_no_gen(p).unwrap();
-            let node = &link.t;
+            let (generation, node) = self.a.get_inx(p).unwrap();
             match Ord::cmp(k, &node.k) {
                 Ordering::Less => {
                     if let Some(p_tree0) = node.p_tree0 {
@@ -251,7 +249,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         let mut p = p_init.inx();
         let mut direction = None;
         for _ in 0..num {
-            let (generation, link) = self.a.get_no_gen(p).unwrap();
+            let (generation, link) = self.a.get_inx_link_no_gen(p).unwrap();
             let node = &link.t;
             let p_with_gen = Ptr::_from_raw(p, generation);
             match Ord::cmp(k, &node.k) {
@@ -299,8 +297,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         }
         let mut p = self.root;
         loop {
-            let (generation, link) = self.a.get_no_gen(p).unwrap();
-            let node = &link.t;
+            let (generation, node) = self.a.get_inx(p).unwrap();
             let p_with_gen = Ptr::_from_raw(p, generation);
             match f(p_with_gen, &node.k, &node.v) {
                 Ordering::Less => p = node.p_tree0?,
@@ -324,8 +321,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         }
         let mut p = self.root;
         loop {
-            let (generation, link) = self.a.get_no_gen(p).unwrap();
-            let node = &link.t;
+            let (generation, node) = self.a.get_inx(p).unwrap();
             let p_with_gen = Ptr::_from_raw(p, generation);
             match f(p_with_gen, &node.k, &node.v) {
                 Ordering::Less => {
@@ -414,7 +410,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug, B
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().3 {
                 let generation = self
                     .a
-                    .get_no_gen(tmp.inx())
+                    .get_inx(tmp.inx())
                     .map(|x| x.0)
                     .unwrap_or(<P::Gen as PtrGen>::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), generation);
@@ -422,7 +418,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug, B
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().4 {
                 let generation = self
                     .a
-                    .get_no_gen(tmp.inx())
+                    .get_inx(tmp.inx())
                     .map(|x| x.0)
                     .unwrap_or(<P::Gen as PtrGen>::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), generation);
@@ -430,7 +426,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug, B
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().5 {
                 let generation = self
                     .a
-                    .get_no_gen(tmp.inx())
+                    .get_inx(tmp.inx())
                     .map(|x| x.0)
                     .unwrap_or(<P::Gen as PtrGen>::one());
                 *tmp = Ptr::_from_raw(tmp.inx(), generation);

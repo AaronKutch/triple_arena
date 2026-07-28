@@ -12,7 +12,7 @@ use core::{
 use crate::{
     Arena, ChainArena, Link,
     chain::LinkNoGen,
-    traits::{Advancer, ArenaCloneFromWith, ArenaTrait, Ptr},
+    traits::{Advancer, ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
     utils::{
         ChainNoGenArena,
         traits::{ArenaBacking, PtrInx},
@@ -209,7 +209,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         if self.is_empty() {
             None
         } else {
-            let generation = self.a.get_no_gen(self.first).unwrap().0;
+            let generation = self.a.get_inx(self.first).unwrap().0;
             Some(Ptr::_from_raw(self.first, generation))
         }
     }
@@ -221,7 +221,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         if self.is_empty() {
             None
         } else {
-            let generation = self.a.get_no_gen(self.last).unwrap().0;
+            let generation = self.a.get_inx(self.last).unwrap().0;
             Some(Ptr::_from_raw(self.last, generation))
         }
     }
@@ -268,13 +268,13 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     pub fn get_link(&self, p: P) -> Option<Link<P, (&K, &V)>> {
         self.a.get_link(p).map(|link| {
             let prev = if let Some(prev) = link.prev() {
-                let (generation, _) = self.a.get_no_gen(prev).unwrap();
+                let (generation, _) = self.a.get_inx(prev).unwrap();
                 Some(Ptr::_from_raw(prev, generation))
             } else {
                 None
             };
             let next = if let Some(next) = link.next() {
-                let (generation, _) = self.a.get_no_gen(next).unwrap();
+                let (generation, _) = self.a.get_inx(next).unwrap();
                 Some(Ptr::_from_raw(next, generation))
             } else {
                 None
@@ -286,7 +286,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Returns the generation associated with `p` and a `LinkNoGen<P, &K>`, the
     /// interlinks of which point to neighboring pairs.
     pub fn get_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, (&K, &V)>)> {
-        self.a.get_no_gen(p).map(|(generation, link)| {
+        self.a.get_inx_link_no_gen(p).map(|(generation, link)| {
             (
                 generation,
                 LinkNoGen::new(link.prev_next(), (&link.t.k, &link.t.v)),
@@ -339,7 +339,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     pub fn replace_val_and_update_gen(&mut self, p: P, new: V) -> Result<(V, P), V> {
         // the tree pointers do not have generation counters
         if let Some(p_new) = self.a.invalidate(p) {
-            let old = mem::replace(&mut self.a.get_inx_mut_unwrap_t(p_new.inx()).v, new);
+            let old = mem::replace(&mut self.a.get_inx_mut_unwrap(p_new.inx()).v, new);
             Ok((old, p_new))
         } else {
             Err(new)
@@ -427,7 +427,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                 let subtree_mid = subtree_first.wrapping_add(subtree_len.wrapping_shr(1));
                 if i.get() == subtree_mid {
                     // important: actual accesses are only done at this time
-                    let node = self.a.get_inx_mut_unwrap_t(p);
+                    let node = self.a.get_inx_mut_unwrap(p);
                     if subtree_len == 1 {
                         node.rank = 1;
                     } else if subtree_len == 2 {
@@ -442,7 +442,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                             P::Inx::try_from_usize(NonZeroUsize::new(last_subtree_mid).unwrap())
                                 .unwrap();
                         node.p_back = Some(p_back);
-                        let node = self.a.get_inx_mut_unwrap_t(p_back);
+                        let node = self.a.get_inx_mut_unwrap(p_back);
                         if i < P::Inx::try_into_usize(p_back).unwrap() {
                             node.p_tree0 = Some(p);
                         } else {
@@ -581,10 +581,10 @@ impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> PartialEq<OrdArena<P, 
             if let Some(p1) = adv1.advance(other) {
                 let node0 = self.a.get_inx_unwrap(p0.inx());
                 let node1 = other.a.get_inx_unwrap(p1.inx());
-                if node0.t.k != node1.t.k {
+                if node0.k != node1.k {
                     return false;
                 }
-                if node0.t.v != node1.t.v {
+                if node0.v != node1.v {
                     return false;
                 }
             } else {
@@ -614,11 +614,11 @@ impl<P: Ptr, K: PartialOrd, V: PartialOrd, B: ArenaBacking> PartialOrd<OrdArena<
             if let Some(p1) = adv1.advance(other) {
                 let node0 = self.a.get_inx_unwrap(p0.inx());
                 let node1 = other.a.get_inx_unwrap(p1.inx());
-                match node0.t.k.partial_cmp(&node1.t.k) {
+                match node0.k.partial_cmp(&node1.k) {
                     Some(Ordering::Equal) => (),
                     ord => return ord,
                 }
-                match node0.t.v.partial_cmp(&node1.t.v) {
+                match node0.v.partial_cmp(&node1.v) {
                     Some(Ordering::Equal) => (),
                     ord => return ord,
                 }
@@ -647,11 +647,11 @@ impl<P: Ptr, K: Ord, V: Ord, B: ArenaBacking> Ord for OrdArena<P, K, V, B> {
             if let Some(p1) = adv1.advance(other) {
                 let node0 = self.a.get_inx_unwrap(p0.inx());
                 let node1 = other.a.get_inx_unwrap(p1.inx());
-                match node0.t.k.cmp(&node1.t.k) {
+                match node0.k.cmp(&node1.k) {
                     Ordering::Equal => (),
                     ord => return ord,
                 }
-                match node0.t.v.cmp(&node1.t.v) {
+                match node0.v.cmp(&node1.v) {
                     Ordering::Equal => (),
                     ord => return ord,
                 }

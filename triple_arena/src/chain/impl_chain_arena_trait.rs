@@ -138,16 +138,16 @@ impl<'a, P: Ptr, T, B: ArenaBacking> ArenaInsertEntryTrait<'a, P, T>
             }
             (None, Some(p1)) => {
                 entry.insert(LinkNoGen::new(self.prev_next, t));
-                self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p.inx());
+                self.a.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p.inx());
             }
             (Some(p0), None) => {
                 entry.insert(LinkNoGen::new(self.prev_next, t));
-                self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p.inx());
+                self.a.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p.inx());
             }
             (Some(p0), Some(p1)) => {
                 entry.insert(LinkNoGen::new(self.prev_next, t));
-                self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p.inx());
-                self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p.inx());
+                self.a.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p.inx());
+                self.a.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p.inx());
             }
         }
     }
@@ -159,7 +159,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainNoGenArena<P, T,
     where
         Self: 'a;
 
-    fn get_link_no_gen_inx(&self, p: <P as Ptr>::Inx) -> Option<(P::Gen, &LinkNoGen<P, T>)> {
+    fn get_inx_link_no_gen(&self, p: <P as Ptr>::Inx) -> Option<(P::Gen, &LinkNoGen<P, T>)> {
         self.a.get_inx(p)
     }
 

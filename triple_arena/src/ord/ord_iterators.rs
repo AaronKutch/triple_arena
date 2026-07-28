@@ -20,7 +20,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> Advancer<OrdArena<P, K, V, B>> for PtrAdvanc
 
     fn advance(&mut self, collection: &OrdArena<P, K, V, B>) -> Option<Self::Item> {
         if let Some(ptr) = self.ptr {
-            if let Some((generation, link)) = collection.a.get_no_gen(ptr) {
+            if let Some((generation, link)) = collection.a.a.get_inx(ptr) {
                 if let Some(next) = link.next() {
                     self.ptr = Some(next);
                 } else {

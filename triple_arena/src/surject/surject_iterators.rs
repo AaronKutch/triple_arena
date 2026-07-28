@@ -7,7 +7,7 @@ use crate::{
     arena_iterators::{self},
     chain::ChainNoGenArena,
     surject::{Key, Val},
-    traits::{Advancer, ArenaTrait, Ptr},
+    traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
     utils::{LinkNoGen, PtrNoGen, chain_no_gen_iterators, traits::ArenaBacking},
 };
 
@@ -51,7 +51,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> Advancer<SurjectArena<P, K, V, B>> for Surje
             self.max_advances = self.max_advances.wrapping_sub(1);
         }
         if let Some(ptr) = self.ptr {
-            if let Some((generation, link)) = collection.keys.get_no_gen(ptr) {
+            if let Some((generation, link)) = collection.keys.get_inx_link_no_gen(ptr) {
                 if let Some(next) = link.next() {
                     if next == self.init {
                         self.ptr = None;

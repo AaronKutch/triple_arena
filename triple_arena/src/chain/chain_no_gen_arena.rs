@@ -167,47 +167,17 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         self.a.inc_generation()
     }
 
-    /// Like [ChainNoGenArena::get], except generation counters are ignored and
-    /// the existing generation is returned.
-    #[doc(hidden)]
-    pub fn get_no_gen(&self, p: P::Inx) -> Option<(P::Gen, &LinkNoGen<P, T>)> {
-        self.a.get_inx(p)
-    }
-
-    /// Like [ChainNoGenArena::get_mut], except generation counters are ignored
-    /// and the existing generation is returned.
-    #[doc(hidden)]
-    pub fn get_no_gen_mut(&mut self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &mut T>)> {
-        self.a
-            .get_inx_mut(p)
-            .map(|(generation, link)| (generation, LinkNoGen::new(link.prev_next(), &mut link.t)))
-    }
-
-    /// Like [ChainNoGenArena::get], except generation counters are ignored and
-    /// the result is unwrapped internally
+    /// Calls [Arena::get_inx_unwrap]
     #[doc(hidden)]
     //#[track_caller]
-    pub fn get_inx_unwrap(&self, p: P::Inx) -> &LinkNoGen<P, T> {
-        self.a.get_inx_unwrap(p)
+    pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
+        &self.a.get_inx_unwrap(p).t
     }
 
-    // do not make a `get_inx_unwrap_t`, we do not want to incur extra offsets
-
-    /// Like [ChainNoGenArena::get_mut], except generation counters are ignored
-    /// and the result is unwrapped internally
+    /// Calls [Arena::get_inx_mut_unwrap]
     #[doc(hidden)]
     //#[track_caller]
-    pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> LinkNoGen<P, &mut T> {
-        let link = self.a.get_inx_mut_unwrap(p);
-        LinkNoGen::new(link.prev_next(), &mut link.t)
-    }
-
-    /// Like [ChainNoGenArena::get_mut], except generation counters are ignored
-    /// and the result is unwrapped internally, and only the `&mut T` is
-    /// returned
-    #[doc(hidden)]
-    //#[track_caller]
-    pub fn get_inx_mut_unwrap_t(&mut self, p: P::Inx) -> &mut T {
+    pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
         &mut self.a.get_inx_mut_unwrap(p).t
     }
 

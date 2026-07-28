@@ -6,7 +6,8 @@ use crate::{
     Arena, ChainArena,
     arena::InternalSlot,
     traits::{
-        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
+        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
+        ChainArenaTrait, Ptr,
     },
     utils::{
         ChainNoGenArena, LinkNoGen, PtrNoGen,
@@ -212,7 +213,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
                         return Err("did not reach end of key chain in expected time");
                     }
                     c = c.checked_sub(1).unwrap();
-                    let (_, link) = this.keys.get_no_gen(tmp).unwrap();
+                    let (_, link) = this.keys.get_inx_link_no_gen(tmp).unwrap();
                     if let Some(next) = link.next() {
                         tmp = next;
                     } else {
@@ -482,7 +483,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     #[must_use]
     pub fn get_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &K>)> {
         self.keys
-            .get_no_gen(p)
+            .get_inx_link_no_gen(p)
             .map(|(p, link)| (p, LinkNoGen::new(link.prev_next(), &link.t.k)))
     }
 
@@ -529,8 +530,14 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         // overwrite the `PVal`s in the smaller chain
         let mut tmp = p1.inx();
         loop {
-            self.keys.get_inx_mut_unwrap_t(tmp).p_val = p_val0;
-            tmp = self.keys.get_inx_unwrap(tmp).next().unwrap();
+            self.keys.get_inx_mut_unwrap(tmp).p_val = p_val0;
+            tmp = self
+                .keys
+                .get_inx_link_no_gen(tmp)
+                .unwrap()
+                .1
+                .next()
+                .unwrap();
             if tmp == p1.inx() {
                 break;
             }

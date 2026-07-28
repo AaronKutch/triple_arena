@@ -753,18 +753,18 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         Some(Link::new(prev_next, &link.t))
     }
 
-    // no `get_link_inx`, there are a bunch of lookups it has to do anyways
+    // no `get_inx_link`, there are a bunch of lookups it has to do anyways
 
     /// Returns a reference to the link pointed to by `p`. Returns `None` if `p`
     /// is invalid.
     fn get_link_no_gen(&self, p: P) -> Option<&LinkNoGen<P, T>> {
-        self.get_link_no_gen_inx(p.inx())
+        self.get_inx_link_no_gen(p.inx())
             .and_then(|(generation, link)| (generation == p.generation()).then_some(link))
     }
 
     /// Like [ChainArenaTrait::get_link_no_gen], except generation counters are
     /// ignored and the existing generation is returned.
-    fn get_link_no_gen_inx(&self, p: P::Inx) -> Option<(P::Gen, &LinkNoGen<P, T>)>;
+    fn get_inx_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, &LinkNoGen<P, T>)>;
 
     /// Returns if `p_prev` and `p_next` are neighbors on the same chain, such
     /// that `self.get_link(p_prev).unwrap().next() == Some(p_next)` or
@@ -790,7 +790,7 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// The same as [ChainNoGenArena::are_neighbors] but generation counters are
     /// ignored
     fn are_neighbors_inx(&self, p_prev: P::Inx, p_next: P::Inx) -> bool {
-        if let Some((_, link)) = self.get_link_no_gen_inx(p_prev)
+        if let Some((_, link)) = self.get_inx_link_no_gen(p_prev)
             && let Some(p) = link.next()
         {
             //  if equal,`p_next` must implicitly exist because of invariants

@@ -651,12 +651,12 @@ fn fuzz_chain_no_gen() {
                     // make sure the modified interlinks agree with the `tmp2` mapping
                     if let Some(prev) = link.prev() {
                         let p_prev = b[&link.t].1.0.unwrap();
-                        let (generation, _) = a.get_no_gen(prev).unwrap();
+                        let (generation, _) = a.get_inx_link_no_gen(prev).unwrap();
                         assert_eq!(tmp2[&Ptr::_from_raw(prev, generation)], b[&p_prev].0);
                     }
                     if let Some(next) = link.next() {
                         let p_next = b[&link.t].1.1.unwrap();
-                        let (generation, _) = a.get_no_gen(next).unwrap();
+                        let (generation, _) = a.get_inx_link_no_gen(next).unwrap();
                         assert_eq!(tmp2[&Ptr::_from_raw(next, generation)], b[&p_next].0);
                     }
                 }
