@@ -14,7 +14,7 @@ pub mod serde_docs;
 pub use advancer::Advancer;
 pub use arena_traits::{
     ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaInsertEntryTrait, ArenaInsertTrait,
-    ArenaTrait, InvalidationOption, InvalidationResult, SingularGenerationArena,
+    ArenaTrait, ChainArenaTrait, InvalidationOption, InvalidationResult, SingularGenerationArena,
 };
 pub use extra::{
     AllocError, DirectInsertionError, IntoNonZeroUsizeIterator, MaxCapacityReductionError,

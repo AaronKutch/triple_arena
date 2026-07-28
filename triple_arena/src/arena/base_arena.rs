@@ -159,7 +159,7 @@ pub struct Arena<
     pub(crate) generation: P::Gen,
 }
 
-// FIXME restrict visibility above to pub(in arena)
+// FIXME restrict visibility above to pub(in arena) and check other structs
 
 impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     pub(crate) fn nziter(&self) -> crate::fundamental::IntoNonZeroUsizeIterator {

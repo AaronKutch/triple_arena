@@ -1,7 +1,8 @@
 use core::{iter::from_fn, slice::GetDisjointMutError};
 
 use crate::{
-    AllocError, DirectInsertionError, NotWithinCapacityError, ReallocationError,
+    AllocError, DirectInsertionError, Link, NotWithinCapacityError, ReallocationError,
+    chain::LinkNoGen,
     traits::{Advancer, Ptr},
 };
 
@@ -74,6 +75,16 @@ impl<T> InvalidationOption<T> {
     pub fn is_overflow(&self) -> bool {
         matches!(self, Self::GenerationOverflow(_))
     }
+
+    /// Maps `T` to `U` in the corresponding variants
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> InvalidationOption<U> {
+        match self {
+            InvalidationOption::Success(t) => InvalidationOption::Success(f(t)),
+            InvalidationOption::GenerationOverflow(t) => {
+                InvalidationOption::GenerationOverflow(f(t))
+            }
+        }
+    }
 }
 
 /// Returned from fallible operations that have two different degrees of
@@ -114,6 +125,17 @@ impl<T> InvalidationResult<T> {
             Self::InvalidPtr => Err(None),
         }
     }
+
+    /// Maps `T` to `U` in the corresponding variants
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> InvalidationResult<U> {
+        match self {
+            InvalidationResult::Success(t) => InvalidationResult::Success(f(t)),
+            InvalidationResult::GenerationOverflow(t) => {
+                InvalidationResult::GenerationOverflow(f(t))
+            }
+            InvalidationResult::InvalidPtr => InvalidationResult::InvalidPtr,
+        }
+    }
 }
 
 /// The base trait for `triple_arena` style Arenas. See [crate::Arena] for the
@@ -151,8 +173,8 @@ impl<T> InvalidationResult<T> {
 /// invalidation operations. If the arena backing type is limited or you must
 /// handle allocation failures, then [ArenaInsertTrait::insert_reallocating] and
 /// similar should be used.
-pub trait ArenaTrait<P: Ptr, T>: Sized + IntoIterator<Item = (P, T)> {
-    // An advancer over the valid `Ptr`s of this arena
+pub trait ArenaTrait<P: Ptr, T>: Sized {
+    /// An advancer over the valid `Ptr`s of this arena
     type PtrAdvancer: Advancer<Self, Item = P>;
 
     /// Creates an empty arena, which may have any capacity to start with
@@ -693,6 +715,12 @@ pub trait ArenaDirectInsertEntryTrait<'a, P: Ptr, T> {
 
 /// See [ArenaInsertTrait], this mainly is for special arenas without a
 /// freelist, that are supposed to follow the state of another arena.
+///
+/// Note: An analogous chain arena version of this trait would not be feasible
+/// because of questions around intermediate validities, however it can be
+/// mimicked to arbitrary degrees by using a direct insertion arena and using
+/// the [Link] struct directly in custom values. The same can be used for the
+/// other arena types
 pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     type DirectInsertionEntry<'a>: ArenaDirectInsertEntryTrait<'a, P, T>
     where
@@ -709,20 +737,24 @@ pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     ) -> Result<Self::DirectInsertionEntry<'_>, DirectInsertionError>;
 }
 
-/*
 /// This inherits all the methods of [ArenaTrait] but adds on some [Link]-aware
 /// ones
 pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
-    fn get_link(&self, p: P) -> Option<&Link<P, T>>;
+    type InsertionEntry<'a>: ArenaInsertEntryTrait<'a, P, T>
+    where
+        Self: 'a;
+
+    fn get_link_no_gen_inx(&self, p: P::Inx) -> Option<(P::Gen, &LinkNoGen<P, T>)>;
+
+    /// If capacity is available, an insertion entry for inserting into the
+    /// arena is returned. Returns `None` if there was no available capacity.
+    fn entry_insert_within_capacity(
+        &mut self,
+        prev_next: (Option<P>, Option<P>),
+    ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError>;
 }
 
-// FIXME put on `ArenaDirectInsertTrait` instead
-/// Note: A direct insertion version analogous to [ArenaDirectInsertEntryTrait] would not be feasible because of questions around intermediate validities, however it can be mimicked to arbitrary degrees by using a direct insertion arena and using the [Link] struct directly in custom values. The same can be used for
-ChainArenaInsertTrait
-
-// this will end up being entirely separate, will eventually want advanced
-// allocation control on key and value arenas
-
+/*
 pub trait OrdArenaTrait<P: Ptr, K, V> {
     //fn insert_nonhereditary_linear(&mut self, p_init: P, num: usize, k: K, v: V)
     // -> P {

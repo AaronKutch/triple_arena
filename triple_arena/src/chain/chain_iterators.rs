@@ -11,7 +11,7 @@ use crate::{
 
 /// An advancer over the valid `P`s of a `ChainArena`
 pub struct PtrAdvancer<P: Ptr> {
-    adv: arena_iterators::PtrAdvancer<P>,
+    pub(in crate::chain) adv: arena_iterators::PtrAdvancer<P>,
 }
 
 impl<P: Ptr, T, B: ArenaBacking> Advancer<ChainArena<P, T, B>> for PtrAdvancer<P> {
@@ -178,17 +178,6 @@ impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a mut ChainArena<P, T, B
     /// consumption.
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
-    }
-}
-
-impl<P: Ptr, T, B: ArenaBacking> FromIterator<T> for ChainArena<P, T, B> {
-    /// Inserts as single link chains
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let mut a = ChainArena::new();
-        for t in iter {
-            a.insert_new(t);
-        }
-        a
     }
 }
 

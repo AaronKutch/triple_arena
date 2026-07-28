@@ -76,6 +76,7 @@ pub mod traits {
 
     pub use crate::fundamental::{
         Advancer, ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaInsertEntryTrait,
-        ArenaInsertTrait, ArenaTrait, Ptr, SetMaxCapacity, SingularGenerationArena,
+        ArenaInsertTrait, ArenaTrait, ChainArenaTrait, Ptr, SetMaxCapacity,
+        SingularGenerationArena,
     };
 }

@@ -22,7 +22,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     fn new() -> Self {
         Self {
             len: 0,
-            m: B::Stack::new(),
+            m: NonZeroInxGenericStack::new(),
             freelist_root: None,
             generation: PtrGen::two(),
         }
@@ -31,7 +31,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     fn with_min_capacity(min_capacity: usize) -> Result<Self, AllocError> {
         Ok(Self {
             len: 0,
-            m: B::Stack::with_min_capacity(min_capacity)?,
+            m: NonZeroInxGenericStack::with_min_capacity(min_capacity)?,
             freelist_root: None,
             generation: PtrGen::two(),
         })
