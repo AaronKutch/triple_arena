@@ -826,15 +826,15 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     fn entry_insert_within_capacity(
         &mut self,
         prev_next: (Option<P>, Option<P>),
-    ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError> {
+    ) -> Option<Result<Self::InsertionEntry<'_>, NotWithinCapacityError>> {
         if let Some(p) = prev_next.0 {
             if !self.contains(p) {
-                return Err(NotWithinCapacityError);
+                return None;
             }
         }
         if let Some(p) = prev_next.1 {
             if !self.contains(p) {
-                return Err(NotWithinCapacityError);
+                return None;
             }
         }
         self.entry_insert_inx_within_capacity((
@@ -850,9 +850,7 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     fn entry_insert_inx_within_capacity(
         &mut self,
         prev_next: (Option<P::Inx>, Option<P::Inx>),
-    ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError> {
-        todo!()
-    }
+    ) -> Option<Result<Self::InsertionEntry<'_>, NotWithinCapacityError>>;
 
     /// Connects the interlinks of `p_prev` and `p_next` such that `p_prev` will
     /// be previous to `p_next`. Returns `None` if `p_prev` has an existing next

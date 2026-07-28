@@ -3,7 +3,7 @@ use core::slice::GetDisjointMutError;
 use crate::{
     AllocError, Arena, InvalidationOption, InvalidationResult, NotWithinCapacityError,
     ReallocationError,
-    arena::{ArenaBacking, ArenaInsertEntry},
+    arena::ArenaBacking,
     chain::{ChainNoGenArena, LinkNoGen, chain_no_gen_iterators},
     traits::{
         ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait, Ptr,
@@ -113,7 +113,10 @@ impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for ChainNoGenArena<
 }
 
 pub struct ChainArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
-    entry: ArenaInsertEntry<'a, P, LinkNoGen<P, T>, B>,
+    // note: we drop the entry when constructing this and are relying on idempotency
+    a: &'a mut ChainNoGenArena<P, T, B>,
+    p: P,
+    // this must be filled out if in the middle of a chain
     prev_next: (Option<P::Inx>, Option<P::Inx>),
 }
 
@@ -121,11 +124,32 @@ impl<'a, P: Ptr, T, B: ArenaBacking> ArenaInsertEntryTrait<'a, P, T>
     for ChainArenaInsertEntry<'a, P, T, B>
 {
     fn ptr(&'a self) -> P {
-        self.entry.ptr()
+        self.p
     }
 
     fn insert(self, t: T) {
-        self.entry.insert(LinkNoGen::new(self.prev_next, t));
+        let p = self.p;
+        // double check idempotency
+        let entry = self.a.a.entry_insert_within_capacity().unwrap();
+        assert_eq!(entry.ptr(), p);
+        match self.prev_next {
+            (None, None) => {
+                entry.insert(LinkNoGen::new(self.prev_next, t));
+            }
+            (None, Some(p1)) => {
+                entry.insert(LinkNoGen::new(self.prev_next, t));
+                self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p.inx());
+            }
+            (Some(p0), None) => {
+                entry.insert(LinkNoGen::new(self.prev_next, t));
+                self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p.inx());
+            }
+            (Some(p0), Some(p1)) => {
+                entry.insert(LinkNoGen::new(self.prev_next, t));
+                self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p.inx());
+                self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p.inx());
+            }
+        }
     }
 }
 
@@ -144,19 +168,59 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainNoGenArena<P, T,
         cyclical: bool,
     ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError> {
         let entry = self.a.entry_insert_within_capacity()?;
+        let p = entry.ptr();
         let prev_next = if cyclical {
             (Some(entry.ptr().inx()), Some(entry.ptr().inx()))
         } else {
             (None, None)
         };
-        Ok(ChainArenaInsertEntry { entry, prev_next })
+        Ok(ChainArenaInsertEntry {
+            a: self,
+            p,
+            prev_next,
+        })
     }
 
     fn entry_insert_inx_within_capacity(
         &mut self,
-        prev_next: (Option<P::Inx>, Option<P::Inx>),
-    ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError> {
-        todo!()
+        mut prev_next: (Option<P::Inx>, Option<P::Inx>),
+    ) -> Option<Result<Self::InsertionEntry<'_>, NotWithinCapacityError>> {
+        match prev_next {
+            // new chain
+            (None, None) => {}
+            (None, Some(p1)) => {
+                // if there is a failure it cannot result in a node being inserted
+                let prev = self.a.get_inx(p1)?.1.prev();
+                if let Some(p0) = prev {
+                    // inserting into middle of chain
+                    prev_next.0 = Some(p0);
+                }
+            }
+            (Some(p0), None) => {
+                let next = self.a.get_inx(p0)?.1.next();
+                if let Some(p1) = next {
+                    // inserting into middle of chain
+                    prev_next.1 = Some(p1);
+                }
+            }
+            (Some(p0), Some(p1)) => {
+                // check for existence and that the nodes are neighbors
+                if !self.are_neighbors_inx(p0, p1) {
+                    return None;
+                }
+            }
+        }
+        match self.a.entry_insert_within_capacity() {
+            Ok(entry) => {
+                let p = entry.ptr();
+                Some(Ok(ChainArenaInsertEntry {
+                    a: self,
+                    p,
+                    prev_next,
+                }))
+            }
+            Err(e) => Some(Err(e)),
+        }
     }
 
     fn connect(&mut self, p_prev: P, p_next: P) -> Option<()> {
