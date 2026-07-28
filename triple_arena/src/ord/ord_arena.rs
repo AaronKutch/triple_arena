@@ -266,21 +266,9 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// [next](crate::Link::next) gives the `Ptr` to the next greater key.
     #[must_use]
     pub fn get_link(&self, p: P) -> Option<Link<P, (&K, &V)>> {
-        self.a.get_link(p).map(|link| {
-            let prev = if let Some(prev) = link.prev() {
-                let (generation, _) = self.a.get_inx(prev).unwrap();
-                Some(Ptr::_from_raw(prev, generation))
-            } else {
-                None
-            };
-            let next = if let Some(next) = link.next() {
-                let (generation, _) = self.a.get_inx(next).unwrap();
-                Some(Ptr::_from_raw(next, generation))
-            } else {
-                None
-            };
-            Link::new((prev, next), (&link.t.k, &link.t.v))
-        })
+        self.a
+            .get_link(p)
+            .map(|link| Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
     }
 
     /// Returns the generation associated with `p` and a `LinkNoGen<P, &K>`, the

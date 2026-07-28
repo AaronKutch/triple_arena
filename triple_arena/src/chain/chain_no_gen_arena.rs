@@ -11,7 +11,8 @@ use crate::{
     Arena, ChainArena, InvalidationOption, Link,
     arena::InternalSlot,
     traits::{
-        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
+        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
+        ChainArenaTrait, Ptr,
     },
     utils::traits::ArenaBacking,
 };
@@ -408,54 +409,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         }
     }
 
-    /// Returns if `p` is a valid `Ptr`
-    pub fn contains(&self, p: P) -> bool {
-        self.a.contains(p)
-    }
-
-    /// Returns if `p_prev` and `p_next` are neighbors on the same chain, such
-    /// that `self.get_link(p_prev).unwrap().next() == Some(p_next)` or
-    /// `self.get_link(p_next).unwrap().prev() == Some(p_prev)`. Note that
-    /// `self.are_neighbors(p0, p1)` is not necessarily equal to
-    /// `self.are_neighbors(p1, p0)` because of the directionality. This
-    /// function returns true for the single link cyclic chain case with
-    /// `p0 == p1`. Incurs only one internal lookup because of invariants.
-    /// Additionally returns `false` if `p_prev` or `p_next` are invalid
-    /// `Ptr`s.
-    pub fn are_neighbors(&self, p_prev: P, p_next: P) -> bool {
-        let mut are_neighbors = false;
-        if let Some(l0) = self.a.get(p_prev) {
-            if let Some(p) = l0.next() {
-                if p == p_next.inx() {
-                    // `p1` must implicitly exist if the invariants hold
-                    are_neighbors = true;
-                }
-            }
-        }
-        are_neighbors
-    }
-
-    /// The same as [ChainNoGenArena::are_neighbors] but with `P::Inx`
-    pub fn are_neighbors_inx(&self, p_prev: P::Inx, p_next: P::Inx) -> bool {
-        let mut are_neighbors = false;
-        if let Some((_, l0)) = self.a.get_inx(p_prev) {
-            if let Some(p) = l0.next() {
-                if p == p_next {
-                    // `p1` must implicitly exist if the invariants hold
-                    are_neighbors = true;
-                }
-            }
-        }
-        are_neighbors
-    }
-
-    /// Returns a reference to a link pointed to by `p`. Returns
-    /// `None` if `p` is invalid.
-    #[must_use]
-    pub fn get_link(&self, p: P) -> Option<&LinkNoGen<P, T>> {
-        self.a.get(p)
-    }
-
     /// Returns a mutable reference to a link pointed to by `p`.
     /// Returns `None` if `p` is invalid.
     #[must_use]
@@ -483,20 +436,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
                     LinkNoGen::new(link1.prev_next(), &mut link1.t),
                 )
             })
-    }
-
-    /// Returns a `&T` reference pointed to by `p`. Returns
-    /// `None` if `p` is invalid.
-    #[must_use]
-    pub fn get(&self, p: P) -> Option<&T> {
-        self.a.get(p).map(|link| &link.t)
-    }
-
-    /// Returns a `&mut T` reference pointed to by `p`.
-    /// Returns `None` if `p` is invalid.
-    #[must_use]
-    pub fn get_mut(&mut self, p: P) -> Option<&mut T> {
-        self.a.get_mut(p).map(|link| &mut link.t)
     }
 
     /// Gets two `&mut T` references pointed to by `p0` and `p1`.
@@ -676,66 +615,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             let [lhs, rhs] = self.a.get_disjoint_mut([p0, p1]).ok()?;
             mem::swap(&mut lhs.t, &mut rhs.t);
             Some(())
-        }
-    }
-
-    /// Connects the interlinks of `p_prev` and `p_next` such that `p_prev` will
-    /// be previous to `p_next`. Returns `None` if `p_prev` has a next
-    /// interlink, `p_next` has a previous interlink, or the pointers are
-    /// invalid.
-    #[must_use]
-    pub fn connect(&mut self, p_prev: P, p_next: P) -> Option<()> {
-        if self.get_link(p_prev)?.next().is_none() && self.get_link(p_next)?.prev().is_none() {
-            self.a.get_inx_mut_unwrap(p_prev.inx()).prev_next.1 = Some(p_next.inx());
-            self.a.get_inx_mut_unwrap(p_next.inx()).prev_next.0 = Some(p_prev.inx());
-            Some(())
-        } else {
-            None
-        }
-    }
-
-    /// Breaks the previous interlink of `p`. Returns `None` if `p` is invalid
-    /// or does not have a prev link.
-    #[must_use]
-    pub fn break_prev(&mut self, p: P) -> Option<()> {
-        let u = self.get_link(p)?.prev()?;
-        self.a.get_inx_mut_unwrap(p.inx()).prev_next.0 = None;
-        self.a.get_inx_mut_unwrap(u).prev_next.1 = None;
-        Some(())
-    }
-
-    /// Breaks the next interlink of `p`. Returns `None` if `p` is invalid or
-    /// does not have a next link.
-    #[must_use]
-    pub fn break_next(&mut self, p: P) -> Option<()> {
-        let d = self.get_link(p)?.next()?;
-        self.a.get_inx_mut_unwrap(p.inx()).prev_next.1 = None;
-        self.a.get_inx_mut_unwrap(d).prev_next.0 = None;
-        Some(())
-    }
-
-    /// Exchanges the endpoints of the interlinks right after `p0` and `p1`.
-    /// Returns `None` if the links do not have next interlinks or if the
-    /// pointers are invalid.
-    ///
-    /// An interesting property of this function when applied to cyclic chains,
-    /// is that `exchange_next` on two `Ptr`s of the same cyclic chain always
-    /// results in two cyclic chains (except for if `p0 == p1`), and
-    /// `exchange_next` on two `Ptr`s of two separate cyclic chains always
-    /// results in a single cyclic chain.
-    #[must_use]
-    pub fn exchange_next(&mut self, p0: P, p1: P) -> Option<()> {
-        if self.contains(p0) && self.contains(p1) {
-            // get downstream links
-            let d0 = self.a.get_inx_unwrap(p0.inx()).next()?;
-            let d1 = self.a.get_inx_unwrap(p1.inx()).next()?;
-            self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(d1);
-            self.a.get_inx_mut_unwrap(p1.inx()).prev_next.1 = Some(d0);
-            self.a.get_inx_mut_unwrap(d0).prev_next.0 = Some(p1.inx());
-            self.a.get_inx_mut_unwrap(d1).prev_next.0 = Some(p0.inx());
-            Some(())
-        } else {
-            None
         }
     }
 

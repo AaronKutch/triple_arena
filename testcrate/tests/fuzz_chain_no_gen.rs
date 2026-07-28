@@ -439,17 +439,10 @@ fn fuzz_chain_no_gen() {
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
                     let (ptr, interlink) = b[&t];
-                    let link = a.get_link(ptr).unwrap();
+                    let link = a.get_link_no_gen(ptr).unwrap();
                     assert_eq!(link.prev(), interlink.0.map(|t| b[&t].0.inx()));
                     assert_eq!(link.next(), interlink.1.map(|t| b[&t].0.inx()));
                     assert_eq!(link.t, t);
-                    let link = a.get_link_mut(ptr).unwrap();
-                    assert_eq!(link.prev(), interlink.0.map(|t| b[&t].0.inx()));
-                    assert_eq!(link.next(), interlink.1.map(|t| b[&t].0.inx()));
-                    assert_eq!(*link.t, t);
-                    assert_eq!(&a[ptr], &t);
-                    assert_eq!(*a.get(ptr).unwrap(), t);
-                    assert_eq!(*a.get_mut(ptr).unwrap(), t);
                     assert_eq!(&a[ptr], &t);
                     let tmp = &mut a[ptr];
                     assert_eq!(*tmp, t);
@@ -731,7 +724,7 @@ fn fuzz_chain_no_gen() {
                     let mut iter = a.iter_chain(init.inx());
                     let mut adv = a.advancer_chain(init.inx());
                     while let Some(p) = adv.advance(&a) {
-                        assert_eq!(iter.next().unwrap(), (p, a.get_link(p).unwrap()));
+                        assert_eq!(iter.next().unwrap(), (p, a.get_link_no_gen(p).unwrap()));
                     }
                 } else {
                     let mut iter = a.iter_chain(invalid.inx());

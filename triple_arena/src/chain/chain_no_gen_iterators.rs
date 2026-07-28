@@ -5,7 +5,7 @@ use recasting::{Recast, Recaster};
 pub use crate::arena_iterators::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
 use crate::{
     Arena, arena_iterators,
-    traits::{Advancer, ArenaTrait, Ptr},
+    traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
     utils::{ChainNoGenArena, LinkNoGen, traits::ArenaBacking},
 };
 
@@ -131,7 +131,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterChain<'a, P, T, B> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(p) = self.adv.advance(self.arena) {
-            Some((p, self.arena.get_link(p).unwrap()))
+            Some((p, self.arena.get_link_no_gen(p).unwrap()))
         } else {
             None
         }
