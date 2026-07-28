@@ -1,8 +1,8 @@
 use core::slice::GetDisjointMutError;
 
 use crate::{
-    AllocError, Arena, InvalidationOption, InvalidationResult, NotWithinCapacityError,
-    ReallocationError,
+    AllocError, Arena, ChainInsertionError, InvalidationOption, InvalidationResult, LinkInsertKind,
+    NotWithinCapacityError, ReallocationError,
     arena::ArenaBacking,
     chain::{ChainNoGenArena, LinkNoGen, chain_no_gen_iterators},
     traits::{
@@ -115,9 +115,10 @@ impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for ChainNoGenArena<
 pub struct ChainArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
     // note: we drop the entry when constructing this and are relying on idempotency
     a: &'a mut ChainNoGenArena<P, T, B>,
+    // the `Ptr` of the new link when inserted
     p: P,
-    // this must be filled out if in the middle of a chain
-    prev_next: (Option<P::Inx>, Option<P::Inx>),
+    // this must be checked to be valid
+    kind: LinkInsertKind<P>,
 }
 
 impl<'a, P: Ptr, T, B: ArenaBacking> ArenaInsertEntryTrait<'a, P, T>
@@ -128,29 +129,119 @@ impl<'a, P: Ptr, T, B: ArenaBacking> ArenaInsertEntryTrait<'a, P, T>
     }
 
     fn insert(self, t: T) {
+        let a = &mut self.a.a;
         let p = self.p;
         // double check idempotency
-        let entry = self.a.a.entry_insert_within_capacity().unwrap();
+        let entry = a.entry_insert_within_capacity().unwrap();
         assert_eq!(entry.ptr(), p);
-        match self.prev_next {
-            (None, None) => {
-                entry.insert(LinkNoGen::new(self.prev_next, t));
+        match self.kind {
+            LinkInsertKind::Disconnected => entry.insert(LinkNoGen::new((None, None), t)),
+            LinkInsertKind::SingleLinkCyclic => {
+                entry.insert(LinkNoGen::new((Some(p.inx()), Some(p.inx())), t))
             }
-            (None, Some(p1)) => {
-                entry.insert(LinkNoGen::new(self.prev_next, t));
-                self.a.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p.inx());
+            LinkInsertKind::ChainStart(start) => {
+                entry.insert(LinkNoGen::new((None, Some(start.inx())), t));
+                a.get_inx_mut_unwrap(start.inx()).prev_next.0 = Some(p.inx());
             }
-            (Some(p0), None) => {
-                entry.insert(LinkNoGen::new(self.prev_next, t));
-                self.a.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p.inx());
+            LinkInsertKind::ChainStartInx(start) => {
+                entry.insert(LinkNoGen::new((None, Some(start)), t));
+                a.get_inx_mut_unwrap(start).prev_next.0 = Some(p.inx());
             }
-            (Some(p0), Some(p1)) => {
-                entry.insert(LinkNoGen::new(self.prev_next, t));
-                self.a.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p.inx());
-                self.a.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p.inx());
+            LinkInsertKind::ChainEnd(end) => {
+                entry.insert(LinkNoGen::new((Some(end.inx()), None), t));
+                a.get_inx_mut_unwrap(end.inx()).prev_next.1 = Some(p.inx());
+            }
+            LinkInsertKind::ChainEndInx(end) => {
+                entry.insert(LinkNoGen::new((Some(end), None), t));
+                a.get_inx_mut_unwrap(end).prev_next.1 = Some(p.inx());
+            }
+            LinkInsertKind::PrevTo(next) => {
+                entry.insert(LinkNoGen::new((None, Some(next.inx())), t));
+                let link = a.get_inx_mut_unwrap(next.inx());
+                if let Some(old_prev) = link.prev() {
+                    // middle of chain
+                    link.prev_next.0 = Some(p.inx());
+                    a.get_inx_mut_unwrap(p.inx()).prev_next.0 = Some(old_prev);
+                    a.get_inx_mut_unwrap(old_prev).prev_next.1 = Some(p.inx());
+                } else {
+                    link.prev_next.0 = Some(p.inx());
+                }
+            }
+            LinkInsertKind::PrevToInx(next) => {
+                entry.insert(LinkNoGen::new((None, Some(next)), t));
+                let link = a.get_inx_mut_unwrap(next);
+                if let Some(old_prev) = link.prev() {
+                    // middle of chain
+                    link.prev_next.0 = Some(p.inx());
+                    a.get_inx_mut_unwrap(p.inx()).prev_next.0 = Some(old_prev);
+                    a.get_inx_mut_unwrap(old_prev).prev_next.1 = Some(p.inx());
+                } else {
+                    link.prev_next.0 = Some(p.inx());
+                }
+            }
+            LinkInsertKind::NextTo(prev) => {
+                entry.insert(LinkNoGen::new((Some(prev.inx()), None), t));
+                let link = a.get_inx_mut_unwrap(prev.inx());
+                if let Some(old_next) = link.next() {
+                    // middle of chain
+                    link.prev_next.1 = Some(p.inx());
+                    a.get_inx_mut_unwrap(p.inx()).prev_next.1 = Some(old_next);
+                    a.get_inx_mut_unwrap(old_next).prev_next.0 = Some(p.inx());
+                } else {
+                    link.prev_next.1 = Some(p.inx());
+                }
+            }
+            LinkInsertKind::NextToInx(prev) => {
+                entry.insert(LinkNoGen::new((Some(prev), None), t));
+                let link = a.get_inx_mut_unwrap(prev);
+                if let Some(old_next) = link.next() {
+                    // middle of chain
+                    link.prev_next.1 = Some(p.inx());
+                    a.get_inx_mut_unwrap(p.inx()).prev_next.1 = Some(old_next);
+                    a.get_inx_mut_unwrap(old_next).prev_next.0 = Some(p.inx());
+                } else {
+                    link.prev_next.1 = Some(p.inx());
+                }
+            }
+            LinkInsertKind::Inbetween { next_to, prev_to } => {
+                entry.insert(LinkNoGen::new(
+                    (Some(next_to.inx()), Some(prev_to.inx())),
+                    t,
+                ));
+                a.get_inx_mut_unwrap(next_to.inx()).prev_next.1 = Some(p.inx());
+                a.get_inx_mut_unwrap(prev_to.inx()).prev_next.0 = Some(p.inx());
+            }
+            LinkInsertKind::InbetweenInx { next_to, prev_to } => {
+                entry.insert(LinkNoGen::new((Some(next_to), Some(prev_to)), t));
+                a.get_inx_mut_unwrap(next_to).prev_next.1 = Some(p.inx());
+                a.get_inx_mut_unwrap(prev_to).prev_next.0 = Some(p.inx());
             }
         }
     }
+}
+
+fn check_link_insert_kind<P: Ptr, T, B: ArenaBacking>(
+    this: &ChainNoGenArena<P, T, B>,
+    kind: LinkInsertKind<P>,
+) -> Option<()> {
+    let a = &this.a;
+    let res = match kind {
+        LinkInsertKind::Disconnected => true,
+        LinkInsertKind::SingleLinkCyclic => true,
+        LinkInsertKind::ChainStart(start) => a.get(start)?.prev().is_none(),
+        LinkInsertKind::ChainStartInx(start) => a.get_inx(start)?.1.prev().is_none(),
+        LinkInsertKind::ChainEnd(end) => a.get(end)?.next().is_none(),
+        LinkInsertKind::ChainEndInx(end) => a.get_inx(end)?.1.next().is_none(),
+        LinkInsertKind::PrevTo(p) => a.get(p).is_some(),
+        LinkInsertKind::PrevToInx(p) => a.get_inx(p).is_some(),
+        LinkInsertKind::NextTo(p) => a.get(p).is_some(),
+        LinkInsertKind::NextToInx(p) => a.get_inx(p).is_some(),
+        LinkInsertKind::Inbetween { next_to, prev_to } => this.are_neighbors(next_to, prev_to),
+        LinkInsertKind::InbetweenInx { next_to, prev_to } => {
+            this.are_neighbors_inx(next_to, prev_to)
+        }
+    };
+    if res { Some(()) } else { None }
 }
 
 impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainNoGenArena<P, T, B> {
@@ -163,63 +254,19 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainNoGenArena<P, T,
         self.a.get_inx(p)
     }
 
-    fn entry_insert_new_within_capacity(
+    fn entry_insert_within_capacity(
         &mut self,
-        cyclical: bool,
-    ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError> {
-        let entry = self.a.entry_insert_within_capacity()?;
-        let p = entry.ptr();
-        let prev_next = if cyclical {
-            (Some(entry.ptr().inx()), Some(entry.ptr().inx()))
-        } else {
-            (None, None)
-        };
-        Ok(ChainArenaInsertEntry {
-            a: self,
-            p,
-            prev_next,
-        })
-    }
-
-    fn entry_insert_inx_within_capacity(
-        &mut self,
-        mut prev_next: (Option<P::Inx>, Option<P::Inx>),
-    ) -> Option<Result<Self::InsertionEntry<'_>, NotWithinCapacityError>> {
-        match prev_next {
-            // new chain
-            (None, None) => {}
-            (None, Some(p1)) => {
-                // if there is a failure it cannot result in a node being inserted
-                let prev = self.a.get_inx(p1)?.1.prev();
-                if let Some(p0) = prev {
-                    // inserting into middle of chain
-                    prev_next.0 = Some(p0);
-                }
-            }
-            (Some(p0), None) => {
-                let next = self.a.get_inx(p0)?.1.next();
-                if let Some(p1) = next {
-                    // inserting into middle of chain
-                    prev_next.1 = Some(p1);
-                }
-            }
-            (Some(p0), Some(p1)) => {
-                // check for existence and that the nodes are neighbors
-                if !self.are_neighbors_inx(p0, p1) {
-                    return None;
-                }
-            }
+        kind: LinkInsertKind<P>,
+    ) -> Result<Self::InsertionEntry<'_>, ChainInsertionError> {
+        if check_link_insert_kind(self, kind).is_none() {
+            return Err(ChainInsertionError::FailedLinkRequirement);
         }
         match self.a.entry_insert_within_capacity() {
             Ok(entry) => {
                 let p = entry.ptr();
-                Some(Ok(ChainArenaInsertEntry {
-                    a: self,
-                    p,
-                    prev_next,
-                }))
+                Ok(ChainArenaInsertEntry { a: self, p, kind })
             }
-            Err(e) => Some(Err(e)),
+            Err(NotWithinCapacityError) => Err(ChainInsertionError::NotWithinCapacity),
         }
     }
 

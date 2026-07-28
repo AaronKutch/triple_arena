@@ -1,7 +1,8 @@
 use core::{iter::from_fn, slice::GetDisjointMutError};
 
 use crate::{
-    AllocError, DirectInsertionError, Link, NotWithinCapacityError, ReallocationError,
+    AllocError, ChainInsertionError, DirectInsertionError, Link, NotWithinCapacityError,
+    ReallocationError,
     chain::LinkNoGen,
     traits::{Advancer, Ptr},
 };
@@ -29,7 +30,9 @@ We call them "entry_insert*" in opposite order to the associated "InsertionEntry
 
 I would have signatures like `Result<..., T>` for nonentry fallible insertion methods, but since the entry methods exist (and often the `Result<..., T>` form promoted bad undo strategies anyways), I have made them all `Result<..., *Error>` instead.
 
-I decided to only have a `direct_insert_within_capacity` method for direct insertion, and no `_reallocating` or panicking variations. Capacity should be manually managed for such arenas, because in several contexts direct insertion would be used in, arbitrary indexes would easily lead to OOM. dealing with automatic reallocation fallibility in the signatures would also be annoying, and usually this is a mirror arena that will not have many places in the code calling direct insertion methods. Similar logic for why we only have the `_within_capacity` and `_reallocating` variants for chain arena insertion that involves more than one link.
+I decided to only have a `direct_insert_within_capacity` method for direct insertion, and no `_reallocating` or panicking variations. Capacity should be manually managed for such arenas, because in several contexts direct insertion would be used in, arbitrary indexes would easily lead to OOM. dealing with automatic reallocation fallibility in the signatures would also be annoying, and usually this is a mirror arena that will not have many places in the code calling direct insertion methods.
+
+I wanted to avoid adding new error enums for chain insertion and would have used something like `Option<Result<Self::InsertionEntry<'_>, NotWithinCapacityError>>`, but the problem is that users will want to assume certain errors take priority and that the outer errors could be unwrapped if their associated errors would not happen. The `ChainInsertionError` has variants that don't show with certain inputs, but having a single set of functions with a single unified `LinkInsertKind` is superior for many reasons.
 
 The `drain` function ends up allowing invalidating every element separately because of "certain arena designs that have a generation per internal slot or domain". For singular generation arenas I also considered maybe adding an invariant that the generation counter equals the number of element invalidations minus 2, but I don't know of a use for it and it costs more and it is awkward to deal with edge cases with `drain` iterator dropping. I decide that we just make `drain` dropping just guarantee a single unseen `clear` invalidation (if there are elements), and make `clear` do a single invalidation if there are any entries. `drain` individually dropping could also make more sense if it stopped part way through on iterator drop, but `clear` by default is safer. The `compress` functions make sense to only increment the generation once.
 
@@ -690,6 +693,49 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     }
 }
 
+/// Describes multiple ways to insert a link. All the "*Inx" variants disregard
+/// generation counters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkInsertKind<P: Ptr> {
+    /// Insert a single link by itself, in a single link chain that is
+    /// disconnected from anything else
+    Disconnected,
+    /// Insert a single link by itself but connected to itself, that is, a
+    /// single link cyclic chain
+    SingleLinkCyclic,
+    /// Insert a link at the start of a chain. The `P` must point to the current
+    /// start link of a noncyclic chain, and the inserted node will become the
+    /// new start of the chain
+    ChainStart(P),
+    ChainStartInx(P::Inx),
+    /// Insert a link at the end of a chain. The `P` must point to the current
+    /// end link of a noncyclic chain, and the inserted node will become the new
+    /// end of the chain
+    ChainEnd(P),
+    ChainEndInx(P::Inx),
+    /// Insert a link as the previous link from the existing link at `P`, which
+    /// could be anywhere on any chain, maintaining continuity of the chain
+    PrevTo(P),
+    PrevToInx(P::Inx),
+    /// Insert a link as the next link from the existing link  at`P`, which
+    /// could be anywhere on any chain, maintaining continuity of the chain
+    NextTo(P),
+    NextToInx(P::Inx),
+    /// Insert a link inbetween two links on any chain with at least two links,
+    /// maintaining continuity of the chain. The insertion will fail if the two
+    /// links are not neighbors. Note that the arguments are directionally
+    /// sensitive, calling [Link::next] on the link at `next_to` must result in
+    /// `prev_to` and not the other way around.
+    Inbetween {
+        next_to: P,
+        prev_to: P,
+    },
+    InbetweenInx {
+        next_to: P::Inx,
+        prev_to: P::Inx,
+    },
+}
+
 /// Dropping the struct cancels the insertion
 #[must_use]
 pub trait ArenaDirectInsertEntryTrait<'a, P: Ptr, T> {
@@ -800,113 +846,42 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         }
     }
 
-    /// If capacity is available, an insertion entry for inserting a new single
-    /// link into the arena is returned. If `cyclical` is set, it will be a
-    /// single link cyclical chain (a link connected to itself), otherwise it
-    /// will be disconnected from anything. Returns if there was no available
-    /// capacity.
-    fn entry_insert_new_within_capacity(
-        &mut self,
-        cyclical: bool,
-    ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError>;
-
-    /// The same as [ChainArenaTrait::entry_insert_new_within_capacity], but
-    /// reallocates if necessary and returns an error if reallocation failed
-    /// or if [ArenaTrait::max_capacity] is used up. Be aware that any
-    /// reallocation happens upon calling this method, and the affects
-    /// remain even if inserting into the arena is cancelled.
-    fn entry_insert_new_reallocating(
-        &mut self,
-        cyclical: bool,
-    ) -> Result<Self::InsertionEntry<'_>, ReallocationError> {
-        handle_reallocation(self)?;
-        self.entry_insert_new_within_capacity(cyclical)
-            .map_err(|NotWithinCapacityError| ReallocationError::AllocError)
-    }
-
-    /// The same as [ChainArenaTrait::entry_insert_new_reallocating], but panics
-    /// if an allocation error occurs or if [ArenaTrait::max_capacity] is
-    /// used up.
-    ///
-    /// # Panics
-    ///
-    /// This function can panic on allocation failure when needing to extend
-    /// capacity, or if `self.len()` is at the maximum capacity.
-    #[track_caller]
-    fn entry_insert_new(&mut self, cyclical: bool) -> Self::InsertionEntry<'_> {
-        self.entry_insert_new_reallocating(cyclical)
-            .expect("`ChainArenaTrait::entry_insert_new_reallocating` failed")
-    }
-
-    /// An entry insertion method that can also connect the new link to an
-    /// existing chain in the same step. If `prev_next.0.is_none() &&
-    /// prev_next.1.is_none()` then a new chain is started in the arena. If
-    /// `prev_next.0.is_some() || prev_next.1.is_some()` then the link is
-    /// inserted in an existing chain and the neighboring interlinks reroute to
-    /// the new link. `prev_next.0.is_some() && prev_next.1.is_none()`
-    /// and the reverse is allowed even if the link is not at the start or
-    /// end of the chain; this function will detect this and derive the
-    /// unknown `Ptr`, inserting in the middle of the chain as usual.
-    ///
-    /// # Errors
-    ///
-    /// If a `Ptr` is invalid, or `prev_next.0.is_some() &&
-    /// prev_next.1.is_some() && !self.are_neighbors(prev, next)`, this will
-    /// return `None`. `Some(Err(NotWithinCapacityError))` is returned if
-    /// `self.len() == self.capacity()`
+    /// If capacity is available and the requirements for the `kind` are met, an
+    /// insertion entry for inserting a new link into the arena is returned.
+    /// Returns an error if there was no available capacity, or some
+    /// requirement was not met.
     fn entry_insert_within_capacity(
         &mut self,
-        prev_next: (Option<P>, Option<P>),
-    ) -> Option<Result<Self::InsertionEntry<'_>, NotWithinCapacityError>> {
-        if let Some(p) = prev_next.0 {
-            if !self.contains(p) {
-                return None;
-            }
-        }
-        if let Some(p) = prev_next.1 {
-            if !self.contains(p) {
-                return None;
-            }
-        }
-        self.entry_insert_inx_within_capacity((
-            prev_next.0.map(|p| p.inx()),
-            prev_next.1.map(|p| p.inx()),
-        ))
-    }
+        kind: LinkInsertKind<P>,
+    ) -> Result<Self::InsertionEntry<'_>, ChainInsertionError>;
 
     /// The same as [ChainArenaTrait::entry_insert_within_capacity] but
-    /// automatically reallocating with the same semantics as other
+    /// automatically reallocating if necessary with the same semantics as other
     /// `*_reallocating` functions.
     fn entry_insert_reallocating(
         &mut self,
-        prev_next: (Option<P>, Option<P>),
-    ) -> Option<Result<Self::InsertionEntry<'_>, ReallocationError>> {
-        if let Err(e) = handle_reallocation(self) {
-            return Some(Err(e));
+        kind: LinkInsertKind<P>,
+    ) -> Result<Self::InsertionEntry<'_>, ChainInsertionError> {
+        match handle_reallocation(self) {
+            Ok(()) => self.entry_insert_within_capacity(kind),
+            Err(ReallocationError::AllocError) => Err(ChainInsertionError::AllocError),
+            Err(ReallocationError::BeyondMaxCapacity) => {
+                Err(ChainInsertionError::BeyondMaxCapacity)
+            }
         }
-        self.entry_insert_within_capacity(prev_next)
-            .map(|r| r.map_err(|NotWithinCapacityError| ReallocationError::AllocError))
     }
 
-    /// If capacity is available, an insertion entry for inserting into the
-    /// arena is returned. Returns `None` if there was no available capacity.
-    fn entry_insert_inx_within_capacity(
-        &mut self,
-        prev_next: (Option<P::Inx>, Option<P::Inx>),
-    ) -> Option<Result<Self::InsertionEntry<'_>, NotWithinCapacityError>>;
-
-    /// The same as [ChainArenaTrait::entry_insert_inx_within_capacity] but
-    /// automatically reallocating with the same semantics as other
-    /// `*_reallocating` functions.
-    fn entry_insert_inx_reallocating(
-        &mut self,
-        prev_next: (Option<P::Inx>, Option<P::Inx>),
-    ) -> Option<Result<Self::InsertionEntry<'_>, ReallocationError>> {
-        if let Err(e) = handle_reallocation(self) {
-            return Some(Err(e));
-        }
-        self.entry_insert_inx_within_capacity(prev_next)
-            .map(|r| r.map_err(|NotWithinCapacityError| ReallocationError::AllocError))
+    /// The same as [ChainArenaTrait::entry_insert_reallocating], but panics
+    /// if an error occurs
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on failures of
+    /// [ChainArenaTrait::entry_insert_reallocating]
+    #[track_caller]
+    fn entry_insert_new(&mut self, kind: LinkInsertKind<P>) -> Self::InsertionEntry<'_> {
+        self.entry_insert_reallocating(kind)
+            .expect("`ChainArenaTrait::entry_insert_reallocating` failed")
     }
 
     /// Connects the interlinks of `p_prev` and `p_next` such that `p_prev` will

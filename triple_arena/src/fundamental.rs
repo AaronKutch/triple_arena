@@ -14,11 +14,12 @@ pub mod serde_docs;
 pub use advancer::Advancer;
 pub use arena_traits::{
     ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaInsertEntryTrait, ArenaInsertTrait,
-    ArenaTrait, ChainArenaTrait, InvalidationOption, InvalidationResult, SingularGenerationArena,
+    ArenaTrait, ChainArenaTrait, InvalidationOption, InvalidationResult, LinkInsertKind,
+    SingularGenerationArena,
 };
 pub use extra::{
-    AllocError, DirectInsertionError, IntoNonZeroUsizeIterator, MaxCapacityReductionError,
-    NotWithinCapacityError, ReallocationError, nzusize_iter,
+    AllocError, ChainInsertionError, DirectInsertionError, IntoNonZeroUsizeIterator,
+    MaxCapacityReductionError, NotWithinCapacityError, ReallocationError, nzusize_iter,
 };
 pub use nonzero_inx_generic_stack::{
     NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, SetMaxCapacity,

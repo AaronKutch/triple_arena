@@ -93,6 +93,39 @@ impl fmt::Display for DirectInsertionError {
 
 impl Error for DirectInsertionError {}
 
+/// For chain arena insertion
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum ChainInsertionError {
+    /// A `Ptr` was invalid or some requirement of a `LinkInsertKind` was failed
+    FailedLinkRequirement,
+    /// The operation would not be within existing capacity
+    NotWithinCapacity,
+    /// Extending the capacity further to the required amount would exceed a max
+    /// capacity limit
+    BeyondMaxCapacity,
+    /// There was an allocation error when attempting to reallocate
+    AllocError,
+}
+
+impl fmt::Display for ChainInsertionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FailedLinkRequirement => {
+                f.write_str("a `LinkInsertKind` requirement was not met")
+            }
+            Self::NotWithinCapacity => {
+                f.write_str("an operation would not be within existing capacity")
+            }
+            Self::BeyondMaxCapacity => {
+                f.write_str("a max capacity limit prevents growing the capacity")
+            }
+            Self::AllocError => f.write_str("a memory reallocation failed"),
+        }
+    }
+}
+
+impl Error for ChainInsertionError {}
+
 pub struct NonZeroUsizeIterator {
     // invariant: if `end_inclusive.is_some()`, `start <= end_inclusive.get()` must be true
     start: NonZeroUsize,
