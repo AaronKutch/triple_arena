@@ -45,7 +45,7 @@ pub mod utils {
     // FIXME rename? or put in another module, do the same with InternalSlot
     pub use crate::ord::Node;
     pub use crate::{
-        arena::{InternalSlot, NonZeroInxArray, NonZeroInxArrayPushEntry},
+        arena::{ArenaInsertEntry, InternalSlot, NonZeroInxArray, NonZeroInxArrayPushEntry},
         chain::{ChainNoGenArena, LinkNoGen, chain_no_gen_iterators},
         fundamental::PtrNoGen,
     };

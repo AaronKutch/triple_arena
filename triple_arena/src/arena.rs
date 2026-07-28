@@ -18,6 +18,7 @@ pub use base_arena::{Arena, InternalSlot};
 pub use fixed_heap_backing::{NonZeroInxBoxedSlice, NonZeroInxBoxedSlicePushEntry};
 #[cfg(feature = "alloc")]
 pub use heap_backing::{NonZeroInxVec, NonZeroInxVecPushEntry};
+pub use impl_arena_trait::ArenaInsertEntry;
 #[cfg(feature = "alloc")]
 pub use limited_heap_backing::{NonZeroInxLimitedVec, NonZeroInxLimitedVecPushEntry};
 pub use stack_backing::{NonZeroInxArray, NonZeroInxArrayPushEntry};

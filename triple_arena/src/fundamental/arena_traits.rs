@@ -79,10 +79,8 @@ impl<T> InvalidationOption<T> {
     /// Maps `T` to `U` in the corresponding variants
     pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> InvalidationOption<U> {
         match self {
-            InvalidationOption::Success(t) => InvalidationOption::Success(f(t)),
-            InvalidationOption::GenerationOverflow(t) => {
-                InvalidationOption::GenerationOverflow(f(t))
-            }
+            Self::Success(t) => InvalidationOption::Success(f(t)),
+            Self::GenerationOverflow(t) => InvalidationOption::GenerationOverflow(f(t)),
         }
     }
 }
@@ -129,11 +127,9 @@ impl<T> InvalidationResult<T> {
     /// Maps `T` to `U` in the corresponding variants
     pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> InvalidationResult<U> {
         match self {
-            InvalidationResult::Success(t) => InvalidationResult::Success(f(t)),
-            InvalidationResult::GenerationOverflow(t) => {
-                InvalidationResult::GenerationOverflow(f(t))
-            }
-            InvalidationResult::InvalidPtr => InvalidationResult::InvalidPtr,
+            Self::Success(t) => InvalidationResult::Success(f(t)),
+            Self::GenerationOverflow(t) => InvalidationResult::GenerationOverflow(f(t)),
+            Self::InvalidPtr => InvalidationResult::InvalidPtr,
         }
     }
 }
@@ -247,7 +243,6 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
 
     /// Returns a reference to a `T` pointed to by `p`. Returns `None` if `p` is
     /// invalid.
-    #[must_use]
     fn get(&self, p: P) -> Option<&T> {
         self.get_inx(p.inx())
             .and_then(|(generation, t)| (generation == p.generation()).then_some(t))
@@ -659,7 +654,7 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     }
 
     /// If capacity is available, an insertion entry for inserting into the
-    /// arena is returned. Returns `None` if there was no available capacity.
+    /// arena is returned. Returns if there was no available capacity.
     fn entry_insert_within_capacity(
         &mut self,
     ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError>;
@@ -744,14 +739,156 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     where
         Self: 'a;
 
+    /// Returns a reference to the link pointed to by `p`. Returns `None` if `p`
+    /// is invalid.
+    ///
+    /// Be aware that unlike the functions returning `LinkNoGen<P, T>`, this has
+    /// to look up neighboring links to find their generation counters and may
+    /// be less performant.
+    fn get_link(&self, p: P) -> Option<Link<P, &T>> {
+        let link = self.get_link_no_gen(p)?;
+        let mut prev_next = (None, None);
+        if let Some(p) = link.prev() {
+            let Some((generation, _)) = self.get_inx(p) else {
+                // better assembly
+                unreachable!()
+            };
+            prev_next.0 = Some(P::_from_raw(p, generation))
+        }
+        if let Some(p) = link.next() {
+            let Some((generation, _)) = self.get_inx(p) else {
+                unreachable!()
+            };
+            prev_next.1 = Some(P::_from_raw(p, generation))
+        }
+        Some(Link::new(prev_next, &link.t))
+    }
+
+    // no `get_link_inx`, there are a bunch of lookups it has to do anyways
+
+    /// Returns a reference to the link pointed to by `p`. Returns `None` if `p`
+    /// is invalid.
+    fn get_link_no_gen(&self, p: P) -> Option<&LinkNoGen<P, T>> {
+        self.get_link_no_gen_inx(p.inx())
+            .and_then(|(generation, link)| (generation == p.generation()).then_some(link))
+    }
+
+    /// Like [ChainArenaTrait::get_link_no_gen], except generation counters are
+    /// ignored and the existing generation is returned.
     fn get_link_no_gen_inx(&self, p: P::Inx) -> Option<(P::Gen, &LinkNoGen<P, T>)>;
 
-    /// If capacity is available, an insertion entry for inserting into the
-    /// arena is returned. Returns `None` if there was no available capacity.
+    /// Returns if `p_prev` and `p_next` are neighbors on the same chain, such
+    /// that `self.get_link(p_prev).unwrap().next() == Some(p_next)` or
+    /// `self.get_link(p_next).unwrap().prev() == Some(p_prev)`. Note that
+    /// `self.are_neighbors(p0, p1)` is not necessarily equal to
+    /// `self.are_neighbors(p1, p0)` because of the directionality. This
+    /// function returns true for the single link cyclic chain case with
+    /// `p0 == p1`. Additionally returns `false` if `p_prev` or `p_next` are
+    /// invalid `Ptr`s.
+    ///
+    /// Incurs only one internal lookup because of invariants.
+    fn are_neighbors(&self, p_prev: P, p_next: P) -> bool {
+        if let Some(link) = self.get_link_no_gen(p_prev)
+            && let Some(p) = link.next()
+        {
+            //  if equal,`p_next` must implicitly exist because of invariants
+            p == p_next.inx()
+        } else {
+            false
+        }
+    }
+
+    /// The same as [ChainNoGenArena::are_neighbors] but generation counters are
+    /// ignored
+    fn are_neighbors_inx(&self, p_prev: P::Inx, p_next: P::Inx) -> bool {
+        if let Some((_, link)) = self.get_link_no_gen_inx(p_prev)
+            && let Some(p) = link.next()
+        {
+            //  if equal,`p_next` must implicitly exist because of invariants
+            p == p_next
+        } else {
+            false
+        }
+    }
+
+    /// If capacity is available, an insertion entry for inserting a new single
+    /// link into the arena is returned. If `cyclical` is set, it will be a
+    /// single link cyclical chain (a link connected to itself), otherwise it
+    /// will be disconnected from anything. Returns if there was no available
+    /// capacity.
+    fn entry_insert_new_within_capacity(
+        &mut self,
+        cyclical: bool,
+    ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError>;
+
+    // FIXME the other `entry_insert_new`s
+
     fn entry_insert_within_capacity(
         &mut self,
         prev_next: (Option<P>, Option<P>),
-    ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError>;
+    ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError> {
+        if let Some(p) = prev_next.0 {
+            if !self.contains(p) {
+                return Err(NotWithinCapacityError);
+            }
+        }
+        if let Some(p) = prev_next.1 {
+            if !self.contains(p) {
+                return Err(NotWithinCapacityError);
+            }
+        }
+        self.entry_insert_inx_within_capacity((
+            prev_next.0.map(|p| p.inx()),
+            prev_next.1.map(|p| p.inx()),
+        ))
+    }
+
+    // Invalid, NotWithinCapacityError or the two ReallocationError's
+
+    /// If capacity is available, an insertion entry for inserting into the
+    /// arena is returned. Returns `None` if there was no available capacity.
+    fn entry_insert_inx_within_capacity(
+        &mut self,
+        prev_next: (Option<P::Inx>, Option<P::Inx>),
+    ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError> {
+        todo!()
+    }
+
+    /// Connects the interlinks of `p_prev` and `p_next` such that `p_prev` will
+    /// be previous to `p_next`. Returns `None` if `p_prev` has an existing next
+    /// interlink, `p_next` has an existing previous interlink, or the pointers
+    /// are invalid.
+    #[must_use]
+    fn connect(&mut self, p_prev: P, p_next: P) -> Option<()>;
+
+    /// Breaks the previous interlink of `p`. Returns `None` if `p` is invalid
+    /// or does not have an existing prev link.
+    #[must_use]
+    fn break_prev(&mut self, p: P) -> Option<()>;
+
+    /// Breaks the next interlink of `p`. Returns `None` if `p` is invalid or
+    /// does not have an existing next link.
+    #[must_use]
+    fn break_next(&mut self, p: P) -> Option<()>;
+
+    /// Exchanges the endpoints of the interlinks right after `p0` and `p1`.
+    /// Returns `None` if the links do not have next interlinks or if the
+    /// pointers are invalid.
+    ///
+    /// An interesting property of this function when applied to cyclic chains,
+    /// is that `exchange_next` on two `Ptr`s of the same cyclic chain always
+    /// results in two cyclic chains (except for if `p0 == p1`), and
+    /// `exchange_next` on two `Ptr`s of two separate cyclic chains always
+    /// results in a single cyclic chain. This is used by [SurjectArena] to
+    /// efficiently track and merge sets of nodes.
+    #[must_use]
+    fn exchange_next(&mut self, p0: P, p1: P) -> Option<()>;
+
+    /*
+    /// Efficiently removes the entire chain that `p` is connected to (which
+    /// might only include itself). Returns `None` if `p` is not valid.
+    fn drain_chain(&mut self, p: P) -> Option<impl Iterator<Item = InvalidationOption<(P, T)>>>;
+    */
 }
 
 /*

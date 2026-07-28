@@ -1051,8 +1051,6 @@ impl<P: Ptr, T: Ord> Ord for LinkNoGen<P, T> {
     }
 }
 
-// `Send` and `Sync` automatically implemented
-
 impl<P: Ptr, T: Display> Display for LinkNoGen<P, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if f.alternate() {
