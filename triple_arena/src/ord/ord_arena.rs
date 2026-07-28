@@ -298,7 +298,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     #[must_use]
     pub fn invalidate(&mut self, p: P) -> Option<P> {
         // the tree pointers do not have generation counters
-        self.a.invalidate(p)
+        self.a.invalidate(p).allow()
     }
 
     /// Replaces the `V` pointed to by `p` with `new`, returns the
@@ -326,7 +326,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Does no invalidation and returns ownership of `new` if `p` is invalid
     pub fn replace_val_and_update_gen(&mut self, p: P, new: V) -> Result<(V, P), V> {
         // the tree pointers do not have generation counters
-        if let Some(p_new) = self.a.invalidate(p) {
+        if let Some(p_new) = self.a.invalidate(p).allow() {
             let old = mem::replace(&mut self.a.get_inx_mut_unwrap(p_new.inx()).v, new);
             Ok((old, p_new))
         } else {
@@ -354,7 +354,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// previously created from it. This has no effect on the allocated
     /// capacity.
     pub fn clear(&mut self) {
-        self.a.clear();
+        self.a.clear().allow();
     }
 
     /// Compresses the arena by moving around entries to be able to shrink the

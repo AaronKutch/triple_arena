@@ -41,7 +41,7 @@ fn fuzz_chain_no_gen() {
     let invalid = a.insert_new(u64::MAX);
     a.remove(invalid).unwrap();
     generation += 1;
-    a.clear();
+    a.clear().allow();
     generation += 1;
     let mut op_inx;
     let mut max_len = 0;
@@ -451,12 +451,12 @@ fn fuzz_chain_no_gen() {
                     assert!(a.get_mut(invalid).is_none());
                 }
             }
-            710..=749 => {
+            710..900 => {
                 // invalidate
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
                     let (ptr, interlink) = b.remove(&t).unwrap();
-                    let new_ptr = a.invalidate(ptr).unwrap();
+                    let new_ptr = a.invalidate(ptr).allow().unwrap();
                     generation += 1;
                     // preserve interlink on node that was invalidated, the incident interlinks
                     // do not need to be updated because we are looking up based on the `t` value
@@ -464,129 +464,7 @@ fn fuzz_chain_no_gen() {
                     b.insert(t, (new_ptr, interlink));
                     assert_eq!(t, *a.get(new_ptr).unwrap());
                 } else {
-                    assert!(a.invalidate(invalid).is_none());
-                }
-            }
-            750..=799 => {
-                // replace_and_keep_gen
-                if len != 0 {
-                    let t = list.swap_remove(next_inx!(rng, len));
-                    let t_new = new_t();
-                    list.push(t_new);
-                    let interlink = b[&t].1;
-                    // correct `t`-based interlinks, do this before other replacements so we don't
-                    // have to special case cyclical chains
-                    if let Some(interlink) = interlink.0 {
-                        let tmp = b.get_mut(&interlink).unwrap();
-                        if let Some(ref mut tmp) = tmp.1.0
-                            && *tmp == t
-                        {
-                            *tmp = t_new;
-                        }
-                        if let Some(ref mut tmp) = tmp.1.1
-                            && *tmp == t
-                        {
-                            *tmp = t_new;
-                        }
-                    }
-                    if let Some(interlink) = interlink.1 {
-                        let tmp = b.get_mut(&interlink).unwrap();
-                        if let Some(ref mut tmp) = tmp.1.0
-                            && *tmp == t
-                        {
-                            *tmp = t_new;
-                        }
-                        if let Some(ref mut tmp) = tmp.1.1
-                            && *tmp == t
-                        {
-                            *tmp = t_new;
-                        }
-                    }
-                    let (ptr, interlink) = b.remove(&t).unwrap();
-                    let t_old = a.replace_and_keep_gen(ptr, t_new).unwrap();
-                    assert_eq!(t, t_old);
-                    b.insert(t_new, (ptr, interlink));
-                } else {
-                    assert_eq!(a.replace_and_keep_gen(invalid, u64::MAX), Err(u64::MAX));
-                }
-            }
-            800..=849 => {
-                // replace_and_update_gen
-                if len != 0 {
-                    let t = list.swap_remove(next_inx!(rng, len));
-                    let t_new = new_t();
-                    list.push(t_new);
-                    let interlink = b[&t].1;
-                    // correct `t`-based interlinks, do this before other replacements so we don't
-                    // have to special case cyclical chains
-                    if let Some(interlink) = interlink.0 {
-                        let tmp = b.get_mut(&interlink).unwrap();
-                        if let Some(ref mut tmp) = tmp.1.0
-                            && *tmp == t
-                        {
-                            *tmp = t_new;
-                        }
-                        if let Some(ref mut tmp) = tmp.1.1
-                            && *tmp == t
-                        {
-                            *tmp = t_new;
-                        }
-                    }
-                    if let Some(interlink) = interlink.1 {
-                        let tmp = b.get_mut(&interlink).unwrap();
-                        if let Some(ref mut tmp) = tmp.1.0
-                            && *tmp == t
-                        {
-                            *tmp = t_new;
-                        }
-                        if let Some(ref mut tmp) = tmp.1.1
-                            && *tmp == t
-                        {
-                            *tmp = t_new;
-                        }
-                    }
-                    let (ptr, interlink) = b.remove(&t).unwrap();
-                    let (t_old, ptr_new) = a.replace_and_update_gen(ptr, t_new).unwrap();
-                    generation += 1;
-                    assert_eq!(t, t_old);
-                    b.insert(t_new, (ptr_new, interlink));
-                } else {
-                    assert_eq!(a.replace_and_keep_gen(invalid, u64::MAX), Err(u64::MAX));
-                }
-            }
-            850..=899 => {
-                // swap
-                if len != 0 {
-                    let t0 = list[next_inx!(rng, len)];
-                    let t1 = list[next_inx!(rng, len)];
-                    if t0 == t1 {
-                        let t = b[&t0].0;
-                        // swapping a node with itself
-                        a.swap(t, t).unwrap();
-                    } else {
-                        let tmp0 = b[&t0];
-                        let tmp1 = b[&t1];
-                        a.swap(tmp0.0, tmp1.0).unwrap();
-                        // because we are using reverse lookups other nodes need to be rerouted
-                        if let Some(prev) = tmp0.1.0 {
-                            b.get_mut(&prev).unwrap().1.1 = Some(t1);
-                        }
-                        if let Some(next) = tmp0.1.1 {
-                            b.get_mut(&next).unwrap().1.0 = Some(t1);
-                        }
-                        if let Some(prev) = tmp1.1.0 {
-                            b.get_mut(&prev).unwrap().1.1 = Some(t0);
-                        }
-                        if let Some(next) = tmp1.1.1 {
-                            b.get_mut(&next).unwrap().1.0 = Some(t0);
-                        }
-                        let tmp0 = b[&t0];
-                        let tmp1 = b[&t1];
-                        *b.get_mut(&t0).unwrap() = tmp1;
-                        *b.get_mut(&t1).unwrap() = tmp0;
-                    }
-                } else {
-                    assert!(a.swap(invalid, invalid).is_none());
+                    assert!(a.invalidate(invalid).allow().is_none());
                 }
             }
             900..=959 => {
@@ -812,7 +690,7 @@ fn fuzz_chain_no_gen() {
             998 => {
                 // clear
                 let prev_cap = a.capacity();
-                a.clear();
+                a.clear().allow();
                 assert_eq!(a.capacity(), prev_cap);
                 b.clear();
                 generation += 1;
@@ -820,7 +698,7 @@ fn fuzz_chain_no_gen() {
             }
             999 => {
                 // clear_and_shrink
-                a.clear();
+                a.clear().allow();
                 b.clear();
                 generation += 1;
                 list.clear();

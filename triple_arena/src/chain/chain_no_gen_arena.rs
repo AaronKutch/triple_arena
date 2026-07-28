@@ -3,7 +3,6 @@ use core::{
     fmt,
     fmt::{Debug, Display},
     hash::Hash,
-    mem,
     ops::{Index, IndexMut},
 };
 
@@ -409,15 +408,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         }
     }
 
-    /// Returns a mutable reference to a link pointed to by `p`.
-    /// Returns `None` if `p` is invalid.
-    #[must_use]
-    pub fn get_link_mut(&mut self, p: P) -> Option<LinkNoGen<P, &mut T>> {
-        self.a
-            .get_mut(p)
-            .map(|link| LinkNoGen::new(link.prev_next, &mut link.t))
-    }
-
     /// Gets two `LinkNoGen<P, &mut T>` references pointed to by `p0` and `p1`.
     /// If `p0 == p1` or a pointer is invalid, `None` is returned.
     #[allow(clippy::type_complexity)]
@@ -532,96 +522,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             len = len.wrapping_add(1);
         }
         Some(len)
-    }
-
-    /// Invalidates all references to the link pointed to by `p`, and returns a
-    /// new valid reference. Any interlinks inside the arena that also pointed
-    /// to `p` are updated to use the new valid reference. Remember that any
-    /// external interlink pointers that used `p` are invalidated as well as the
-    /// link itself. Does no invalidation and returns `None` if `p` is
-    /// invalid.
-    #[must_use]
-    pub fn invalidate(&mut self, p: P) -> Option<P> {
-        let p_res = self.a.invalidate(p).allow()?;
-        let p_new = p_res.inx();
-        // fix invalidated interlinks
-        match self.a.get_inx_unwrap(p_new).prev_next() {
-            (None, None) => (),
-            (None, Some(p1)) => {
-                self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p_new);
-            }
-            (Some(p0), None) => {
-                self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p_new);
-            }
-            (Some(p0), Some(p1)) => {
-                if p0 == p.inx() {
-                    // single link cyclical chain must be handled separately
-                    self.a.get_inx_mut_unwrap(p_new).prev_next = (Some(p_new), Some(p_new));
-                } else {
-                    self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p_new);
-                    self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p_new);
-                }
-            }
-        }
-        Some(p_res)
-    }
-
-    /// Replaces the `T` in the link pointed to by `p` with `new`, returns the
-    /// old `T`, and keeps the internal generation counter as-is so that
-    /// previously constructed `Ptr`s are still valid.
-    ///
-    /// # Errors
-    ///
-    /// Returns ownership of `new` instead if `p` is invalid
-    pub fn replace_and_keep_gen(&mut self, p: P, new: T) -> Result<T, T> {
-        if let Some(t) = self.get_mut(p) {
-            let old = mem::replace(t, new);
-            Ok(old)
-        } else {
-            Err(new)
-        }
-    }
-
-    /// Replaces the `T` in the link pointed to by `p` with `new`, returns a
-    /// tuple of the old `T` and new `P`, and updates the internal
-    /// generation counter so that previous `Plink`s to this link are
-    /// invalidated.
-    ///
-    /// # Errors
-    ///
-    /// Does no invalidation and returns ownership of `new` if `p` is invalid
-    pub fn replace_and_update_gen(&mut self, p: P, new: T) -> Result<(T, P), T> {
-        if let Some(p_new) = self.invalidate(p) {
-            let old = mem::replace(self.get_mut(p_new).unwrap(), new);
-            Ok((old, p_new))
-        } else {
-            Err(new)
-        }
-    }
-
-    /// Swaps the `T` at indexes `p0` and `p1` and keeps the generation counters
-    /// and link connections as-is. If `p0 == p1` then nothing occurs.
-    /// Returns `None` if `p0` or `p1` are invalid.
-    #[must_use]
-    pub fn swap(&mut self, p0: P, p1: P) -> Option<()> {
-        if p0.inx() == p1.inx() {
-            // need to check that they are valid
-            if self.contains(p0) && self.contains(p1) {
-                Some(())
-            } else {
-                None
-            }
-        } else {
-            let [lhs, rhs] = self.a.get_disjoint_mut([p0, p1]).ok()?;
-            mem::swap(&mut lhs.t, &mut rhs.t);
-            Some(())
-        }
-    }
-
-    /// Drops all links from the arena and invalidates all pointers previously
-    /// created from it. This has no effect on allocated capacity.
-    pub fn clear(&mut self) {
-        self.a.clear().allow()
     }
 
     /// Compresses the arena by moving around entries to be able to shrink the

@@ -599,7 +599,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     #[must_use]
     pub fn invalidate(&mut self, p: P) -> Option<P> {
         // the chain arena fixes interlinks
-        self.keys.invalidate(p)
+        self.keys.invalidate(p).allow()
     }
 
     /// Swaps the `K` keys pointed to by `Ptr`s `p0` and `p1` and keeps the
@@ -642,7 +642,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// previously created from it. This has no effect on allocated
     /// capacities of keys or values.
     pub fn clear(&mut self) {
-        self.keys.clear();
+        self.keys.clear().allow();
         self.vals.clear().allow();
     }
 

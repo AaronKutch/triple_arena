@@ -16,7 +16,7 @@ required-features = ["alloc"]
 
 # separate feature because we need to test the `ptr_struct` macro both ways and make sure we got configuration correct
 [features]
-default = ["serde_support"]
+default = ["serde_support", "alloc"]
 alloc = ["triple_arena/alloc", "triple_arena_render"]
 serde_support = ["triple_arena/serde_support"]
 
