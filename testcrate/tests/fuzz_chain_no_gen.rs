@@ -8,6 +8,7 @@ use rand_xoshiro::{
 };
 use testcrate::P0;
 use triple_arena::{
+    LinkInsertKind,
     traits::*,
     utils::{ChainNoGenArena, traits::PtrGen},
 };
@@ -38,7 +39,7 @@ fn fuzz_chain_no_gen() {
     let mut generation = 2;
     let mut b: HashMap<u64, (P0, (Option<u64>, Option<u64>))> = HashMap::new();
 
-    let invalid = a.insert_new(u64::MAX);
+    let invalid = a.insert(LinkInsertKind::Disconnected, u64::MAX);
     a.remove(invalid).unwrap();
     generation += 1;
     a.clear().allow();
@@ -61,57 +62,35 @@ fn fuzz_chain_no_gen() {
         match op_inx {
             // testing all nontrivial functions on `ChainNoGenArena` not already tested by the
             // regular `Arena` tests
-            0..=9 => {
+            0..20 => {
                 // insert_new
                 let t = new_t();
                 list.push(t);
-                let p = a.insert_new(t);
+                let p = a.insert(LinkInsertKind::Disconnected, t);
                 b.insert(t, (p, (None, None)));
             }
-            10..=19 => {
-                // insert_new_with
-                let t = new_t();
-                list.push(t);
-                let mut tmp = P0::invalid();
-                let p = a.insert_new_with(|p_create| {
-                    tmp = p_create;
-                    t
-                });
-                assert_eq!(p, tmp);
-                b.insert(t, (p, (None, None)));
-            }
-            20..=29 => {
+            20..40 => {
                 // insert_new_cyclic
                 let t = new_t();
                 list.push(t);
-                let p = a.insert_new_cyclic(t);
+                let p = a.insert(LinkInsertKind::SingleLinkCyclic, t);
                 b.insert(t, (p, (Some(t), Some(t))));
             }
-            30..=39 => {
-                // insert_new_cyclic_with
-                let t = new_t();
-                list.push(t);
-                let mut tmp = P0::invalid();
-                let p = a.insert_new_cyclic_with(|p_create| {
-                    tmp = p_create;
-                    t
-                });
-                assert_eq!(p, tmp);
-                b.insert(t, (p, (Some(t), Some(t))));
-            }
-            40..=79 => {
+            40..100 => {
                 // insert
                 let op = if len == 0 { 0 } else { rng.next_u32() % 5 };
                 let t = new_t();
                 list.push(t);
                 match op {
                     0 => {
-                        let p = a.insert((None, None), t).unwrap();
+                        let p = a.insert(LinkInsertKind::Disconnected, t);
                         b.insert(t, (p, (None, None)));
                     }
                     1 => {
                         let t0 = list[next_inx!(rng, len)];
-                        let p = a.insert((Some(b[&t0].0.inx()), None), t).unwrap();
+                        let p = a
+                            .insert_reallocating(LinkInsertKind::NextToInx(b[&t0].0.inx()), t)
+                            .unwrap();
                         if let Some(t1) = b[&t0].1.1 {
                             b.get_mut(&t0).unwrap().1.1 = Some(t);
                             b.get_mut(&t1).unwrap().1.0 = Some(t);
@@ -123,7 +102,9 @@ fn fuzz_chain_no_gen() {
                     }
                     2 => {
                         let t1 = list[next_inx!(rng, len)];
-                        let p = a.insert((None, Some(b[&t1].0.inx())), t).unwrap();
+                        let p = a
+                            .insert_reallocating(LinkInsertKind::PrevToInx(b[&t1].0.inx()), t)
+                            .unwrap();
                         if let Some(t0) = b[&t1].1.0 {
                             b.get_mut(&t0).unwrap().1.1 = Some(t);
                             b.get_mut(&t1).unwrap().1.0 = Some(t);
@@ -136,7 +117,13 @@ fn fuzz_chain_no_gen() {
                     3 => {
                         let t0 = list[next_inx!(rng, len)];
                         let t1 = list[next_inx!(rng, len)];
-                        if let Ok(p) = a.insert((Some(b[&t0].0.inx()), Some(b[&t1].0.inx())), t) {
+                        if let Ok(p) = a.insert_reallocating(
+                            LinkInsertKind::InbetweenInx {
+                                next_to: b[&t0].0.inx(),
+                                prev_to: b[&t1].0.inx(),
+                            },
+                            t,
+                        ) {
                             if let Some(t1) = b[&t0].1.1 {
                                 b.get_mut(&t0).unwrap().1.1 = Some(t);
                                 b.get_mut(&t1).unwrap().1.0 = Some(t);
@@ -156,7 +143,13 @@ fn fuzz_chain_no_gen() {
                     4 => {
                         // test double sided insertion for single link cyclical chains
                         let t0 = list[next_inx!(rng, len)];
-                        if let Ok(p) = a.insert((Some(b[&t0].0.inx()), Some(b[&t0].0.inx())), t) {
+                        if let Ok(p) = a.insert_reallocating(
+                            LinkInsertKind::InbetweenInx {
+                                next_to: b[&t0].0.inx(),
+                                prev_to: b[&t0].0.inx(),
+                            },
+                            t,
+                        ) {
                             if let Some(t1) = b[&t0].1.1 {
                                 b.get_mut(&t0).unwrap().1.1 = Some(t);
                                 b.get_mut(&t1).unwrap().1.0 = Some(t);
@@ -166,120 +159,6 @@ fn fuzz_chain_no_gen() {
                                 b.insert(t, (p, (Some(t0), None)));
                             }
                         } else {
-                            // check that the failure is expected
-                            assert_ne!(b[&t0].1.1, Some(t0));
-                            assert_ne!(b[&t0].1.0, Some(t0));
-                            // undo
-                            list.pop().unwrap();
-                        }
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            80..=99 => {
-                // insert_with
-                let op = if len == 0 { 0 } else { rng.next_u32() % 5 };
-                let t = new_t();
-                list.push(t);
-                match op {
-                    0 => {
-                        let mut inner_p = None;
-                        let p = a
-                            .insert_with((None, None), |p| {
-                                inner_p = Some(p);
-                                t
-                            })
-                            .unwrap();
-                        assert_eq!(inner_p.unwrap(), p);
-                        b.insert(t, (p, (None, None)));
-                    }
-                    1 => {
-                        let t0 = list[next_inx!(rng, len)];
-                        let mut inner_p = None;
-                        let p = a
-                            .insert_with((Some(b[&t0].0.inx()), None), |p| {
-                                inner_p = Some(p);
-                                t
-                            })
-                            .unwrap();
-                        assert_eq!(inner_p.unwrap(), p);
-                        if let Some(t1) = b[&t0].1.1 {
-                            b.get_mut(&t0).unwrap().1.1 = Some(t);
-                            b.get_mut(&t1).unwrap().1.0 = Some(t);
-                            b.insert(t, (p, (Some(t0), Some(t1))));
-                        } else {
-                            b.get_mut(&t0).unwrap().1.1 = Some(t);
-                            b.insert(t, (p, (Some(t0), None)));
-                        }
-                    }
-                    2 => {
-                        let t1 = list[next_inx!(rng, len)];
-                        let mut inner_p = None;
-                        let p = a
-                            .insert_with((None, Some(b[&t1].0.inx())), |p| {
-                                inner_p = Some(p);
-                                t
-                            })
-                            .unwrap();
-                        assert_eq!(inner_p.unwrap(), p);
-                        if let Some(t0) = b[&t1].1.0 {
-                            b.get_mut(&t0).unwrap().1.1 = Some(t);
-                            b.get_mut(&t1).unwrap().1.0 = Some(t);
-                            b.insert(t, (p, (Some(t0), Some(t1))));
-                        } else {
-                            b.get_mut(&t1).unwrap().1.0 = Some(t);
-                            b.insert(t, (p, (None, Some(t1))));
-                        }
-                    }
-                    3 => {
-                        let t0 = list[next_inx!(rng, len)];
-                        let t1 = list[next_inx!(rng, len)];
-                        let mut inner_p = None;
-                        if let Some(p) =
-                            a.insert_with((Some(b[&t0].0.inx()), Some(b[&t1].0.inx())), |p| {
-                                inner_p = Some(p);
-                                t
-                            })
-                        {
-                            assert_eq!(inner_p.unwrap(), p);
-                            if let Some(t1) = b[&t0].1.1 {
-                                b.get_mut(&t0).unwrap().1.1 = Some(t);
-                                b.get_mut(&t1).unwrap().1.0 = Some(t);
-                                b.insert(t, (p, (Some(t0), Some(t1))));
-                            } else {
-                                b.get_mut(&t0).unwrap().1.1 = Some(t);
-                                b.insert(t, (p, (Some(t0), None)));
-                            }
-                        } else {
-                            assert!(inner_p.is_none());
-                            // check that the failure is expected
-                            assert_ne!(b[&t0].1.1, Some(t1));
-                            assert_ne!(b[&t1].1.0, Some(t0));
-                            // undo
-                            list.pop().unwrap();
-                        }
-                    }
-                    4 => {
-                        // test double sided insertion for single link cyclical chains
-                        let t0 = list[next_inx!(rng, len)];
-                        let mut inner_p = None;
-                        if let Some(p) =
-                            a.insert_with((Some(b[&t0].0.inx()), Some(b[&t0].0.inx())), |p| {
-                                inner_p = Some(p);
-                                t
-                            })
-                        {
-                            assert_eq!(inner_p.unwrap(), p);
-                            if let Some(t1) = b[&t0].1.1 {
-                                b.get_mut(&t0).unwrap().1.1 = Some(t);
-                                b.get_mut(&t1).unwrap().1.0 = Some(t);
-                                b.insert(t, (p, (Some(t0), Some(t1))));
-                            } else {
-                                b.get_mut(&t0).unwrap().1.1 = Some(t);
-                                b.insert(t, (p, (Some(t0), None)));
-                            }
-                        } else {
-                            assert!(inner_p.is_none());
                             // check that the failure is expected
                             assert_ne!(b[&t0].1.1, Some(t0));
                             assert_ne!(b[&t0].1.0, Some(t0));
@@ -299,7 +178,7 @@ fn fuzz_chain_no_gen() {
                     match b[&t_mid].1 {
                         (None, None) => {
                             if (rng.next_u32() & 1) == 0 {
-                                let p = a.insert_start(b[&t_mid].0, t).unwrap();
+                                let p = a.insert(LinkInsertKind::ChainStart(b[&t_mid].0), t);
                                 b.insert(t, (p, (None, Some(t_mid))));
                                 b.get_mut(&t_mid).unwrap().1.0 = Some(t);
                             } else {

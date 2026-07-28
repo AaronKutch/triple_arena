@@ -4,8 +4,8 @@ use core::{cmp::Ordering, mem};
 
 use super::ord_arena::Node;
 use crate::{
-    OrdArena,
-    traits::{ArenaTrait, Ptr},
+    LinkInsertKind, OrdArena,
+    traits::{ArenaTrait, ChainArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 
@@ -73,7 +73,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// it. Returns `None` if the arena was not empty.
     pub fn insert_empty(&mut self, k: K, v: V) -> Option<P> {
         if self.is_empty() {
-            let p_new = self.a.insert_new(Node {
+            let p_new = self.a.insert(LinkInsertKind::Disconnected, Node {
                 k,
                 v,
                 p_back: None,
@@ -146,7 +146,10 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                 p_tree1: None,
                 rank: 1,
             };
-            if let Ok(p_new) = self.a.insert((Some(p), None), new_node) {
+            if let Ok(p_new) = self
+                .a
+                .insert_reallocating(LinkInsertKind::NextToInx(p), new_node)
+            {
                 self.a.get_inx_mut_unwrap(p).p_tree1 = Some(p_new.inx());
                 if self.last == p {
                     self.last = p_new.inx()
@@ -165,7 +168,10 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                 p_tree1: None,
                 rank: 1,
             };
-            if let Ok(p_new) = self.a.insert((None, Some(p)), new_node) {
+            if let Ok(p_new) = self
+                .a
+                .insert_reallocating(LinkInsertKind::PrevToInx(p), new_node)
+            {
                 // fix tree pointer in leaf direction
                 self.a.get_inx_mut_unwrap(p).p_tree0 = Some(p_new.inx());
                 if self.first == p {

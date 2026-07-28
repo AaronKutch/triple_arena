@@ -3,7 +3,7 @@ use core::{fmt, mem, num::NonZeroUsize};
 use fmt::Debug;
 
 use crate::{
-    Arena, ChainArena,
+    Arena, ChainArena, LinkInsertKind,
     arena::InternalSlot,
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
@@ -310,7 +310,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             v,
             key_count: NonZeroUsize::new(1).unwrap(),
         });
-        self.keys.insert_new_cyclic(Key { k, p_val })
+        self.keys
+            .insert(LinkInsertKind::SingleLinkCyclic, Key { k, p_val })
     }
 
     /// Inserts a surject into the arena, using the `K` and `V` returned by
@@ -319,21 +320,17 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// useful for initialization of immutable structures that need to reference
     /// themselves.
     pub fn insert_with<F: FnOnce(P) -> (K, V)>(&mut self, create_k_v: F) -> P {
-        let entry = self.vals.entry_insert();
-        let p_val = entry.ptr();
-        let mut res = P::invalid();
-        let mut created_v = None;
-        self.keys.insert_new_cyclic_with(|p| {
-            res = p;
-            let (k, v) = create_k_v(p);
-            created_v = Some(v);
-            Key { k, p_val }
-        });
-        entry.insert(Val {
-            v: created_v.unwrap(),
+        let val_entry = self.vals.entry_insert();
+        let p_val = val_entry.ptr();
+        let key_entry = self.keys.entry_insert(LinkInsertKind::SingleLinkCyclic);
+        let p = key_entry.ptr();
+        let (k, v) = create_k_v(p);
+        key_entry.insert(Key { k, p_val });
+        val_entry.insert(Val {
+            v,
             key_count: NonZeroUsize::new(1).unwrap(),
         });
-        res
+        p
     }
 
     /// Inserts a new key into the arena, associating it with the same key set
@@ -353,7 +350,10 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
                 .wrapping_add(1),
         )
         .unwrap();
-        if let Ok(p) = self.keys.insert((Some(p.inx()), None), Key { k, p_val }) {
+        if let Ok(p) = self
+            .keys
+            .insert_reallocating(LinkInsertKind::NextToInx(p.inx()), Key { k, p_val })
+        {
             Ok(p)
         } else {
             unreachable!()
@@ -375,14 +375,13 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
                 .wrapping_add(1),
         )
         .unwrap();
-        if let Some(p) = self.keys.insert_with((Some(p.inx()), None), |p_link| Key {
+        let entry = self.keys.entry_insert(LinkInsertKind::NextToInx(p.inx()));
+        let p_link = entry.ptr();
+        entry.insert(Key {
             k: create_k(p_link),
             p_val,
-        }) {
-            Some(p)
-        } else {
-            unreachable!()
-        }
+        });
+        Some(p)
     }
 
     /// Returns if `p` is a valid `Ptr`
