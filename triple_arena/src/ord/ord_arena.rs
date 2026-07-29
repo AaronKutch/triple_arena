@@ -281,16 +281,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         })
     }
 
-    /// Gets two references pointed to by `p0` and `p1`.
-    /// If `p0 == p1` or a pointer is invalid, `None` is returned.
-    #[allow(clippy::type_complexity)]
-    #[must_use]
-    pub fn get2_val_mut(&mut self, p0: P, p1: P) -> Option<(&mut V, &mut V)> {
-        self.a
-            .get2_mut(p0, p1)
-            .map(|(t0, t1)| (&mut t0.v, &mut t1.v))
-    }
-
     /// Invalidates all references to the entry pointed to by `p`, and returns a
     /// new valid reference. Does no invalidation and returns `None` if `p` is
     /// invalid.
@@ -330,22 +320,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             Ok((old, p_new))
         } else {
             Err(new)
-        }
-    }
-
-    /// Swaps the `V` values pointed to by `Ptr`s `p0` and `p1` and keeps the
-    /// generation counters as-is. If `p0 == p1`, then nothing occurs. Returns
-    /// `None` if `p0` or `p1` are invalid.
-    #[must_use]
-    pub fn swap_vals(&mut self, p0: P, p1: P) -> Option<()> {
-        if p0 == p1 {
-            // still need to check for containment
-            if self.contains(p0) { Some(()) } else { None }
-        } else {
-            let (lhs, rhs) = self.a.get2_mut(p0, p1)?;
-            // be careful to swap only the inner `V` values
-            mem::swap(&mut lhs.v, &mut rhs.v);
-            Some(())
         }
     }
 

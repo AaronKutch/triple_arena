@@ -280,7 +280,7 @@ fn fuzz_surject() {
                     assert!(a.get_key_mut(invalid).is_none());
                 }
             }
-            390..=399 => {
+            390..440 => {
                 // get_val_mut
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
@@ -290,52 +290,6 @@ fn fuzz_surject() {
                     assert_eq!(*a.get_val_mut(pair.p).unwrap(), v);
                 } else {
                     assert!(a.get_val_mut(invalid).is_none());
-                }
-            }
-            400..=429 => {
-                // get2_mut
-                if len != 0 {
-                    let v0 = list[next_inx!(rng, len)];
-                    let v1 = list[next_inx!(rng, len)];
-                    let set0 = &b[&v0];
-                    let set_len0 = set0.len();
-                    let set1 = &b[&v1];
-                    let set_len1 = set1.len();
-                    let pair0 = set0[next_inx!(rng, set_len0)];
-                    let pair1 = set1[next_inx!(rng, set_len1)];
-                    if v0 == v1 {
-                        assert!(a.get2_mut(pair0.p, pair1.p).is_none());
-                    } else {
-                        let tmp = a.get2_mut(pair0.p, pair1.p).unwrap();
-                        assert_eq!(*tmp.0.0, pair0.k);
-                        assert_eq!(*tmp.1.0, pair1.k);
-                        assert_eq!(*tmp.0.1, v0);
-                        assert_eq!(*tmp.1.1, v1);
-                    }
-                } else {
-                    assert!(a.get2_mut(invalid, invalid).is_none());
-                }
-            }
-            430..=439 => {
-                // get2_key_mut
-                if len != 0 {
-                    let v0 = list[next_inx!(rng, len)];
-                    let v1 = list[next_inx!(rng, len)];
-                    let set0 = &b[&v0];
-                    let set_len0 = set0.len();
-                    let set1 = &b[&v1];
-                    let set_len1 = set1.len();
-                    let pair0 = set0[next_inx!(rng, set_len0)];
-                    let pair1 = set1[next_inx!(rng, set_len1)];
-                    if pair0.k == pair1.k {
-                        assert!(a.get2_key_mut(pair0.p, pair1.p).is_none());
-                    } else {
-                        let tmp = a.get2_key_mut(pair0.p, pair1.p).unwrap();
-                        assert_eq!(*tmp.0, pair0.k);
-                        assert_eq!(*tmp.1, pair1.k);
-                    }
-                } else {
-                    assert!(a.get2_key_mut(invalid, invalid).is_none());
                 }
             }
             440..=445 => {
@@ -410,7 +364,7 @@ fn fuzz_surject() {
                     assert!(a.union(invalid, invalid).is_none());
                 }
             }
-            500..=549 => {
+            500..580 => {
                 // invalidate
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
@@ -427,28 +381,6 @@ fn fuzz_surject() {
                     };
                 } else {
                     assert!(a.invalidate(invalid).is_none());
-                }
-            }
-            550..=579 => {
-                // swap_keys
-                if len != 0 {
-                    let v0 = list[next_inx!(rng, len)];
-                    let v1 = list[next_inx!(rng, len)];
-                    let set0 = &b[&v0];
-                    let set_len0 = set0.len();
-                    let set1 = &b[&v1];
-                    let set_len1 = set1.len();
-                    let i0 = next_inx!(rng, set_len0);
-                    let i1 = next_inx!(rng, set_len1);
-                    let pair0 = set0[i0];
-                    let pair1 = set1[i1];
-                    a.swap_keys(pair0.p, pair1.p).unwrap();
-                    if pair0.p != pair1.p {
-                        b.get_mut(&v0).unwrap()[i0].k = pair1.k;
-                        b.get_mut(&v1).unwrap()[i1].k = pair0.k;
-                    }
-                } else {
-                    assert!(a.swap_keys(invalid, invalid).is_none());
                 }
             }
             580..=599 => {

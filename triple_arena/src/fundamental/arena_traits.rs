@@ -859,7 +859,17 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         p: P,
     ) -> Option<impl Iterator<Item = InvalidationOption<(P, LinkNoGen<P, T>)>>>;
 
-    /// This is a more advanced version of [ArenaTrait::compress] that
+    // TODO the problem with this currently is that in-place canonical compression
+    // necessarily requires the map function to be called on an element multiple
+    // times, and even if we accept that and have some contraption to prevent users
+    // assuming otherwise, implementing recasters properly takes an entire other
+    // buffer. I think we should instead have a `compress_from*`.
+
+    /// This is a more advanced version of [ArenaTrait::compress] that lays out
+    /// links within the same chain to be continuous with one another, improving
+    /// cache locality. Because an element can be internally swapped multiple
+    /// times to achieve this in-place in the allocation, this cannot have a
+    /// map.
     fn compress_and_canonicalize_chains(
         &mut self,
         reset_generation: bool,

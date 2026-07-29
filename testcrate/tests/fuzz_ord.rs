@@ -263,7 +263,7 @@ fn fuzz_ord() {
                     );
                 }
             }
-            400..=419 => {
+            400..440 => {
                 // contains, get_link, get, get_key, get_val, get_link_mut, get_mut, get_val_mut
                 if len != 0 {
                     let t = &list[next_inx!(rng, len)];
@@ -283,24 +283,6 @@ fn fuzz_ord() {
                     assert!(a.get_val(invalid).is_none());
                     assert!(a.get_mut(invalid).is_none());
                     assert!(a.get_val_mut(invalid).is_none());
-                }
-            }
-            420..=439 => {
-                // get2_val_mut
-                if len != 0 {
-                    let t0 = &list[next_inx!(rng, len)];
-                    let t1 = &list[next_inx!(rng, len)];
-                    if t0.p == t1.p {
-                        assert!(a.get2_val_mut(t0.p, t1.p).is_none())
-                    } else {
-                        let tmp = a.get2_val_mut(t0.p, t1.p).unwrap();
-                        let mut val0 = t0.v;
-                        assert_eq!(tmp.0, &mut val0);
-                        let mut val1 = t1.v;
-                        assert_eq!(tmp.1, &mut val1);
-                    }
-                } else {
-                    assert!(a.get2_val_mut(invalid, invalid).is_none())
                 }
             }
             440..=459 => {
@@ -344,7 +326,7 @@ fn fuzz_ord() {
                     );
                 }
             }
-            480..=499 => {
+            480..520 => {
                 // invalidate
                 if len != 0 {
                     let t = &mut list[next_inx!(rng, len)];
@@ -355,36 +337,6 @@ fn fuzz_ord() {
                     generation += 1;
                 } else {
                     assert!(a.invalidate(invalid).is_none());
-                }
-            }
-            500..=519 => {
-                // swap_vals
-                if len != 0 {
-                    let inx0 = next_inx!(rng, len);
-                    let inx1 = next_inx!(rng, len);
-                    let t0 = &list[inx0];
-                    let t1 = &list[inx1];
-                    a.swap_vals(t0.p, t1.p).unwrap();
-                    let val0 = t0.v;
-                    let val1 = t1.v;
-                    if t0.p != t1.p {
-                        b.get_mut(&t0.k).unwrap().remove(&t0.v).unwrap();
-                        b.get_mut(&t1.k).unwrap().remove(&t1.v).unwrap();
-                        b.get_mut(&t0.k).unwrap().insert(val1, Triple {
-                            p: t0.p,
-                            k: t0.k,
-                            v: val1,
-                        });
-                        b.get_mut(&t1.k).unwrap().insert(val0, Triple {
-                            p: t1.p,
-                            k: t1.k,
-                            v: val0,
-                        });
-                    }
-                    list[inx0].v = val1;
-                    list[inx1].v = val0;
-                } else {
-                    assert!(a.swap_vals(invalid, invalid).is_none())
                 }
             }
             520..=549 => {

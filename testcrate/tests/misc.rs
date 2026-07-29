@@ -59,6 +59,8 @@ fn ptr_display() {
         &format!("{}", PtrNoGen::<P1>::_from_raw(NonZeroU128::MAX, ())),
         "P1[ffffffffffffffffffffffffffffffff]"
     );
+
+    // FIXME display links and arenas
 }
 
 // this is a hard coded test, there is a section in the fuzz test and in the

@@ -440,16 +440,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         ))
     }
 
-    /// Gets two `&mut K` references pointed to by `p0` and `p1`. If
-    /// `p0 == p1` or a pointer is invalid, `None` is returned.
-    #[must_use]
-    pub fn get2_key_mut(&mut self, p0: P, p1: P) -> Option<(&mut K, &mut K)> {
-        match self.keys.get2_mut(p0, p1) {
-            Some((key0, key1)) => Some((&mut key0.k, &mut key1.k)),
-            None => None,
-        }
-    }
-
     /// Gets two `&mut V` references pointed to by `p0` and `p1`. If
     /// `self.in_same_set(p0, p1)` or a pointer is invalid, `None` is
     /// returned.
@@ -459,17 +449,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         let p_val1 = self.keys.get(p1)?.p_val;
         let [val0, val1] = self.vals.get_disjoint_mut([p_val0, p_val1]).ok()?;
         Some((&mut val0.v, &mut val1.v))
-    }
-
-    /// Gets two mutable references to the key-value pairs pointed to by `p0`
-    /// and `p1`. If `self.in_same_set(p0, p1)` or a pointer is invalid,
-    /// `None` is returned.
-    #[must_use]
-    #[allow(clippy::type_complexity)]
-    pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<((&mut K, &mut V), (&mut K, &mut V))> {
-        let (key0, key1) = self.keys.get2_mut(p0, p1)?;
-        let [val0, val1] = self.vals.get_disjoint_mut([key0.p_val, key1.p_val]).ok()?;
-        Some(((&mut key0.k, &mut val0.v), (&mut key1.k, &mut val1.v)))
     }
 
     /// Returns the generation associated with `p` and a `LinkNoGen<P, &K>`, the
@@ -596,26 +575,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     pub fn invalidate(&mut self, p: P) -> Option<P> {
         // the chain arena fixes interlinks
         self.keys.invalidate(p).allow()
-    }
-
-    /// Swaps the `K` keys pointed to by `Ptr`s `p0` and `p1` and keeps the
-    /// generation counters as-is. Note that key-value associations are swapped
-    /// such that if `p0` and `p1` point to two different key sets, then the
-    /// first key becomes associated with the value of the second key and vice
-    /// versa. If `p0` and `p1` point to the same key set, no association
-    /// changes occur. If `p0 == p1`, then nothing occurs. Returns `None` if
-    /// `p0` or `p1` are invalid.
-    #[must_use]
-    pub fn swap_keys(&mut self, p0: P, p1: P) -> Option<()> {
-        if p0 == p1 {
-            // still need to check for containment
-            if self.contains(p0) { Some(()) } else { None }
-        } else {
-            let (lhs, rhs) = self.keys.get2_mut(p0, p1)?;
-            // be careful to swap only the inner `K` values and not the `p_val`s
-            mem::swap(&mut lhs.k, &mut rhs.k);
-            Some(())
-        }
     }
 
     /// Swaps the `V` values pointed to by `Ptr`s `p0` and `p1` and keeps the

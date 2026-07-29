@@ -155,37 +155,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         unsafe { self.a.backing_mut() }
     }
 
-    /// Gets two `LinkNoGen<P, &mut T>` references pointed to by `p0` and `p1`.
-    /// If `p0 == p1` or a pointer is invalid, `None` is returned.
-    #[allow(clippy::type_complexity)]
-    #[must_use]
-    pub fn get2_link_mut(
-        &mut self,
-        p0: P,
-        p1: P,
-    ) -> Option<(LinkNoGen<P, &mut T>, LinkNoGen<P, &mut T>)> {
-        self.a
-            .get_disjoint_mut([p0, p1])
-            .ok()
-            .map(|[link0, link1]| {
-                (
-                    LinkNoGen::new(link0.prev_next(), &mut link0.t),
-                    LinkNoGen::new(link1.prev_next(), &mut link1.t),
-                )
-            })
-    }
-
-    /// Gets two `&mut T` references pointed to by `p0` and `p1`.
-    /// If `p0 == p1` or a `Ptr` is invalid, `None` is returned.
-    #[allow(clippy::type_complexity)]
-    #[must_use]
-    pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<(&mut T, &mut T)> {
-        self.a
-            .get_disjoint_mut([p0, p1])
-            .ok()
-            .map(|[link0, link1]| (&mut link0.t, &mut link1.t))
-    }
-
     // this is tested by the `SurjectArena` fuzz test
     /// Like `remove_chain` but assumes the chain is cyclic and `p` is valid
     pub(crate) fn remove_cyclic_chain_internal(&mut self, p: P::Inx, inc_gen: bool) {

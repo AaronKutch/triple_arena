@@ -356,7 +356,7 @@ fn fuzz_chain_no_gen() {
                     assert!(a.invalidate(invalid).allow().is_none());
                 }
             }
-            900..=959 => {
+            900..969 => {
                 // are_neighbors
                 if len != 0 {
                     let t0 = list[next_inx!(rng, len)];
@@ -370,21 +370,6 @@ fn fuzz_chain_no_gen() {
                     }
                 } else {
                     assert!(!a.are_neighbors(invalid, invalid));
-                }
-            }
-            960..=968 => {
-                // get2_mut
-                if len == 0 {
-                    assert!(a.get2_mut(invalid, invalid).is_none());
-                } else {
-                    let p0 = b[&list[next_inx!(rng, len)]].0;
-                    let p1 = b[&list[next_inx!(rng, len)]].0;
-                    if p0 == p1 {
-                        assert!(a.get2_mut(p0, p1).is_none());
-                    } else {
-                        let tmp = a.get2_mut(p0, p1).unwrap();
-                        assert_eq!((*tmp.0, *tmp.1), (*a.get(p0).unwrap(), *a.get(p1).unwrap()));
-                    }
                 }
             }
             969 => {
