@@ -550,6 +550,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
                 .remove_internal(p_val1.inx(), None, false)
                 .allow()
                 .unwrap()
+                .1
                 .v,
             p0,
         ))

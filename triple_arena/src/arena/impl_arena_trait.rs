@@ -162,6 +162,11 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
 
     fn remove(&mut self, p: P) -> InvalidationResult<T> {
         self.remove_internal(p.inx(), Some(p.generation()), true)
+            .map(|(_, t)| t)
+    }
+
+    fn remove_inx(&mut self, p: P::Inx) -> InvalidationResult<(P::Gen, T)> {
+        self.remove_internal(p, None, true)
     }
 
     fn clear(&mut self) -> InvalidationOption<()> {

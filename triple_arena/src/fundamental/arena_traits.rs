@@ -317,6 +317,9 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// invalid.
     fn remove(&mut self, p: P) -> InvalidationResult<T>;
 
+    /// Same as [ArenaTrait::remove] but ignoring generation counters
+    fn remove_inx(&mut self, p: P::Inx) -> InvalidationResult<(P::Gen, T)>;
+
     /// Drops all `T` from the arena and invalidates all pointers previously
     /// created from it. This has no effect on allocated capacity. Returns if
     /// any generation overflow occured (for arena implementations that have
@@ -824,13 +827,26 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// chain remains continuous. Returns `InvalidationResult::Invalid` if `p`
     /// is not valid and `InvalidationResult::GenerationOverflow` if a
     /// generation counter overflowed.
-    fn remove_link_no_gen(&mut self, p: P) -> InvalidationResult<LinkNoGen<P, T>>;
+    fn remove_link_no_gen(&mut self, p: P) -> InvalidationResult<LinkNoGen<P, T>> {
+        if !self.contains(p) {
+            return InvalidationResult::InvalidPtr;
+        }
+        self.remove_inx_link_no_gen(p.inx()).map(|(_, link)| link)
+    }
 
-    /*
+    /// Same as [ChainArenaTrait::remove_link_no_gen] but without generation
+    /// counters
+    fn remove_inx_link_no_gen(
+        &mut self,
+        p: P::Inx,
+    ) -> InvalidationResult<(P::Gen, LinkNoGen<P, T>)>;
+
     /// Efficiently removes the entire chain that `p` is connected to (which
     /// might only include itself). Returns `None` if `p` is not valid.
-    fn drain_chain(&mut self, p: P) -> Option<impl Iterator<Item = InvalidationOption<(P, T)>>>;
-    */
+    fn drain_chain(
+        &mut self,
+        p: P,
+    ) -> Option<impl Iterator<Item = InvalidationOption<(P, LinkNoGen<P, T>)>>>;
 
     /// This is a more advanced version of [ArenaTrait::compress] that
     fn compress_and_canonicalize_chains(

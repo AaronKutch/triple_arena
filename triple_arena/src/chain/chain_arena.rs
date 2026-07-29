@@ -589,7 +589,8 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         let init = self
             .a
             .remove_internal(p.inx(), Some(p.generation()), false)
-            .allow()?;
+            .allow()?
+            .1;
         let mut len = 1;
         self.a.inc_generation().allow();
         let mut tmp = init.next();
@@ -603,6 +604,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
                 .remove_internal(next.inx(), None, false)
                 .allow()
                 .unwrap()
+                .1
                 .next();
             len = len.wrapping_add(1);
         }
@@ -613,6 +615,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
                 .remove_internal(prev.inx(), None, false)
                 .allow()
                 .unwrap()
+                .1
                 .prev();
             len = len.wrapping_add(1);
         }

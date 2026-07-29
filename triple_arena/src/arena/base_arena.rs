@@ -276,7 +276,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         inx: P::Inx,
         generation: Option<P::Gen>,
         inc_gen: bool,
-    ) -> InvalidationResult<T> {
+    ) -> InvalidationResult<(P::Gen, T)> {
         let Some(raw_inx) = P::Inx::try_into_usize(inx) else {
             return InvalidationResult::InvalidPtr;
         };
@@ -295,7 +295,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                     }
                 }
 
-                let old_t = if len == raw_inx.get() {
+                let old = if len == raw_inx.get() {
                     // Special optimization case: if this was the last slot in the stack, pop it off
                     // without touching the freelist at all. We can't efficiently keep the end
                     // canonicalized in general if using a one-way freelist (if something in the
@@ -308,10 +308,10 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                     // If deterministic compatibility needs to be a thing again (and I don't think
                     // it will ever since we introduced `ArenaDirectInsertTrait` mirror arenas), I
                     // don't see it being difficult to follow this case.
-                    let Allocated(_, old_t) = self.m.pop().unwrap() else {
+                    let Allocated(generation, t) = self.m.pop().unwrap() else {
                         unreachable!()
                     };
-                    old_t
+                    (generation, t)
                 } else {
                     let freelist_ptr = if let Some(free) = self.freelist_root {
                         // points to previous root
@@ -322,10 +322,11 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                     };
                     // in both cases the new root is the slot we just freed
                     self.freelist_root = Some(inx);
-                    let Allocated(_, old_t) = mem::replace(allocation, Free(freelist_ptr)) else {
+                    let Allocated(generation, t) = mem::replace(allocation, Free(freelist_ptr))
+                    else {
                         unreachable!()
                     };
-                    old_t
+                    (generation, t)
                 };
 
                 self.len = self.len.wrapping_sub(1);
@@ -333,12 +334,12 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                     let tmp = PtrGen::generational_inc(self.generation);
                     self.generation = tmp.0;
                     if tmp.1 {
-                        InvalidationResult::GenerationOverflow(old_t)
+                        InvalidationResult::GenerationOverflow(old)
                     } else {
-                        InvalidationResult::Success(old_t)
+                        InvalidationResult::Success(old)
                     }
                 } else {
-                    InvalidationResult::Success(old_t)
+                    InvalidationResult::Success(old)
                 }
             }
         }

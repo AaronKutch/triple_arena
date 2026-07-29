@@ -1,4 +1,4 @@
-use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
+use core::{iter, mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
     AllocError, Arena, ChainInsertionError, InvalidationOption, InvalidationResult, LinkInsertKind,
@@ -89,6 +89,11 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainNoGenArena<P, T, B> {
 
     fn remove(&mut self, p: P) -> InvalidationResult<T> {
         self.remove_link_no_gen(p).map(|link| link.t)
+    }
+
+    fn remove_inx(&mut self, p: <P as Ptr>::Inx) -> InvalidationResult<(<P as Ptr>::Gen, T)> {
+        self.remove_inx_link_no_gen(p)
+            .map(|(generation, link)| (generation, link.t))
     }
 
     fn clear(&mut self) -> InvalidationOption<()> {
@@ -408,10 +413,13 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainNoGenArena<P, T,
         }
     }
 
-    fn remove_link_no_gen(&mut self, p: P) -> InvalidationResult<LinkNoGen<P, T>> {
-        let (link, o) = match self.a.remove(p) {
-            InvalidationResult::Success(link) => (link, false),
-            InvalidationResult::GenerationOverflow(link) => (link, true),
+    fn remove_inx_link_no_gen(
+        &mut self,
+        p: P::Inx,
+    ) -> InvalidationResult<(P::Gen, LinkNoGen<P, T>)> {
+        let ((generation, link), o) = match self.a.remove_inx(p) {
+            InvalidationResult::Success(x) => (x, false),
+            InvalidationResult::GenerationOverflow(x) => (x, true),
             InvalidationResult::InvalidPtr => return InvalidationResult::InvalidPtr,
         };
         match link.prev_next() {
@@ -423,56 +431,66 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainNoGenArena<P, T,
                 self.a.get_inx_mut_unwrap(p0).prev_next.1 = None;
             }
             (Some(p0), Some(p1)) => {
-                if p.inx() != p0 {
+                if p != p0 {
                     self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p1);
                     self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p0);
                 } // else it is a single link cyclic chain
             }
         }
         if o {
-            InvalidationResult::GenerationOverflow(link)
+            InvalidationResult::GenerationOverflow((generation, link))
         } else {
-            InvalidationResult::Success(link)
+            InvalidationResult::Success((generation, link))
         }
     }
 
-    /*fn drain_chain(&mut self, p: P) -> Option<impl Iterator<Item = InvalidationOption<(P, T)>>> {
-        // FIXME fix generic
-        let res = match ArenaTrait::remove(self, p) {
-            InvalidationResult::Success(_) => InvalidationOption::Success(()),
-            InvalidationResult::GenerationOverflow(_) => InvalidationOption::GenerationOverflow(()),
-            InvalidationResult::InvalidPtr => return InvalidationResult::InvalidPtr,
-        };
-        let mut removed = 1;
-        let mut tmp = init.next();
-        while let Some(next) = tmp {
-            if next == p.inx() {
-                // cyclical
-                return Some(removed);
+    fn drain_chain(
+        &mut self,
+        p: P,
+    ) -> Option<impl Iterator<Item = InvalidationOption<(P, LinkNoGen<P, T>)>>> {
+        // the nice thing about this is that we don't need to deal with interlinks
+        if !self.contains(p) {
+            return None;
+        }
+        let p_init = p.inx();
+        // first we go in the `prev` direction and then resume at `next_init`
+        let next_init = self.a.get_inx_unwrap(p_init).next();
+        let mut go_next = false;
+        let mut target = Some(p_init);
+        Some(iter::from_fn(move || {
+            let p = target?;
+            let ((generation, link), o) = match self.a.remove_inx(p) {
+                InvalidationResult::Success(x) => (x, false),
+                InvalidationResult::GenerationOverflow(x) => (x, true),
+                InvalidationResult::InvalidPtr => unreachable!(),
+            };
+
+            // locate next target first
+            target = if Some(p) == next_init {
+                // cyclic
+                None
+            } else if go_next {
+                link.next()
+            } else {
+                let prev = link.prev();
+                if prev.is_none() {
+                    // switch directions
+                    go_next = true;
+                    // automatically `None` if started at end
+                    next_init
+                } else {
+                    prev
+                }
+            };
+
+            let p = P::_from_raw(p, generation);
+            if o {
+                Some(InvalidationOption::GenerationOverflow((p, link)))
+            } else {
+                Some(InvalidationOption::Success((p, link)))
             }
-            tmp = self
-                .a
-                .remove_internal(next, None, false)
-                .allow()
-                .unwrap()
-                .next();
-            removed = removed.wrapping_add(1);
-        }
-        let mut tmp = init.prev();
-        while let Some(prev) = tmp {
-            tmp = self
-                .a
-                .remove_internal(prev, None, false)
-                .allow()
-                .unwrap()
-                .prev();
-            removed = removed.wrapping_add(1);
-        }
-        match res {
-            InvalidationOption::Success(()) => InvalidationResult::Success(removed),
-            InvalidationOption::GenerationOverflow(()) => InvalidationResult::GenerationOverflow(removed),
-        }
-    }*/
+        }))
+    }
 
     fn compress_and_canonicalize_chains(
         &mut self,

@@ -302,7 +302,7 @@ pub fn fuzz<
                     b_capacity = a.capacity();
                 }
             }
-            300..500 => {
+            300..400 => {
                 // remove
                 if let Some((k, p)) = b.remove_rand(rng) {
                     match a.remove(p) {
@@ -323,11 +323,45 @@ pub fn fuzz<
                     ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr))
                 }
             }
+            400..500 => {
+                // remove_inx
+                if let Some((k, p)) = b.remove_rand(rng) {
+                    match a.remove_inx(p.inx()) {
+                        InvalidationResult::Success((generation, t)) => {
+                            ensure_eq!(p.generation(), generation);
+                            ensure_eq!(k, t.key());
+                            ensure!(!g.invalidate());
+                        }
+                        InvalidationResult::GenerationOverflow((generation, t)) => {
+                            ensure_eq!(p.generation(), generation);
+                            ensure_eq!(k, t.key());
+                            ensure!(g.invalidate());
+                        }
+                        InvalidationResult::InvalidPtr => {
+                            bail!("")
+                        }
+                    }
+                } else {
+                    let invalid = gen_invalid(rng, a);
+                    if a.get_inx(invalid.inx()).is_none() {
+                        ensure!(matches!(
+                            a.remove_inx(invalid.inx()),
+                            InvalidationResult::InvalidPtr
+                        ));
+                    }
+                }
+            }
             // we do these to test against when there are elements in the arena
             500..520 => {
-                // remove invalid
+                // remove, remove_inx all invalid
                 let invalid = gen_invalid(rng, a);
-                ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr))
+                ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr));
+                if a.get_inx(invalid.inx()).is_none() {
+                    ensure!(matches!(
+                        a.remove_inx(invalid.inx()),
+                        InvalidationResult::InvalidPtr
+                    ));
+                }
             }
             520..600 => {
                 // invalidate

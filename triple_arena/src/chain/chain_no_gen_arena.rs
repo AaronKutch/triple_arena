@@ -260,6 +260,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             .remove_internal(p, None, false)
             .allow()
             .unwrap()
+            .1
             .next()
             .unwrap();
         while tmp != p {
@@ -268,6 +269,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
                 .remove_internal(tmp, None, false)
                 .allow()
                 .unwrap()
+                .1
                 .next()
                 .unwrap();
         }
@@ -283,7 +285,8 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         let init = self
             .a
             .remove_internal(p.inx(), Some(p.generation()), false)
-            .allow()?;
+            .allow()?
+            .1;
         let mut len = 1;
         self.a.inc_generation().allow();
         let mut tmp = init.next();
@@ -297,6 +300,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
                 .remove_internal(next, None, false)
                 .allow()
                 .unwrap()
+                .1
                 .next();
             len = len.wrapping_add(1);
         }
@@ -307,6 +311,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
                 .remove_internal(prev, None, false)
                 .allow()
                 .unwrap()
+                .1
                 .prev();
             len = len.wrapping_add(1);
         }
