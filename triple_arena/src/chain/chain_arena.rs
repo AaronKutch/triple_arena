@@ -20,27 +20,28 @@ use crate::{
 /// chains are supported.
 ///
 /// ```
-/// use triple_arena::{ChainArena, traits::*, LinkNoGen, ptr_struct};
+/// use triple_arena::{ChainArena, ChainInsertionError, LinkInsertKind, ptr_struct, traits::*};
 ///
 /// ptr_struct!(P0);
 /// let mut a: ChainArena<P0, String> = ChainArena::new();
 ///
-/// let p_a = a.insert_new("A".to_owned());
-/// let p_b = a.insert_new("B".to_owned());
+/// let p_a = a.insert(LinkInsertKind::Disconnected, "A".to_owned());
+/// let p_b = a.insert(LinkInsertKind::Disconnected, "B".to_owned());
 ///
-/// // initially, all entries from `insert_new` have `None` interlinks and
-/// // are each in their own single link chains, and are completely
-/// // unassociated like in a normal `Arena`.
+/// // initially, all entries from inserting with`LinkInsertKind::Disconnected`
+/// // have `None` interlinks and are each in their own single link chains, and
+/// // are completely unassociated like in a normal `Arena`.
 ///
-/// let link = a.get_link(p_a).unwrap();
+/// // `*_no_gen` variants are preferred if only index interlinks are needed
+/// let link = a.get_link_no_gen(p_a).unwrap();
 /// assert_eq!(link.t, "A");
-/// assert!(link.prev().is_none());
-/// assert!(link.next().is_none());
+/// assert_eq!(link.prev(), None);
+/// assert_eq!(link.next(), None);
 ///
-/// let link = a.get_link(p_b).unwrap();
+/// let link = a.get_link_no_gen(p_b).unwrap();
 /// assert_eq!(link.t, "B");
-/// assert!(link.prev().is_none());
-/// assert!(link.next().is_none());
+/// assert_eq!(link.prev(), None);
+/// assert_eq!(link.next(), None);
 ///
 /// assert!(!a.are_neighbors(p_a, p_b));
 ///
@@ -50,39 +51,48 @@ use crate::{
 /// // and A being the end of the chain instead.
 /// a.connect(p_a, p_b).unwrap();
 ///
-/// let link = a.get_link(p_a).unwrap();
+/// let link = a.get_link_no_gen(p_a).unwrap();
 /// assert_eq!(link.t, "A");
-/// assert!(link.prev().is_none());
-/// assert_eq!(link.next().unwrap(), p_b);
+/// assert_eq!(link.prev(), None);
+/// assert_eq!(link.next(), Some(p_b.inx()));
 ///
-/// let link = a.get_link(p_b).unwrap();
+/// let link = a.get_link_no_gen(p_b).unwrap();
 /// assert_eq!(link.t, "B");
-/// assert_eq!(link.prev().unwrap(), p_a);
-/// assert!(link.next().is_none());
+/// assert_eq!(link.prev(), Some(p_a.inx()));
+/// assert_eq!(link.next(), None);
 ///
 /// assert!(a.are_neighbors(p_a, p_b));
 /// assert!(!a.are_neighbors(p_b, p_a));
 ///
 /// // Now let us insert a third link and make it the end of the existing chain
-/// // by using `insert_end`.
+/// // by using `LinkInsertKind::ChainEnd`.
 ///
-/// // `insert_end` guards against attaching to any part of a chain except for
-/// // the preexisting end link.
-/// assert_eq!(a.insert_end(p_a, "D".to_owned()), Err("D".to_owned()));
-/// let p_d = a.insert_end(p_b, "D".to_owned()).unwrap();
+/// // `LinkInsertKind::ChainEnd` guards against attaching to any part of a
+/// // chain except for the preexisting end link.
+/// assert_eq!(
+///     a.insert_reallocating(LinkInsertKind::ChainEnd(p_a), "D".to_owned()),
+///     Err(ChainInsertionError::FailedLinkRequirement)
+/// );
+/// let p_d = a.insert(LinkInsertKind::ChainEnd(p_b), "D".to_owned());
 ///
 /// assert!(a.are_neighbors(p_b, p_d));
 ///
 /// // Inserting a link into the middle
-/// let p_c = a.insert((Some(p_b), Some(p_d)), "C".to_owned()).unwrap();
+/// let p_c = a.insert(
+///     LinkInsertKind::AtInterlink {
+///         next_to: p_b,
+///         prev_to: p_d,
+///     },
+///     "C".to_owned(),
+/// );
 /// assert!(!a.are_neighbors(p_b, p_d));
 /// assert!(a.are_neighbors(p_b, p_c));
 /// assert!(a.are_neighbors(p_c, p_d));
 ///
 /// // Insert a separate chain
-/// let p_x = a.insert_new("X".to_owned());
-/// let p_y = a.insert_end(p_x, "Y".to_owned()).unwrap();
-/// let p_z = a.insert_end(p_y, "Z".to_owned()).unwrap();
+/// let p_x = a.insert(LinkInsertKind::Disconnected, "X".to_owned());
+/// let p_y = a.insert(LinkInsertKind::ChainEnd(p_x), "Y".to_owned());
+/// let p_z = a.insert(LinkInsertKind::ChainEnd(p_y), "Z".to_owned());
 ///
 /// // Connect the chains end-to-start in `O(1)`.
 /// a.connect(p_d, p_x).unwrap();
@@ -100,7 +110,7 @@ use crate::{
 ///     (p_y, "Y"),
 ///     (p_z, "Z"),
 /// ];
-/// for (i, (p_link, link)) in a.iter_chain(p_a).enumerate() {
+/// for (i, (p_link, link)) in a.iter_chain(p_a).unwrap().enumerate() {
 ///     assert_eq!(expected[i], (p_link, link.t.as_str()));
 /// }
 ///
@@ -109,11 +119,11 @@ use crate::{
 /// // that the link before the removed element is connected with the link
 /// // after the element (chains are only broken in two with `break_*` or
 /// // `exchange_next`).
-/// assert_eq!(a.remove(p_d).unwrap().t, "D".to_owned());
+/// assert_eq!(a.remove(p_d).allow().unwrap(), "D".to_owned());
 /// assert!(a.are_neighbors(p_c, p_x));
 ///
 /// // Remove a single connected chain efficiently
-/// a.remove_chain(p_x).unwrap();
+/// let _ = a.drain_chain(p_x).unwrap();
 /// assert!(a.is_empty());
 /// ```
 pub struct ChainArena<
