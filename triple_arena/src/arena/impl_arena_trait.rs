@@ -6,6 +6,7 @@ use crate::{
     arena::{
         ArenaBacking,
         InternalSlot::{self, *},
+        base_arena::{from_checked_ptr, from_checked_raw},
     },
     arena_iterators::{self, Drain},
     fundamental::NonZeroInxGenericStackPushEntryTrait,
@@ -101,7 +102,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     fn find_first_inx_ptr(&self) -> Option<P> {
         for inx in self.nziter() {
             if let Allocated(generation, _) = self.m.get(inx).unwrap() {
-                return Some(P::_from_raw(Self::from_checked(inx), *generation));
+                return Some(P::_from_raw(from_checked_raw::<P>(inx), *generation));
             }
         }
         None
@@ -110,7 +111,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     fn find_last_inx_ptr(&self) -> Option<P> {
         for inx in self.nziter().into_iter().rev() {
             if let Allocated(generation, _) = self.m.get(inx).unwrap() {
-                return Some(P::_from_raw(Self::from_checked(inx), *generation));
+                return Some(P::_from_raw(from_checked_raw::<P>(inx), *generation));
             }
         }
         None
@@ -200,9 +201,9 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
             );
             if let Allocated(old_gen, mut t) = entry {
                 map(
-                    Ptr::_from_raw(Self::from_checked(j), old_gen),
+                    Ptr::_from_raw(from_checked_raw::<P>(j), old_gen),
                     &mut t,
-                    Ptr::_from_raw(Self::from_checked(i), new_gen),
+                    Ptr::_from_raw(from_checked_raw::<P>(i), new_gen),
                 );
                 let _ = mem::replace(self.m.get_mut(i).unwrap(), Allocated(new_gen, t));
                 i = i.checked_add(1).unwrap();
@@ -321,7 +322,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> ArenaInsertEntryTrait<'a, P, T>
 
     fn insert(self, t: T) {
         let this = self.this;
-        let inx = Arena::<P, T, B>::into_checked(self.p.inx());
+        let inx = from_checked_ptr::<P>(self.p.inx());
         let generation = self.p.generation();
         if let Some(slot) = this.m.get_mut(inx) {
             let InternalSlot::Free(next) = mem::replace(slot, Allocated(generation, t)) else {
@@ -355,7 +356,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaInsertTrait<P, T> for Arena<P, T, B> {
     fn insert_within_capacity(&mut self, t: T) -> Result<P, NotWithinCapacityError> {
         let generation = self.generation;
         if let Some(inx) = self.freelist_root {
-            let slot = self.m.get_mut(Self::into_checked(inx)).unwrap();
+            let slot = self.m.get_mut(from_checked_ptr::<P>(inx)).unwrap();
             let InternalSlot::Free(next) = mem::replace(slot, Allocated(generation, t)) else {
                 unreachable!()
             };

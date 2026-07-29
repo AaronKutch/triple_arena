@@ -161,6 +161,22 @@ pub struct Arena<
 
 // FIXME restrict visibility above to pub(in arena) and check other structs
 
+// FIXME we may want `unreachable` for assembly perf, see u32 Ptr case
+
+/// We assume that if a slot has been successfully pushed before (implying
+/// that `P::Inx::try_from_usize` has succeeded with this exact value
+/// before), then passing the same raw index again to this will not fail,
+/// this function is to check places where this assumption happens
+pub(crate) fn from_checked_raw<P: Ptr>(inx: NonZeroUsize) -> P::Inx {
+    <P::Inx as PtrInx>::try_from_usize(inx)
+        .expect("`<P::Inx as PtrInx>::try_from_usize` failed on a value that has succeeded before")
+}
+
+pub(crate) fn from_checked_ptr<P: Ptr>(inx: P::Inx) -> NonZeroUsize {
+    <P::Inx as PtrInx>::try_into_usize(inx)
+        .expect("`<P::Inx as PtrInx>::try_into_usize` failed on a value that has succeeded before")
+}
+
 impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     pub(crate) fn nziter(&self) -> crate::fundamental::IntoNonZeroUsizeIterator {
         crate::fundamental::nzusize_iter(
@@ -224,24 +240,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         Ok(())
     }
 
-    // FIXME we may want `unreachable` for assembly perf, see u32 Ptr case
-
-    /// We assume that if a slot has been successfully pushed before (implying
-    /// that `P::Inx::try_from_usize` has succeeded with this exact value
-    /// before), then passing the same raw index again to this will not fail,
-    /// this function is to check places where this assumption happens
-    pub(crate) fn from_checked(inx: NonZeroUsize) -> P::Inx {
-        <P::Inx as PtrInx>::try_from_usize(inx).expect(
-            "`<P::Inx as PtrInx>::try_from_usize` failed on a value that has succeeded before",
-        )
-    }
-
-    pub(crate) fn into_checked(inx: P::Inx) -> NonZeroUsize {
-        <P::Inx as PtrInx>::try_into_usize(inx).expect(
-            "`<P::Inx as PtrInx>::try_into_usize` failed on a value that has succeeded before",
-        )
-    }
-
     /// Pops off free slots on the end, and rebuilds the freelist so it is
     /// ordered to allocate from the earliest free slot forwards
     pub(crate) fn canonicalize_free_list(&mut self) {
@@ -260,10 +258,10 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
                 if let Some(next) = earliest_free {
                     // point to the next free slot, the last one we encountered
                     *overwrite = next;
-                    earliest_free = Some(Self::from_checked(inx));
+                    earliest_free = Some(from_checked_raw::<P>(inx));
                 } else {
                     // point to self on first one going in reverse
-                    *overwrite = Self::from_checked(inx);
+                    *overwrite = from_checked_raw::<P>(inx);
                     earliest_free = Some(*overwrite);
                 }
             }
@@ -388,7 +386,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     #[doc(hidden)]
     //#[track_caller]
     pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
-        match self.m.get(Self::into_checked(p)) {
+        match self.m.get(from_checked_ptr::<P>(p)) {
             Some(Allocated(_, t)) => t,
             // if we use `panic` it induces stack management on every hot path according to the
             // assembly
@@ -401,7 +399,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     #[doc(hidden)]
     //#[track_caller]
     pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
-        match self.m.get_mut(Self::into_checked(p)) {
+        match self.m.get_mut(from_checked_ptr::<P>(p)) {
             Some(Allocated(_, t)) => t,
             _ => unreachable!(), /* panic!("get_inx_mut_unwrap of unallocated entry"), */
         }

@@ -118,7 +118,7 @@ fn fuzz_chain_no_gen() {
                         let t0 = list[next_inx!(rng, len)];
                         let t1 = list[next_inx!(rng, len)];
                         if let Ok(p) = a.insert_reallocating(
-                            LinkInsertKind::InbetweenInx {
+                            LinkInsertKind::AtInterlinkInx {
                                 next_to: b[&t0].0.inx(),
                                 prev_to: b[&t1].0.inx(),
                             },
@@ -144,7 +144,7 @@ fn fuzz_chain_no_gen() {
                         // test double sided insertion for single link cyclical chains
                         let t0 = list[next_inx!(rng, len)];
                         if let Ok(p) = a.insert_reallocating(
-                            LinkInsertKind::InbetweenInx {
+                            LinkInsertKind::AtInterlinkInx {
                                 next_to: b[&t0].0.inx(),
                                 prev_to: b[&t0].0.inx(),
                             },
@@ -201,7 +201,7 @@ fn fuzz_chain_no_gen() {
                             // can't use `insert_end` or `insert_start`, use `insert` with both
                             // `Some`
                             let p = a.insert(
-                                LinkInsertKind::InbetweenInx {
+                                LinkInsertKind::AtInterlinkInx {
                                     next_to: b[&t_mid].0.inx(),
                                     prev_to: b[&t1].0.inx(),
                                 },

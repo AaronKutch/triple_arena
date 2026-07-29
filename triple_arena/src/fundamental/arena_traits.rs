@@ -629,7 +629,10 @@ pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
 }
 
 /// This inherits all the methods of [ArenaTrait] but adds on some [Link]-aware
-/// ones
+/// ones. Note that [ArenaTrait::remove] for chain arenas follows the interlink
+/// semantics of [ChainArenaTrait::remove_link_no_gen]. The compression
+/// functions also have the property that links of the same chain are brought in
+/// order together, at least on simple arenas.
 pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     type InsertionEntry<'a>: ArenaInsertEntryTrait<'a, P, T>
     where
@@ -817,6 +820,13 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// efficiently track and merge sets of nodes.
     #[must_use]
     fn exchange_next(&mut self, p0: P, p1: P) -> Option<()>;
+
+    /// Removes the link at `p`. If the link is in the middle of a chain, the
+    /// neighbors of `p` are rerouted to be neighbors of each other so that the
+    /// chain remains continuous. Returns `InvalidationResult::Invalid` if `p`
+    /// is not valid and `InvalidationResult::GenerationOverflow` if a
+    /// generation counter overflowed.
+    fn remove_link_no_gen(&mut self, p: P) -> InvalidationResult<LinkNoGen<P, T>>;
 
     /*
     /// Efficiently removes the entire chain that `p` is connected to (which

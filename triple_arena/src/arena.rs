@@ -14,6 +14,7 @@ pub use arena_backing::{ArenaBacking, StackBacking};
 #[cfg(feature = "alloc")]
 pub use arena_backing::{FixedHeapBacking, HeapBacking, LimitedHeapBacking};
 pub use base_arena::{Arena, InternalSlot};
+pub(crate) use base_arena::{from_checked_ptr, from_checked_raw};
 #[cfg(feature = "alloc")]
 pub use fixed_heap_backing::{NonZeroInxBoxedSlice, NonZeroInxBoxedSlicePushEntry};
 #[cfg(feature = "alloc")]

@@ -206,18 +206,35 @@ pub enum LinkInsertKind<P: Ptr> {
     /// could be anywhere on any chain, maintaining continuity of the chain
     PrevTo(P),
     PrevToInx(P::Inx),
-    /// Insert a link inbetween two links on any chain with at least two links,
+    /// Insert a link inbetween two `P` that have an interlink between them,
     /// maintaining continuity of the chain. The insertion will fail if the two
     /// links are not neighbors. Note that the arguments are directionally
     /// sensitive, calling [Link::next] on the link at `next_to` must result in
-    /// `prev_to` and not the other way around.
-    Inbetween {
+    /// `prev_to` and not the other way around. Note that this can act on a
+    /// single link cyclic chain with `next_to == prev_to`, but `next_to ==
+    /// prev_to` is allowed only in that case as the "inbetween" acts upon the
+    /// interlink of a link with itself. Single link chains without a cycle can
+    /// never succeed with this operation, because there is no interlink.
+    AtInterlink {
         next_to: P,
         prev_to: P,
     },
-    InbetweenInx {
+    AtInterlinkInx {
         next_to: P::Inx,
         prev_to: P::Inx,
+    },
+    // (named bridge because 3 links are involved, "connect" only involves interlinks)
+    /// Insert a link as a bridge inbetween the end and start of chains. If this
+    /// is the end and start of the same chain, this creates a unified cyclic
+    /// chain. If this is the end and start of different chains, this makes a
+    /// unified linear chain.
+    Bridge {
+        end: P,
+        start: P,
+    },
+    BridgeInx {
+        end: P::Inx,
+        start: P::Inx,
     },
 }
 
@@ -230,5 +247,6 @@ pub(crate) enum LinkInsertInxKind<P: Ptr> {
     ChainStartInx(P::Inx),
     NextToInx(P::Inx),
     PrevToInx(P::Inx),
-    InbetweenInx { next_to: P::Inx, prev_to: P::Inx },
+    // `AtInterlinkInx` and `BridgeInx` unify for the purposes of a verified entry insertion
+    InternalConnect { next_to: P::Inx, prev_to: P::Inx },
 }
