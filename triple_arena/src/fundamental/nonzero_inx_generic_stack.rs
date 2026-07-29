@@ -63,6 +63,8 @@ pub trait NonZeroInxGenericStackPushEntryTrait<'a, T> {
 /// - Must act consistently as a stack should with regards to pushes, pops,
 ///   `self.capacity()`, and accesses
 /// - See the functions for other requirements
+/// - The limit for slices where the total size in bytes cannot exceed
+///   `isize::MAX`
 ///
 /// It is implied that `reallocate_min_capacity` must fail if `max_capacity` is
 /// set and the requested `min_capacity` is greater than it. On success, it must

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeTuple};
 
-use crate::{Link, traits::Ptr, utils::LinkNoGen};
+use crate::{Link, LinkNoGen, traits::Ptr};
 
 impl<P: Ptr, T: Serialize> Serialize for Link<P, T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

@@ -1,51 +1,18 @@
 use core::{
     borrow::Borrow,
     fmt,
-    fmt::{Debug, Display},
-    hash::Hash,
+    fmt::Debug,
     mem,
     ops::{Index, IndexMut},
 };
 
 use crate::{
-    Arena,
+    Arena, Link,
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
     },
     utils::traits::ArenaBacking,
 };
-
-/// This represents a link in a `ChainArena` that has a public `t: T` field and
-/// `Option<Ptr<P>>` interlinks to the previous and next links.
-pub struct Link<P: Ptr, T> {
-    // I think the code gen should be overall better if this is done
-    pub(crate) prev_next: (Option<P>, Option<P>),
-    pub t: T,
-}
-
-impl<P: Ptr, T> Link<P, T> {
-    /// Get a `Ptr` to the previous `Link` in the chain before `self`. Returns
-    /// `None` if `self` is at the start of the chain.
-    pub fn prev(&self) -> Option<P> {
-        self.prev_next.0
-    }
-
-    /// Get a `Ptr` to the next `Link` in the chain after `self`. Returns
-    /// `None` if `self` is at the end of the chain.
-    pub fn next(&self) -> Option<P> {
-        self.prev_next.1
-    }
-
-    /// Shorthand for `(self.prev(), self.next())`
-    pub fn prev_next(&self) -> (Option<P>, Option<P>) {
-        self.prev_next
-    }
-
-    /// Construct a `Link` from its components
-    pub fn new(prev_next: (Option<P>, Option<P>), t: T) -> Self {
-        Self { prev_next, t }
-    }
-}
 
 /// A doubly-linked-list based on an arena for handling usecases involving
 /// `O(1)` insertion, deletion, and other functions on linear lists of elements
@@ -973,70 +940,6 @@ impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for ChainArena<P, T, 
             .get_mut(*index.borrow())
             .map(|link| &mut link.t)
             .expect("indexed `ChainArena` with invalidated `Ptr`")
-    }
-}
-
-impl<P: Ptr, T: Debug> Debug for Link<P, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if f.alternate() {
-            write!(f, "({:?}, {:?}) {:#?}", self.prev(), self.next(), self.t)
-        } else {
-            write!(f, "({:?}, {:?}) {:?}", self.prev(), self.next(), self.t)
-        }
-    }
-}
-
-impl<P: Ptr, T: Hash> Hash for Link<P, T> {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.prev_next.hash(state);
-        self.t.hash(state);
-    }
-}
-
-impl<P: Ptr, T: Clone> Clone for Link<P, T> {
-    fn clone(&self) -> Self {
-        Self {
-            prev_next: self.prev_next,
-            t: self.t.clone(),
-        }
-    }
-}
-
-impl<P: Ptr, T: Copy> Copy for Link<P, T> {}
-
-impl<P: Ptr, T: PartialEq> PartialEq for Link<P, T> {
-    fn eq(&self, other: &Self) -> bool {
-        (self.prev_next == other.prev_next) && (self.t == other.t)
-    }
-}
-
-impl<P: Ptr, T: Eq> Eq for Link<P, T> {}
-
-impl<P: Ptr, T: PartialOrd> PartialOrd for Link<P, T> {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        match self.prev_next.partial_cmp(&other.prev_next) {
-            Some(core::cmp::Ordering::Equal) => {}
-            ord => return ord,
-        }
-        self.t.partial_cmp(&other.t)
-    }
-}
-
-impl<P: Ptr, T: Ord> Ord for Link<P, T> {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
-    }
-}
-
-// `Send` and `Sync` automatically implemented
-
-impl<P: Ptr, T: Display> Display for Link<P, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if f.alternate() {
-            write!(f, "({:?}, {:?}) {:#}", self.prev(), self.next(), self.t)
-        } else {
-            write!(f, "({:?}, {:?}) {}", self.prev(), self.next(), self.t)
-        }
     }
 }
 

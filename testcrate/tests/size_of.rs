@@ -6,7 +6,7 @@ use std::{
 use triple_arena::{
     Link, ptr_struct,
     traits::*,
-    utils::{InternalSlot, LinkNoGen, Node, PtrNoGen},
+    utils::{InternalSlot, Node, PtrNoGen},
 };
 
 ptr_struct!(P0);
@@ -29,6 +29,8 @@ fn size_of_ptr() {
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn size_of_node() {
+    use triple_arena::LinkNoGen;
+
     assert_eq!(size_of::<Node<P0, (), ()>>(), 32);
     assert_eq!(size_of::<Link<P0, ()>>(), 32);
     assert_eq!(size_of::<LinkNoGen<P0, ()>>(), 16);

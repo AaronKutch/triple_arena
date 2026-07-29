@@ -3,12 +3,12 @@ use core::{fmt, mem, num::NonZeroUsize};
 use fmt::Debug;
 
 use crate::{
-    Arena, ChainArena, LinkInsertKind,
+    Arena, ChainArena, LinkInsertKind, LinkNoGen,
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
         ChainArenaTrait, Ptr,
     },
-    utils::{ChainNoGenArena, LinkNoGen, PtrNoGen, traits::ArenaBacking},
+    utils::{ChainNoGenArena, PtrNoGen, traits::ArenaBacking},
 };
 
 #[derive(Clone)]

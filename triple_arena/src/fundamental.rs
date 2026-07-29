@@ -2,6 +2,7 @@ mod advancer;
 mod arena_traits;
 mod errors;
 mod extra;
+mod links;
 mod nonzero_inx_generic_stack;
 #[cfg(not(feature = "serde_support"))]
 mod ptr;
@@ -26,6 +27,7 @@ pub(crate) use extra::LinkInsertInxKind;
 pub use extra::{
     IntoNonZeroUsizeIterator, InvalidationOption, InvalidationResult, LinkInsertKind, nzusize_iter,
 };
+pub use links::{Link, LinkNoGen};
 pub use nonzero_inx_generic_stack::{
     NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, SetMaxCapacity,
 };

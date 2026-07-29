@@ -1,60 +1,18 @@
 use core::{
     borrow::Borrow,
-    fmt,
-    fmt::{Debug, Display},
-    hash::Hash,
+    fmt::{self, Debug},
     ops::{Index, IndexMut},
 };
 
 use crate::{
-    Arena, ChainArena, InvalidationOption, Link,
+    Arena, ChainArena, InvalidationOption, Link, LinkNoGen,
     arena::InternalSlot,
-    traits::{ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr},
+    traits::{
+        ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait,
+        Ptr,
+    },
     utils::traits::ArenaBacking,
 };
-
-/// The same as [crate::Link] except that the interlinks do not have a
-/// generation counter
-pub struct LinkNoGen<P: Ptr, T> {
-    // I think the code generation should be overall better if this is done
-    pub(crate) prev_next: (Option<P::Inx>, Option<P::Inx>),
-    pub t: T,
-}
-
-impl<P: Ptr, T> LinkNoGen<P, T> {
-    /// Get a `P::Inx` to the previous `LinkNoGen` in the chain before `self`.
-    /// Returns `None` if `self` is at the start of the chain.
-    pub fn prev(&self) -> Option<P::Inx> {
-        self.prev_next.0
-    }
-
-    /// Get a `P::Inx` to the next `LinkNoGen` in the chain after `self`.
-    /// Returns `None` if `self` is at the end of the chain.
-    pub fn next(&self) -> Option<P::Inx> {
-        self.prev_next.1
-    }
-
-    /// Shorthand for `(self.prev(), self.next())`
-    pub fn prev_next(&self) -> (Option<P::Inx>, Option<P::Inx>) {
-        self.prev_next
-    }
-
-    /// Construct a `LinkNoGen` from its components
-    pub fn new(prev_next: (Option<P::Inx>, Option<P::Inx>), t: T) -> Self {
-        Self { prev_next, t }
-    }
-
-    /// Construct a `LinkNoGen` from a regular `Link`
-    pub fn from_link(link: Link<P, T>) -> Self {
-        Self {
-            prev_next: (
-                link.prev_next.0.map(|p| p.inx()),
-                link.prev_next.1.map(|p| p.inx()),
-            ),
-            t: link.t,
-        }
-    }
-}
 
 /// The same as [crate::ChainArena] except that the interlinks have no
 /// generation counters.
@@ -254,46 +212,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         }
     }
 
-    /// Efficiently removes the entire chain that `p` is connected to (which
-    /// might only include itself). Returns the length of the chain. Returns
-    /// `None` if `p` is not valid.
-    pub fn remove_chain(&mut self, p: P) -> Option<usize> {
-        let init = self
-            .a
-            .remove_internal(p.inx(), Some(p.generation()), false)
-            .allow()?
-            .1;
-        let mut len = 1;
-        self.a.inc_generation().allow();
-        let mut tmp = init.next();
-        while let Some(next) = tmp {
-            if next == p.inx() {
-                // cyclical
-                return Some(len);
-            }
-            tmp = self
-                .a
-                .remove_internal(next, None, false)
-                .allow()
-                .unwrap()
-                .1
-                .next();
-            len = len.wrapping_add(1);
-        }
-        let mut tmp = init.prev();
-        while let Some(prev) = tmp {
-            tmp = self
-                .a
-                .remove_internal(prev, None, false)
-                .allow()
-                .unwrap()
-                .1
-                .prev();
-            len = len.wrapping_add(1);
-        }
-        Some(len)
-    }
-
     /// A variation of `compress_and_shrink_with` that is intended for a single
     /// acyclic chain that has `first_link` as the first link in the chain.
     pub(crate) fn compress_and_shrink_acyclic_chain_with<F: FnMut(P, &mut T, P)>(
@@ -415,76 +333,11 @@ impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for ChainNoGenArena<P
     }
 }
 
-impl<P: Ptr, T: Debug> Debug for LinkNoGen<P, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if f.alternate() {
-            write!(f, "({:?}, {:?}) {:#?}", self.prev(), self.next(), self.t)
-        } else {
-            write!(f, "({:?}, {:?}) {:?}", self.prev(), self.next(), self.t)
-        }
-    }
-}
-
-impl<P: Ptr, T: Hash> Hash for LinkNoGen<P, T> {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.prev_next.hash(state);
-        self.t.hash(state);
-    }
-}
-
-impl<P: Ptr, T: Clone> Clone for LinkNoGen<P, T> {
-    fn clone(&self) -> Self {
-        Self {
-            prev_next: self.prev_next,
-            t: self.t.clone(),
-        }
-    }
-}
-
-impl<P: Ptr, T: Copy> Copy for LinkNoGen<P, T> {}
-
-impl<P: Ptr, T: PartialEq> PartialEq for LinkNoGen<P, T> {
-    fn eq(&self, other: &Self) -> bool {
-        (self.prev_next == other.prev_next) && (self.t == other.t)
-    }
-}
-
-impl<P: Ptr, T: Eq> Eq for LinkNoGen<P, T> {}
-
-impl<P: Ptr, T: PartialOrd> PartialOrd for LinkNoGen<P, T> {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        match self.prev_next.partial_cmp(&other.prev_next) {
-            Some(core::cmp::Ordering::Equal) => {}
-            ord => return ord,
-        }
-        self.t.partial_cmp(&other.t)
-    }
-}
-
-impl<P: Ptr, T: Ord> Ord for LinkNoGen<P, T> {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
-    }
-}
-
-impl<P: Ptr, T: Display> Display for LinkNoGen<P, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if f.alternate() {
-            write!(f, "({:?}, {:?}) {:#}", self.prev(), self.next(), self.t)
-        } else {
-            write!(f, "({:?}, {:?}) {}", self.prev(), self.next(), self.t)
-        }
-    }
-}
-
 impl<P: Ptr, T: Debug, B: ArenaBacking> Debug for ChainNoGenArena<P, T, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // needs to be done this way have the proper formatting
-        if f.alternate() {
-            write!(f, "{:#?}", self.a)
-        } else {
-            write!(f, "{:?}", self.a)
-        }
+        // TODO try to group by chain like `compress_and_canonicalize_chains` does using
+        // canonical iterator?
+        f.debug_map().entries(self.iter_link_no_gen()).finish()
     }
 }
 

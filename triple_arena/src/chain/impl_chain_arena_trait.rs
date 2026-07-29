@@ -2,9 +2,9 @@ use core::{iter, mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
     AllocError, Arena, ChainInsertionError, InvalidationOption, InvalidationResult, LinkInsertKind,
-    NotWithinCapacityError, ReallocationError,
+    LinkNoGen, NotWithinCapacityError, ReallocationError,
     arena::{ArenaBacking, InternalSlot::*, from_checked_ptr, from_checked_raw},
-    chain::{ChainNoGenArena, LinkNoGen, chain_no_gen_iterators},
+    chain::{ChainNoGenArena, chain_no_gen_iterators},
     fundamental::{LinkInsertInxKind, NonZeroInxGenericStack, PtrGen},
     traits::{
         ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait, Ptr,

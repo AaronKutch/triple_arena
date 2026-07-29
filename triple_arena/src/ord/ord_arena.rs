@@ -10,8 +10,7 @@ use core::{
 };
 
 use crate::{
-    Arena, ChainArena, Link,
-    chain::LinkNoGen,
+    Arena, ChainArena, Link, LinkNoGen,
     traits::{Advancer, ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
     utils::{
         ChainNoGenArena,

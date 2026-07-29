@@ -2,8 +2,7 @@ use core::{iter::from_fn, slice::GetDisjointMutError};
 
 use crate::{
     AllocError, ChainInsertionError, DirectInsertionError, InvalidationOption, InvalidationResult,
-    Link, LinkInsertKind, NotWithinCapacityError, ReallocationError,
-    chain::LinkNoGen,
+    Link, LinkInsertKind, LinkNoGen, NotWithinCapacityError, ReallocationError,
     traits::{Advancer, Ptr},
 };
 
@@ -709,6 +708,18 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         } else {
             false
         }
+    }
+
+    /// Iteration over all `(P, &LinkNoGen<P, T>)` in the arena
+    fn iter_link_no_gen<'a>(&'a self) -> impl Iterator<Item = (P, &'a LinkNoGen<P, T>)>
+    where
+        T: 'a,
+    {
+        let mut adv = self.advancer();
+        from_fn(move || {
+            let p = adv.advance(self)?;
+            Some((p, self.get_link_no_gen(p)?))
+        })
     }
 
     /// Inserts `t` into the arena and returns a `Ptr` to it. Returns an error

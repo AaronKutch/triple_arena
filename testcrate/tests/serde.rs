@@ -4,11 +4,7 @@ use std::num::{NonZeroU32, NonZeroU128};
 
 use stacked_errors::{StackedError, ensure, ensure_eq};
 use testcrate::{P0, P3};
-use triple_arena::{
-    Link,
-    traits::*,
-    utils::{LinkNoGen, PtrNoGen},
-};
+use triple_arena::{Link, LinkNoGen, traits::*, utils::PtrNoGen};
 
 #[test]
 fn serde() -> Result<(), StackedError> {

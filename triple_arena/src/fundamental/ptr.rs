@@ -4,7 +4,7 @@ NOTE: do not forget to update `ptr_serde.rs` when updating this file
 
 */
 use core::{
-    fmt::Debug,
+    fmt::{self, Debug, Write},
     hash::Hash,
     num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZeroUsize},
     panic::{RefUnwindSafe, UnwindSafe},
@@ -48,6 +48,9 @@ pub trait PtrGen:
     /// skipping both the unrepresentable generation 0 and invalid generation 1
     /// values, resulting in [PtrGen::two] and a `true` value for overflow.
     fn generational_inc(this: Self) -> (Self, bool);
+    /// This exists so that thinks like interlinks can be printed out in hex.
+    /// `()` does not implement `LowerHex` so we can't do it directly.
+    fn fmt_hex(this: Self, f: &mut fmt::Formatter<'_>) -> core::fmt::Result;
 }
 
 // I am using aggressive inlining even on trivial functions because there may
@@ -74,6 +77,11 @@ macro_rules! impl_gen {
                         None => (Self::new(2).unwrap(), true),
                     }
                 }
+
+                #[inline]
+                fn fmt_hex(this: Self, f: &mut fmt::Formatter<'_>) -> core::fmt::Result {
+                    f.write_fmt(format_args!("{this:x?}"))
+                }
             }
         )*
     };
@@ -91,6 +99,10 @@ impl PtrGen for () {
     #[inline]
     fn generational_inc(_this: Self) -> (Self, bool) {
         ((), false)
+    }
+
+    fn fmt_hex(_this: Self, f: &mut fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("()")
     }
 }
 
@@ -133,6 +145,8 @@ pub trait PtrInx:
     /// Returns the invalid index most likely to be unvalid if given to an
     /// arena, which is usually the max value
     fn best_effort_invalid() -> Self;
+    /// This exists so that thinks like interlinks can be printed out in hex
+    fn fmt_hex(this: Self, f: &mut fmt::Formatter<'_>) -> core::fmt::Result;
 }
 
 macro_rules! impl_ptr_inx {
@@ -153,6 +167,11 @@ macro_rules! impl_ptr_inx {
 
                 fn best_effort_invalid() -> Self {
                     $nz::MAX
+                }
+
+                #[inline]
+                fn fmt_hex(this: Self, f: &mut fmt::Formatter<'_>) -> core::fmt::Result {
+                    f.write_fmt(format_args!("{this:x?}"))
                 }
             }
         )*
@@ -224,6 +243,10 @@ pub unsafe trait Ptr:
 
     /// Returns the generation of this `Ptr`.
     fn generation(self) -> Self::Gen;
+
+    // keep it as "_from_raw" even though there are more cases where manual
+    // construction is normal, it still violates soft invariants for ideal uses and
+    // so should be prefixed with an underscore
 
     /// Do not use this unless you are manually managing internal details
     fn _from_raw(inx: Self::Inx, generation: Self::Gen) -> Self;
@@ -341,12 +364,12 @@ macro_rules! ptr_struct {
             // makes the `Debug` implementation on `Arena` look much nicer.
             impl core::fmt::Debug for $struct_name {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                    f.write_fmt(format_args!(
-                        "{}[{:x?}]({:x?})",
-                        <Self as $crate::traits::Ptr>::name(),
-                        $crate::traits::Ptr::inx(*self),
-                        $crate::traits::Ptr::generation(*self),
-                    ))
+                    f.write_str(<Self as $crate::traits::Ptr>::name())?;
+                    f.write_str("[")?;
+                    $crate::utils::traits::PtrInx::fmt_hex($crate::traits::Ptr::inx(*self), f)?;
+                    f.write_str("](")?;
+                    $crate::utils::traits::PtrGen::fmt_hex($crate::traits::Ptr::generation(*self), f)?;
+                    f.write_str(")")
                 }
             }
 
@@ -431,11 +454,10 @@ macro_rules! ptr_struct {
             // makes the `Debug` implementation on `Arena` look much nicer.
             impl core::fmt::Debug for $struct_name {
                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                    f.write_fmt(format_args!(
-                        "{}[{:x?}]",
-                        <Self as $crate::traits::Ptr>::name(),
-                        $crate::traits::Ptr::inx(*self),
-                    ))
+                    f.write_str(<Self as $crate::traits::Ptr>::name())?;
+                    f.write_str("[")?;
+                    $crate::utils::traits::PtrInx::fmt_hex($crate::traits::Ptr::inx(*self), f)?;
+                    f.write_str("]")
                 }
             }
 
@@ -551,7 +573,10 @@ impl<P: Ptr> core::default::Default for PtrNoGen<P> {
 
 impl<P: Ptr> core::fmt::Debug for PtrNoGen<P> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.write_fmt(format_args!("{}[{:x?}]", Self::name(), Ptr::inx(*self),))
+        f.write_str(Self::name())?;
+        f.write_char('[')?;
+        P::Inx::fmt_hex(Ptr::inx(*self), f)?;
+        f.write_char(']')
     }
 }
 
