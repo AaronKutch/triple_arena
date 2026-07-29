@@ -505,7 +505,8 @@ fn fuzz_chain_no_gen() {
                     let t = list[next_inx!(rng, len)];
                     let mut t_to_remove = HashSet::new();
                     t_to_remove.insert(t);
-                    let claim_num_removed = a.remove_chain(b[&t].0).unwrap();
+                    let claim_num_removed =
+                        a.drain_chain(b[&t].0).unwrap().fold(0usize, |i, _| i + 1);
                     generation += 1;
                     let init = b.remove(&t).unwrap();
                     let mut num_removed = 1;
@@ -538,7 +539,7 @@ fn fuzz_chain_no_gen() {
                         }
                     }
                 } else {
-                    assert!(a.remove_chain(invalid).is_none());
+                    assert!(a.drain_chain(invalid).is_none());
                 }
             }
             995 => {

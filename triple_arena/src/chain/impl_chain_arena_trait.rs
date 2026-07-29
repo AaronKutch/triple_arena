@@ -466,11 +466,11 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainNoGenArena<P, T,
             };
 
             // locate next target first
-            target = if Some(p) == next_init {
+            target = if go_next {
+                link.next()
+            } else if Some(p) == next_init {
                 // cyclic
                 None
-            } else if go_next {
-                link.next()
             } else {
                 let prev = link.prev();
                 if prev.is_none() {
