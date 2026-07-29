@@ -4,15 +4,11 @@ use fmt::Debug;
 
 use crate::{
     Arena, ChainArena, LinkInsertKind,
-    arena::InternalSlot,
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
         ChainArenaTrait, Ptr,
     },
-    utils::{
-        ChainNoGenArena, LinkNoGen, PtrNoGen,
-        traits::{ArenaBacking, NonZeroInxGenericStack, PtrInx},
-    },
+    utils::{ChainNoGenArena, LinkNoGen, PtrNoGen, traits::ArenaBacking},
 };
 
 #[derive(Clone)]
@@ -645,6 +641,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         self.vals.clear().allow();
     }
 
+    // FIXME can only be a `canonicalize` version
+    /*
     /// Compresses the arena by moving around entries to be able to shrink the
     /// capacities of the keys and values down to their respective lengths. All
     /// surject relations remain, but all `Ptr`s are invalidated. New `Ptr`s
@@ -736,6 +734,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         self.vals.freelist_root = None;
         let _ = self.vals.m.reallocate_min_capacity(0);
     }
+    */
 
     /// Has the same properties of [Arena::clone_from_with]
     pub fn clone_from_with<

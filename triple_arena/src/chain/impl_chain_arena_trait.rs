@@ -474,7 +474,10 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainNoGenArena<P, T,
         }
     }*/
 
-    fn compress_and_linearize_chains(&mut self, reset_generation: bool) -> InvalidationOption<()> {
+    fn compress_and_canonicalize_chains(
+        &mut self,
+        reset_generation: bool,
+    ) -> InvalidationOption<()> {
         let res = if reset_generation {
             self.a.set_generation(<P::Gen as PtrGen>::two());
             InvalidationOption::Success(())

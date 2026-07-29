@@ -833,7 +833,10 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     */
 
     /// This is a more advanced version of [ArenaTrait::compress] that
-    fn compress_and_linearize_chains(&mut self, reset_generation: bool) -> InvalidationOption<()>;
+    fn compress_and_canonicalize_chains(
+        &mut self,
+        reset_generation: bool,
+    ) -> InvalidationOption<()>;
 }
 
 /*

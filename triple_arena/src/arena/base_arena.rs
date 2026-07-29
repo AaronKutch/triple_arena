@@ -370,17 +370,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    // FIXME remove this if possible
-
-    /// This is currently only used by `SurjectArena::compress_and_shrink_with`
-    /// in a way that avoids a broken freelist.
-    pub(crate) fn raw_entry_swap_special(&mut self, i0: NonZeroUsize, i1: NonZeroUsize) {
-        if i0 != i1 {
-            let [entry0, entry1] = self.m.get_disjoint_mut([i0, i1]).unwrap();
-            mem::swap(entry0, entry1);
-        }
-    }
-
     /// Like [Arena::get], except generation counters are ignored and the
     /// result is unwrapped internally
     #[doc(hidden)]

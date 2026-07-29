@@ -277,6 +277,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         }
     }
 
+    /*
     /// Performs [SurjectArena::compress_and_shrink] and returns an `Arena<P,
     /// P>` that can be used for [Recast]ing
     pub fn compress_and_shrink_recaster(&mut self) -> crate::Arena<P, P, B> {
@@ -285,6 +286,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         self.compress_and_shrink_with(|p, _, _, q| *res.get_mut(p).unwrap() = q);
         res
     }
+    */
 }
 
 impl<P: Ptr, I, K: Recast<I>, V: Recast<I>, B: ArenaBacking> Recast<I>

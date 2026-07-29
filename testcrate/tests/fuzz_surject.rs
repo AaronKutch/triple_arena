@@ -11,7 +11,7 @@ use rand_xoshiro::{
     rand_core::{Rng, SeedableRng},
 };
 use testcrate::P0;
-use triple_arena::{SurjectArena, traits::*, utils::traits::PtrGen};
+use triple_arena::{SurjectArena, traits::*};
 
 const N: usize = if cfg!(miri) { 1000 } else { 1_000_000 };
 
@@ -473,7 +473,7 @@ fn fuzz_surject() {
                     assert!(a.swap_vals(invalid, invalid).is_none());
                 }
             }
-            600..=968 => {
+            600..970 => {
                 // reserved
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
@@ -486,7 +486,7 @@ fn fuzz_surject() {
                     assert!(a.get(invalid).is_none());
                 }
             }
-            969 => {
+            /*969 => {
                 // compress_and_shrink_with
                 // compress_and_shrink is difficult to test, we just note its definition is
                 // self.compress_and_shrink_with(|_, _, _| ())
@@ -528,7 +528,7 @@ fn fuzz_surject() {
                         pair.p = q;
                     }
                 }
-            }
+            }*/
             970..=979 => {
                 // advancer
                 let mut i = 0;
