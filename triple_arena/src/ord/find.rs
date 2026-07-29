@@ -4,7 +4,7 @@ use crate::{
     OrdArena,
     arena::ArenaBacking,
     traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
-    utils::ChainNoGenArena,
+    utils::ChainArena,
 };
 
 impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
@@ -12,7 +12,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
         // needed because of special functions like `compress_and_shrink`
-        ChainNoGenArena::_check_invariants(&this.a)?;
+        ChainArena::_check_invariants(&this.a)?;
         if this.a.is_empty() {
             return Ok(());
         }

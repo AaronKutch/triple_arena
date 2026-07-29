@@ -5,7 +5,7 @@ use std::{
     num::NonZeroU64,
 };
 
-use triple_arena::{Arena, ChainArena, Link, OrdArena, ptr_struct, traits::*};
+use triple_arena::{Arena, ChainArena, LinkNoGen, OrdArena, ptr_struct, traits::*};
 
 use crate::{DebugNodeTrait, RenderError, render_grid::RenderGrid};
 
@@ -468,9 +468,11 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
 
     ptr_struct!(Q());
     let mut chain_lens = Arena::<Q, usize>::new();
-    let mut tmp = Arena::<P, Link<P, Q>>::new();
-    tmp.clone_from_with(&dag, |_, _| Link::new((None, None), chain_lens.insert(0)))
-        .unwrap();
+    let mut tmp = Arena::<P, LinkNoGen<P, Q>>::new();
+    tmp.clone_from_with(&dag, |_, _| {
+        LinkNoGen::new((None, None), chain_lens.insert(0))
+    })
+    .unwrap();
     let mut total_ordering = ChainArena::<P, Q>::from_arena(tmp).unwrap();
     while let Some(Reverse((_, p0, p1))) = prioritize.pop() {
         let q0 = *total_ordering.get(p0).unwrap();
@@ -483,13 +485,13 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             }
             // find start of `q1` chain but also recolor
             let mut p1_start = Ptr::invalid();
-            let mut adv = total_ordering.advancer_chain(p1);
+            let mut adv = total_ordering.advancer_chain(p1.inx());
             while let Some(p) = adv.advance(&total_ordering) {
-                let link = total_ordering.get_link_mut(p).unwrap();
+                let link = total_ordering.get_link_no_gen(p).unwrap();
                 if link.prev().is_none() {
                     p1_start = p;
                 }
-                *link.t = q0;
+                *total_ordering.get_mut(p).unwrap() = q0;
             }
             total_ordering.connect(p0_end, p1_start).unwrap();
             let q1_len = *chain_lens.get(q1).unwrap();
@@ -514,11 +516,11 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         loop {
             if let Some(next) = total_ordering.get_link(p).unwrap().next() {
                 chain.push(p);
-                total_ordering.remove(p).unwrap();
+                total_ordering.remove(p).allow().unwrap();
                 p = next;
             } else {
                 chain.push(p);
-                total_ordering.remove(p).unwrap();
+                total_ordering.remove(p).allow().unwrap();
                 break;
             }
         }

@@ -47,7 +47,7 @@ pub mod utils {
     pub use crate::ord::Node;
     pub use crate::{
         arena::{ArenaInsertEntry, InternalSlot, NonZeroInxArray, NonZeroInxArrayPushEntry},
-        chain::{ChainNoGenArena, chain_no_gen_iterators},
+        chain::{ChainArena, chain_iterators},
         fundamental::PtrNoGen,
     };
     /// A reexport used by the macros

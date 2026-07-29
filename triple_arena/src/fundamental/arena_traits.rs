@@ -713,7 +713,7 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         }
     }
 
-    /// The same as [ChainNoGenArena::are_neighbors] but generation counters are
+    /// The same as [ChainArenaTrait::are_neighbors] but generation counters are
     /// ignored
     fn are_neighbors_inx(&self, p_prev: P::Inx, p_next: P::Inx) -> bool {
         if let Some((_, link)) = self.get_inx_link_no_gen(p_prev)
@@ -844,7 +844,7 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// is that `exchange_next` on two `Ptr`s of the same cyclic chain always
     /// results in two cyclic chains (except for if `p0 == p1`), and
     /// `exchange_next` on two `Ptr`s of two separate cyclic chains always
-    /// results in a single cyclic chain. This is used by [SurjectArena] to
+    /// results in a single cyclic chain. This is used by [crate::SurjectArena] to
     /// efficiently track and merge sets of nodes.
     #[must_use]
     fn exchange_next(&mut self, p0: P, p1: P) -> Option<()>;

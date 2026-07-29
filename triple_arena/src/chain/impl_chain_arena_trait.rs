@@ -4,7 +4,7 @@ use crate::{
     AllocError, Arena, ChainInsertionError, InvalidationOption, InvalidationResult, LinkInsertKind,
     LinkNoGen, NotWithinCapacityError, ReallocationError,
     arena::{ArenaBacking, InternalSlot::*, from_checked_ptr, from_checked_raw},
-    chain::{ChainNoGenArena, chain_no_gen_iterators},
+    chain::{ChainArena, chain_iterators},
     fundamental::{LinkInsertInxKind, NonZeroInxGenericStack, PtrGen},
     traits::{
         ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait, Ptr,
@@ -14,8 +14,8 @@ use crate::{
 
 // FIXME unify the chain arenas
 
-impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainNoGenArena<P, T, B> {
-    type PtrAdvancer = chain_no_gen_iterators::PtrAdvancer<P>;
+impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainArena<P, T, B> {
+    type PtrAdvancer = chain_iterators::PtrAdvancer<P>;
 
     fn new() -> Self {
         Self { a: Arena::new() }
@@ -67,7 +67,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainNoGenArena<P, T, B> {
     }
 
     fn ordered_advancer(&self, inx: <P as Ptr>::Inx, rev: bool) -> Self::PtrAdvancer {
-        chain_no_gen_iterators::PtrAdvancer {
+        chain_iterators::PtrAdvancer {
             adv: self.a.ordered_advancer(inx, rev),
         }
     }
@@ -186,7 +186,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainNoGenArena<P, T, B> {
     }
 }
 
-impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for ChainNoGenArena<P, T, B> {
+impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for ChainArena<P, T, B> {
     fn singular_generation(&self) -> <P as Ptr>::Gen {
         self.a.singular_generation()
     }
@@ -194,7 +194,7 @@ impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for ChainNoGenArena<
 
 pub struct ChainArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
     // note: we drop the entry when constructing this and are relying on idempotency
-    a: &'a mut ChainNoGenArena<P, T, B>,
+    a: &'a mut ChainArena<P, T, B>,
     // the `Ptr` of the new link when inserted
     p: P,
     // this must be checked to be valid
@@ -261,7 +261,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> ArenaInsertEntryTrait<'a, P, T>
 }
 
 fn check_link_insert_kind<P: Ptr, T, B: ArenaBacking>(
-    this: &ChainNoGenArena<P, T, B>,
+    this: &ChainArena<P, T, B>,
     kind: LinkInsertKind<P>,
 ) -> Option<LinkInsertInxKind<P>> {
     let a = &this.a;
@@ -346,7 +346,7 @@ fn check_link_insert_kind<P: Ptr, T, B: ArenaBacking>(
     }
 }
 
-impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainNoGenArena<P, T, B> {
+impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
     type InsertionEntry<'a>
         = ChainArenaInsertEntry<'a, P, T, B>
     where

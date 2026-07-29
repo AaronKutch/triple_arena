@@ -357,10 +357,10 @@ pub fn std_chain() -> ChainArena<P1, (CKey, CVal)> {
     a
 }
 
-pub fn std_chain_no_gen() -> ChainNoGenArena<P1, (CKey, CVal)> {
+pub fn std_chain_no_gen() -> ChainArena<P1, (CKey, CVal)> {
     let mut rng = Xoshiro128StarStar::seed_from_u64(0);
 
-    let mut a = ChainNoGenArena::<P1, (CKey, CVal)>::new();
+    let mut a = ChainArena::<P1, (CKey, CVal)>::new();
     let mut repr = vec![];
     let mut repr_inxs = vec![];
     let (mut insts, expected) = fuzz_fill_inst(&mut rng, &repr, 3 * A, A);

@@ -7,6 +7,7 @@
 ### Changes
 - All the Arenas have a new `B: ArenaBacking` third generic parameter that is defaulted so that existing uses use the same unlimited heap backing that they did before. Added stack backing (for which `const` support could be added in the future), limited heap backing, and fixed heap backing standard options.
 - Added new traits with new methods and put all traits under modules, they can be glob imported in some cases to preserve ease of use.
+- Unified `ChainNoGenArena` and `ChainArena` together so that there is just one `ChainArena` type now, optimized for space, since usually if the neighboring generation counters are needed, then you are probably accessing their cache lines anyways. The generation counters on interlinks are often not needed.
 - More ideal deterministic behavior, it should be stable for the forseeable future (but note however that the heap types can have nondeterminism in some capacity interactive cases from the allocator giving extra). For duplicating `Ptr` validities across arenas however, we recommend the new `ArenaDirectInsertTrait` and arenas that implement it to follow `ArenaInsertTrait` type arenas.
 - Generation overflow no longer panics, has the best possible behavior in the default case, and can be explicitly checked with various functions now.
 - The `PtrInx` and `PtrGen` traits have been changed to be safe, and have stricter semantics around conversion now
@@ -52,7 +53,7 @@
 
 ### Additions
 - Added `serde_support`
-- Added `LinkNoGen` and `ChainNoGenArena` and made various performance improvements
+- Added `LinkNoGen` and `ChainArena` and made various performance improvements
 - Added `SurjectArena::get_link_no_gen`
 - Added `OrdArena::get_link_no_gen`
 - Added `with_capacity` to all arenas

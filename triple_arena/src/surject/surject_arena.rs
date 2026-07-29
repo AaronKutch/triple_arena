@@ -8,7 +8,7 @@ use crate::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
         ChainArenaTrait, Ptr,
     },
-    utils::{ChainNoGenArena, PtrNoGen, traits::ArenaBacking},
+    utils::{PtrNoGen, traits::ArenaBacking},
 };
 
 #[derive(Clone)]
@@ -157,7 +157,7 @@ pub struct SurjectArena<
     #[cfg(feature = "alloc")] B: ArenaBacking = crate::HeapBacking,
     #[cfg(not(feature = "alloc"))] B: ArenaBacking,
 > {
-    pub(crate) keys: ChainNoGenArena<P, Key<P, K>, B>,
+    pub(crate) keys: ChainArena<P, Key<P, K>, B>,
     pub(crate) vals: Arena<PtrNoGen<P>, Val<V>, B>,
 }
 
@@ -171,7 +171,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
         // needs to be done because of manual `InternalEntry` handling
-        ChainNoGenArena::_check_invariants(&this.keys)?;
+        ChainArena::_check_invariants(&this.keys)?;
         Arena::_check_invariants(&this.vals)?;
         Self::_check_surjects(this)?;
         Ok(())
@@ -231,7 +231,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
 
     pub fn new() -> Self {
         Self {
-            keys: ChainNoGenArena::new(),
+            keys: ChainArena::new(),
             vals: Arena::new(),
         }
     }
@@ -732,18 +732,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     pub fn clone_keys_to_chain_arena<T, F: FnMut(P, &K) -> T>(
         &self,
         chain_arena: &mut ChainArena<P, T, B>,
-        mut map: F,
-    ) {
-        self.keys
-            .clone_to_chain_arena(chain_arena, |p, key| map(p, &key.k))
-    }
-
-    /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
-    /// generation counter, and reusing capacity) with the `Ptr` mapping of
-    /// `self`, with groups of keys preserved as cyclical chains.
-    pub fn clone_keys_to_chain_no_gen_arena<T, F: FnMut(P, &K) -> T>(
-        &self,
-        chain_arena: &mut ChainNoGenArena<P, T, B>,
         mut map: F,
     ) {
         chain_arena.clone_from_with(&self.keys, |p, link| map(p, &link.t.k))

@@ -5,15 +5,15 @@ use recasting::{Recast, Recaster};
 use crate::{
     Arena, LinkNoGen, SurjectArena,
     arena_iterators::{self},
-    chain::ChainNoGenArena,
+    chain::ChainArena,
     surject::{Key, Val},
     traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
-    utils::{PtrNoGen, chain_no_gen_iterators, traits::ArenaBacking},
+    utils::{PtrNoGen, chain_iterators, traits::ArenaBacking},
 };
 
 /// An advancer over the valid `P`s of a `SurjectArena`
 pub struct PtrAdvancer<P: Ptr> {
-    adv: chain_no_gen_iterators::PtrAdvancer<P>,
+    adv: chain_iterators::PtrAdvancer<P>,
 }
 
 impl<P: Ptr, K, V, B: ArenaBacking> Advancer<SurjectArena<P, K, V, B>> for PtrAdvancer<P> {
@@ -25,9 +25,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> Advancer<SurjectArena<P, K, V, B>> for PtrAd
 
     fn empty() -> Self {
         Self {
-            adv: <chain_no_gen_iterators::PtrAdvancer<P> as Advancer<
-                ChainNoGenArena<P, Key<P, K>, B>,
-            >>::empty(),
+            adv: <chain_iterators::PtrAdvancer<P> as Advancer<ChainArena<P, Key<P, K>, B>>>::empty(
+            ),
         }
     }
 }
@@ -123,7 +122,7 @@ impl<'a, P: Ptr, V, B: ArenaBacking> Iterator for Vals<'a, P, V, B> {
 
 /// A mutable iterator over `&mut K` in a `SurjectArena`
 pub struct KeysMut<'a, P: Ptr, K, B: ArenaBacking> {
-    iter_mut: chain_no_gen_iterators::ValsLinkMut<'a, P, Key<P, K>, B>,
+    iter_mut: chain_iterators::ValsLinkMut<'a, P, Key<P, K>, B>,
 }
 
 impl<'a, P: Ptr, K, B: ArenaBacking> Iterator for KeysMut<'a, P, K, B> {

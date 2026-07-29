@@ -12,10 +12,7 @@ use core::{
 use crate::{
     Arena, ChainArena, Link, LinkNoGen,
     traits::{Advancer, ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
-    utils::{
-        ChainNoGenArena,
-        traits::{ArenaBacking, PtrInx},
-    },
+    utils::traits::{ArenaBacking, PtrInx},
 };
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
@@ -153,7 +150,7 @@ pub struct OrdArena<
     pub(crate) root: P::Inx,
     pub(crate) first: P::Inx,
     pub(crate) last: P::Inx,
-    pub(crate) a: ChainNoGenArena<P, Node<P, K, V>, B>,
+    pub(crate) a: ChainArena<P, Node<P, K, V>, B>,
 }
 
 impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
@@ -164,7 +161,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             root: P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap(),
             first: P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap(),
             last: P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap(),
-            a: ChainNoGenArena::new(),
+            a: ChainArena::new(),
         }
     }
 
@@ -439,8 +436,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         chain_arena: &mut ChainArena<P, U, B>,
         mut map: F,
     ) {
-        self.a
-            .clone_to_chain_arena(chain_arena, |p, node| map(p, &node.k, &node.v))
+        chain_arena.clone_from_with(&self.a, |p, link| map(p, &link.t.k, &link.t.v));
     }
 
     /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
