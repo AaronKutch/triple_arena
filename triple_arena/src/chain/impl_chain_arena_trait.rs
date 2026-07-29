@@ -184,6 +184,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainNoGenArena<P, T, B> {
 
                     let replaced =
                         mem::replace(self.a.m.get_mut(i).unwrap(), Allocated(new_gen, link));
+                    // preserve the generation because it is needed for the map to be accurate
                     if let Allocated(..) = replaced {
                         // finish 3 replacements to do the swap
                         let _ = mem::replace(self.a.m.get_mut(raw_target).unwrap(), replaced);

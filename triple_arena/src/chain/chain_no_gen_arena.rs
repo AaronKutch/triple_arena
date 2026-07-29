@@ -9,9 +9,7 @@ use core::{
 use crate::{
     Arena, ChainArena, InvalidationOption, Link,
     arena::InternalSlot,
-    traits::{
-        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
-    },
+    traits::{ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 
@@ -315,6 +313,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
         Some(len)
     }
 
+    /*
     /// Compresses the arena by moving around entries to be able to shrink the
     /// capacity down to the length. All links and link prev-next relations
     /// remain, but all `Ptr`s and interlinks are invalidated. New `Ptr`s to
@@ -420,7 +419,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             }
         }
         self.a = new;
-    }
+    }*/
 
     /// A variation of `compress_and_shrink_with` that is intended for a single
     /// acyclic chain that has `first_link` as the first link in the chain.

@@ -676,51 +676,53 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         // first compress the keys so that their cache locality is improved
         let mut p_val_last = None;
         let mut new_p_val = None;
-        self.keys.compress_and_shrink_with(|p, key, q| {
-            let p_val = key.p_val;
-            if Some(p_val) != p_val_last {
-                let mut new_change = false;
-                if let Some(i_unallocated) = first_unallocated {
-                    let i = P::Inx::try_into_usize(p_val.inx()).unwrap();
-                    if i > i_unallocated {
-                        // move it into the unallocated spot
-                        self.vals.raw_entry_swap_special(i_unallocated, i);
-                        // change all `p_val`s of the surject
-                        new_p_val = Some(P::Inx::try_from_usize(i_unallocated).unwrap());
-                        new_change = true;
-                        // get the next unallocated index
-                        let mut j = i_unallocated.get().wrapping_add(1);
-                        loop {
-                            if j > self.vals.m.len() {
-                                first_unallocated = None;
-                                break;
+        self.keys
+            .compress_with(false, |p, key, q| {
+                let p_val = key.p_val;
+                if Some(p_val) != p_val_last {
+                    let mut new_change = false;
+                    if let Some(i_unallocated) = first_unallocated {
+                        let i = P::Inx::try_into_usize(p_val.inx()).unwrap();
+                        if i > i_unallocated {
+                            // move it into the unallocated spot
+                            self.vals.raw_entry_swap_special(i_unallocated, i);
+                            // change all `p_val`s of the surject
+                            new_p_val = Some(P::Inx::try_from_usize(i_unallocated).unwrap());
+                            new_change = true;
+                            // get the next unallocated index
+                            let mut j = i_unallocated.get().wrapping_add(1);
+                            loop {
+                                if j > self.vals.m.len() {
+                                    first_unallocated = None;
+                                    break;
+                                }
+                                let j_nz = NonZeroUsize::new(j).unwrap();
+                                if matches!(self.vals.m.get(j_nz).unwrap(), InternalSlot::Free(_)) {
+                                    first_unallocated = Some(j_nz);
+                                    break;
+                                }
+                                j = j.wrapping_add(1);
                             }
-                            let j_nz = NonZeroUsize::new(j).unwrap();
-                            if matches!(self.vals.m.get(j_nz).unwrap(), InternalSlot::Free(_)) {
-                                first_unallocated = Some(j_nz);
-                                break;
-                            }
-                            j = j.wrapping_add(1);
                         }
                     }
+                    if !new_change {
+                        // the `p_val` of this new surject we are encountering does not need to be
+                        // changed
+                        new_p_val = None;
+                    }
+                    p_val_last = Some(p_val);
                 }
-                if !new_change {
-                    // the `p_val` of this new surject we are encountering does not need to be
-                    // changed
-                    new_p_val = None;
+                if let Some(new_p_val) = new_p_val {
+                    key.p_val = Ptr::_from_raw(new_p_val, ());
                 }
-                p_val_last = Some(p_val);
-            }
-            if let Some(new_p_val) = new_p_val {
-                key.p_val = Ptr::_from_raw(new_p_val, ());
-            }
-            map(
-                p,
-                &mut key.k,
-                &mut self.vals.get_inx_mut_unwrap(key.p_val.inx()).v,
-                q,
-            )
-        });
+                map(
+                    p,
+                    &mut key.k,
+                    &mut self.vals.get_inx_mut_unwrap(key.p_val.inx()).v,
+                    q,
+                )
+            })
+            .allow();
         // important: remove all free entries, set freelist root to `None`, and shrink
         // to fit `self.vals`, completes the compression and fixes the likely broken
         // freelist

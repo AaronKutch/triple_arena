@@ -270,7 +270,8 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
     pub fn compress_and_shrink_recaster(&mut self) -> crate::Arena<P, P, B> {
         let mut res = crate::Arena::<P, P, B>::new();
         self.clone_to_arena(&mut res, |_, _| P::invalid());
-        self.compress_and_shrink_with(|p, _, q| *res.get_mut(p).unwrap() = q);
+        self.compress_with(false, |p, _, q| *res.get_mut(p).unwrap() = q)
+            .allow();
         res
     }
 }

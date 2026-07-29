@@ -395,12 +395,13 @@ fn fuzz_chain_no_gen() {
                 let mut tmp = HashMap::new();
                 let mut tmp2 = HashMap::new();
                 let q_gen = PtrGen::generational_inc(a.generation()).0;
-                a.compress_and_shrink_with(|p, t, q| {
+                a.compress_with(false, |p, t, q| {
                     assert_eq!(b[t].0, p);
                     assert_eq!(q_gen, q.generation());
                     tmp.insert(*t, q);
                     tmp2.insert(q, p);
-                });
+                })
+                .allow();
                 assert_eq!(tmp.len(), a.len());
                 generation += 1;
                 for (t, q) in &tmp {
