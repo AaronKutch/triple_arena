@@ -228,30 +228,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
             .map(|[link0, link1]| (&mut link0.t, &mut link1.t))
     }
 
-    /// Removes the link at `p`. If the link is in the middle of the chain, the
-    /// neighbors of `p` are rerouted to be neighbors of each other so that the
-    /// chain remains continuous. Returns `None` if `p` is not valid.
-    #[must_use]
-    pub fn remove(&mut self, p: P) -> Option<LinkNoGen<P, T>> {
-        let link = self.a.remove(p).allow()?;
-        match link.prev_next() {
-            (None, None) => (),
-            (None, Some(p1)) => {
-                self.a.get_inx_mut_unwrap(p1).prev_next.0 = None;
-            }
-            (Some(p0), None) => {
-                self.a.get_inx_mut_unwrap(p0).prev_next.1 = None;
-            }
-            (Some(p0), Some(p1)) => {
-                if p.inx() != p0 {
-                    self.a.get_inx_mut_unwrap(p0).prev_next.1 = Some(p1);
-                    self.a.get_inx_mut_unwrap(p1).prev_next.0 = Some(p0);
-                } // else it is a single link cyclic chain
-            }
-        }
-        Some(link)
-    }
-
     // this is tested by the `SurjectArena` fuzz test
     /// Like `remove_chain` but assumes the chain is cyclic and `p` is valid
     pub(crate) fn remove_cyclic_chain_internal(&mut self, p: P::Inx, inc_gen: bool) {

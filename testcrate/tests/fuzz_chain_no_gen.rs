@@ -40,7 +40,7 @@ fn fuzz_chain_no_gen() {
     let mut b: HashMap<u64, (P0, (Option<u64>, Option<u64>))> = HashMap::new();
 
     let invalid = a.insert(LinkInsertKind::Disconnected, u64::MAX);
-    a.remove(invalid).unwrap();
+    a.remove(invalid).allow().unwrap();
     generation += 1;
     a.clear().allow();
     generation += 1;
@@ -241,11 +241,11 @@ fn fuzz_chain_no_gen() {
                             b.get_mut(&t1).unwrap().1.0 = Some(t0);
                         }
                     }
-                    assert_eq!(a.remove(p).unwrap().t, t);
+                    assert_eq!(a.remove_link_no_gen(p).allow().unwrap().t, t);
                     generation += 1;
                     b.remove(&t);
                 } else {
-                    assert!(a.remove(invalid).is_none());
+                    assert!(a.remove(invalid).allow().is_none());
                 }
             }
             400..=499 => {

@@ -563,7 +563,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// `None` if `p` is not valid.
     #[must_use]
     pub fn remove_key(&mut self, p: P) -> Option<(K, Option<V>)> {
-        let key = self.keys.remove(p)?.t;
+        let key = self.keys.remove(p).allow()?;
         let p_val = key.p_val;
         let k = key.k;
         let key_count = self.vals.get_inx_unwrap(p_val.inx()).key_count.get();

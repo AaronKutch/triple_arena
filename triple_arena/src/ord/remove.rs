@@ -1,6 +1,6 @@
 use crate::{
     OrdArena,
-    traits::{ArenaTrait, Ptr},
+    traits::{ArenaTrait, ChainArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 
@@ -8,7 +8,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Removes the key-value pair at `p`. Returns `None` if `p` is invalid.
     #[must_use]
     pub fn remove(&mut self, p: P) -> Option<(K, V)> {
-        let link = self.a.remove(p)?;
+        let link = self.a.remove_link_no_gen(p).allow()?;
         // when removing a nonleaf node of the tree, its place in the tree is
         // replaced by a similar node, and if that node is nonleaf then it is
         // replaced again. We reach a leaf node in 2 replacements in the worst case:

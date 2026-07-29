@@ -69,6 +69,7 @@ impl<T> InvalidationResult<T> {
     /// `InvalidPtr` to `None`. This is the preferred method for most uses
     /// that don't care about the incredible difficulty of
     /// reaching generation overflow with the default `NonZeroU64`.
+    #[must_use]
     pub fn allow(self) -> Option<T> {
         match self {
             Self::Success(t) => Some(t),
