@@ -381,7 +381,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             k: create_k(p_link),
             p_val,
         });
-        Some(p)
+        Some(p_link)
     }
 
     /// Returns if `p` is a valid `Ptr`

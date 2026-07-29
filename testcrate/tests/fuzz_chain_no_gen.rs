@@ -182,35 +182,45 @@ fn fuzz_chain_no_gen() {
                                 b.insert(t, (p, (None, Some(t_mid))));
                                 b.get_mut(&t_mid).unwrap().1.0 = Some(t);
                             } else {
-                                let p = a.insert_end(b[&t_mid].0, t).unwrap();
+                                let p = a.insert(LinkInsertKind::ChainEnd(b[&t_mid].0), t);
                                 b.insert(t, (p, (Some(t_mid), None)));
                                 b.get_mut(&t_mid).unwrap().1.1 = Some(t);
                             }
                         }
                         (None, Some(_)) => {
-                            let p = a.insert_start(b[&t_mid].0, t).unwrap();
+                            let p = a.insert(LinkInsertKind::ChainStart(b[&t_mid].0), t);
                             b.insert(t, (p, (None, Some(t_mid))));
                             b.get_mut(&t_mid).unwrap().1.0 = Some(t);
                         }
                         (Some(_), None) => {
-                            let p = a.insert_end(b[&t_mid].0, t).unwrap();
+                            let p = a.insert(LinkInsertKind::ChainEnd(b[&t_mid].0), t);
                             b.insert(t, (p, (Some(t_mid), None)));
                             b.get_mut(&t_mid).unwrap().1.1 = Some(t);
                         }
                         (Some(_), Some(t1)) => {
                             // can't use `insert_end` or `insert_start`, use `insert` with both
                             // `Some`
-                            let p = a
-                                .insert((Some(b[&t_mid].0.inx()), Some(b[&t1].0.inx())), t)
-                                .unwrap();
+                            let p = a.insert(
+                                LinkInsertKind::InbetweenInx {
+                                    next_to: b[&t_mid].0.inx(),
+                                    prev_to: b[&t1].0.inx(),
+                                },
+                                t,
+                            );
                             b.insert(t, (p, (Some(t_mid), Some(t1))));
                             b.get_mut(&t_mid).unwrap().1.1 = Some(t);
                             b.get_mut(&t1).unwrap().1.0 = Some(t);
                         }
                     }
                 } else {
-                    assert_eq!(a.insert_start(invalid, u64::MAX), Err(u64::MAX));
-                    assert_eq!(a.insert_end(invalid, u64::MAX), Err(u64::MAX));
+                    assert!(
+                        a.insert_reallocating(LinkInsertKind::ChainStart(invalid), u64::MAX)
+                            .is_err()
+                    );
+                    assert!(
+                        a.insert_reallocating(LinkInsertKind::ChainEnd(invalid), u64::MAX)
+                            .is_err()
+                    );
                 }
             }
             200..=399 => {
@@ -424,7 +434,7 @@ fn fuzz_chain_no_gen() {
                     // insert at random time
                     if i == rand_insert_i {
                         let t = new_t();
-                        let ptr = a.insert_new(t);
+                        let ptr = a.insert(LinkInsertKind::Disconnected, t);
                         b.insert(t, (ptr, (None, None)));
                         list.push(t);
                     }
