@@ -341,13 +341,13 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
         self.compress_with(reset_generation, |_, _, _| ())
     }
 
-    /// The same as [ArenaTrait::compress] except that `map` is run on
-    /// `(P, &mut T, P)`, with the first `P` being the old `Ptr` and the last
-    /// `P` being the new `Ptr` that points to the `T` after compression. If all
-    /// extant `Ptr`s are recast or invalidated `Ptr`s will not be a problem,
-    /// `reset_generation` should be set in order to reset the generation
-    /// counter on all of the new `Ptr`s (and `InvalidationOption::Success` will
-    /// always be returned).
+    /// The same as [ArenaTrait::compress] except that, as entries are moved
+    /// around, `map` is run on `(P, &mut T, P)`, with the first `P` being
+    /// the old `Ptr` and the last `P` being the new `Ptr` that points to
+    /// the `T` after compression. If all extant `Ptr`s are recast or
+    /// invalidated `Ptr`s will not be a problem, `reset_generation` should
+    /// be set in order to reset the generation counter on all of the new
+    /// `Ptr`s (and `InvalidationOption::Success` will always be returned).
     ///
     /// This can be used to create a custom [crate::traits::Recaster] for
     /// recasting external `Ptr`s:
@@ -630,9 +630,7 @@ pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
 
 /// This inherits all the methods of [ArenaTrait] but adds on some [Link]-aware
 /// ones. Note that [ArenaTrait::remove] for chain arenas follows the interlink
-/// semantics of [ChainArenaTrait::remove_link_no_gen]. The compression
-/// functions also have the property that links of the same chain are brought in
-/// order together, at least on simple arenas.
+/// semantics of [ChainArenaTrait::remove_link_no_gen].
 pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     type InsertionEntry<'a>: ArenaInsertEntryTrait<'a, P, T>
     where
@@ -833,6 +831,9 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// might only include itself). Returns `None` if `p` is not valid.
     fn drain_chain(&mut self, p: P) -> Option<impl Iterator<Item = InvalidationOption<(P, T)>>>;
     */
+
+    /// This is a more advanced version of [ArenaTrait::compress] that
+    fn compress_and_linearize_chains(&mut self, reset_generation: bool) -> InvalidationOption<()>;
 }
 
 /*

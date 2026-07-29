@@ -194,6 +194,19 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         // we are moving from `j` to `i`
         let mut i = NonZeroUsize::new(1).unwrap();
         for j in self.nziter() {
+            if i == j {
+                // optimize for the front part being compressed already
+                if let Allocated(old_gen, t) = self.m.get_mut(j).unwrap() {
+                    map(
+                        Ptr::_from_raw(from_checked_raw::<P>(j), *old_gen),
+                        t,
+                        Ptr::_from_raw(from_checked_raw::<P>(i), new_gen),
+                    );
+                    *old_gen = new_gen;
+                    i = i.checked_add(1).unwrap();
+                }
+                continue;
+            }
             let entry = mem::replace(
                 self.m.get_mut(j).unwrap(),
                 // this will be overwritten or dropped
