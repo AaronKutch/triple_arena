@@ -630,9 +630,25 @@ pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     ) -> Result<Self::DirectInsertionEntry<'_>, DirectInsertionError>;
 }
 
-/// This inherits all the methods of [ArenaTrait] but adds on some [Link]-aware
-/// ones. Note that [ArenaTrait::remove] for chain arenas follows the interlink
-/// semantics of [ChainArenaTrait::remove_link_no_gen].
+/// A trait for storing an idealized doubly-linked-list on arenas. Multiple
+/// separate chains and cyclical chains are supported. This inherits all the
+/// methods of [ArenaTrait] but adds on some [Link]-aware
+/// ones. See [crate::ChainArena] for the standard implementor.
+///
+/// # Note
+///
+/// `P` `Ptr`s to links in a chain arena follow the same validity rules as
+/// described on the [ArenaTrait] documentation, except that chain arenas
+/// automatically update internal interlinks to maintain the linked-list nature
+/// of the chains. The public interface has been designed such that it is not
+/// possible to break the doubly linked invariant that each interlink `Ptr` from
+/// one link to its neighbor has exactly one corresponding interlink `Ptr`
+/// pointing from the neighbor back to itself. However, note that copies of
+/// interlinks made external to the arena or put in the custom `T`
+/// may be indirectly invalidated by operations on a neighboring link.
+///
+/// Note that [ArenaTrait::remove] for chain arenas is modified to follow the
+/// interlink semantics of [ChainArenaTrait::remove_link_no_gen].
 pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     type InsertionEntry<'a>: ArenaInsertEntryTrait<'a, P, T>
     where

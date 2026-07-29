@@ -14,12 +14,108 @@ use crate::{
     utils::traits::ArenaBacking,
 };
 
-/// The same as [crate::ChainArena] except that the interlinks have no
-/// generation counters.
+/// A doubly-linked-list based on an arena for handling usecases involving
+/// `O(1)` insertion, deletion, and other functions on linear lists of elements
+/// that we call "chains" of "links". Multiple separate chains and cyclical
+/// chains are supported.
 ///
-/// The advantage of this is reduced memory footprint at the expense of
-/// generation checks from the interlinks. This is mainly intended for internal
-/// usage within data structures.
+/// ```
+/// use triple_arena::{ChainArena, Link, ptr_struct};
+///
+/// ptr_struct!(P0);
+/// let mut a: ChainArena<P0, String> = ChainArena::new();
+///
+/// let p_a = a.insert_new("A".to_owned());
+/// let p_b = a.insert_new("B".to_owned());
+///
+/// // initially, all entries from `insert_new` have `None` interlinks and
+/// // are each in their own single link chains, and are completely
+/// // unassociated like in a normal `Arena`.
+///
+/// let link = a.get_link(p_a).unwrap();
+/// assert_eq!(link.t, "A");
+/// assert!(link.prev().is_none());
+/// assert!(link.next().is_none());
+///
+/// let link = a.get_link(p_b).unwrap();
+/// assert_eq!(link.t, "B");
+/// assert!(link.prev().is_none());
+/// assert!(link.next().is_none());
+///
+/// assert!(!a.are_neighbors(p_a, p_b));
+///
+/// // Connect the two links by making the `next` interlink of A point to B,
+/// // and the `prev` interlink of B point to A. Note that this is directional
+/// // and that `a.connect(p_b, p_a).unwrap()` would result B being the start
+/// // and A being the end of the chain instead.
+/// a.connect(p_a, p_b).unwrap();
+///
+/// let link = a.get_link(p_a).unwrap();
+/// assert_eq!(link.t, "A");
+/// assert!(link.prev().is_none());
+/// assert_eq!(link.next().unwrap(), p_b);
+///
+/// let link = a.get_link(p_b).unwrap();
+/// assert_eq!(link.t, "B");
+/// assert_eq!(link.prev().unwrap(), p_a);
+/// assert!(link.next().is_none());
+///
+/// assert!(a.are_neighbors(p_a, p_b));
+/// assert!(!a.are_neighbors(p_b, p_a));
+///
+/// // Now let us insert a third link and make it the end of the existing chain
+/// // by using `insert_end`.
+///
+/// // `insert_end` guards against attaching to any part of a chain except for
+/// // the preexisting end link.
+/// assert_eq!(a.insert_end(p_a, "D".to_owned()), Err("D".to_owned()));
+/// let p_d = a.insert_end(p_b, "D".to_owned()).unwrap();
+///
+/// assert!(a.are_neighbors(p_b, p_d));
+///
+/// // Inserting a link into the middle
+/// let p_c = a.insert((Some(p_b), Some(p_d)), "C".to_owned()).unwrap();
+/// assert!(!a.are_neighbors(p_b, p_d));
+/// assert!(a.are_neighbors(p_b, p_c));
+/// assert!(a.are_neighbors(p_c, p_d));
+///
+/// // Insert a separate chain
+/// let p_x = a.insert_new("X".to_owned());
+/// let p_y = a.insert_end(p_x, "Y".to_owned()).unwrap();
+/// let p_z = a.insert_end(p_y, "Z".to_owned()).unwrap();
+///
+/// // Connect the chains end-to-start in `O(1)`.
+/// a.connect(p_d, p_x).unwrap();
+///
+/// // `iter_chain` will iterate over all links in the chain that the given
+/// // `Ptr` is a part of. It will iterate across the chain in order (but
+/// // check the documentation for how starting in the middle or in a cyclical
+/// // chain works).
+/// let expected = [
+///     (p_a, "A"),
+///     (p_b, "B"),
+///     (p_c, "C"),
+///     (p_d, "D"),
+///     (p_x, "X"),
+///     (p_y, "Y"),
+///     (p_z, "Z"),
+/// ];
+/// for (i, (p_link, link)) in a.iter_chain(p_a).enumerate() {
+///     assert_eq!(expected[i], (p_link, link.t.as_str()));
+/// }
+///
+/// // Remove an element in the middle of a chain in `O(1)` with the same
+/// // capabilities that the plain `Arena` has. Interlinks are fixed so
+/// // that the link before the removed element is connected with the link
+/// // after the element (chains are only broken in two with `break_*` or
+/// // `exchange_next`).
+/// assert_eq!(a.remove(p_d).unwrap().t, "D".to_owned());
+/// assert!(a.are_neighbors(p_c, p_x));
+///
+/// // Remove a single connected chain efficiently
+/// a.remove_chain(p_x).unwrap();
+/// assert!(a.is_empty());
+/// ```
 pub struct ChainNoGenArena<
     P: Ptr,
     T,
@@ -29,17 +125,6 @@ pub struct ChainNoGenArena<
     pub(crate) a: Arena<P, LinkNoGen<P, T>, B>,
 }
 
-/// # Note
-///
-/// `P` `Ptr`s to links in a `ChainNoGenArena` follow the same validity rules as
-/// `Ptr`s in a regular `Arena` (see the documentation on the main
-/// `impl<P: Ptr, T> Arena<P, T>`), except that `ChainNoGenArena`s automatically
-/// update internal interlinks to maintain the linked-list nature of the chains.
-/// The public interface has been designed such that it is not possible to break
-/// the doubly linked invariant that each interlink `Ptr` from one link to its
-/// neighbor has exactly one corresponding interlink `Ptr` pointing from the
-/// neighbor back to itself. However, note that external copies of interlinks
-/// may be indirectly invalidated by operations on a neighboring link.
 impl<P: Ptr, T, B: ArenaBacking> ChainNoGenArena<P, T, B> {
     /// Used by tests
     #[doc(hidden)]
