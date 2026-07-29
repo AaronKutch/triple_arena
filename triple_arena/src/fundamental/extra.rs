@@ -210,12 +210,13 @@ pub enum LinkInsertKind<P: Ptr> {
     /// Insert a link inbetween two `P` that have an interlink between them,
     /// maintaining continuity of the chain. The insertion will fail if the two
     /// links are not neighbors. Note that the arguments are directionally
-    /// sensitive, calling [crate::Link::next] on the link at `next_to` must result in
-    /// `prev_to` and not the other way around. Note that this can act on a
-    /// single link cyclic chain with `next_to == prev_to`, but `next_to ==
-    /// prev_to` is allowed only in that case as the "inbetween" acts upon the
-    /// interlink of a link with itself. Single link chains without a cycle can
-    /// never succeed with this operation, because there is no interlink.
+    /// sensitive, calling [crate::Link::next] on the link at `next_to` must
+    /// result in `prev_to` and not the other way around. Note that this can
+    /// act on a single link cyclic chain with `next_to == prev_to`, but
+    /// `next_to == prev_to` is allowed only in that case as the "inbetween"
+    /// acts upon the interlink of a link with itself. Single link chains
+    /// without a cycle can never succeed with this operation, because there
+    /// is no interlink.
     AtInterlink {
         next_to: P,
         prev_to: P,

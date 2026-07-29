@@ -436,7 +436,7 @@ fn fuzz_chain_no_gen() {
                     let mut t_to_explore = HashSet::new();
                     let mut iters = 0;
 
-                    let mut adv = a.advancer_chain(b[&t].0.inx());
+                    let mut adv = a.advancer_chain(b[&t].0);
                     while let Some(p) = adv.advance(&a) {
                         t_to_explore.insert(a.get(p).unwrap());
                         // make sure we aren't double counting and the hash set is just dropping
@@ -465,7 +465,7 @@ fn fuzz_chain_no_gen() {
                     }
                     assert!(t_to_explore.is_empty());
                 } else {
-                    let mut adv = a.advancer_chain(P0::invalid().inx());
+                    let mut adv = a.advancer_chain(P0::invalid());
                     assert!(adv.advance(&a).is_none());
                 }
             }
@@ -474,13 +474,13 @@ fn fuzz_chain_no_gen() {
                 if len != 0 {
                     let t = list[next_inx!(rng, len)];
                     let init = b[&t].0;
-                    let mut iter = a.iter_chain(init.inx());
-                    let mut adv = a.advancer_chain(init.inx());
+                    let mut iter = a.iter_chain(init);
+                    let mut adv = a.advancer_chain(init);
                     while let Some(p) = adv.advance(&a) {
                         assert_eq!(iter.next().unwrap(), (p, a.get_link_no_gen(p).unwrap()));
                     }
                 } else {
-                    let mut iter = a.iter_chain(invalid.inx());
+                    let mut iter = a.iter_chain(invalid);
                     assert!(iter.next().is_none());
                 }
             }

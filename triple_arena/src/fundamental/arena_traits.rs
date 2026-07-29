@@ -654,6 +654,87 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     where
         Self: 'a;
 
+    /// Inserts `t` into the arena and returns a `Ptr` to it. Returns an error
+    /// if there was no available capacity or if the requirements of `kind` are
+    /// not met.
+    fn insert_within_capacity(
+        &mut self,
+        kind: LinkInsertKind<P>,
+        t: T,
+    ) -> Result<P, ChainInsertionError> {
+        let entry = self.entry_insert_within_capacity(kind)?;
+        let p = entry.ptr();
+        entry.insert(t);
+        Ok(p)
+    }
+
+    /// Inserts `t` into the arena and returns a `Ptr` to it. Automatically
+    /// reallocates if needing more capacity. Returns the `t`
+    /// if an allocation error occurs, if [ArenaTrait::max_capacity] is used
+    /// up, or if the requirements of `kind` are not met.
+    fn insert_reallocating(
+        &mut self,
+        kind: LinkInsertKind<P>,
+        t: T,
+    ) -> Result<P, ChainInsertionError> {
+        let entry = self.entry_insert_reallocating(kind)?;
+        let p = entry.ptr();
+        entry.insert(t);
+        Ok(p)
+    }
+
+    /// Inserts `t` into the arena and returns a `Ptr` to it. Panics if an
+    /// allocation error occurs or if [ArenaTrait::max_capacity] is used up.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure when needing to extend
+    /// capacity, or if `self.len()` is at the maximum capacity, or if the
+    /// requirements of `kind` are not met.
+    #[track_caller]
+    fn insert(&mut self, kind: LinkInsertKind<P>, t: T) -> P {
+        self.insert_reallocating(kind, t)
+            .expect("`ArenaInsertTrait::insert_reallocating` failed")
+    }
+
+    /// If capacity is available and the requirements for the `kind` are met, an
+    /// insertion entry for inserting a new link into the arena is returned.
+    /// Returns an error if there was no available capacity, or some
+    /// requirement was not met.
+    fn entry_insert_within_capacity(
+        &mut self,
+        kind: LinkInsertKind<P>,
+    ) -> Result<Self::InsertionEntry<'_>, ChainInsertionError>;
+
+    /// The same as [ChainArenaTrait::entry_insert_within_capacity] but
+    /// automatically reallocating if necessary with the same semantics as other
+    /// `*_reallocating` functions.
+    fn entry_insert_reallocating(
+        &mut self,
+        kind: LinkInsertKind<P>,
+    ) -> Result<Self::InsertionEntry<'_>, ChainInsertionError> {
+        match handle_reallocation(self) {
+            Ok(()) => self.entry_insert_within_capacity(kind),
+            Err(ReallocationError::AllocError) => Err(ChainInsertionError::AllocError),
+            Err(ReallocationError::BeyondMaxCapacity) => {
+                Err(ChainInsertionError::BeyondMaxCapacity)
+            }
+        }
+    }
+
+    /// The same as [ChainArenaTrait::entry_insert_reallocating], but panics
+    /// if an error occurs
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on failures of
+    /// [ChainArenaTrait::entry_insert_reallocating]
+    #[track_caller]
+    fn entry_insert(&mut self, kind: LinkInsertKind<P>) -> Self::InsertionEntry<'_> {
+        self.entry_insert_reallocating(kind)
+            .expect("`ChainArenaTrait::entry_insert_reallocating` failed")
+    }
+
     /// Returns a reference to the link pointed to by `p`. Returns `None` if `p`
     /// is invalid.
     ///
@@ -738,87 +819,6 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         })
     }
 
-    /// Inserts `t` into the arena and returns a `Ptr` to it. Returns an error
-    /// if there was no available capacity or if the requirements of `kind` are
-    /// not met.
-    fn insert_within_capacity(
-        &mut self,
-        kind: LinkInsertKind<P>,
-        t: T,
-    ) -> Result<P, ChainInsertionError> {
-        let entry = self.entry_insert_within_capacity(kind)?;
-        let p = entry.ptr();
-        entry.insert(t);
-        Ok(p)
-    }
-
-    /// Inserts `t` into the arena and returns a `Ptr` to it. Automatically
-    /// reallocates if needing more capacity. Returns the `t`
-    /// if an allocation error occurs, if [ArenaTrait::max_capacity] is used
-    /// up, or if the requirements of `kind` are not met.
-    fn insert_reallocating(
-        &mut self,
-        kind: LinkInsertKind<P>,
-        t: T,
-    ) -> Result<P, ChainInsertionError> {
-        let entry = self.entry_insert_reallocating(kind)?;
-        let p = entry.ptr();
-        entry.insert(t);
-        Ok(p)
-    }
-
-    /// Inserts `t` into the arena and returns a `Ptr` to it. Panics if an
-    /// allocation error occurs or if [ArenaTrait::max_capacity] is used up.
-    ///
-    /// # Panics
-    ///
-    /// This function can panic on allocation failure when needing to extend
-    /// capacity, or if `self.len()` is at the maximum capacity, or if the
-    /// requirements of `kind` are not met.
-    #[track_caller]
-    fn insert(&mut self, kind: LinkInsertKind<P>, t: T) -> P {
-        self.insert_reallocating(kind, t)
-            .expect("`ArenaInsertTrait::insert_reallocating` failed")
-    }
-
-    /// If capacity is available and the requirements for the `kind` are met, an
-    /// insertion entry for inserting a new link into the arena is returned.
-    /// Returns an error if there was no available capacity, or some
-    /// requirement was not met.
-    fn entry_insert_within_capacity(
-        &mut self,
-        kind: LinkInsertKind<P>,
-    ) -> Result<Self::InsertionEntry<'_>, ChainInsertionError>;
-
-    /// The same as [ChainArenaTrait::entry_insert_within_capacity] but
-    /// automatically reallocating if necessary with the same semantics as other
-    /// `*_reallocating` functions.
-    fn entry_insert_reallocating(
-        &mut self,
-        kind: LinkInsertKind<P>,
-    ) -> Result<Self::InsertionEntry<'_>, ChainInsertionError> {
-        match handle_reallocation(self) {
-            Ok(()) => self.entry_insert_within_capacity(kind),
-            Err(ReallocationError::AllocError) => Err(ChainInsertionError::AllocError),
-            Err(ReallocationError::BeyondMaxCapacity) => {
-                Err(ChainInsertionError::BeyondMaxCapacity)
-            }
-        }
-    }
-
-    /// The same as [ChainArenaTrait::entry_insert_reallocating], but panics
-    /// if an error occurs
-    ///
-    /// # Panics
-    ///
-    /// This function can panic on failures of
-    /// [ChainArenaTrait::entry_insert_reallocating]
-    #[track_caller]
-    fn entry_insert(&mut self, kind: LinkInsertKind<P>) -> Self::InsertionEntry<'_> {
-        self.entry_insert_reallocating(kind)
-            .expect("`ChainArenaTrait::entry_insert_reallocating` failed")
-    }
-
     /// Connects the interlinks of `p_prev` and `p_next` such that `p_prev` will
     /// be previous to `p_next`. Returns `None` if `p_prev` has an existing next
     /// interlink, `p_next` has an existing previous interlink, or the pointers
@@ -844,8 +844,8 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// is that `exchange_next` on two `Ptr`s of the same cyclic chain always
     /// results in two cyclic chains (except for if `p0 == p1`), and
     /// `exchange_next` on two `Ptr`s of two separate cyclic chains always
-    /// results in a single cyclic chain. This is used by [crate::SurjectArena] to
-    /// efficiently track and merge sets of nodes.
+    /// results in a single cyclic chain. This is used by [crate::SurjectArena]
+    /// to efficiently track and merge sets of nodes.
     #[must_use]
     fn exchange_next(&mut self, p0: P, p1: P) -> Option<()>;
 
