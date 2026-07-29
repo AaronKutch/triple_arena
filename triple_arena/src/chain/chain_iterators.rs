@@ -206,13 +206,16 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// the loop, it can lead to a loop where the same `Ptr` can be returned
     /// multiple times. There is a internal fail safe that prevents
     /// non-termination.
-    pub fn advancer_chain(&self, p_init: P) -> ChainPtrAdvancer<P> {
-        ChainPtrAdvancer {
+    pub fn advancer_chain(&self, p_init: P) -> Option<ChainPtrAdvancer<P>> {
+        if !self.contains(p_init) {
+            return None;
+        }
+        Some(ChainPtrAdvancer {
             init: p_init.inx(),
             ptr: Some(p_init.inx()),
             switch: false,
             max_advances: self.len(),
-        }
+        })
     }
 
     /// Iteration over all valid `P`s in the arena
@@ -240,9 +243,9 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// Iteration over `(P, &LinkNoGen<P, T>)` tuples corresponding to all
     /// links in the chain that `p_init` is connected to, according to the order
     /// of [ChainArena::advancer_chain]
-    pub fn iter_chain(&self, p_init: P) -> IterChain<'_, P, T, B> {
-        let adv = self.advancer_chain(p_init);
-        IterChain { arena: self, adv }
+    pub fn iter_chain(&self, p_init: P) -> Option<IterChain<'_, P, T, B>> {
+        let adv = self.advancer_chain(p_init)?;
+        Some(IterChain { arena: self, adv })
     }
 
     /// Mutable iteration over `(P, LinkNoGen<P, &mut T>)` tuples

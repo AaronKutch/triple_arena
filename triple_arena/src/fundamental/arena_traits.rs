@@ -37,7 +37,10 @@ The `drain` function ends up allowing invalidating every element separately beca
 
 I almost considered `fn ok` instead of `fn allow` but that could easily lead to confusion and would make finding these uses difficult
 
-`insert` could have returned `(P, &mut T)` as an extension of what stacks do, but it definitely does not carry its weight and the entry methods replace most places where it would be used
+`insert` could have returned `(P, &mut T)` as an extension of what stacks do, but it definitely does not carry its weight and the entry methods replace most places where it would be used.
+
+I do not have `inx` variations of the `*_chain` methods, they are dangerous enough and usually the `Ptr` is around and `O(n)` anyways.
+The `Ptr`s are usually around for the chain connection or break functions as well.
 */
 
 /// The base trait for `triple_arena` style Arenas. See [crate::Arena] for the

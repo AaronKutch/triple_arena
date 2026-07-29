@@ -37,7 +37,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
 
         let generation = this.a.get_inx(this.first).unwrap().0;
         let first = P::_from_raw(this.first, generation);
-        let mut adv = this.a.advancer_chain(first);
+        let mut adv = this.a.advancer_chain(first).unwrap();
         while let Some(p) = adv.advance(&this.a) {
             count = count.checked_add(1).unwrap();
             if !this.a.contains(p) {
@@ -445,7 +445,7 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug, B
         writeln!(s, "last: {:?}", self.last).unwrap();
         let generation = self.a.get_inx(self.first).unwrap().0;
         let first = P::_from_raw(self.first, generation);
-        let mut adv = self.a.advancer_chain(first);
+        let mut adv = self.a.advancer_chain(first).unwrap();
         while let Some(p) = adv.advance(&self.a) {
             let n = self.a.get(p).unwrap();
             writeln!(

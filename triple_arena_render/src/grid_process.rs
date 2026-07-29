@@ -485,7 +485,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             }
             // find start of `q1` chain but also recolor
             let mut p1_start = Ptr::invalid();
-            let mut adv = total_ordering.advancer_chain(p1);
+            let mut adv = total_ordering.advancer_chain(p1).unwrap();
             while let Some(p) = adv.advance(&total_ordering) {
                 let link = total_ordering.get_link_no_gen(p).unwrap();
                 if link.prev().is_none() {
