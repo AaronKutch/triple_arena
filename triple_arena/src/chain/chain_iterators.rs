@@ -246,15 +246,6 @@ impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a mut ChainArena<P, T, B
 /// All the iterators here can return values in arbitrary order, except for
 /// [ChainArena::advancer_chain].
 impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
-    /// Advances over every valid `Ptr` in `self`.
-    ///
-    /// Has the same properties as [crate::Arena::advancer]
-    pub fn advancer(&self) -> PtrAdvancer<P> {
-        PtrAdvancer {
-            adv: self.a.advancer(),
-        }
-    }
-
     /// Advances over every valid `Ptr` in the chain that contains `p_init`.
     /// This does _not_ support invalidating `Ptr`s or changing the interlinks
     /// of the chain of `p_init` during the loop.

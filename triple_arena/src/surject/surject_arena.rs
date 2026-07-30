@@ -3,7 +3,8 @@ use core::{fmt, mem, num::NonZeroUsize};
 use fmt::Debug;
 
 use crate::{
-    Arena, ChainArena, LinkInsertKind, LinkNoGen,
+    AllocError, Arena, ChainArena, ChainInsertionError, InvalidationOption, InvalidationResult,
+    LinkInsertKind, LinkNoGen, NotWithinCapacityError, ReallocationError,
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
         ChainArenaTrait, Ptr,
@@ -161,6 +162,54 @@ pub struct SurjectArena<
     pub(crate) vals: Arena<PtrNoGen<P>, Val<V>, B>,
 }
 
+// REF(insertion_idempotency)
+
+/// See [ArenaInsertTrait]
+pub struct SurjectArenaInsertEntry<'a, P: Ptr, K, V, B: ArenaBacking> {
+    this: &'a mut SurjectArena<P, K, V, B>,
+    p: P,
+}
+
+impl<'a, P: Ptr, K, V, B: ArenaBacking> SurjectArenaInsertEntry<'a, P, K, V, B> {
+    pub fn ptr(&self) -> P {
+        self.p
+    }
+
+    pub fn insert(self, k: K, v: V) {
+        let p_val = self.this.vals.insert(Val {
+            v,
+            key_count: NonZeroUsize::new(1).unwrap(),
+        });
+        self.this
+            .keys
+            .insert(LinkInsertKind::SingleLinkCyclic, Key { k, p_val });
+    }
+}
+
+/// See [ArenaInsertTrait]
+pub struct SurjectArenaInsertKeyEntry<'a, P: Ptr, K, V, B: ArenaBacking> {
+    this: &'a mut SurjectArena<P, K, V, B>,
+    p_target: P::Inx,
+    p_new: P,
+}
+
+impl<'a, P: Ptr, K, V, B: ArenaBacking> SurjectArenaInsertKeyEntry<'a, P, K, V, B> {
+    /// Returns the `P` that the newly inserted key will be associated with, and
+    /// not the `ptr_in_target_set`
+    pub fn ptr(&self) -> P {
+        self.p_new
+    }
+
+    pub fn insert(self, k: K) {
+        let this = self.this;
+        let p_val = this.keys.get_inx_mut_unwrap(self.p_target).p_val;
+        let key_count = &mut this.vals.get_inx_mut_unwrap(p_val.inx()).key_count;
+        *key_count = key_count.checked_add(1).unwrap();
+        this.keys
+            .insert(LinkInsertKind::NextToInx(self.p_target), Key { k, p_val });
+    }
+}
+
 /// # Note
 ///
 /// `Ptr`s in a `SurjectArena` follow the same validity rules as `Ptr`s in a
@@ -229,6 +278,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         Ok(())
     }
 
+    /// Creates an empty surjection arena, which may have any capacity of keys
+    /// and any capacity of values to start with
     pub fn new() -> Self {
         Self {
             keys: ChainArena::new(),
@@ -236,13 +287,16 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         }
     }
 
-    /// Creates the new arena with capacity for at least `capacity_keys` keys
-    /// and `capacity_vals` values
-    pub fn with_capacity(capacity_keys: usize, capacity_vals: usize) -> Self {
-        let mut res = Self::new();
-        res.reserve_keys(capacity_keys);
-        res.reserve_vals(capacity_vals);
-        res
+    /// See [ArenaTrait::with_min_capacity], this has separate capacities for
+    /// the keys and vals
+    pub fn with_min_capacity(
+        min_capacity_keys: usize,
+        min_capacity_vals: usize,
+    ) -> Result<Self, AllocError> {
+        Ok(Self {
+            keys: ChainArena::with_min_capacity(min_capacity_keys)?,
+            vals: Arena::with_min_capacity(min_capacity_vals)?,
+        })
     }
 
     /// Returns the total number of valid `Ptr`s, or equivalently the number of
@@ -283,101 +337,187 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         self.vals.capacity()
     }
 
+    /// Returns the max key capacity of the arena. See
+    /// [ArenaTrait::max_capacity].
+    pub fn max_capacity_keys(&self) -> Option<usize> {
+        self.keys.max_capacity()
+    }
+
+    /// Returns the max value capacity of the arena
+    pub fn max_capacity_vals(&self) -> Option<usize> {
+        self.vals.max_capacity()
+    }
+
     /// Follows [Arena::generation]
     pub fn generation(&self) -> P::Gen {
         self.keys.generation()
     }
 
-    pub fn reserve_keys(&mut self, additional: usize) {
-        self.keys
-            .reallocate_min_capacity(self.keys.len() + additional)
-            .unwrap()
+    /// Follows [Arena::set_generation]
+    pub fn set_generation(&mut self, new_gen: P::Gen) {
+        self.keys.set_generation(new_gen)
     }
 
-    pub fn reserve_vals(&mut self, additional: usize) {
-        self.vals
-            .reallocate_min_capacity(self.vals.len() + additional)
-            .unwrap();
+    /// Follows [Arena::inc_generation]
+    pub fn inc_generation(&mut self) -> InvalidationOption<()> {
+        self.keys.inc_generation()
     }
 
-    /// Inserts a new key and associated value. Returns a `Ptr` to the key.
+    /// Follows [ArenaTrait::reallocate_min_capacity] for keys
+    pub fn reallocate_min_capacity_keys(
+        &mut self,
+        min_capacity: usize,
+    ) -> Result<(), ReallocationError> {
+        self.keys.reallocate_min_capacity(min_capacity)
+    }
+
+    /// Follows [ArenaTrait::reallocate_min_capacity] for vals
+    pub fn reallocate_min_capacity_vals(
+        &mut self,
+        min_capacity: usize,
+    ) -> Result<(), ReallocationError> {
+        self.vals.reallocate_min_capacity(min_capacity)
+    }
+
+    /// Inserts a new surject into the arena, with initial key `k` for the key
+    /// set and associated value `v`. Returns a `Ptr` to the key.
+    pub fn insert_within_capacity(&mut self, k: K, v: V) -> Result<P, NotWithinCapacityError> {
+        let entry = self.entry_insert_within_capacity()?;
+        let p = entry.ptr();
+        entry.insert(k, v);
+        Ok(p)
+    }
+
+    /// Inserts a new surject into the arena, with initial key `k` for the key
+    /// set and associated value `v`. Returns a `Ptr` to the key.
+    pub fn insert_reallocating(&mut self, k: K, v: V) -> Result<P, ReallocationError> {
+        let entry = self.entry_insert_reallocating()?;
+        let p = entry.ptr();
+        entry.insert(k, v);
+        Ok(p)
+    }
+
+    /// Inserts a new surject into the arena, with initial key `k` for the key
+    /// set and associated value `v`. Returns a `Ptr` to the key.
+    ///
+    /// # Panics
+    ///
+    /// Panics on allocation failure or if max capacity is used up
+    #[track_caller]
     pub fn insert(&mut self, k: K, v: V) -> P {
-        let p_val = self.vals.insert(Val {
-            v,
-            key_count: NonZeroUsize::new(1).unwrap(),
-        });
-        self.keys
-            .insert(LinkInsertKind::SingleLinkCyclic, Key { k, p_val })
+        self.insert_reallocating(k, v)
+            .expect("`SurjectArena::insert_reallocating` failed")
     }
 
-    /// Inserts a surject into the arena, using the `K` and `V` returned by
-    /// `create` for the new key and value. Returns a `Ptr` to the new key.
-    /// `create` is given the the same `Ptr` that is returned, which is
-    /// useful for initialization of immutable structures that need to reference
-    /// themselves.
-    pub fn insert_with<F: FnOnce(P) -> (K, V)>(&mut self, create_k_v: F) -> P {
-        let val_entry = self.vals.entry_insert();
-        let p_val = val_entry.ptr();
-        let key_entry = self.keys.entry_insert(LinkInsertKind::SingleLinkCyclic);
-        let p = key_entry.ptr();
-        let (k, v) = create_k_v(p);
-        key_entry.insert(Key { k, p_val });
-        val_entry.insert(Val {
-            v,
-            key_count: NonZeroUsize::new(1).unwrap(),
-        });
-        p
-    }
-
-    /// Inserts a new key into the arena, associating it with the same key set
-    /// that `p` is in (any `Ptr` from the valid key set can be used as a
-    /// reference), and returns the new `Ptr` to the key. Returns `Err(k)`
-    /// if `p` was invalid.
-    pub fn insert_key(&mut self, p: P, k: K) -> Result<P, K> {
-        let p_val = match self.keys.get(p) {
-            None => return Err(k),
-            Some(key) => key.p_val,
-        };
-        self.vals[p_val].key_count = NonZeroUsize::new(
-            self.vals
-                .get_inx_unwrap(p_val.inx())
-                .key_count
-                .get()
-                .wrapping_add(1),
-        )
-        .unwrap();
-        if let Ok(p) = self
+    /// Entry version of [SurjectArena::insert_within_capacity]
+    pub fn entry_insert_within_capacity(
+        &mut self,
+    ) -> Result<SurjectArenaInsertEntry<'_, P, K, V, B>, NotWithinCapacityError> {
+        let entry = self
             .keys
-            .insert_reallocating(LinkInsertKind::NextToInx(p.inx()), Key { k, p_val })
-        {
-            Ok(p)
-        } else {
-            unreachable!()
-        }
+            .entry_insert_within_capacity(LinkInsertKind::SingleLinkCyclic)
+            .map_err(|_| NotWithinCapacityError)?;
+        let p = entry.ptr();
+        // will need space for a new value
+        let _ = self.vals.entry_insert_within_capacity()?;
+        Ok(SurjectArenaInsertEntry { this: self, p })
     }
 
-    /// The same as [SurjectArena::insert_key] except that the inserted `K` is
-    /// created by `create_k`. The `Ptr` that will point to the new key is
-    /// passed to `create_k`, and this `Ptr` is also returned. `create` is
-    /// not called and `None` is returned if `p` is invalid.
-    #[must_use]
-    pub fn insert_key_with<F: FnOnce(P) -> K>(&mut self, p: P, create_k: F) -> Option<P> {
-        let p_val = self.keys.get(p)?.p_val;
-        self.vals[p_val].key_count = NonZeroUsize::new(
-            self.vals
-                .get_inx_unwrap(p_val.inx())
-                .key_count
-                .get()
-                .wrapping_add(1),
-        )
-        .unwrap();
-        let entry = self.keys.entry_insert(LinkInsertKind::NextToInx(p.inx()));
-        let p_link = entry.ptr();
-        entry.insert(Key {
-            k: create_k(p_link),
-            p_val,
-        });
-        Some(p_link)
+    /// Entry version of [SurjectArena::insert_reallocating]
+    pub fn entry_insert_reallocating(
+        &mut self,
+    ) -> Result<SurjectArenaInsertEntry<'_, P, K, V, B>, ReallocationError> {
+        let p = match self
+            .keys
+            .entry_insert_reallocating(LinkInsertKind::SingleLinkCyclic)
+        {
+            Ok(entry) => entry.ptr(),
+            Err(ChainInsertionError::BeyondMaxCapacity) => {
+                return Err(ReallocationError::BeyondMaxCapacity);
+            }
+            Err(_) => return Err(ReallocationError::AllocError),
+        };
+        let _ = self.vals.entry_insert_reallocating()?;
+        Ok(SurjectArenaInsertEntry { this: self, p })
+    }
+
+    /// Inserts a new key into the arena, associating it with an existing
+    /// surject, of which `ptr_in_target_set` is an existing key in that set.
+    /// Returns `ChainInsertionError::FailedLinkRequirement` if
+    /// `ptr_in_target_set` is invalid.
+    pub fn insert_key_within_capacity(
+        &mut self,
+        ptr_in_target_set: P,
+        k: K,
+    ) -> Result<P, ChainInsertionError> {
+        let entry = self.entry_insert_key_within_capacity(ptr_in_target_set)?;
+        let p = entry.ptr();
+        entry.insert(k);
+        Ok(p)
+    }
+
+    /// Reallocating version of [SurjectArena::insert_key_within_capacity]
+    pub fn insert_key_reallocating(
+        &mut self,
+        ptr_in_target_set: P,
+        k: K,
+    ) -> Result<P, ChainInsertionError> {
+        let entry = self.entry_insert_key_reallocating(ptr_in_target_set)?;
+        let p = entry.ptr();
+        entry.insert(k);
+        Ok(p)
+    }
+
+    /// Panicking version of [SurjectArena::insert_key_within_capacity]
+    ///
+    /// # Panics
+    ///
+    /// Panics on allocation failure, or if max capacity is used up, or if
+    /// `ptr_in_target_set` was invalid
+    #[track_caller]
+    pub fn insert_key(&mut self, ptr_in_target_set: P, k: K) -> P {
+        self.insert_key_reallocating(ptr_in_target_set, k)
+            .expect("`SurjectArena::insert_key_reallocating` failed")
+    }
+
+    /// Entry version of [SurjectArena::insert_key_within_capacity]
+    pub fn entry_insert_key_within_capacity(
+        &mut self,
+        ptr_in_target_set: P,
+    ) -> Result<SurjectArenaInsertKeyEntry<'_, P, K, V, B>, ChainInsertionError> {
+        if !self.contains(ptr_in_target_set) {
+            return Err(ChainInsertionError::FailedLinkRequirement);
+        }
+        // only need space for the key
+        let entry = self
+            .keys
+            .entry_insert_within_capacity(LinkInsertKind::SingleLinkCyclic)?;
+        let p = entry.ptr();
+        Ok(SurjectArenaInsertKeyEntry {
+            this: self,
+            p_target: ptr_in_target_set.inx(),
+            p_new: p,
+        })
+    }
+
+    /// Entry version of [SurjectArena::insert_key_reallocating]
+    pub fn entry_insert_key_reallocating(
+        &mut self,
+        ptr_in_target_set: P,
+    ) -> Result<SurjectArenaInsertKeyEntry<'_, P, K, V, B>, ChainInsertionError> {
+        if !self.contains(ptr_in_target_set) {
+            return Err(ChainInsertionError::FailedLinkRequirement);
+        }
+        // only need space for the key
+        let entry = self
+            .keys
+            .entry_insert_reallocating(LinkInsertKind::SingleLinkCyclic)?;
+        let p = entry.ptr();
+        Ok(SurjectArenaInsertKeyEntry {
+            this: self,
+            p_target: ptr_in_target_set.inx(),
+            p_new: p,
+        })
     }
 
     /// Returns if `p` is a valid `Ptr`
@@ -455,7 +595,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// interlinks of which point to other keys in the key set. The key set is a
     /// cyclic chain of `LinkNoGen`s.
     #[must_use]
-    pub fn get_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &K>)> {
+    pub fn get_inx_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &K>)> {
         self.keys
             .get_inx_link_no_gen(p)
             .map(|(p, link)| (p, LinkNoGen::new(link.prev_next(), &link.t.k)))
@@ -524,15 +664,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         // inserted `usize + 1` elements
         self.vals.get_inx_mut_unwrap(p_val0.inx()).key_count =
             NonZeroUsize::new(len0.wrapping_add(len1)).unwrap();
-        Some((
-            self.vals
-                .remove_internal(p_val1.inx(), None, false)
-                .allow()
-                .unwrap()
-                .1
-                .v,
-            p0,
-        ))
+        Some((self.vals.remove(p_val1).allow().unwrap().v, p0))
     }
 
     /// Removes the key pointed to by `p`. If there were other keys still in the
@@ -540,65 +672,59 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// returned. If `p` was the last key in the key set, then the value is
     /// removed and returned like `Some((key, Some(val)))`. Returns
     /// `None` if `p` is not valid.
-    #[must_use]
-    pub fn remove_key(&mut self, p: P) -> Option<(K, Option<V>)> {
-        let key = self.keys.remove(p).allow()?;
+    pub fn remove_key(&mut self, p: P) -> InvalidationResult<(K, Option<V>)> {
+        let (key, o) = match self.keys.remove(p) {
+            InvalidationResult::Success(key) => (key, false),
+            InvalidationResult::GenerationOverflow(key) => (key, true),
+            InvalidationResult::InvalidPtr => return InvalidationResult::InvalidPtr,
+        };
         let p_val = key.p_val;
         let k = key.k;
-        let key_count = self.vals.get_inx_unwrap(p_val.inx()).key_count.get();
-        if key_count == 1 {
-            // last key, remove the value
-            Some((k, Some(self.vals.remove(p_val).allow().unwrap().v)))
-        } else {
+        let key_count = &mut self.vals.get_inx_mut_unwrap(p_val.inx()).key_count;
+        let res = if let Some(next) = NonZeroUsize::new(key_count.get() - 1) {
             // decrement the key count
-            self.vals.get_inx_mut_unwrap(p_val.inx()).key_count =
-                NonZeroUsize::new(key_count.wrapping_sub(1)).unwrap();
-            Some((k, None))
+            *key_count = next;
+            (k, None)
+        } else {
+            // last key, remove the value
+            (k, Some(self.vals.remove(p_val).allow().unwrap().v))
+        };
+        if o {
+            InvalidationResult::GenerationOverflow(res)
+        } else {
+            InvalidationResult::Success(res)
         }
     }
 
-    // FIXME use "remove_surject" instead
+    // TODO have a drain_surject instead
 
     /// Removes the entire key set and value cheaply, returning the value. `p`
     /// can point to any key from the key set. Returns `None` if `p` is invalid.
-    #[must_use]
-    pub fn remove(&mut self, p: P) -> Option<V> {
-        let p_val = self.keys.get(p)?.p_val;
-        self.keys.remove_cyclic_chain_internal(p.inx(), true);
-        Some(self.vals.remove(p_val).allow().unwrap().v)
+    pub fn remove_surject(&mut self, p: P) -> InvalidationResult<V> {
+        let Some(key) = self.keys.get(p) else {
+            return InvalidationResult::InvalidPtr;
+        };
+        let v = self.vals.remove(key.p_val).allow().unwrap().v;
+        self.keys.remove_cyclic_chain_internal(p.inx(), false);
+        match self.inc_generation() {
+            InvalidationOption::Success(()) => InvalidationResult::Success(v),
+            InvalidationOption::GenerationOverflow(()) => InvalidationResult::GenerationOverflow(v),
+        }
     }
 
     /// Invalidates the `Ptr` `p` (no other `Ptr`s to keys in the key set are
-    /// invalidated), returning a new valid `Ptr`. Returns `None` if `p` is
-    /// not valid.
-    #[must_use]
-    pub fn invalidate(&mut self, p: P) -> Option<P> {
+    /// invalidated), returning a new valid `Ptr`
+    pub fn invalidate(&mut self, p: P) -> InvalidationResult<P> {
         // the chain arena fixes interlinks
-        self.keys.invalidate(p).allow()
-    }
-
-    /// Swaps the `V` values pointed to by `Ptr`s `p0` and `p1` and keeps the
-    /// generation counters as-is. If `p0` and `p1` point to keys in the same
-    /// key set, then nothing occurs. Returns `None` if `p0` or `p1` are
-    /// invalid.
-    #[must_use]
-    pub fn swap_vals(&mut self, p0: P, p1: P) -> Option<()> {
-        let p_val0 = self.keys.get(p0)?.p_val;
-        let p_val1 = self.keys.get(p1)?.p_val;
-        if p_val0 != p_val1 {
-            // we only want to swap the `V` and not the ref counts
-            let [lhs, rhs] = self.vals.get_disjoint_mut([p_val0, p_val1]).unwrap();
-            mem::swap(&mut lhs.v, &mut rhs.v);
-        } // else no-op and we also checked for containment earlier
-        Some(())
+        self.keys.invalidate(p)
     }
 
     /// Drops all keys and values from the arena and invalidates all pointers
     /// previously created from it. This has no effect on allocated
     /// capacities of keys or values.
-    pub fn clear(&mut self) {
-        self.keys.clear().allow();
+    pub fn clear(&mut self) -> InvalidationOption<()> {
         self.vals.clear().allow();
+        self.keys.clear()
     }
 
     // FIXME can only be a `canonicalize` version

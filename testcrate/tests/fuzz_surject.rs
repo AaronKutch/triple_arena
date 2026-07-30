@@ -62,9 +62,9 @@ fn fuzz_surject() {
     let mut b: HashMap<Val, Vec<Pair>> = HashMap::new();
 
     let invalid = a.insert(Key::MAX, Val { v: u64::MAX });
-    a.remove_key(invalid).unwrap();
+    a.remove_key(invalid).allow().unwrap();
     generation += 1;
-    a.clear();
+    a.clear().allow();
     generation += 1;
     let mut op_inx;
     let mut max_key_len = 0;
@@ -94,7 +94,7 @@ fn fuzz_surject() {
         }
         op_inx = rng.next_u32() % 1000;
         match op_inx {
-            0..=19 => {
+            0..25 => {
                 // insert
                 let k = new_k();
                 let v = new_v();
@@ -102,20 +102,7 @@ fn fuzz_surject() {
                 list.push(v);
                 b.insert(v, vec![Pair { p, k }]);
             }
-            20..=24 => {
-                // insert_with
-                let k = new_k();
-                let v = new_v();
-                let mut outer = P0::invalid();
-                let p = a.insert_with(|p_create| {
-                    outer = p_create;
-                    (k, v)
-                });
-                assert_eq!(p, outer);
-                list.push(v);
-                b.insert(v, vec![Pair { p, k }]);
-            }
-            25..=59 => {
+            25..100 => {
                 // insert_key
                 if len != 0 {
                     let k = new_k();
@@ -123,31 +110,10 @@ fn fuzz_surject() {
                     let set = &b[&v];
                     let set_len = set.len();
                     let Pair { p, .. } = set[next_inx!(rng, set_len)];
-                    let p_new = a.insert_key(p, k).unwrap();
+                    let p_new = a.insert_key(p, k);
                     b.get_mut(&v).unwrap().push(Pair { p: p_new, k });
                 } else {
-                    assert_eq!(a.insert_key(invalid, Key::MAX), Err(Key::MAX));
-                }
-            }
-            60..=99 => {
-                // insert_key_with
-                if len != 0 {
-                    let k = new_k();
-                    let v = list[next_inx!(rng, len)];
-                    let set = &b[&v];
-                    let set_len = set.len();
-                    let Pair { p, .. } = set[next_inx!(rng, set_len)];
-                    let mut created_k = None;
-                    let p_new = a
-                        .insert_key_with(p, |p| {
-                            created_k = Some(p);
-                            k
-                        })
-                        .unwrap();
-                    assert_eq!(created_k.unwrap(), p_new);
-                    b.get_mut(&v).unwrap().push(Pair { p: p_new, k });
-                } else {
-                    assert_eq!(a.insert_key(invalid, Key::MAX), Err(Key::MAX));
+                    assert!(a.insert_key_reallocating(invalid, Key::MAX).is_err());
                 }
             }
             100..=104 => {
@@ -156,11 +122,14 @@ fn fuzz_surject() {
                     let v = list.swap_remove(next_inx!(rng, len));
                     let set = b.remove(&v).unwrap();
                     let set_len = set.len();
-                    let removed = a.remove(set[next_inx!(rng, set_len)].p).unwrap();
+                    let removed = a
+                        .remove_surject(set[next_inx!(rng, set_len)].p)
+                        .allow()
+                        .unwrap();
                     assert_eq!(removed, v);
                     generation += 1;
                 } else {
-                    assert!(a.remove(invalid).is_none());
+                    assert!(a.remove_surject(invalid).allow().is_none());
                 }
             }
             105..=199 => {
@@ -172,7 +141,7 @@ fn fuzz_surject() {
                     let set_len = set.len();
                     let i_set = next_inx!(rng, set_len);
                     let pair = set[i_set];
-                    let res = a.remove_key(pair.p);
+                    let res = a.remove_key(pair.p).allow();
                     generation += 1;
                     if set_len == 1 {
                         list.swap_remove(i);
@@ -183,7 +152,7 @@ fn fuzz_surject() {
                         assert_eq!(res, Some((pair.k, None)));
                     }
                 } else {
-                    assert!(a.remove(invalid).is_none());
+                    assert!(a.remove_key(invalid).allow().is_none());
                 }
             }
             200..=249 => {
@@ -315,16 +284,16 @@ fn fuzz_surject() {
                 }
             }
             446..=449 => {
-                // get_link_no_gen
+                // get_inx_link_no_gen
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
                     let set = &b[&v];
                     let set_len = set.len();
                     let pair = set[next_inx!(rng, set_len)];
-                    let (_, link) = a.get_link_no_gen(pair.p.inx()).unwrap();
+                    let (_, link) = a.get_inx_link_no_gen(pair.p.inx()).unwrap();
                     assert_eq!(*link.t, pair.k);
                 } else {
-                    assert!(a.get_link_no_gen(P0::invalid().inx()).is_none());
+                    assert!(a.get_inx_link_no_gen(P0::invalid().inx()).is_none());
                 }
             }
             450..=499 => {
@@ -364,7 +333,7 @@ fn fuzz_surject() {
                     assert!(a.union(invalid, invalid).is_none());
                 }
             }
-            500..580 => {
+            500..600 => {
                 // invalidate
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
@@ -372,7 +341,7 @@ fn fuzz_surject() {
                     let set_len = set.len();
                     let i_set = next_inx!(rng, set_len);
                     let pair = set[i_set];
-                    let p_new = a.invalidate(pair.p).unwrap();
+                    let p_new = a.invalidate(pair.p).allow().unwrap();
                     generation += 1;
                     // keep key value
                     b.get_mut(&v).unwrap()[i_set] = Pair {
@@ -380,29 +349,7 @@ fn fuzz_surject() {
                         k: pair.k,
                     };
                 } else {
-                    assert!(a.invalidate(invalid).is_none());
-                }
-            }
-            580..=599 => {
-                // swap_vals
-                if len != 0 {
-                    let v0 = list[next_inx!(rng, len)];
-                    let v1 = list[next_inx!(rng, len)];
-                    let set0 = &b[&v0];
-                    let set_len0 = set0.len();
-                    let set1 = &b[&v1];
-                    let set_len1 = set1.len();
-                    let pair0 = set0[next_inx!(rng, set_len0)];
-                    let pair1 = set1[next_inx!(rng, set_len1)];
-                    a.swap_vals(pair0.p, pair1.p).unwrap();
-                    if v0 != v1 {
-                        let tmp0 = b.remove(&v0).unwrap();
-                        let tmp1 = b.remove(&v1).unwrap();
-                        b.insert(v0, tmp1);
-                        b.insert(v1, tmp0);
-                    }
-                } else {
-                    assert!(a.swap_vals(invalid, invalid).is_none());
+                    assert!(a.invalidate(invalid).allow().is_none());
                 }
             }
             600..970 => {
@@ -548,7 +495,7 @@ fn fuzz_surject() {
                 // clear
                 let prev_cap_keys = a.capacity_keys();
                 let prev_cap_vals = a.capacity_vals();
-                a.clear();
+                a.clear().allow();
                 assert_eq!(a.capacity_keys(), prev_cap_keys);
                 assert_eq!(a.capacity_vals(), prev_cap_vals);
                 b.clear();
@@ -557,7 +504,7 @@ fn fuzz_surject() {
             }
             999 => {
                 // clear_and_shrink
-                a.clear();
+                a.clear().allow();
                 b.clear();
                 generation += 1;
                 list.clear();

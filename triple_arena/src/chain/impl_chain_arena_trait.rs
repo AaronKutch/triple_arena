@@ -12,8 +12,6 @@ use crate::{
     },
 };
 
-// FIXME unify the chain arenas
-
 impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainArena<P, T, B> {
     type PtrAdvancer = chain_iterators::PtrAdvancer<P>;
 
@@ -193,7 +191,8 @@ impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for ChainArena<P, T,
 }
 
 pub struct ChainArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
-    // note: we drop the entry when constructing this and are relying on idempotency
+    // REF(insertion_idempotency) we drop the entry when constructing this and are relying on
+    // idempotency
     a: &'a mut ChainArena<P, T, B>,
     // the `Ptr` of the new link when inserted
     p: P,

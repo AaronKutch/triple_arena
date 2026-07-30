@@ -879,6 +879,9 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         p: P,
     ) -> Option<impl Iterator<Item = InvalidationOption<(P, LinkNoGen<P, T>)>>>;
 
+    // FIXME solve the advancer guarding problem and fix the iterators, and probably
+    // add the compress_from functions
+
     // TODO the problem with this currently is that in-place canonical compression
     // necessarily requires the map function to be called on an element multiple
     // times, and even if we accept that and have some contraption to prevent users
