@@ -27,7 +27,7 @@ pub use chain::{ChainArena, Link, LinkInsertKind, LinkNoGen, chain_iterators};
 #[cfg(feature = "serde_support")]
 pub use fundamental::serde_docs;
 pub use fundamental::{InvalidationOption, InvalidationResult, errors};
-pub use ord::{OrdArena, ord_iterators};
+pub use ord::{OrdArena, OrdPair, SimpleOrdItem, ord_iterators};
 pub use surject::{SurjectArena, surject_iterators};
 
 pub use crate::stack::StackBacking;

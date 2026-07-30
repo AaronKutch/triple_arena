@@ -9,7 +9,10 @@ use core::{
 };
 
 use crate::{
-    Arena, ChainArena, InvalidationOption, Link, LinkNoGen, errors::{AllocError, ReallocationError}, traits::{Advancer, ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr}, utils::traits::{ArenaBacking, PtrInx},
+    Arena, ChainArena, InvalidationOption, Link, LinkNoGen,
+    errors::{AllocError, ReallocationError},
+    traits::{Advancer, ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
+    utils::traits::{ArenaBacking, PtrInx},
 };
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
@@ -43,9 +46,13 @@ use crate::{
 // key arena design that tries to cram as many keys as possible into the same
 // 128 byte cache line space, and as may `P::Inx`s as possible are on the value
 // arena side. May have some thing configured on the key size to have a
-// `NonZeroInxArray<P>` that compresses a variable number of keys together.
+// `NonZeroInxArray<P>` that compresses a variable number of keys together. We
+// are keeping the `SimpleOrdArena` however as-is because the key can't be
+// separated anyway (at least unless there is an `upcast_key` equivalent like
+// what `iddqd` has, I have named `SimpleOrdItem` in case I want an associated
+// value which would require a new trait `OrdItem`)
 
-/// Internal node for an `OrdArena`
+/// Internal node for a `SimpleOrdArena`
 #[derive(Clone)]
 pub struct Node<P: Ptr, K, V> {
     pub k: K,
@@ -165,11 +172,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     }
 
     /// See [ArenaTrait::with_min_capacity]
-    pub fn with_min_capacity(
-        min_capacity: usize,
-    ) -> Result<Self, AllocError> {
-        Ok(
-        Self {
+    pub fn with_min_capacity(min_capacity: usize) -> Result<Self, AllocError> {
+        Ok(Self {
             root: P::invalid().inx(),
             first: P::invalid().inx(),
             last: P::invalid().inx(),
@@ -510,13 +514,11 @@ impl<P: Ptr, K: Debug, V: Debug, B: ArenaBacking> Debug for OrdArena<P, K, V, B>
     }
 }
 
-
-impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> OrdArena<P, K, V, B>
-{
+impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Checks if all `(K, V)` pairs are equal. This is sensitive to
     /// nonhereditary ordering, but does not compare pointers, generations,
     /// arena capacities, internal tree configuration, or `self.generation()`.
-    pub fn canonical_eq<>(&self, other: &OrdArena<P, K, V, B>) -> bool {
+    pub fn canonical_eq(&self, other: &OrdArena<P, K, V, B>) -> bool {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
@@ -537,8 +539,7 @@ impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> OrdArena<P, K, V, B>
     }
 }
 
-impl<P: Ptr, K: PartialOrd, V: PartialOrd, B: ArenaBacking>  OrdArena<P, K, V, B>
-{
+impl<P: Ptr, K: PartialOrd, V: PartialOrd, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Orders as if the arena were a `Vec<(K, V)>` in order, returning early if
     /// the prefix had a difference, checking the key before the value in the
     /// pair, and returning based on which is longer. This is sensitive to
