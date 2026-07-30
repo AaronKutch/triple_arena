@@ -7,7 +7,7 @@ use crate::{
 };
 
 /*
-See first the comments in nonzero_inx_generic_stack.rs
+See first the comments in nonzero_inx_generic_stack.rs, some of these comments are also for chain_traits.rs etc
 
 REF(arena_terminology): Internally an arena has a main memory (usually `m`) of slots, usually a stack of free or allocated slots. I decide to use the terminology "slots" to refer to the actual internal stack elements that exist. "entries" for the public logical behavior docs and entry APIs may involve capacity in the internal stack that doesn't have a slot yet, or beyond. I use "root" for single linked lists.
 

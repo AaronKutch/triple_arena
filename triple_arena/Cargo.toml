@@ -11,9 +11,11 @@ license = "MIT OR Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/AaronKutch/triple_arena"
 documentation = "https://docs.rs/triple_arena"
-description = "Regular, Chain, Surjection, and Ordered Arenas supporting non-Clone types, deletion, and more"
+description = "Regular, Chain, Surjection, and Ordered Arenas supporting non-Clone types, deletion, and stack backing"
 keywords = ["arena", "generation", "no_std"]
 categories = ["memory-management", "data-structures", "no-std"]
+
+# TODO in a future version put each of the arenas under feature flags enabled by default (for faster compilation in cases where certain types are not needed)
 
 [features]
 default = ["alloc"]
@@ -23,6 +25,7 @@ alloc = ["recasting/alloc"]
 std = ["alloc", "recasting/std"]
 serde_support = ["serde"]
 
+# FIXME review and add MSRV to recasting crate, bump minor version
 [dependencies]
 #recasting = { path = "../../recasting", default-features = false }
 recasting = { version = "0.2", default-features = false }

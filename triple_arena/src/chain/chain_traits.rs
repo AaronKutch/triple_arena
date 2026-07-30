@@ -7,6 +7,8 @@ use crate::{
     traits::{Advancer, ArenaInsertEntryTrait, ArenaTrait, Ptr},
 };
 
+// The comments for this are in arena_traits.rs
+
 /// Describes multiple ways to insert a link. All the "*Inx" variants disregard
 /// generation counters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
