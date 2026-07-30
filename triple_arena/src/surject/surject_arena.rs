@@ -52,7 +52,7 @@ pub(crate) struct Val<V> {
 /// reference counting or epoch-like structures.
 ///
 /// ```
-/// use triple_arena::{SurjectArena, ptr_struct};
+/// use triple_arena::{ChainInsertionError, SurjectArena, ptr_struct};
 ///
 /// ptr_struct!(P0);
 /// let mut a: SurjectArena<P0, String, String> = SurjectArena::new();
@@ -61,11 +61,11 @@ pub(crate) struct Val<V> {
 /// let p0_42 = a.insert("key0".to_owned(), "42".to_owned());
 /// // If we want new keys to be associated with the same key set pointing to
 /// // "42", then instead of calling `insert_val` we call `insert_key`
-/// let p1_42 = a.insert_key(p0_42, "key1".to_owned()).unwrap();
+/// let p1_42 = a.insert_key(p0_42, "key1".to_owned());
 /// // We could use either `p0_42` or `p1_42` as our reference to get
 /// // associated with the same key set; any valid pointer in the preexisting
 /// // set can be used with the same `O(1)` computational complexity incurred.
-/// let p2_42 = a.insert_key(p0_42, "key2".to_owned()).unwrap();
+/// let p2_42 = a.insert_key(p0_42, "key2".to_owned());
 ///
 /// assert_eq!(a.get_key(p0_42).unwrap(), "key0");
 /// assert_eq!(a.get_key(p1_42).unwrap(), "key1");
@@ -74,7 +74,7 @@ pub(crate) struct Val<V> {
 /// assert_eq!(a.get_val(p1_42).unwrap(), "42");
 /// assert_eq!(a.get_val(p2_42).unwrap(), "42");
 ///
-/// assert_eq!(a.remove_key(p1_42), Some(("key1".to_owned(), None)));
+/// assert_eq!(a.remove_key(p1_42).allow(), Some(("key1".to_owned(), None)));
 /// assert!(a.contains(p0_42));
 /// assert!(!a.contains(p1_42));
 /// assert!(a.contains(p2_42));
@@ -84,11 +84,11 @@ pub(crate) struct Val<V> {
 ///
 /// // We cannot use an invalidated pointer as a reference
 /// assert_eq!(
-///     a.insert_key(p1_42, "key3".to_owned()),
-///     Err("key3".to_owned())
+///     a.insert_key_reallocating(p1_42, "key3".to_owned()),
+///     Err(ChainInsertionError::FailedLinkRequirement)
 /// );
 /// // We need to use an existing valid key
-/// let p3_42 = a.insert_key(p2_42, "key3".to_owned()).unwrap();
+/// let p3_42 = a.insert_key(p2_42, "key3".to_owned());
 /// assert_eq!(a.get_val(p3_42).unwrap(), "42");
 ///
 /// let other42 = a.insert("test".to_owned(), "42".to_owned());
@@ -96,10 +96,10 @@ pub(crate) struct Val<V> {
 /// // set or map, so multiple of the same exact values can exist in different
 /// // surjects.
 /// assert!(!a.in_same_set(p0_42, other42).unwrap());
-/// a.remove(other42).unwrap();
+/// a.remove_surject(other42).allow().unwrap();
 ///
 /// let p4_7 = a.insert("key4".to_owned(), "7".to_owned());
-/// let p5_7 = a.insert_key(p4_7, "key5".to_owned()).unwrap();
+/// let p5_7 = a.insert_key(p4_7, "key5".to_owned());
 ///
 /// assert_eq!(a.len_key_set(p0_42).unwrap().get(), 3);
 /// assert_eq!(a.len_key_set(p4_7).unwrap().get(), 2);
@@ -142,12 +142,12 @@ pub(crate) struct Val<V> {
 ///
 /// // only upon removing the last key is the value is returned
 /// // (or we could use the wholesale `remove`)
-/// assert_eq!(a.remove_key(p4_7), Some(("key4".to_owned(), None)));
-/// assert_eq!(a.remove_key(p0_42), Some(("key0".to_owned(), None)));
-/// assert_eq!(a.remove_key(p3_42), Some(("key3".to_owned(), None)));
-/// assert_eq!(a.remove_key(p5_7), Some(("key5".to_owned(), None)));
+/// assert_eq!(a.remove_key(p4_7).allow(), Some(("key4".to_owned(), None)));
+/// assert_eq!(a.remove_key(p0_42).allow(), Some(("key0".to_owned(), None)));
+/// assert_eq!(a.remove_key(p3_42).allow(), Some(("key3".to_owned(), None)));
+/// assert_eq!(a.remove_key(p5_7).allow(), Some(("key5".to_owned(), None)));
 /// assert_eq!(
-///     a.remove_key(p2_42),
+///     a.remove_key(p2_42).allow(),
 ///     Some(("key2".to_owned(), Some("42 + 7".to_owned())))
 /// );
 /// ```

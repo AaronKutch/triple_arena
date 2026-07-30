@@ -40,7 +40,13 @@ use crate::{
 // values on their own arena that preserves stable `Ptr`s. They have
 // backreferences to the keys. We group the keys together in memory, and rewrite
 // groups based on different factors. We may need tricks like the bitfields of
-// https://github.com/sebastiencs/shared-arena for a different freelist approach
+// https://github.com/sebastiencs/shared-arena for a different freelist approach.
+// The counterpoint however, is that pure WAVL with chain arena traversal incurs
+// 5 whole `P::Inx`s competing for cache line space. We probably want a special
+// key arena design that tries to cram as many keys as possible into the same
+// 128 byte cache line space, and as may `P::Inx`s as possible are on the value
+// arena side. May have some thing configured on the key size to have a
+// `NonZeroInxArray<P>` that compresses a variable number of keys together.
 
 /// Internal node for an `OrdArena`
 #[derive(Clone)]
@@ -85,10 +91,6 @@ pub struct Node<P: Ptr, K, V> {
 /// memory leaks, or non-termination occurs. However, the well ordered property,
 /// `find_key`, and hereditary properties may be broken for any entry in the
 /// arena.
-///
-/// Note: the serialization impls from `serde_support` requires that `OrdArena`s
-/// are compressed with one of the `compress_and_shrink_*` functions such as
-/// [OrdArena::compress_and_shrink_recaster] before use.
 ///
 /// ```
 /// use core::cmp::Ordering;
