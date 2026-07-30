@@ -401,9 +401,7 @@ impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for SimpleOrdArena<P,
 impl<P: Ptr, T: Debug, B: ArenaBacking> Debug for SimpleOrdArena<P, T, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO here and in other triple `Debug`s we need a flat triple
-        f.debug_map()
-            .entries(self.iter().map(|(p, t)| (p, t)))
-            .finish()
+        f.debug_map().entries(self.iter()).finish()
     }
 }
 

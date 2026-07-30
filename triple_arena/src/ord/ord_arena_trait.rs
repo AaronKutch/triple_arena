@@ -28,3 +28,40 @@ impl<K: Ord, V> SimpleOrdItem for OrdPair<K, V> {
         &self.k
     }
 }
+
+impl<K, V> OrdPair<K, V> {
+    /// Creates a new `OrdPair` from the key `k` and value `v`
+    pub fn new(k: K, v: V) -> Self {
+        Self { k, v }
+    }
+
+    pub fn k(&self) -> &K {
+        &self.k
+    }
+
+    pub fn k_mut(&mut self) -> &mut K {
+        &mut self.k
+    }
+
+    pub fn v(&self) -> &V {
+        &self.v
+    }
+
+    pub fn v_mut(&mut self) -> &mut V {
+        &mut self.v
+    }
+
+    pub fn k_v(&self) -> (&K, &V) {
+        (&self.k, &self.v)
+    }
+
+    pub fn k_v_mut(&mut self) -> (&mut K, &mut V) {
+        (&mut self.k, &mut self.v)
+    }
+
+    pub fn into_k_v(self) -> (K, V) {
+        (self.k, self.v)
+    }
+}
+
+// TODO future OrdArena-specific trait goes here

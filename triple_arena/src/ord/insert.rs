@@ -5,7 +5,7 @@ use core::{cmp::Ordering, mem};
 use crate::{
     LinkInsertKind, SimpleOrdArena, SimpleOrdItem,
     arena::ArenaInsertEntryTrait,
-    errors::NotWithinCapacityError,
+    errors::{ChainInsertionError, NotWithinCapacityError, ReallocationError},
     traits::{ArenaTrait, ChainArenaTrait, Ptr},
     utils::{Node, traits::ArenaBacking},
 };
@@ -128,6 +128,39 @@ impl<'a, P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArenaInsertEntry<'a
 }
 
 impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
+    /// Following the style of [ArenaInsertTrait::insert_within_capacity]. Uses
+    /// [OrdInsertKind::Normal].
+    pub fn insert_within_capacity(
+        &mut self,
+        t: T,
+    ) -> Result<(P, Option<T>), NotWithinCapacityError> {
+        let entry = self.entry_insert_within_capacity(OrdInsertKind::Normal)?;
+        let p = entry.ptr();
+        Ok((p, entry.insert(t)))
+    }
+
+    /// Following the style of [ArenaInsertTrait::insert_reallocating]. Uses
+    /// [OrdInsertKind::Normal].
+    pub fn insert_reallocating(&mut self, t: T) -> Result<(P, Option<T>), ReallocationError> {
+        let entry = self.entry_insert_reallocating(OrdInsertKind::Normal)?;
+        let p = entry.ptr();
+        Ok((p, entry.insert(t)))
+    }
+
+    /// Following the style of [ArenaInsertTrait::insert]. Uses
+    /// [OrdInsertKind::Normal]. Panics if there was a reallocation error or if
+    /// max capacity was reached.
+    ///
+    /// # Panics
+    ///
+    /// If there was a reallocation error or if max capacity was reached.
+    #[must_use]
+    pub fn insert(&mut self, t: T) -> (P, Option<T>) {
+        self.insert_reallocating(t)
+            .expect("`SimpleOrdArena::insert_reallocating` failed")
+    }
+
+    /// Following the style of [ArenaInsertTrait::entry_insert_within_capacity]
     pub fn entry_insert_within_capacity(
         &mut self,
         mut kind: OrdInsertKind<P>,
@@ -142,9 +175,61 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         // consider it
         if self.is_empty() {
             kind = OrdInsertKind::Empty;
+        } else {
+            if matches!(kind, OrdInsertKind::Empty) {
+                // TODO get a proper enum
+                return Err(NotWithinCapacityError);
+            }
         }
 
         Ok(SimpleOrdArenaInsertEntry { a: self, p, kind })
+    }
+
+    /// Following the style of [ArenaInsertTrait::entry_insert_reallocating]
+    pub fn entry_insert_reallocating(
+        &mut self,
+        mut kind: OrdInsertKind<P>,
+    ) -> Result<SimpleOrdArenaInsertEntry<'_, P, T, B>, ReallocationError> {
+        let entry = match self
+            .a
+            .entry_insert_reallocating(LinkInsertKind::Disconnected)
+        {
+            Ok(x) => x,
+            Err(ChainInsertionError::BeyondMaxCapacity) => {
+                return Err(ReallocationError::BeyondMaxCapacity);
+            }
+            Err(_) => return Err(ReallocationError::AllocError),
+        };
+        let p = entry.ptr();
+
+        // common collapse case so that all the branches from now on do not need to
+        // consider it
+        if self.is_empty() {
+            kind = OrdInsertKind::Empty;
+        } else {
+            if matches!(kind, OrdInsertKind::Empty) {
+                // TODO get a proper enum
+                return Err(ReallocationError::AllocError);
+            }
+        }
+
+        Ok(SimpleOrdArenaInsertEntry { a: self, p, kind })
+    }
+
+    /// Following the style of [ArenaInsertTrait::entry_insert]. Panics if there
+    /// was a reallocation error, or if max capacity was reached, or if a
+    /// `OrdInsertKind` requirement was violated.
+    ///
+    /// # Panics
+    ///
+    /// If there was a reallocation error, or if max capacity was reached, or if
+    /// a `OrdInsertKind` requirement was violated.
+    pub fn entry_insert(
+        &mut self,
+        kind: OrdInsertKind<P>,
+    ) -> SimpleOrdArenaInsertEntry<'_, P, T, B> {
+        self.entry_insert_reallocating(kind)
+            .expect("`SimpleOrdArena::entry_insert_reallocating` failed")
     }
 }
 

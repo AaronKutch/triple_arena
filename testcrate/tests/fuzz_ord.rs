@@ -11,7 +11,7 @@ use rand_xoshiro::{
     rand_core::{Rng, SeedableRng},
 };
 use testcrate::P0;
-use triple_arena::{OrdArena, traits::*, utils::traits::PtrGen};
+use triple_arena::{OrdInsertKind, OrdPair, SimpleOrdArena, traits::*, utils::traits::PtrGen};
 
 const N: usize = if cfg!(miri) {
     1000
@@ -64,13 +64,13 @@ fn fuzz_ord() {
 
     let mut list: Vec<Triple> = vec![];
 
-    let mut a: OrdArena<P0, Key, Val> = OrdArena::new();
+    let mut a: SimpleOrdArena<P0, OrdPair<Key, Val>> = SimpleOrdArena::new();
     let mut generation = 2;
     // the tricky part is that we need to handle nonhereditary cases
     let mut b: BTreeMap<Key, BTreeMap<Val, Triple>> = BTreeMap::new();
 
-    let invalid = a.insert_nonhereditary(Key { k: 0 }, Val { v: 0 });
-    assert!(a.insert_empty(Key { k: 0 }, Val { v: 0 }).is_none());
+    let invalid = a.insert(OrdPair::new(Key { k: 0 }, Val { v: 0 }));
+    assert!(a.entry_insert_reallocating(OrdInsertKind::Empty).is_err());
     a.clear();
     generation += 1;
     let mut op_inx;
@@ -87,7 +87,7 @@ fn fuzz_ord() {
         assert_eq!(a.is_empty(), list.is_empty());
         let len = list.len();
         if !cfg!(miri)
-            && let Err(e) = OrdArena::_check_invariants(&a)
+            && let Err(e) = SimpleOrdArena::_check_invariants(&a)
         {
             //if i == 9 {
             /*let debug0 = a.debug_arena();

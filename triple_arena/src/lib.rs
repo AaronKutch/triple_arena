@@ -27,7 +27,7 @@ pub use chain::{ChainArena, Link, LinkInsertKind, LinkNoGen, chain_iterators};
 #[cfg(feature = "serde_support")]
 pub use fundamental::serde_docs;
 pub use fundamental::{InvalidationOption, InvalidationResult, errors};
-pub use ord::{SimpleOrdArena, SimpleOrdItem, ord_iterators};
+pub use ord::{OrdInsertKind, SimpleOrdArena, SimpleOrdItem, ord_iterators};
 pub use surject::{SurjectArena, surject_iterators};
 
 #[cfg(feature = "alloc")]
@@ -46,7 +46,7 @@ pub mod utils {
         arena::{ArenaInsertEntry, InternalSlot},
         chain::{ChainArena, chain_iterators},
         fundamental::PtrNoGen,
-        ord::Node,
+        ord::{Node, SimpleOrdArenaInsertEntry},
         stack::{NonZeroInxArray, NonZeroInxArrayPushEntry},
     };
     /// A reexport used by the macros

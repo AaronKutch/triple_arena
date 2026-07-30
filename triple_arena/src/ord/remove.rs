@@ -6,7 +6,6 @@ use crate::{
 
 impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Removes the key-value pair at `p`. Returns `None` if `p` is invalid.
-    #[must_use]
     pub(crate) fn internal_remove(
         &mut self,
         p: P::Inx,
