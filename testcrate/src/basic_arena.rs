@@ -4,8 +4,8 @@ use expect_test::Expect;
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use star_rng::StarRng;
 use triple_arena::{
-    AllocError, Arena, InvalidationOption, InvalidationResult, MaxCapacityReductionError,
-    NotWithinCapacityError, ReallocationError, StackBacking,
+    Arena, InvalidationOption, InvalidationResult, StackBacking,
+    errors::{AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError},
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena,
     },

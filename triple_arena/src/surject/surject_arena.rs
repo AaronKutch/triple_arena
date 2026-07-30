@@ -3,8 +3,8 @@ use core::{fmt, mem, num::NonZeroUsize};
 use fmt::Debug;
 
 use crate::{
-    AllocError, Arena, ChainArena, ChainInsertionError, InvalidationOption, InvalidationResult,
-    LinkInsertKind, LinkNoGen, NotWithinCapacityError, ReallocationError,
+    Arena, ChainArena, InvalidationOption, InvalidationResult, LinkInsertKind, LinkNoGen,
+    errors::{AllocError, ChainInsertionError, NotWithinCapacityError, ReallocationError},
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
         ChainArenaTrait, Ptr,
@@ -52,7 +52,7 @@ pub(crate) struct Val<V> {
 /// reference counting or epoch-like structures.
 ///
 /// ```
-/// use triple_arena::{ChainInsertionError, SurjectArena, ptr_struct};
+/// use triple_arena::{SurjectArena, errors::ChainInsertionError, ptr_struct};
 ///
 /// ptr_struct!(P0);
 /// let mut a: SurjectArena<P0, String, String> = SurjectArena::new();

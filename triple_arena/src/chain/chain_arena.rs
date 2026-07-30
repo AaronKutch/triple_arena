@@ -20,7 +20,9 @@ use crate::{
 /// chains are supported.
 ///
 /// ```
-/// use triple_arena::{ChainArena, ChainInsertionError, LinkInsertKind, ptr_struct, traits::*};
+/// use triple_arena::{
+///     ChainArena, LinkInsertKind, errors::ChainInsertionError, ptr_struct, traits::*,
+/// };
 ///
 /// ptr_struct!(P0);
 /// let mut a: ChainArena<P0, String> = ChainArena::new();

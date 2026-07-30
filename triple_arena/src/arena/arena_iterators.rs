@@ -7,9 +7,11 @@ use recasting::{Recast, Recaster};
 
 use crate::{
     Arena, InvalidationOption, InvalidationResult,
-    arena::{ArenaBacking, InternalSlot},
     traits::{Advancer, ArenaTrait, Ptr},
-    utils::traits::{NonZeroInxGenericStack, PtrInx},
+    utils::{
+        InternalSlot,
+        traits::{ArenaBacking, NonZeroInxGenericStack, PtrInx},
+    },
 };
 
 /// An advancer over the valid `P`s of an `Arena`

@@ -1,15 +1,15 @@
 use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
-    AllocError, Arena, ChainInsertionError, InvalidationOption, InvalidationResult, LinkInsertKind,
-    LinkNoGen, NotWithinCapacityError, ReallocationError,
-    arena::{ArenaBacking, InternalSlot::*, from_checked_ptr, from_checked_raw},
+    Arena, InvalidationOption, InvalidationResult, LinkInsertInxKind, LinkInsertKind, LinkNoGen,
+    arena::{InternalSlot::*, from_checked_ptr, from_checked_raw},
     chain::{ChainArena, chain_iterators},
-    fundamental::{LinkInsertInxKind, NonZeroInxGenericStack, PtrGen},
+    errors::{AllocError, ChainInsertionError, NotWithinCapacityError, ReallocationError},
     traits::{
         ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait, Ptr,
         SingularGenerationArena,
     },
+    utils::traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen},
 };
 
 impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainArena<P, T, B> {

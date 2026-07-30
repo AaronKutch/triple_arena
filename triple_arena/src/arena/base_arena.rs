@@ -7,9 +7,9 @@ use core::{
 
 use crate::{
     InvalidationOption, InvalidationResult,
-    arena::ArenaBacking,
+    errors::MaxCapacityReductionError,
     traits::{ArenaCloneFromWith, ArenaTrait, Ptr, SetMaxCapacity},
-    utils::traits::{NonZeroInxGenericStack, PtrGen, PtrInx},
+    utils::traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen, PtrInx},
 };
 
 // See REF(arena_terminology)
@@ -134,7 +134,7 @@ use InternalSlot::*;
 pub struct Arena<
     P: Ptr,
     T,
-    #[cfg(feature = "alloc")] B: ArenaBacking = crate::arena::HeapBacking,
+    #[cfg(feature = "alloc")] B: ArenaBacking = crate::HeapBacking,
     #[cfg(not(feature = "alloc"))] B: ArenaBacking,
 > {
     /// # Invariants
@@ -474,10 +474,7 @@ impl<P: Ptr, T, B: ArenaBacking> SetMaxCapacity for Arena<P, T, B>
 where
     <B as ArenaBacking>::Stack<InternalSlot<P, T>>: SetMaxCapacity,
 {
-    fn set_max_capacity(
-        &mut self,
-        max_capacity: usize,
-    ) -> Result<(), crate::MaxCapacityReductionError> {
+    fn set_max_capacity(&mut self, max_capacity: usize) -> Result<(), MaxCapacityReductionError> {
         // If reducing below the logical `self.capacity()`, we may need to pop off free
         // slots off the end to achieve the ideal, instead of special casing it do this
         // and always call `canonicalize_free_list` for determinism idealness,

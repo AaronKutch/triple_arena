@@ -5,7 +5,7 @@ use core::{
 };
 
 use crate::{
-    AllocError, NotWithinCapacityError, ReallocationError,
+    errors::{AllocError, NotWithinCapacityError, ReallocationError},
     utils::traits::{NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait},
 };
 

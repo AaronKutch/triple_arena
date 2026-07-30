@@ -1,6 +1,8 @@
 use core::{num::NonZeroUsize, slice::GetDisjointMutError};
 
-use crate::{AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError};
+use crate::errors::{
+    AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError,
+};
 
 /*
 Regarding design choices, we would have a collision between two approaches: approach (1) where we want to use the full allocation given back by the allocator (some allocator interfaces can give back more than requested, because the allocator's blocks had extra space that would otherwise be unused, in fact the base `Vec` type practically _must_ accept extra capacity or else it needs to have another field added, this and avoiding confusions regarding this is ultimately why we have the `reallocate_min_capacity` function that can only guarantee a lower bound), and approach (2) where we want to rely on a hard maximum capacity and thus exact maximum length of elements (and there would be an especially dangerous bug if `reallocate_min_capacity` resulted in a larger capacity and thus actual length limit than the limit, and this would only show up occasionally). It would be annoying in (2) that the "limit" isn't actually a hard limit we can rely on at all and we would still need a further limit.

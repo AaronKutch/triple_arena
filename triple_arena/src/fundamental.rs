@@ -1,9 +1,6 @@
 mod advancer;
-mod arena_traits;
-mod errors;
+pub mod errors;
 mod extra;
-mod links;
-mod nonzero_inx_generic_stack;
 #[cfg(not(feature = "serde_support"))]
 mod ptr;
 #[cfg(feature = "serde_support")]
@@ -14,23 +11,7 @@ pub mod serde;
 pub mod serde_docs;
 
 pub use advancer::Advancer;
-pub use arena_traits::{
-    ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaInsertEntryTrait, ArenaInsertTrait,
-    ArenaTrait, ChainArenaTrait, SingularGenerationArena,
-};
-// FIXME just export the module
-pub use errors::{
-    AllocError, ChainInsertionError, DirectInsertionError, MaxCapacityReductionError,
-    NotWithinCapacityError, ReallocationError,
-};
-pub(crate) use extra::LinkInsertInxKind;
-pub use extra::{
-    IntoNonZeroUsizeIterator, InvalidationOption, InvalidationResult, LinkInsertKind, nzusize_iter,
-};
-pub use links::{Link, LinkNoGen};
-pub use nonzero_inx_generic_stack::{
-    NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, SetMaxCapacity,
-};
+pub use extra::{IntoNonZeroUsizeIterator, InvalidationOption, InvalidationResult, nzusize_iter};
 #[cfg(not(feature = "serde_support"))]
 pub use ptr::{Ptr, PtrGen, PtrInx, PtrNoGen};
 #[cfg(feature = "serde_support")]

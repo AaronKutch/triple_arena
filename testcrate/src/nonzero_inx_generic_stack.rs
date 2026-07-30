@@ -3,7 +3,7 @@ use std::{num::NonZeroUsize, slice::GetDisjointMutError};
 use expect_test::Expect;
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use triple_arena::{
-    AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError,
+    errors::{AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError},
     utils::traits::NonZeroInxGenericStack,
 };
 

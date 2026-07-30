@@ -1,20 +1,20 @@
 use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
-    AllocError, Arena, InvalidationOption, InvalidationResult, NotWithinCapacityError,
-    ReallocationError,
+    Arena, InvalidationOption, InvalidationResult,
     arena::{
-        ArenaBacking,
         InternalSlot::{self, *},
         base_arena::{from_checked_ptr, from_checked_raw},
     },
     arena_iterators::{self, Drain},
-    fundamental::NonZeroInxGenericStackPushEntryTrait,
+    errors::{AllocError, NotWithinCapacityError, ReallocationError},
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
         SingularGenerationArena,
     },
-    utils::traits::{NonZeroInxGenericStack, PtrGen, PtrInx},
+    utils::traits::{
+        ArenaBacking, NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, PtrGen, PtrInx,
+    },
 };
 
 impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {

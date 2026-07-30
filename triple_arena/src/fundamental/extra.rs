@@ -1,7 +1,5 @@
 use core::num::NonZeroUsize;
 
-use crate::traits::Ptr;
-
 /// Returned from operations that are infallible but could involve generation
 /// overflow
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -177,78 +175,4 @@ pub fn nzusize_iter(
         start,
         end_inclusive,
     })
-}
-
-/// Describes multiple ways to insert a link. All the "*Inx" variants disregard
-/// generation counters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LinkInsertKind<P: Ptr> {
-    /// Insert a single link by itself, in a single link chain that is
-    /// disconnected from anything else
-    Disconnected,
-    /// Insert a single link by itself but connected to itself, that is, a
-    /// single link cyclic chain
-    SingleLinkCyclic,
-    /// Insert a link at the end of a chain. The `P` must point to the current
-    /// end link of a noncyclic chain, and the inserted node will become the new
-    /// end of the chain
-    ChainEnd(P),
-    ChainEndInx(P::Inx),
-    /// Insert a link at the start of a chain. The `P` must point to the current
-    /// start link of a noncyclic chain, and the inserted node will become the
-    /// new start of the chain
-    ChainStart(P),
-    ChainStartInx(P::Inx),
-    /// Insert a link as the next link from the existing link  at`P`, which
-    /// could be anywhere on any chain, maintaining continuity of the chain
-    NextTo(P),
-    NextToInx(P::Inx),
-    /// Insert a link as the previous link from the existing link at `P`, which
-    /// could be anywhere on any chain, maintaining continuity of the chain
-    PrevTo(P),
-    PrevToInx(P::Inx),
-    /// Insert a link inbetween two `P` that have an interlink between them,
-    /// maintaining continuity of the chain. The insertion will fail if the two
-    /// links are not neighbors. Note that the arguments are directionally
-    /// sensitive, calling [crate::Link::next] on the link at `next_to` must
-    /// result in `prev_to` and not the other way around. Note that this can
-    /// act on a single link cyclic chain with `next_to == prev_to`, but
-    /// `next_to == prev_to` is allowed only in that case as the "inbetween"
-    /// acts upon the interlink of a link with itself. Single link chains
-    /// without a cycle can never succeed with this operation, because there
-    /// is no interlink.
-    AtInterlink {
-        next_to: P,
-        prev_to: P,
-    },
-    AtInterlinkInx {
-        next_to: P::Inx,
-        prev_to: P::Inx,
-    },
-    // (named bridge because 3 links are involved, "connect" only involves interlinks)
-    /// Insert a link as a bridge inbetween the end and start of chains. If this
-    /// is the end and start of the same chain, this creates a unified cyclic
-    /// chain. If this is the end and start of different chains, this makes a
-    /// unified linear chain.
-    Bridge {
-        end: P,
-        start: P,
-    },
-    BridgeInx {
-        end: P::Inx,
-        start: P::Inx,
-    },
-}
-
-// for internal convenience
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LinkInsertInxKind<P: Ptr> {
-    Disconnected,
-    SingleLinkCyclic,
-    ChainEndInx(P::Inx),
-    ChainStartInx(P::Inx),
-    NextToInx(P::Inx),
-    PrevToInx(P::Inx),
-    // `AtInterlinkInx` and `BridgeInx` unify for the purposes of a verified entry insertion
-    InternalConnect { next_to: P::Inx, prev_to: P::Inx },
 }

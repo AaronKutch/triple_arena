@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use core::num::NonZeroUsize;
 
 use crate::{
-    AllocError, NotWithinCapacityError, ReallocationError,
+    errors::{AllocError, NotWithinCapacityError, ReallocationError},
     utils::traits::{NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait},
 };
 

@@ -3,10 +3,9 @@
 use core::{cmp::min, num::NonZeroUsize};
 
 use crate::{
-    AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError,
-    arena::NonZeroInxVec,
+    errors::{AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError},
     utils::{
-        NonZeroInxVecPushEntry,
+        NonZeroInxVec, NonZeroInxVecPushEntry,
         traits::{NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, SetMaxCapacity},
     },
 };

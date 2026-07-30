@@ -1,6 +1,6 @@
+use crate::utils::{NonZeroInxArray, traits::NonZeroInxGenericStack};
 #[cfg(feature = "alloc")]
-use crate::arena::{NonZeroInxBoxedSlice, NonZeroInxLimitedVec, NonZeroInxVec};
-use crate::{arena::NonZeroInxArray, utils::traits::NonZeroInxGenericStack};
+use crate::utils::{NonZeroInxBoxedSlice, NonZeroInxLimitedVec, NonZeroInxVec};
 
 /// A trait describing the backing for an Arena
 ///

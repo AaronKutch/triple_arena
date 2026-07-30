@@ -13,6 +13,7 @@ extern crate alloc;
 mod arena;
 mod chain;
 mod ord;
+mod stack;
 // this would have directly been the `traits` module, but things had to be so
 // selective that we synthesize the `utils` and `traits` modules instead
 mod fundamental;
@@ -20,35 +21,33 @@ mod surject;
 
 // reexport for the macros to use
 pub use arena::{Arena, arena_iterators};
-pub use chain::{ChainArena, chain_iterators};
+pub(crate) use chain::LinkInsertInxKind;
+pub use chain::{ChainArena, Link, LinkInsertKind, LinkNoGen, chain_iterators};
 /// Documentation on arenas and serialization
 #[cfg(feature = "serde_support")]
 pub use fundamental::serde_docs;
-pub use fundamental::{
-    AllocError, ChainInsertionError, DirectInsertionError, InvalidationOption, InvalidationResult,
-    Link, LinkInsertKind, LinkNoGen, MaxCapacityReductionError, NotWithinCapacityError,
-    ReallocationError,
-};
+pub use fundamental::{InvalidationOption, InvalidationResult, errors};
 pub use ord::{OrdArena, ord_iterators};
 pub use surject::{SurjectArena, surject_iterators};
 
-pub use crate::arena::StackBacking;
+pub use crate::stack::StackBacking;
 #[cfg(feature = "alloc")]
-pub use crate::arena::{FixedHeapBacking, HeapBacking, LimitedHeapBacking};
+pub use crate::stack::{FixedHeapBacking, HeapBacking, LimitedHeapBacking};
 
 /// Special utilities for advanced usage
 pub mod utils {
+    // FIXME rename? or put in another module, do the same with InternalSlot
     #[cfg(feature = "alloc")]
-    pub use crate::arena::{
+    pub use crate::stack::{
         NonZeroInxBoxedSlice, NonZeroInxBoxedSlicePushEntry, NonZeroInxLimitedVec,
         NonZeroInxLimitedVecPushEntry, NonZeroInxVec, NonZeroInxVecPushEntry,
     };
-    // FIXME rename? or put in another module, do the same with InternalSlot
-    pub use crate::ord::Node;
     pub use crate::{
-        arena::{ArenaInsertEntry, InternalSlot, NonZeroInxArray, NonZeroInxArrayPushEntry},
+        arena::{ArenaInsertEntry, InternalSlot},
         chain::{ChainArena, chain_iterators},
         fundamental::PtrNoGen,
+        ord::Node,
+        stack::{NonZeroInxArray, NonZeroInxArrayPushEntry},
     };
     /// A reexport used by the macros
     #[cfg(feature = "serde_support")]
@@ -61,9 +60,9 @@ pub mod utils {
     /// Traits for [crate::utils]
     pub mod traits {
         pub use crate::{
-            arena::ArenaBacking,
-            fundamental::{
-                NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, PtrGen, PtrInx,
+            fundamental::{PtrGen, PtrInx},
+            stack::{
+                ArenaBacking, NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait,
                 SetMaxCapacity,
             },
         };
@@ -74,9 +73,13 @@ pub mod utils {
 pub mod traits {
     pub use recasting::{Recast, Recaster};
 
-    pub use crate::fundamental::{
-        Advancer, ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaInsertEntryTrait,
-        ArenaInsertTrait, ArenaTrait, ChainArenaTrait, Ptr, SetMaxCapacity,
-        SingularGenerationArena,
+    pub use crate::{
+        arena::{
+            ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaInsertEntryTrait, ArenaInsertTrait,
+            ArenaTrait, SingularGenerationArena,
+        },
+        chain::ChainArenaTrait,
+        fundamental::{Advancer, Ptr},
+        stack::SetMaxCapacity,
     };
 }
