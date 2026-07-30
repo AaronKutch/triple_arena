@@ -27,12 +27,12 @@ pub use chain::{ChainArena, Link, LinkInsertKind, LinkNoGen, chain_iterators};
 #[cfg(feature = "serde_support")]
 pub use fundamental::serde_docs;
 pub use fundamental::{InvalidationOption, InvalidationResult, errors};
-pub use ord::{OrdArena, OrdPair, SimpleOrdItem, ord_iterators};
+pub use ord::{SimpleOrdArena, SimpleOrdItem, ord_iterators};
 pub use surject::{SurjectArena, surject_iterators};
 
-pub use crate::stack::StackBacking;
 #[cfg(feature = "alloc")]
 pub use crate::stack::{FixedHeapBacking, HeapBacking, LimitedHeapBacking};
+pub use crate::{ord::OrdPair, stack::StackBacking};
 
 /// Special utilities for advanced usage
 pub mod utils {

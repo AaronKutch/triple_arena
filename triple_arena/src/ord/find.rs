@@ -1,12 +1,12 @@
 use core::cmp::{Ordering, min};
 
 use crate::{
-    OrdArena,
+    SimpleOrdArena, SimpleOrdItem,
     traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
     utils::{ChainArena, traits::ArenaBacking},
 };
 
-impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
+impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
@@ -44,8 +44,8 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             }
             if let Some(prev) = prev {
                 if Ord::cmp(
-                    &this.a.get_inx(prev.inx()).unwrap().1.k,
-                    &this.a.get_inx(p.inx()).unwrap().1.k,
+                    &this.a.get_inx(prev.inx()).unwrap().1.t.key(),
+                    &this.a.get_inx(p.inx()).unwrap().1.t.key(),
                 ) == Ordering::Greater
                 {
                     return Err("incorrect ordering");
@@ -142,14 +142,14 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Finds a `Ptr` with an associated key that is equal to `k`. Returns
     /// `None` if such a key is not in the arena.
     #[must_use]
-    pub fn find_key(&self, k: &K) -> Option<P> {
+    pub fn find_key<'a>(&'a self, k: T::Key<'a>) -> Option<P> {
         if self.a.is_empty() {
             return None;
         }
         let mut p = self.root;
         loop {
             let (generation, node) = self.a.get_inx(p).unwrap();
-            match Ord::cmp(k, &node.k) {
+            match Ord::cmp(&k, &node.t.key()) {
                 Ordering::Less => p = node.p_tree0?,
                 Ordering::Equal => break Some(Ptr::_from_raw(p, generation)),
                 Ordering::Greater => p = node.p_tree1?,
@@ -162,7 +162,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// within `num` comparisons, or `p_init` is invalid, a normal search is
     /// used. Returns `None` if the key was not found.
     #[must_use]
-    pub fn find_key_linear(&self, p_init: P, num: usize, k: &K) -> Option<P> {
+    pub fn find_key_linear<'a>(&'a self, p_init: P, num: usize, k: T::Key<'a>) -> Option<P> {
         if !self.a.contains(p_init) {
             return self.find_key(k);
         }
@@ -175,7 +175,7 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         for _ in 0..num {
             let (generation, link) = self.a.get_inx_link_no_gen(p).unwrap();
             let node = &link.t;
-            match Ord::cmp(k, &node.k) {
+            match Ord::cmp(&k, &node.t.key()) {
                 Ordering::Less => {
                     if direction == Some(true) {
                         break;
@@ -213,14 +213,14 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// the similar entry, and `Ordering::Greater` indicating that `k` is
     /// greater than the similar entry. `None` is returned if `self.is_empty()`.
     #[must_use]
-    pub fn find_similar_key(&self, k: &K) -> Option<(P, Ordering)> {
+    pub fn find_similar_key<'a>(&'a self, k: T::Key<'a>) -> Option<(P, Ordering)> {
         if self.a.is_empty() {
             return None;
         }
         let mut p = self.root;
         loop {
             let (generation, node) = self.a.get_inx(p).unwrap();
-            match Ord::cmp(k, &node.k) {
+            match Ord::cmp(&k, &node.t.key()) {
                 Ordering::Less => {
                     if let Some(p_tree0) = node.p_tree0 {
                         p = p_tree0;
@@ -243,17 +243,22 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Combines the behaviors of [OrdArena::find_similar_key] and
     /// [OrdArena::find_key_linear]
     #[must_use]
-    pub fn find_similar_key_linear(&self, p_init: P, num: usize, k: &K) -> Option<(P, Ordering)> {
-        if !self.a.contains(p_init) {
+    pub fn find_similar_key_linear<'a>(
+        &'a self,
+        p_init: P::Inx,
+        num: usize,
+        k: T::Key<'a>,
+    ) -> Option<(P, Ordering)> {
+        if self.a.get_inx(p_init).is_none() {
             return self.find_similar_key(k);
         }
-        let mut p = p_init.inx();
+        let mut p = p_init;
         let mut direction = None;
         for _ in 0..num {
             let (generation, link) = self.a.get_inx_link_no_gen(p).unwrap();
             let node = &link.t;
             let p_with_gen = Ptr::_from_raw(p, generation);
-            match Ord::cmp(k, &node.k) {
+            match Ord::cmp(&k, &node.t.key()) {
                 Ordering::Less => {
                     if direction == Some(true) {
                         return Some((p_with_gen, Ordering::Less));
@@ -283,8 +288,8 @@ impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     }
 }
 
-/// Does not require `K: Ord`
-impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
+/// Does not require `T: SimpleOrdItem`
+impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Finds a `Ptr` through binary search with a user-provided function `f`.
     /// `f` is provided a `P, &K, &V` triple of the node the binary search is
     /// currently at. Will go in a `Ordering::Less` direction if `f` returns
@@ -292,7 +297,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// returns the `P` when `Ordering::Equal` is returned. Returns
     /// `None` if `self.is_empty` or an `Ordering::Equal` case is not
     /// encountered by the end of the binary search.
-    pub fn find_with<F: FnMut(P, &K, &V) -> Ordering>(&self, mut f: F) -> Option<P> {
+    pub fn find_with<F: FnMut(P, &T) -> Ordering>(&self, mut f: F) -> Option<P> {
         if self.a.is_empty() {
             return None;
         }
@@ -300,7 +305,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         loop {
             let (generation, node) = self.a.get_inx(p).unwrap();
             let p_with_gen = Ptr::_from_raw(p, generation);
-            match f(p_with_gen, &node.k, &node.v) {
+            match f(p_with_gen, &node.t) {
                 Ordering::Less => p = node.p_tree0?,
                 Ordering::Equal => break Some(p_with_gen),
                 Ordering::Greater => p = node.p_tree1?,
@@ -313,7 +318,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// returned ordering will be `Ordering::Equal`), it will instead return a
     /// similar `Ptr` with the last `Ordering` returned by `f`. `None` is only
     /// returned if `self.is_empty()`
-    pub fn find_similar_with<F: FnMut(P, &K, &V) -> Ordering>(
+    pub fn find_similar_with<F: FnMut(P, &T) -> Ordering>(
         &self,
         mut f: F,
     ) -> Option<(P, Ordering)> {
@@ -324,7 +329,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         loop {
             let (generation, node) = self.a.get_inx(p).unwrap();
             let p_with_gen = Ptr::_from_raw(p, generation);
-            match f(p_with_gen, &node.k, &node.v) {
+            match f(p_with_gen, &node.t) {
                 Ordering::Less => {
                     if let Some(tmp) = node.p_tree0 {
                         p = tmp;
@@ -387,19 +392,18 @@ res.unwrap();
 #[doc(hidden)]
 #[cfg(feature = "alloc")]
 #[allow(clippy::type_complexity)]
-impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug, B: ArenaBacking>
-    OrdArena<P, K, V, B>
+impl<P: Ptr, T: SimpleOrdItem + Clone + alloc::fmt::Debug, B: ArenaBacking>
+    SimpleOrdArena<P, T, B>
 {
-    pub fn _debug_arena(&self) -> crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>), B> {
+    pub fn _debug_arena(&self) -> crate::Arena<P, (u8, T, Option<P>, Option<P>, Option<P>), B> {
         use crate::{traits::ArenaTrait, utils::traits::PtrGen};
 
-        let mut res: crate::Arena<P, (u8, K, V, Option<P>, Option<P>, Option<P>), B> =
+        let mut res: crate::Arena<P, (u8, T, Option<P>, Option<P>, Option<P>), B> =
             crate::Arena::new();
         self.a.clone_to_arena(&mut res, |_, link| {
             (
                 link.t.rank,
-                link.t.k.clone(),
-                link.t.v.clone(),
+                link.t.t.clone(),
                 link.t.p_tree0.map(|inx| Ptr::_from_raw(inx, PtrGen::one())),
                 link.t.p_back.map(|inx| Ptr::_from_raw(inx, PtrGen::one())),
                 link.t.p_tree1.map(|inx| Ptr::_from_raw(inx, PtrGen::one())),
@@ -408,6 +412,14 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug, B
         // fix the generations
         let mut adv = res.advancer();
         while let Some(p) = adv.advance(&res) {
+            if let Some(ref mut tmp) = res.get_mut(p).unwrap().2 {
+                let generation = self
+                    .a
+                    .get_inx(tmp.inx())
+                    .map(|x| x.0)
+                    .unwrap_or(<P::Gen as PtrGen>::one());
+                *tmp = Ptr::_from_raw(tmp.inx(), generation);
+            }
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().3 {
                 let generation = self
                     .a
@@ -417,14 +429,6 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug, B
                 *tmp = Ptr::_from_raw(tmp.inx(), generation);
             }
             if let Some(ref mut tmp) = res.get_mut(p).unwrap().4 {
-                let generation = self
-                    .a
-                    .get_inx(tmp.inx())
-                    .map(|x| x.0)
-                    .unwrap_or(<P::Gen as PtrGen>::one());
-                *tmp = Ptr::_from_raw(tmp.inx(), generation);
-            }
-            if let Some(ref mut tmp) = res.get_mut(p).unwrap().5 {
                 let generation = self
                     .a
                     .get_inx(tmp.inx())
@@ -449,11 +453,10 @@ impl<P: Ptr, K: Ord + Clone + alloc::fmt::Debug, V: Clone + alloc::fmt::Debug, B
             let n = self.a.get(p).unwrap();
             writeln!(
                 s,
-                "(inx: {:2?}, k: {:3?}, v: {:3?}, rank: {:2?}, p_back: {:2?}, p_tree0: {:2?}, \
-                 p_tree1: {:2?})",
+                "(inx: {:2?}, t: {:10?}, rank: {:2?}, p_back: {:2?}, p_tree0: {:2?}, p_tree1: \
+                 {:2?})",
                 p.inx(),
-                n.k,
-                n.v,
+                n.t,
                 n.rank,
                 n.p_back,
                 n.p_tree0,

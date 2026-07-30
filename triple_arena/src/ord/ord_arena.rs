@@ -2,17 +2,14 @@
 
 use core::{
     borrow::Borrow,
-    cmp::Ordering,
     fmt::{self, Debug},
-    num::NonZeroUsize,
     ops::{Index, IndexMut},
 };
 
 use crate::{
-    Arena, ChainArena, InvalidationOption, Link, LinkNoGen,
-    errors::{AllocError, ReallocationError},
-    traits::{Advancer, ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
-    utils::traits::{ArenaBacking, PtrInx},
+    Arena, ChainArena, InvalidationOption, LinkNoGen,
+    traits::{ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
+    utils::traits::ArenaBacking,
 };
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
@@ -51,24 +48,37 @@ use crate::{
 // separated anyway (at least unless there is an `upcast_key` equivalent like
 // what `iddqd` has, I have named `SimpleOrdItem` in case I want an associated
 // value which would require a new trait `OrdItem`)
+/*
+// this couldn't implement `ArenaTrait` (or maybe it could on values?)
+pub struct OrdArena<
+    P: Ptr,
+    K,
+    V,
+    #[cfg(feature = "alloc")] B: ArenaBacking = crate::HeapBacking,
+    #[cfg(not(feature = "alloc"))] B: ArenaBacking,
+> {
+    pub(crate) a: SimpleOrdArena<P, OrdPair<K, V>, B>,
+}
+*/
 
-/// Internal node for a `SimpleOrdArena`
+// FIXME have a test that makes sure only bounds that are absolutely required
+// are used
+
+/// Internal node for a [SimpleOrdArena]
 #[derive(Clone)]
-pub struct Node<P: Ptr, K, V> {
-    pub k: K,
-    pub v: V,
-    // Pointer back to parent
+pub struct Node<P: Ptr, T> {
+    pub t: T,
+    /// Pointer back to parent
     pub p_back: Option<P::Inx>,
-    // Pointer to left subtree
+    /// Pointer to left subtree
     pub p_tree0: Option<P::Inx>,
-    // Pointer to right subtree
+    /// Pointer to right subtree
     pub p_tree1: Option<P::Inx>,
-    // we do not have to worry about overflow because the worst case is that the root rank is
-    // 2*lb(len), meaning that even i128::MAX could not overflow this.
+    /// The rank of the node. We do not have to worry about overflow because the
+    /// worst case is that the root rank is `2*lb(len)`, meaning that even
+    /// `i128::MAX` could not overflow this.
     pub rank: u8,
 }
-
-// FIXME SimpleOrdArena<P, K>, OrdArena<P, K, V>
 
 /// An Ordered Arena with three parameters: a `P: Ptr` type that gives single
 /// indirection access to elements, a `K: Ord` key type that is used to define
@@ -145,58 +155,24 @@ pub struct Node<P: Ptr, K, V> {
 ///
 /// Note: due to a known problem with cache locality, insert and find operations
 /// can take twice the time they would on a `BTreeMap`. A future `triple_arena`
-/// version will find a way to fix this, however it should still be faster in
+/// version will find a way to fix this for `OrdArena` (since its keys and
+/// values can be separated internally), however it should still be faster in
 /// many cases if `Ptr`s can be reused multiple times. Try to minimize
 /// the points where `find_key` is required.
-pub struct OrdArena<
+pub struct SimpleOrdArena<
     P: Ptr,
-    K,
-    V,
+    T,
     #[cfg(feature = "alloc")] B: ArenaBacking = crate::HeapBacking,
     #[cfg(not(feature = "alloc"))] B: ArenaBacking,
 > {
+    // these are invalid if `a.is_empty()`
     pub(crate) root: P::Inx,
     pub(crate) first: P::Inx,
     pub(crate) last: P::Inx,
-    pub(crate) a: ChainArena<P, Node<P, K, V>, B>,
+    pub(crate) a: ChainArena<P, Node<P, T>, B>,
 }
 
-impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
-    pub fn new() -> Self {
-        Self {
-            root: P::invalid().inx(),
-            first: P::invalid().inx(),
-            last: P::invalid().inx(),
-            a: ChainArena::new(),
-        }
-    }
-
-    /// See [ArenaTrait::with_min_capacity]
-    pub fn with_min_capacity(min_capacity: usize) -> Result<Self, AllocError> {
-        Ok(Self {
-            root: P::invalid().inx(),
-            first: P::invalid().inx(),
-            last: P::invalid().inx(),
-            a: ChainArena::with_min_capacity(min_capacity)?,
-        })
-    }
-
-    /// Returns the total number of valid `Ptr`s, or equivalently the number of
-    /// key-value entries in the arena.
-    pub fn len(&self) -> usize {
-        self.a.len()
-    }
-
-    /// Returns if the arena is empty
-    pub fn is_empty(&self) -> bool {
-        self.a.is_empty()
-    }
-
-    /// Returns the key-value capacity of the arena
-    pub fn capacity(&self) -> usize {
-        self.a.capacity()
-    }
-
+impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Follows [Arena::generation]
     pub fn generation(&self) -> P::Gen {
         self.a.generation()
@@ -210,14 +186,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Follows [Arena::inc_generation]
     pub fn inc_generation(&mut self) -> InvalidationOption<()> {
         self.a.inc_generation()
-    }
-
-    /// Follows [ArenaTrait::reallocate_min_capacity]
-    pub fn reallocate_min_capacity(
-        &mut self,
-        min_capacity: usize,
-    ) -> Result<(), ReallocationError> {
-        self.a.reallocate_min_capacity(min_capacity)
     }
 
     /// Returns the `Ptr` to the minimum key. Runs in `O(1)` time. Returns
@@ -244,78 +212,24 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         }
     }
 
-    /// Returns if `p` is a valid `Ptr`
-    pub fn contains(&self, p: P) -> bool {
-        self.a.contains(p)
-    }
-
-    /// Returns a reference to the key-value pair pointed to by `p`
-    #[must_use]
-    pub fn get(&self, p: P) -> Option<(&K, &V)> {
-        self.a.get(p).map(|node| (&node.k, &node.v))
-    }
-
-    /// Returns a reference to the key pointed to by `p`
-    #[must_use]
-    pub fn get_key(&self, p: P) -> Option<&K> {
-        self.a.get(p).map(|node: &Node<P, K, V>| &node.k)
-    }
-
-    /// Returns a reference to the value pointed to by `p`
-    #[must_use]
-    pub fn get_val(&self, p: P) -> Option<&V> {
-        self.a.get(p).map(|node| &node.v)
-    }
-
-    /// Returns a mutable reference to the value pointed to by `p`
-    #[must_use]
-    pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
-        self.a.get_mut(p).map(|t| &mut t.v)
-    }
-
-    /// Returns a mutable reference to the key-value pair pointed to by `p`
-    #[must_use]
-    pub fn get_mut(&mut self, p: P) -> Option<(&K, &mut V)> {
-        self.a.get_mut(p).map(|t| (&t.k, &mut t.v))
-    }
-
-    /// Returns the full `Link<P, (&K, &V)>`. Using [prev](crate::Link::prev) on
-    /// the result gives the `Ptr` to the next lesser key, and using
-    /// [next](crate::Link::next) gives the `Ptr` to the next greater key.
-    #[must_use]
-    pub fn get_link(&self, p: P) -> Option<Link<P, (&K, &V)>> {
+    /// Returns the generation associated with `p` and a `LinkNoGen<P, &T>`.
+    /// Using [prev](crate::Link::prev) on the result gives the `Ptr` to the
+    /// next lesser key, and using [next](crate::Link::next) gives the `Ptr`
+    /// to the next greater key.
+    pub fn get_inx_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &T>)> {
         self.a
-            .get_link(p)
-            .map(|link| Link::new(link.prev_next(), (&link.t.k, &link.t.v)))
+            .get_inx_link_no_gen(p)
+            .map(|(generation, link)| (generation, LinkNoGen::new(link.prev_next(), &link.t.t)))
     }
 
-    /// Returns the generation associated with `p` and a `LinkNoGen<P, &K>`, the
-    /// interlinks of which point to neighboring pairs.
-    pub fn get_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, (&K, &V)>)> {
-        self.a.get_inx_link_no_gen(p).map(|(generation, link)| {
-            (
-                generation,
-                LinkNoGen::new(link.prev_next(), (&link.t.k, &link.t.v)),
-            )
-        })
+    // this is safe for the `SimpleOrdArena`
+
+    /// Returns a whole internal node
+    pub fn get_inx_node(&self, p: P::Inx) -> Option<(P::Gen, &LinkNoGen<P, Node<P, T>>)> {
+        self.a.get_inx_link_no_gen(p)
     }
 
-    /// Invalidates all references to the entry pointed to by `p`, and returns a
-    /// new valid reference. Does no invalidation and returns `None` if `p` is
-    /// invalid.
-    #[must_use]
-    pub fn invalidate(&mut self, p: P) -> Option<P> {
-        // the tree pointers do not have generation counters
-        self.a.invalidate(p).allow()
-    }
-
-    /// Drops all keys and values from the arena and invalidates all pointers
-    /// previously created from it. This has no effect on the allocated
-    /// capacity.
-    pub fn clear(&mut self) {
-        self.a.clear().allow();
-    }
-
+    /*
     /// Compresses the arena by moving around entries to be able to shrink the
     /// capacity down to the length. All key-value relations remain, but all
     /// `Ptr`s are invalidated. New `Ptr`s to the entries can be found again
@@ -415,53 +329,32 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             }
         }
     }
+    */
 
     /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
     /// `self`, with the ordering preserved in a single chain
     /// ([next](crate::Link::next) points to the next greater entry)
-    pub fn clone_to_chain_arena<U, F: FnMut(P, &K, &V) -> U>(
+    pub fn clone_to_chain_arena<U, F: FnMut(P, &T) -> U>(
         &self,
         chain_arena: &mut ChainArena<P, U, B>,
         mut map: F,
     ) {
-        chain_arena.clone_from_with(&self.a, |p, link| map(p, &link.t.k, &link.t.v));
+        chain_arena.clone_from_with(&self.a, |p, link| map(p, &link.t.t));
     }
 
     /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
     /// `self`
-    pub fn clone_to_arena<U, F: FnMut(P, &K, &V) -> U>(
-        &self,
-        arena: &mut Arena<P, U, B>,
-        mut map: F,
-    ) {
+    pub fn clone_to_arena<U, F: FnMut(P, &T) -> U>(&self, arena: &mut Arena<P, U, B>, mut map: F) {
         arena
-            .clone_from_with(&self.a.a, |p, link| map(p, &link.t.k, &link.t.v))
+            .clone_from_with(&self.a.a, |p, link| map(p, &link.t.t))
             .unwrap();
     }
 }
 
-impl<P: Ptr, K: Clone, V0, B: ArenaBacking> OrdArena<P, K, V0, B> {
-    /// Has the same properties of [Arena::clone_from_with]. Clones the keys.
-    pub fn clone_from_with<V1, F: FnMut(P, &V1) -> V0>(
-        &mut self,
-        source: &OrdArena<P, K, V1, B>,
-        mut map: F,
-    ) {
-        self.a.clone_from_with(&source.a, |p, link| Node {
-            k: link.t.k.clone(),
-            v: map(p, &link.t.v),
-            p_back: link.t.p_back,
-            p_tree0: link.t.p_tree0,
-            p_tree1: link.t.p_tree1,
-            rank: link.t.rank,
-        })
-    }
-}
-
-/// Implemented if `K: Clone` and `V: Clone`.
-impl<P: Ptr, K: Clone, V: Clone, B: ArenaBacking> Clone for OrdArena<P, K, V, B> {
+/// Implemented if `T: Clone`.
+impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for SimpleOrdArena<P, T, B> {
     /// Has the `Ptr` preserving properties of [Arena::clone]
     fn clone(&self) -> Self {
         Self {
@@ -481,54 +374,53 @@ impl<P: Ptr, K: Clone, V: Clone, B: ArenaBacking> Clone for OrdArena<P, K, V, B>
     }
 }
 
-impl<P: Ptr, K, V, B: ArenaBacking> Default for OrdArena<P, K, V, B> {
+impl<P: Ptr, T, B: ArenaBacking> Default for SimpleOrdArena<P, T, B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<P: Ptr, K, V, B: ArenaBacking, Q: Borrow<P>> Index<Q> for OrdArena<P, K, V, B> {
-    type Output = V;
+impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> Index<Q> for SimpleOrdArena<P, T, B> {
+    type Output = T;
 
-    fn index(&self, inx: Q) -> &V {
+    fn index(&self, inx: Q) -> &T {
         let p: P = *inx.borrow();
-        self.get_val(p)
-            .expect("indexed `OrdArena` with invalidated `Ptr`")
+        self.get(p)
+            .expect("indexed `SimpleOrdArena` with invalidated `Ptr`")
     }
 }
 
-impl<P: Ptr, K, V, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for OrdArena<P, K, V, B> {
-    fn index_mut(&mut self, inx: Q) -> &mut V {
+impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for SimpleOrdArena<P, T, B> {
+    fn index_mut(&mut self, inx: Q) -> &mut T {
         let p: P = *inx.borrow();
-        self.get_val_mut(p)
-            .expect("indexed `OrdArena` with invalidated `Ptr`")
+        self.get_mut(p)
+            .expect("indexed `SimpleOrdArena` with invalidated `Ptr`")
     }
 }
 
-impl<P: Ptr, K: Debug, V: Debug, B: ArenaBacking> Debug for OrdArena<P, K, V, B> {
+impl<P: Ptr, T: Debug, B: ArenaBacking> Debug for SimpleOrdArena<P, T, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO here and in other triple `Debug`s we need a flat triple
         f.debug_map()
-            .entries(self.iter().map(|triple| (triple.0, (triple.1, triple.2))))
+            .entries(self.iter().map(|(p, t)| (p, t)))
             .finish()
     }
 }
 
-impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> OrdArena<P, K, V, B> {
-    /// Checks if all `(K, V)` pairs are equal. This is sensitive to
+// FIXME
+/*
+impl<P: Ptr, T: PartialEq, B0: ArenaBacking> SimpleOrdArena<P, T, B0> {
+    /// Checks if there is the same number of `T` and if all `T` are equal. This is sensitive to
     /// nonhereditary ordering, but does not compare pointers, generations,
     /// arena capacities, internal tree configuration, or `self.generation()`.
-    pub fn canonical_eq(&self, other: &OrdArena<P, K, V, B>) -> bool {
+    pub fn canonical_eq<Q: Ptr, B1>(&self, other: &SimpleOrdArena<Q, T, B1>) -> bool {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
             if let Some(p1) = adv1.advance(other) {
                 let node0 = self.a.get_inx_unwrap(p0.inx());
                 let node1 = other.a.get_inx_unwrap(p1.inx());
-                if node0.k != node1.k {
-                    return false;
-                }
-                if node0.v != node1.v {
+                if node0.t != node1.t {
                     return false;
                 }
             } else {
@@ -539,13 +431,13 @@ impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> OrdArena<P, K, V, B> {
     }
 }
 
-impl<P: Ptr, K: PartialOrd, V: PartialOrd, B: ArenaBacking> OrdArena<P, K, V, B> {
-    /// Orders as if the arena were a `Vec<(K, V)>` in order, returning early if
+impl<P: Ptr, T: PartialOrd, B: ArenaBacking> SimpleOrdArena<P, T, B> {
+    /// Orders as if the arena were a `Vec<T>` in order (note this is ordering over the order of the `T` itself and not the substructure through [SimpleOrdItem::key]), returning early if
     /// the prefix had a difference, checking the key before the value in the
     /// pair, and returning based on which is longer. This is sensitive to
     /// nonhereditary ordering, but does not compare pointers, generations,
     /// arena capacities, internal tree configuration, or `self.generation()`.
-    pub fn canonical_partial_cmp(&self, other: &OrdArena<P, K, V, B>) -> Option<Ordering> {
+    pub fn canonical_partial_cmp(&self, other: &SimpleOrdArena<P, T, B>) -> Option<Ordering> {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
@@ -604,3 +496,4 @@ impl<P: Ptr, K: Ord, V: Ord, B: ArenaBacking> OrdArena<P, K, V, B> {
         }
     }
 }
+*/

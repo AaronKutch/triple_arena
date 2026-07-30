@@ -1,14 +1,21 @@
 use crate::{
-    OrdArena,
+    InvalidationResult, SimpleOrdArena,
     traits::{ArenaTrait, ChainArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 
-impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
+impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Removes the key-value pair at `p`. Returns `None` if `p` is invalid.
     #[must_use]
-    pub fn remove(&mut self, p: P) -> Option<(K, V)> {
-        let link = self.a.remove_link_no_gen(p).allow()?;
+    pub(crate) fn internal_remove(
+        &mut self,
+        p: P::Inx,
+    ) -> InvalidationResult<(<P as Ptr>::Gen, T)> {
+        let (generation, link, o) = match self.a.remove_inx_link_no_gen(p) {
+            InvalidationResult::Success((generation, link)) => (generation, link, false),
+            InvalidationResult::GenerationOverflow((generation, link)) => (generation, link, true),
+            InvalidationResult::InvalidPtr => return InvalidationResult::InvalidPtr,
+        };
         // when removing a nonleaf node of the tree, its place in the tree is
         // replaced by a similar node, and if that node is nonleaf then it is
         // replaced again. We reach a leaf node in 2 replacements in the worst case:
@@ -39,7 +46,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
 
         // previous configuration of displaced node
         let (mut p_d, mut d_tree0, mut d_tree1, mut d_back, mut d_rank, mut d_prev, mut d_next) = (
-            p.inx(),
+            p,
             link.t.p_tree0,
             link.t.p_tree1,
             link.t.p_back,
@@ -47,7 +54,11 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             link.prev(),
             link.next(),
         );
-        let res = Some((link.t.k, link.t.v));
+        let res = if o {
+            InvalidationResult::GenerationOverflow((generation, link.t.t))
+        } else {
+            InvalidationResult::Success((generation, link.t.t))
+        };
         if self.a.is_empty() {
             // last node to be removed, our invariants require that `self.a.is_empty` be
             // checked to determine whether or not `self.first`, etc are valid.
@@ -87,7 +98,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                 );
                 r.t.rank = d_rank;
                 if let Some(d_back) = d_back {
-                    if d_back != p.inx() {
+                    if d_back != p {
                         r.t.p_back = Some(d_back);
                         let n = self.a.get_inx_mut_unwrap(d_back);
                         if n.p_tree1 == Some(p_d) {

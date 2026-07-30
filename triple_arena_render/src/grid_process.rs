@@ -5,7 +5,7 @@ use std::{
     num::NonZeroU64,
 };
 
-use triple_arena::{Arena, ChainArena, LinkNoGen, OrdArena, ptr_struct, traits::*};
+use triple_arena::{Arena, ChainArena, LinkNoGen, OrdPair, SimpleOrdArena, ptr_struct, traits::*};
 
 use crate::{DebugNodeTrait, RenderError, render_grid::RenderGrid};
 
@@ -314,7 +314,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     // the `(P, P)` tuple is ordered for uniqueness, the first weight indicates `<`
     // preference and the second `>`. The bool allows only one extra layer of new
     // transitives to be made.
-    let mut orderings = OrdArena::<P, (P, P), (u64, u64, bool)>::new();
+    let mut orderings = SimpleOrdArena::<P, OrdPair<(P, P), (u64, u64, bool)>>::new();
     let mut f = |p0: P, p1: P, swap: bool, init_weight: u64| {
         let (pair, mut weight) = match p0.cmp(&p1) {
             Ordering::Less => ((p0, p1), (init_weight, 0)),
@@ -326,7 +326,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         }
         if weight != (0, 0) {
             if let Some(p_ordering) = orderings.find_key(&pair) {
-                let tmp = orderings.get_val_mut(p_ordering).unwrap();
+                let tmp = &mut orderings.get_mut(p_ordering).unwrap().v;
                 tmp.0 = tmp.0.saturating_add(weight.0);
                 tmp.1 = tmp.1.saturating_add(weight.1);
             } else {

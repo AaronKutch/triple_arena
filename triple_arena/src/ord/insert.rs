@@ -2,97 +2,154 @@
 
 use core::{cmp::Ordering, mem};
 
-use super::ord_arena::Node;
 use crate::{
-    LinkInsertKind, OrdArena,
+    LinkInsertKind, SimpleOrdArena, SimpleOrdItem,
+    arena::ArenaInsertEntryTrait,
+    errors::NotWithinCapacityError,
     traits::{ArenaTrait, ChainArenaTrait, Ptr},
-    utils::traits::ArenaBacking,
+    utils::{Node, traits::ArenaBacking},
 };
 
-impl<P: Ptr, K: Ord, V, B: ArenaBacking> OrdArena<P, K, V, B> {
-    /// Inserts key `v` with associated value `v` into `self` and returns a
-    /// `Ptr` to it. If the inserted key is equal to a key already contained
-    /// in `self`, the new value replaces the old value, and `k` and the old
-    /// value are returned. The existing key is not replaced, which should
-    /// not make a difference unless special `Ord` definitions are being
-    /// used.
-    #[must_use]
-    pub fn insert(&mut self, k: K, v: V) -> (P, Option<(K, V)>) {
-        if self.is_empty() {
-            (self.insert_empty(k, v).unwrap(), None)
-        } else {
-            let (p, direction) = self.find_similar_key(&k).unwrap();
-            self.insert_inx_manual_unwrap(p.inx(), direction, k, v)
-        }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrdInsertKind<P: Ptr> {
+    /// Inserts an item into an empty arena. Fails if the arena is not empty.
+    Empty,
+    /// Normal hereditary insertion. If the inserted key is equal to a key
+    /// already contained in `self`, the new item replaces the old item, and
+    /// the old item is returned.
+    Normal,
+    /// If the inserted key is equal to an already contained key, it does not
+    /// replace the entry and is instead inserted in addition to it,
+    /// such that there can be multiple neighboring items with equal keys.
+    /// Future calls like [SimpleOrdArena::find_key] will find one of these, but
+    /// it could find any one of the equal keys.
+    Nonhereditary,
+    /// The same as normal insertion, except it starts by using linear
+    /// comparisons starting at `p_init`. If the insertion point is not
+    /// found within `num` comparisons, or `p_init` is invalid, a normal
+    /// insertion is used.
+    Linear { p_init: P::Inx, num: usize },
+    /// Combines nonhereditary insertion with linear startup
+    NonhereditaryLinear { p_init: P::Inx, num: usize },
+    /// Manual insertion. Does not enforce key orderings, and instead accepts
+    /// whatever `direction` says. If `direction` is `Ordering::Equal`, the
+    /// item at `p_target` is replaced and returned. If `direction` is
+    /// `Ordering::Less`, the pair is inserted as a new entry before
+    /// `p_target`. If `direction` is `Ordering::Greater`, the pair is
+    /// inserted after `p_target`. Returns the replaced pair if there was one.
+    /// Returns the inserted element if `p_target` was invalid.
+    Manual {
+        p_target: P::Inx,
+        direction: Ordering,
+    },
+}
+
+pub struct SimpleOrdArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
+    // REF(insertion_idempotency) we drop the entry when constructing this and are relying on
+    // idempotency
+    a: &'a mut SimpleOrdArena<P, T, B>,
+    // the `Ptr` of the new link when inserted
+    p: P,
+    // this must be checked to be valid
+    kind: OrdInsertKind<P>,
+}
+
+impl<'a, P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArenaInsertEntry<'a, P, T, B> {
+    pub fn ptr(&self) -> P {
+        self.p
     }
 
-    /// Inserts key `v` with associated value `v` into `self` and returns a
-    /// `Ptr` to it. If the inserted key is equal to a key already contained in
-    /// `self`, it does not replace the entry and is inserted in addition to it,
-    /// such that there can be multiple neighboring entries with equal keys.
-    /// Future calls to `self.find_key` could find any one of the equal keys.
-    pub fn insert_nonhereditary(&mut self, k: K, v: V) -> P {
-        if self.is_empty() {
-            self.insert_empty(k, v).unwrap()
-        } else {
-            let (p, mut direction) = self.find_similar_key(&k).unwrap();
-            if direction == Ordering::Equal {
-                direction = Ordering::Less;
+    pub fn insert(mut self, t: T) -> Option<T> {
+        let a = &mut self.a;
+        let c = &mut a.a;
+        let p = self.p.inx();
+        /*match self.kind {
+        LinkInsertInxKind::Disconnected => entry.insert(LinkNoGen::new((None, None), t)),
+        LinkInsertInxKind::SingleLinkCyclic => {
+            entry.insert(LinkNoGen::new((Some(p.inx()), Some(p.inx())), t))
+        }
+        LinkInsertInxKind::ChainStartInx(start) => {
+            entry.insert(LinkNoGen::new((None, Some(start)), t));
+            a.get_inx_mut_unwrap(start).prev_next.0 = Some(p.inx());
+        }*/
+        match self.kind {
+            OrdInsertKind::Empty => {
+                assert_eq!(
+                    c.insert_within_capacity(LinkInsertKind::Disconnected, Node {
+                        t,
+                        p_back: None,
+                        p_tree0: None,
+                        p_tree1: None,
+                        rank: 1,
+                    })
+                    .unwrap()
+                    .inx(),
+                    p
+                );
+                a.first = p;
+                a.last = p;
+                a.root = p;
+                None
             }
-            self.insert_inx_manual_unwrap(p.inx(), direction, k, v).0
-        }
-    }
-
-    /// The same as [OrdArena::insert], except it uses linear comparisons
-    /// starting at `p_init`. If the insertion point is not found within `num`
-    /// comparisons, or `p_init` is invalid, a normal insertion is used.
-    pub fn insert_linear(&mut self, p_init: P, num: usize, k: K, v: V) -> (P, Option<(K, V)>) {
-        if self.is_empty() {
-            (self.insert_empty(k, v).unwrap(), None)
-        } else {
-            let (p, direction) = self.find_similar_key_linear(p_init, num, &k).unwrap();
-            self.insert_inx_manual_unwrap(p.inx(), direction, k, v)
-        }
-    }
-
-    /// Combines the behaviors of [OrdArena::insert_nonhereditary] and
-    /// [OrdArena::insert_linear]
-    pub fn insert_nonhereditary_linear(&mut self, p_init: P, num: usize, k: K, v: V) -> P {
-        if self.is_empty() {
-            self.insert_empty(k, v).unwrap()
-        } else {
-            let (p, mut direction) = self.find_similar_key_linear(p_init, num, &k).unwrap();
-            if direction == Ordering::Equal {
-                direction = Ordering::Less;
+            OrdInsertKind::Normal => {
+                let (p, direction) = a.find_similar_key(t.key()).unwrap();
+                a.insert_inx_manual_unwrap(p.inx(), direction, t)
             }
-            self.insert_inx_manual_unwrap(p.inx(), direction, k, v).0
-        }
-    }
-
-    /// Inserts key `k` and value `v` into an empty arena, returning a `Ptr` to
-    /// it. Returns `None` if the arena was not empty.
-    pub fn insert_empty(&mut self, k: K, v: V) -> Option<P> {
-        if self.is_empty() {
-            let p_new = self.a.insert(LinkInsertKind::Disconnected, Node {
-                k,
-                v,
-                p_back: None,
-                p_tree0: None,
-                p_tree1: None,
-                rank: 1,
-            });
-            self.first = p_new.inx();
-            self.last = p_new.inx();
-            self.root = p_new.inx();
-            Some(p_new)
-        } else {
-            None
+            OrdInsertKind::Nonhereditary => {
+                let (p, mut direction) = a.find_similar_key(t.key()).unwrap();
+                if direction == Ordering::Equal {
+                    direction = Ordering::Less;
+                }
+                a.insert_inx_manual_unwrap(p.inx(), direction, t)
+            }
+            OrdInsertKind::Linear { p_init, num } => {
+                let (p, direction) = a.find_similar_key_linear(p_init, num, t.key()).unwrap();
+                a.insert_inx_manual_unwrap(p.inx(), direction, t)
+            }
+            OrdInsertKind::NonhereditaryLinear { p_init, num } => {
+                let (p, mut direction) = a.find_similar_key_linear(p_init, num, t.key()).unwrap();
+                if direction == Ordering::Equal {
+                    direction = Ordering::Less;
+                }
+                a.insert_inx_manual_unwrap(p.inx(), direction, t)
+            }
+            OrdInsertKind::Manual {
+                p_target,
+                direction,
+            } => {
+                if a.get_inx(p_target).is_none() {
+                    Some(t)
+                } else {
+                    a.insert_inx_manual_unwrap(p_target, direction, t)
+                }
+            }
         }
     }
 }
 
-/// Does not require `K: Ord`
-impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
+impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
+    pub fn entry_insert_within_capacity(
+        &mut self,
+        mut kind: OrdInsertKind<P>,
+    ) -> Result<SimpleOrdArenaInsertEntry<'_, P, T, B>, NotWithinCapacityError> {
+        let entry = self
+            .a
+            .entry_insert_within_capacity(LinkInsertKind::Disconnected)
+            .map_err(|_| NotWithinCapacityError)?;
+        let p = entry.ptr();
+
+        // common collapse case so that all the branches from now on do not need to
+        // consider it
+        if self.is_empty() {
+            kind = OrdInsertKind::Empty;
+        }
+
+        Ok(SimpleOrdArenaInsertEntry { a: self, p, kind })
+    }
+}
+
+/// Does not require `T: SimpleOrdItem`
+impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Inserts key `k` with associated value `v` at `p`. Does not enforce key
     /// orderings, and instead accepts whatever `direction` says. If
     /// `direction` is `Ordering::Equal`, the value at `p` is replaced and
@@ -104,18 +161,12 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// # Panics
     ///
     /// If `p` is invalid.
-    pub fn insert_inx_manual_unwrap(
-        &mut self,
-        p: P::Inx,
-        direction: Ordering,
-        k: K,
-        v: V,
-    ) -> (P, Option<(K, V)>) {
+    pub fn insert_inx_manual_unwrap(&mut self, p: P::Inx, direction: Ordering, t: T) -> Option<T> {
         let (p, direction) = match direction {
             Ordering::Less => {
                 // first need to linear step to a node with a `None` in the right position if
                 // needed
-                let link = self.a.a.get_inx_unwrap(p);
+                let link = self.a.a.get_inx_mut_unwrap(p);
                 if link.t.p_tree0.is_some() {
                     (link.prev().unwrap(), true)
                 } else {
@@ -124,12 +175,12 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
             }
             Ordering::Equal => {
                 // replacement case
-                let (generation, node) = self.a.get_inx_mut(p).unwrap();
-                let old_v = mem::replace(&mut node.v, v);
-                return (Ptr::_from_raw(p, generation), Some((k, old_v)));
+                let node = self.a.get_inx_mut_unwrap(p);
+                let old_t = mem::replace(&mut node.t, t);
+                return Some(old_t);
             }
             Ordering::Greater => {
-                let link = self.a.a.get_inx_unwrap(p);
+                let link = self.a.a.get_inx_mut_unwrap(p);
                 if link.t.p_tree1.is_some() {
                     (link.next().unwrap(), false)
                 } else {
@@ -139,8 +190,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         };
         if direction {
             let new_node = Node {
-                k,
-                v,
+                t,
                 p_back: Some(p),
                 p_tree0: None,
                 p_tree1: None,
@@ -155,14 +205,13 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                     self.last = p_new.inx()
                 }
                 self.rebalance_inserted(p_new.inx());
-                (p_new, None)
+                None
             } else {
                 unreachable!()
             }
         } else {
             let new_node = Node {
-                k,
-                v,
+                t,
                 p_back: Some(p),
                 p_tree0: None,
                 p_tree1: None,
@@ -178,7 +227,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
                     self.first = p_new.inx()
                 }
                 self.rebalance_inserted(p_new.inx());
-                (p_new, None)
+                None
             } else {
                 unreachable!()
             }

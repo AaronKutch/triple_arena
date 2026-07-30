@@ -3,7 +3,7 @@
 use recasting::{Recast, Recaster};
 
 use crate::{
-    OrdArena,
+    SimpleOrdArena,
     traits::{Advancer, ArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
@@ -12,36 +12,38 @@ use crate::{
 pub struct PtrAdvancer<P: Ptr> {
     // same as for `ChainPtrAdvancer` except we get to assume the chain is acyclical and we start
     // from the beginning
-    ptr: Option<P::Inx>,
+    pub(in crate::ord) inx: Option<P::Inx>,
+    // if in reverse
+    pub(in crate::ord) rev: bool,
 }
 
-impl<P: Ptr, K, V, B: ArenaBacking> Advancer<OrdArena<P, K, V, B>> for PtrAdvancer<P> {
+impl<P: Ptr, T, B: ArenaBacking> Advancer<SimpleOrdArena<P, T, B>> for PtrAdvancer<P> {
     type Item = P;
 
-    fn advance(&mut self, collection: &OrdArena<P, K, V, B>) -> Option<Self::Item> {
-        if let Some(ptr) = self.ptr {
-            if let Some((generation, link)) = collection.a.a.get_inx(ptr) {
-                if let Some(next) = link.next() {
-                    self.ptr = Some(next);
-                } else {
-                    // could be unreachable under invalidation
-                    self.ptr = None;
-                }
-                Some(Ptr::_from_raw(ptr, generation))
+    fn advance(&mut self, collection: &SimpleOrdArena<P, T, B>) -> Option<Self::Item> {
+        let inx = self.inx?;
+        if let Some((generation, link)) = collection.a.a.get_inx(inx) {
+            if self.rev {
+                self.inx = link.prev();
             } else {
-                self.ptr = None;
-                None
+                self.inx = link.next();
             }
+            Some(Ptr::_from_raw(inx, generation))
         } else {
+            self.inx = None;
             None
         }
     }
 
     fn empty() -> Self {
-        Self { ptr: None }
+        Self {
+            inx: None,
+            rev: false,
+        }
     }
 }
 
+/*
 /// An iterator over the valid `P`s of an `OrdArena`
 pub struct Ptrs<'a, P: Ptr, K, V, B: ArenaBacking> {
     arena: &'a OrdArena<P, K, V, B>,
@@ -297,3 +299,4 @@ impl<P: Ptr, I, K, V: Recast<I>, B: ArenaBacking> Recast<I> for OrdArena<P, K, V
         Ok(())
     }
 }
+*/
