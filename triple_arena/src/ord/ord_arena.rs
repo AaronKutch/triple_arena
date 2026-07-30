@@ -4,15 +4,12 @@ use core::{
     borrow::Borrow,
     cmp::Ordering,
     fmt::{self, Debug},
-    mem,
     num::NonZeroUsize,
     ops::{Index, IndexMut},
 };
 
 use crate::{
-    Arena, ChainArena, Link, LinkNoGen,
-    traits::{Advancer, ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
-    utils::traits::{ArenaBacking, PtrInx},
+    Arena, ChainArena, InvalidationOption, Link, LinkNoGen, errors::{AllocError, ReallocationError}, traits::{Advancer, ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr}, utils::traits::{ArenaBacking, PtrInx},
 };
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
@@ -63,6 +60,8 @@ pub struct Node<P: Ptr, K, V> {
     // 2*lb(len), meaning that even i128::MAX could not overflow this.
     pub rank: u8,
 }
+
+// FIXME SimpleOrdArena<P, K>, OrdArena<P, K, V>
 
 /// An Ordered Arena with three parameters: a `P: Ptr` type that gives single
 /// indirection access to elements, a `K: Ord` key type that is used to define
@@ -157,20 +156,25 @@ pub struct OrdArena<
 
 impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     pub fn new() -> Self {
-        // FIXME just panic on `try_from_usize` failure with right message, do that
-        // everywhere since the arena would be completely broken anyways
         Self {
-            root: P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap(),
-            first: P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap(),
-            last: P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap(),
+            root: P::invalid().inx(),
+            first: P::invalid().inx(),
+            last: P::invalid().inx(),
             a: ChainArena::new(),
         }
     }
 
-    pub fn with_capacity(capacity: usize) -> Self {
-        let mut res = Self::new();
-        res.reserve(capacity);
-        res
+    /// See [ArenaTrait::with_min_capacity]
+    pub fn with_min_capacity(
+        min_capacity: usize,
+    ) -> Result<Self, AllocError> {
+        Ok(
+        Self {
+            root: P::invalid().inx(),
+            first: P::invalid().inx(),
+            last: P::invalid().inx(),
+            a: ChainArena::with_min_capacity(min_capacity)?,
+        })
     }
 
     /// Returns the total number of valid `Ptr`s, or equivalently the number of
@@ -194,10 +198,22 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
         self.a.generation()
     }
 
-    pub fn reserve(&mut self, additional: usize) {
-        self.a
-            .reallocate_min_capacity(self.a.len() + additional)
-            .unwrap();
+    /// Follows [Arena::set_generation]
+    pub fn set_generation(&mut self, new_gen: P::Gen) {
+        self.a.set_generation(new_gen)
+    }
+
+    /// Follows [Arena::inc_generation]
+    pub fn inc_generation(&mut self) -> InvalidationOption<()> {
+        self.a.inc_generation()
+    }
+
+    /// Follows [ArenaTrait::reallocate_min_capacity]
+    pub fn reallocate_min_capacity(
+        &mut self,
+        min_capacity: usize,
+    ) -> Result<(), ReallocationError> {
+        self.a.reallocate_min_capacity(min_capacity)
     }
 
     /// Returns the `Ptr` to the minimum key. Runs in `O(1)` time. Returns
@@ -287,39 +303,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> OrdArena<P, K, V, B> {
     pub fn invalidate(&mut self, p: P) -> Option<P> {
         // the tree pointers do not have generation counters
         self.a.invalidate(p).allow()
-    }
-
-    /// Replaces the `V` pointed to by `p` with `new`, returns the
-    /// old `V`, and keeps the internal generation counter as-is so that
-    /// previously constructed `Ptr`s are still valid.
-    ///
-    /// # Errors
-    ///
-    /// Returns ownership of `new` instead if `p` is invalid
-    pub fn replace_val_and_keep_gen(&mut self, p: P, new: V) -> Result<V, V> {
-        if let Some(t) = self.a.get_mut(p) {
-            let old = mem::replace(&mut t.v, new);
-            Ok(old)
-        } else {
-            Err(new)
-        }
-    }
-
-    /// Replaces the `V` pointed to by `p` with `new`, returns a tuple of the
-    /// old `V` and new `Ptr`, and updates the internal generation counter so
-    /// that previous `Ptr`s to this are invalidated.
-    ///
-    /// # Errors
-    ///
-    /// Does no invalidation and returns ownership of `new` if `p` is invalid
-    pub fn replace_val_and_update_gen(&mut self, p: P, new: V) -> Result<(V, P), V> {
-        // the tree pointers do not have generation counters
-        if let Some(p_new) = self.a.invalidate(p).allow() {
-            let old = mem::replace(&mut self.a.get_inx_mut_unwrap(p_new.inx()).v, new);
-            Ok((old, p_new))
-        } else {
-            Err(new)
-        }
     }
 
     /// Drops all keys and values from the arena and invalidates all pointers
@@ -527,13 +510,13 @@ impl<P: Ptr, K: Debug, V: Debug, B: ArenaBacking> Debug for OrdArena<P, K, V, B>
     }
 }
 
-impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> PartialEq<OrdArena<P, K, V, B>>
-    for OrdArena<P, K, V, B>
+
+impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> OrdArena<P, K, V, B>
 {
     /// Checks if all `(K, V)` pairs are equal. This is sensitive to
     /// nonhereditary ordering, but does not compare pointers, generations,
     /// arena capacities, internal tree configuration, or `self.generation()`.
-    fn eq(&self, other: &OrdArena<P, K, V, B>) -> bool {
+    pub fn canonical_eq<>(&self, other: &OrdArena<P, K, V, B>) -> bool {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
@@ -554,19 +537,14 @@ impl<P: Ptr, K: PartialEq, V: PartialEq, B: ArenaBacking> PartialEq<OrdArena<P, 
     }
 }
 
-// FIXME These should become methods instead
-
-impl<P: Ptr, K: Eq, V: Eq, B: ArenaBacking> Eq for OrdArena<P, K, V, B> {}
-
-impl<P: Ptr, K: PartialOrd, V: PartialOrd, B: ArenaBacking> PartialOrd<OrdArena<P, K, V, B>>
-    for OrdArena<P, K, V, B>
+impl<P: Ptr, K: PartialOrd, V: PartialOrd, B: ArenaBacking>  OrdArena<P, K, V, B>
 {
     /// Orders as if the arena were a `Vec<(K, V)>` in order, returning early if
     /// the prefix had a difference, checking the key before the value in the
     /// pair, and returning based on which is longer. This is sensitive to
     /// nonhereditary ordering, but does not compare pointers, generations,
     /// arena capacities, internal tree configuration, or `self.generation()`.
-    fn partial_cmp(&self, other: &OrdArena<P, K, V, B>) -> Option<Ordering> {
+    pub fn canonical_partial_cmp(&self, other: &OrdArena<P, K, V, B>) -> Option<Ordering> {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
@@ -593,13 +571,13 @@ impl<P: Ptr, K: PartialOrd, V: PartialOrd, B: ArenaBacking> PartialOrd<OrdArena<
     }
 }
 
-impl<P: Ptr, K: Ord, V: Ord, B: ArenaBacking> Ord for OrdArena<P, K, V, B> {
+impl<P: Ptr, K: Ord, V: Ord, B: ArenaBacking> OrdArena<P, K, V, B> {
     /// Orders as if the arena were a `Vec<(K, V)>` in order, returning early if
     /// the prefix had a difference, checking the key before the value in the
     /// pair, and returning based on which is longer. This is sensitive to
     /// nonhereditary ordering, but does not compare pointers, generations,
     /// arena capacities, internal tree configuration, or `self.generation()`.
-    fn cmp(&self, other: &OrdArena<P, K, V, B>) -> Ordering {
+    pub fn canonical_cmp(&self, other: &OrdArena<P, K, V, B>) -> Ordering {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {

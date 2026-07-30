@@ -263,7 +263,7 @@ fn fuzz_ord() {
                     );
                 }
             }
-            400..440 => {
+            400..480 => {
                 // contains, get_link, get, get_key, get_val, get_link_mut, get_mut, get_val_mut
                 if len != 0 {
                     let t = &list[next_inx!(rng, len)];
@@ -283,47 +283,6 @@ fn fuzz_ord() {
                     assert!(a.get_val(invalid).is_none());
                     assert!(a.get_mut(invalid).is_none());
                     assert!(a.get_val_mut(invalid).is_none());
-                }
-            }
-            440..=459 => {
-                // replace_val_and_keep_gen
-                if len != 0 {
-                    let t = &mut list[next_inx!(rng, len)];
-                    let v = new_v();
-                    assert_eq!(a.replace_val_and_keep_gen(t.p, v), Ok(t.v));
-                    let set = b.get_mut(&t.k).unwrap();
-                    set.remove(&t.v).unwrap();
-                    set.insert(v, Triple { p: t.p, k: t.k, v });
-                    t.v = v;
-                } else {
-                    assert_eq!(
-                        a.replace_val_and_keep_gen(invalid, Val { v: 0 }),
-                        Err(Val { v: 0 })
-                    );
-                }
-            }
-            460..=479 => {
-                // replace_val_and_update_gen
-                if len != 0 {
-                    let t = &mut list[next_inx!(rng, len)];
-                    let v = new_v();
-                    let (old_v, new_p) = a.replace_val_and_update_gen(t.p, v).unwrap();
-                    assert_eq!(t.v, old_v);
-                    let set = b.get_mut(&t.k).unwrap();
-                    set.remove(&t.v).unwrap();
-                    set.insert(v, Triple {
-                        p: new_p,
-                        k: t.k,
-                        v,
-                    });
-                    t.p = new_p;
-                    t.v = v;
-                    generation += 1;
-                } else {
-                    assert_eq!(
-                        a.replace_val_and_update_gen(invalid, Val { v: 0 }),
-                        Err(Val { v: 0 })
-                    );
                 }
             }
             480..520 => {
