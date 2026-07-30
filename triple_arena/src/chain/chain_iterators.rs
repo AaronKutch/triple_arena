@@ -4,7 +4,7 @@ use recasting::{Recast, Recaster};
 
 pub use crate::arena_iterators::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
 use crate::{
-    Arena, LinkNoGen, arena_iterators,
+    Arena, InvalidationOption, InvalidationResult, LinkNoGen, arena_iterators,
     traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
     utils::{ChainArena, traits::ArenaBacking},
 };
@@ -102,6 +102,67 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer<ChainArena<P, T, B>> for ChainPtrAdvan
             switch: false,
             max_advances: 0,
         }
+    }
+}
+
+pub struct DrainChain<'a, P: Ptr, T, B: ArenaBacking> {
+    pub(crate) arena: &'a mut ChainArena<P, T, B>,
+    pub(crate) next_init: Option<P::Inx>,
+    pub(crate) target: Option<P::Inx>,
+    pub(crate) go_next: bool,
+}
+
+impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for DrainChain<'a, P, T, B> {
+    type Item = InvalidationOption<(P, LinkNoGen<P, T>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let p = self.target?;
+        // TODO when we get the ability to enforce !Forget, optimize so that we don't
+        // need to deal with interlinks
+
+        /*let ((generation, link), o) = match self.arena.a.remove_inx(p) {
+            InvalidationResult::Success(x) => (x, false),
+            InvalidationResult::GenerationOverflow(x) => (x, true),
+            InvalidationResult::InvalidPtr => unreachable!(),
+        };*/
+        let prev_next = self.arena.a.get_inx_unwrap(p).prev_next();
+        let ((generation, t), o) = match self.arena.remove_inx(p) {
+            InvalidationResult::Success(x) => (x, false),
+            InvalidationResult::GenerationOverflow(x) => (x, true),
+            InvalidationResult::InvalidPtr => unreachable!(),
+        };
+        let link = LinkNoGen::new(prev_next, t);
+
+        // locate next target first
+        self.target = if self.go_next {
+            link.next()
+        } else if Some(p) == self.next_init {
+            // cyclic
+            None
+        } else {
+            let prev = link.prev();
+            if prev.is_none() {
+                // switch directions
+                self.go_next = true;
+                // automatically `None` if started at end
+                self.next_init
+            } else {
+                prev
+            }
+        };
+
+        let p = P::_from_raw(p, generation);
+        if o {
+            Some(InvalidationOption::GenerationOverflow((p, link)))
+        } else {
+            Some(InvalidationOption::Success((p, link)))
+        }
+    }
+}
+
+impl<'a, P: Ptr, T, B: ArenaBacking> Drop for DrainChain<'a, P, T, B> {
+    fn drop(&mut self) {
+        while self.next().is_some() {}
     }
 }
 

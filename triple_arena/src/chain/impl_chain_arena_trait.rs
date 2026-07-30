@@ -1,4 +1,4 @@
-use core::{iter, mem, num::NonZeroUsize, slice::GetDisjointMutError};
+use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
     AllocError, Arena, ChainInsertionError, InvalidationOption, InvalidationResult, LinkInsertKind,
@@ -448,48 +448,18 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
         &mut self,
         p: P,
     ) -> Option<impl Iterator<Item = InvalidationOption<(P, LinkNoGen<P, T>)>>> {
-        // the nice thing about this is that we don't need to deal with interlinks
         if !self.contains(p) {
             return None;
         }
         let p_init = p.inx();
         // first we go in the `prev` direction and then resume at `next_init`
         let next_init = self.a.get_inx_unwrap(p_init).next();
-        let mut go_next = false;
-        let mut target = Some(p_init);
-        Some(iter::from_fn(move || {
-            let p = target?;
-            let ((generation, link), o) = match self.a.remove_inx(p) {
-                InvalidationResult::Success(x) => (x, false),
-                InvalidationResult::GenerationOverflow(x) => (x, true),
-                InvalidationResult::InvalidPtr => unreachable!(),
-            };
-
-            // locate next target first
-            target = if go_next {
-                link.next()
-            } else if Some(p) == next_init {
-                // cyclic
-                None
-            } else {
-                let prev = link.prev();
-                if prev.is_none() {
-                    // switch directions
-                    go_next = true;
-                    // automatically `None` if started at end
-                    next_init
-                } else {
-                    prev
-                }
-            };
-
-            let p = P::_from_raw(p, generation);
-            if o {
-                Some(InvalidationOption::GenerationOverflow((p, link)))
-            } else {
-                Some(InvalidationOption::Success((p, link)))
-            }
-        }))
+        Some(chain_iterators::DrainChain {
+            arena: self,
+            next_init,
+            target: Some(p_init),
+            go_next: false,
+        })
     }
 
     fn compress_and_canonicalize_chains(

@@ -872,7 +872,8 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     ) -> InvalidationResult<(P::Gen, LinkNoGen<P, T>)>;
 
     /// Efficiently removes the entire chain that `p` is connected to (which
-    /// might only include itself). Returns `None` if `p` is not valid.
+    /// might only include itself). If the iterator is dropped, the rest of the
+    /// chain is removed. Returns `None` if `p` is not valid.
     fn drain_chain(
         &mut self,
         p: P,
