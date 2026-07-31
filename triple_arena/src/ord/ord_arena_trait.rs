@@ -13,6 +13,7 @@ pub trait SimpleOrdItem {
 
 /// An implementor of [SimpleOrdItem] that has a key `K: Ord` and associated
 /// value `V`. `&K` is used as the key.
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OrdPair<K, V> {
     pub k: K,
     pub v: V,

@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use rand_xoshiro::{Xoshiro128StarStar, rand_core::Rng};
-use triple_arena::traits::*;
+use triple_arena::{OrdPair, traits::*};
 
 #[cfg(miri)]
 pub const A: u64 = 1 << 4;
@@ -220,10 +220,10 @@ pub fn fuzz_fill_inst(
 pub fn fuzz_fill_inst_bench(
     rng: &mut Xoshiro128StarStar,
     // representation of the arena
-    repr: &[(u128, u128)],
+    repr: &[OrdPair<u128, u128>],
     insertions: u64,
     removals: u64,
-) -> (Vec<Result<(u128, u128), usize>>, Vec<(u128, u128)>) {
+) -> (Vec<Result<OrdPair<u128, u128>, usize>>, Vec<OrdPair<u128, u128>>) {
     // first, schedule what instructions will be insertions and what will be
     // removals
     let mut blank_insts: Vec<bool> = vec![];
@@ -276,7 +276,7 @@ pub fn fuzz_fill_inst_bench(
         if inst {
             // split up the key by alternating bits to make sure the whole thing is being
             // compared against and branch prediction does not get lazy
-            let val = (
+            let val = OrdPair::new(
                 key,
                 (u128::from(rng.next_u64()) << 64) | u128::from(rng.next_u64()),
             );

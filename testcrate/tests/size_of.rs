@@ -31,21 +31,21 @@ fn size_of_ptr() {
 fn size_of_node() {
     use triple_arena::LinkNoGen;
 
-    assert_eq!(size_of::<Node<P0, (), ()>>(), 32);
+    assert_eq!(size_of::<Node<P0, ()>>(), 32);
     assert_eq!(size_of::<Link<P0, ()>>(), 32);
     assert_eq!(size_of::<LinkNoGen<P0, ()>>(), 16);
     assert_eq!(size_of::<InternalSlot<P0, ()>>(), 16);
     assert_eq!(
-        size_of::<InternalSlot<P0, Link<P0, Node<P0, (), ()>>>>(),
+        size_of::<InternalSlot<P0, Link<P0, Node<P0, ()>>>>(),
         72
     );
 
-    assert_eq!(size_of::<Node<P1, (), ()>>(), 32);
+    assert_eq!(size_of::<Node<P1, ()>>(), 32);
     assert_eq!(size_of::<Link<P1, ()>>(), 16);
     assert_eq!(size_of::<LinkNoGen<P1, ()>>(), 16);
     assert_eq!(size_of::<InternalSlot<P1, ()>>(), 8);
     assert_eq!(
-        size_of::<InternalSlot<P1, Link<P1, Node<P1, (), ()>>>>(),
+        size_of::<InternalSlot<P1, Link<P1, Node<P1, ()>>>>(),
         56
     );
 }

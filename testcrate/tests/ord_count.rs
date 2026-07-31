@@ -2,7 +2,7 @@
 
 use rand_xoshiro::{Xoshiro128StarStar, rand_core::SeedableRng};
 use testcrate::{A, CKey, CVal, P1, fuzz_fill_inst, get_cmp_count};
-use triple_arena::OrdArena;
+use triple_arena::{OrdPair, SimpleOrdArena, traits::ArenaTrait};
 
 fn get_std_insts() -> Vec<Result<(CKey, CVal), usize>> {
     let mut rng = Xoshiro128StarStar::seed_from_u64(0);
@@ -21,16 +21,16 @@ fn get_std_insts() -> Vec<Result<(CKey, CVal), usize>> {
 
 #[test]
 fn ord_arena_count() {
-    let mut a = OrdArena::<P1, CKey, CVal>::new();
+    let mut a = SimpleOrdArena::<P1, OrdPair<CKey, CVal>>::new();
     let mut repr_inxs = vec![];
     let insts = get_std_insts();
     for inst in insts {
         match inst {
             Ok((k, v)) => {
-                repr_inxs.push(a.insert(k, v).0);
+                repr_inxs.push(a.insert(OrdPair::new(k, v)).0);
             }
             Err(inx) => {
-                a.remove(repr_inxs.swap_remove(inx)).unwrap();
+                a.remove(repr_inxs.swap_remove(inx)).allow().unwrap();
             }
         }
     }
@@ -39,19 +39,19 @@ fn ord_arena_count() {
 
 #[test]
 fn ord_arena_find_to_remove_count() {
-    let mut a = OrdArena::<P1, CKey, CVal>::new();
+    let mut a = SimpleOrdArena::<P1, OrdPair<CKey, CVal>>::new();
     let mut repr_keys = vec![];
     let insts = get_std_insts();
     for inst in insts {
         match inst {
             Ok((k, v)) => {
                 repr_keys.push(k.clone_uncounting());
-                let _ = a.insert(k, v);
+                let _ = a.insert(OrdPair::new(k, v));
             }
             Err(inx) => {
                 let key = repr_keys.swap_remove(inx);
                 let p = a.find_key(&key).unwrap();
-                a.remove(p).unwrap();
+                a.remove(p).allow().unwrap();
             }
         }
     }
