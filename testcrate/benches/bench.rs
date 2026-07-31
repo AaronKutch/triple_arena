@@ -157,7 +157,7 @@ fn insert_only_std_btree(bencher: &mut Bencher) {
 #[bench]
 fn insert_only_ord_arena(bencher: &mut Bencher) {
     bencher.iter(|| {
-        let mut a = SimpleOrdArena::<P1,OrdPair<u128, u128>>::new();
+        let mut a = SimpleOrdArena::<P1, OrdPair<u128, u128>>::new();
         let insts = get_insert_insts(get_next_seed());
         for item in &insts {
             let _ = a.insert(*item);

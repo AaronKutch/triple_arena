@@ -223,7 +223,10 @@ pub fn fuzz_fill_inst_bench(
     repr: &[OrdPair<u128, u128>],
     insertions: u64,
     removals: u64,
-) -> (Vec<Result<OrdPair<u128, u128>, usize>>, Vec<OrdPair<u128, u128>>) {
+) -> (
+    Vec<Result<OrdPair<u128, u128>, usize>>,
+    Vec<OrdPair<u128, u128>>,
+) {
     // first, schedule what instructions will be insertions and what will be
     // removals
     let mut blank_insts: Vec<bool> = vec![];
