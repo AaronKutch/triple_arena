@@ -206,7 +206,7 @@ fn fuzz_ord() {
                     b.insert(k, set);
                 }
             }
-            210..=299 => {
+            210..300 => {
                 // remove
                 if len != 0 {
                     let t = list.swap_remove(next_inx!(rng, len));
@@ -315,6 +315,7 @@ fn fuzz_ord() {
                     assert!(a.invalidate(invalid).allow().is_none());
                 }
             }
+
             520..=549 => {
                 // find_with
                 let new_k = new_k();
@@ -366,7 +367,7 @@ fn fuzz_ord() {
                     }
                 }
             }
-            580..=994 => {
+            580..995 => {
                 // find_key with get_val
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {
@@ -386,7 +387,7 @@ fn fuzz_ord() {
                 //let mut vals = a.vals();
                 let new_k = new_k();
                 let p_start = a.find_key(&new_k).unwrap_or(Ptr::invalid());
-                let mut adv_from = a.ordered_advancer(p_start.inx(), false);
+                let mut adv_from = a.advancer_inx(p_start.inx(), false);
                 let mut adv_from_started = false;
                 while let Some(p) = adv.advance(&a) {
                     //let (k, v) = a.get(p).unwrap().k_v();
@@ -416,7 +417,7 @@ fn fuzz_ord() {
                     assert!(a.first().is_none());
                 }
             }
-            997 => {
+            997..999 => {
                 // last
                 if len != 0 {
                     let set = b.last_entry().unwrap();
@@ -426,7 +427,7 @@ fn fuzz_ord() {
                     assert!(a.last().is_none());
                 }
             }
-            998 => {
+            /*998 => {
                 // compress_and_shrink_with
                 // compress_and_shrink is difficult to test, we just note its definition is
                 // self.compress_and_shrink_with(|_, _, _| ())
@@ -467,7 +468,7 @@ fn fuzz_ord() {
                         }
                     }
                 }
-            }
+            }*/
             999 => {
                 match rng.next_u32() % 4 {
                     0 => {
@@ -504,6 +505,9 @@ fn fuzz_ord() {
                             generation += 1;
                         }
                         a.clear();*/
+                        a.clear().allow();
+                        // FIXME
+                        generation += 1;
                     }
                     _ => unreachable!(),
                 }

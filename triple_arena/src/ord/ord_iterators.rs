@@ -3,13 +3,33 @@
 use recasting::{Recast, Recaster};
 
 use crate::{
-    SimpleOrdArena,
+    SimpleOrdArena, arena_iterators, chain_iterators,
     traits::{Advancer, ArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 
-/// An advancer over the valid `P`s of an `OrdArena`
+/// An advancer over the valid `P`s of a `SimpleOrdArena`. This is _not_ ordered
+/// with respect to keys
 pub struct PtrAdvancer<P: Ptr> {
+    pub(in crate::ord) adv: arena_iterators::PtrAdvancer<P>,
+}
+
+impl<P: Ptr, T, B: ArenaBacking> Advancer<SimpleOrdArena<P, T, B>> for PtrAdvancer<P> {
+    type Item = P;
+
+    fn advance(&mut self, collection: &SimpleOrdArena<P, T, B>) -> Option<Self::Item> {
+        self.adv.advance(&collection.a.a)
+    }
+
+    fn empty() -> Self {
+        Self {
+            adv: <arena_iterators::PtrAdvancer<P> as Advancer<crate::Arena<P, T, B>>>::empty(),
+        }
+    }
+}
+
+/// An ordered advancer
+pub struct OrderedPtrAdvancer<P: Ptr> {
     // same as for `ChainPtrAdvancer` except we get to assume the chain is acyclical and we start
     // from the beginning
     pub(in crate::ord) inx: Option<P::Inx>,
@@ -17,7 +37,7 @@ pub struct PtrAdvancer<P: Ptr> {
     pub(in crate::ord) rev: bool,
 }
 
-impl<P: Ptr, T, B: ArenaBacking> Advancer<SimpleOrdArena<P, T, B>> for PtrAdvancer<P> {
+impl<P: Ptr, T, B: ArenaBacking> Advancer<SimpleOrdArena<P, T, B>> for OrderedPtrAdvancer<P> {
     type Item = P;
 
     fn advance(&mut self, collection: &SimpleOrdArena<P, T, B>) -> Option<Self::Item> {

@@ -51,9 +51,9 @@ pub enum OrdInsertKind<P: Ptr, K: Ord> {
     /// comparisons starting at `p_init`. If the insertion point is not
     /// found within `num` comparisons, or `p_init` is invalid, a normal
     /// insertion is used.
-    Linear { k: K, p_init: P::Inx, num: usize },
+    Linear { p_init: P::Inx, num: usize, k: K },
     /// Combines nonhereditary insertion with linear startup
-    NonhereditaryLinear { k: K, p_init: P::Inx, num: usize },
+    NonhereditaryLinear { p_init: P::Inx, num: usize, k: K },
     /// Manual insertion. Does not enforce key orderings, and instead accepts
     /// whatever `direction` says. If `direction` is `Ordering::Equal`, the
     /// item at `p_target` is replaced and returned. If `direction` is

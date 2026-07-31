@@ -69,10 +69,9 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
         self.a.find_last_inx_ptr()
     }
 
-    fn ordered_advancer(&self, inx: <P as Ptr>::Inx, rev: bool) -> Self::PtrAdvancer {
+    fn advancer_inx(&self, inx: <P as Ptr>::Inx, rev: bool) -> Self::PtrAdvancer {
         ord_iterators::PtrAdvancer {
-            inx: Some(inx),
-            rev,
+            adv: self.a.a.advancer_inx(inx, rev),
         }
     }
 

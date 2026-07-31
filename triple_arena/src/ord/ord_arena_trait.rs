@@ -20,6 +20,12 @@ pub trait SimpleOrdItem {
         Self: 'long;
 }
 
+// We almost implemented this for all `T: Ord`, but blanket impls have a bad
+// habit of causing conflicts and will probably mess with type checking
+// protection in this case. Also `OrdPair<K, ()>` or an explicit equivalent is
+// desired to prevent changing the key accidentally. It is easy to implement
+// this for single structs if they are intended as keys.
+
 /// An implementor of [SimpleOrdItem] that has a key `K: Ord` and associated
 /// value `V`. `&K` is used as the key. Note that this does not provide a
 /// `k_mut` function in order to guard against accidentally modifying the key of

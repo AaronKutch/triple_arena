@@ -229,7 +229,7 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// can both be witnessed or not witnessed before the loop terminates.
     fn advancer(&self) -> Self::PtrAdvancer {
         if let Some(first) = self.find_first_inx_ptr() {
-            self.ordered_advancer(first.inx(), false)
+            self.advancer_inx(first.inx(), false)
         } else {
             Self::PtrAdvancer::empty()
         }
@@ -239,7 +239,7 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// forwards or in reverse if `rev` is set. `inx` does not have to point at
     /// a valid entry, and it will find the next valid entry if it exists in
     /// the direction the advancer is going.
-    fn ordered_advancer(&self, inx: P::Inx, rev: bool) -> Self::PtrAdvancer;
+    fn advancer_inx(&self, inx: P::Inx, rev: bool) -> Self::PtrAdvancer;
 
     /// Iteration over all valid `P` in the arena
     fn ptrs(&self) -> impl Iterator<Item = P> {

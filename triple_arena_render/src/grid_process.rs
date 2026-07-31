@@ -382,7 +382,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                     Ordering::Greater => Ordering::Greater,
                 })
             {
-                let mut adv_region = orderings.ordered_advancer(p_region_start.inx(), false);
+                let mut adv_region = orderings.advancer_ordered(p_region_start, false).unwrap();
                 if ord.is_gt() {
                     // advance by one to get into the region
                     adv_region.advance(&orderings);

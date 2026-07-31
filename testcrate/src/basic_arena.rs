@@ -542,7 +542,7 @@ pub fn fuzz<
                 b_capacity = a.capacity();
             }
             910..920 => {
-                // ptrs, ordered_advancer, find_last_inx_ptr, find_first_inx_ptr
+                // ptrs, advancer_inx, find_last_inx_ptr, find_first_inx_ptr
                 let ptrs: Vec<P> = a.ptrs().collect();
                 ensure_eq!(len, ptrs.len());
                 if len > 0 {
@@ -554,7 +554,7 @@ pub fn fuzz<
                 }
                 if let Some(mut i) = rng.index(ptrs.len()) {
                     let rev = rng.next_bool();
-                    let mut adv = a.ordered_advancer(ptrs[i].inx(), rev);
+                    let mut adv = a.advancer_inx(ptrs[i].inx(), rev);
                     loop {
                         let p = adv.advance(a).stack()?;
                         ensure_eq!(ptrs[i], p);
@@ -574,17 +574,17 @@ pub fn fuzz<
                     }
                 } else {
                     let inx1 = P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap();
-                    let mut adv = a.ordered_advancer(inx1, false);
+                    let mut adv = a.advancer_inx(inx1, false);
                     ensure!(adv.advance(a).is_none());
-                    let mut adv = a.ordered_advancer(inx1, true);
+                    let mut adv = a.advancer_inx(inx1, true);
                     ensure!(adv.advance(a).is_none());
                     if a.capacity() > 0 {
                         let inx_last =
                             P::Inx::try_from_usize(NonZeroUsize::new(a.capacity()).unwrap())
                                 .unwrap();
-                        let mut adv = a.ordered_advancer(inx_last, false);
+                        let mut adv = a.advancer_inx(inx_last, false);
                         ensure!(adv.advance(a).is_none());
-                        let mut adv = a.ordered_advancer(inx_last, true);
+                        let mut adv = a.advancer_inx(inx_last, true);
                         ensure!(adv.advance(a).is_none());
                     }
                 }
