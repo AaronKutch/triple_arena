@@ -688,6 +688,13 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         fn key(&self) -> Self::Key<'_> {
             self.grid_pos0
         }
+
+        fn shorten_key<'long: 'short, 'short>(k: Self::Key<'long>) -> Self::Key<'short>
+        where
+            Self: 'long,
+        {
+            k
+        }
     }
     let mut horizontals: Vec<SimpleOrdArena<P, HInfo<P>>> = vec![];
     let mut max_y = 0;

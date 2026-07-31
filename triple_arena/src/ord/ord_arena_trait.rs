@@ -9,6 +9,15 @@ pub trait SimpleOrdItem {
 
     /// Returns the key
     fn key(&self) -> Self::Key<'_>;
+
+    /// Shortens the lifetime of a key. Any sensible `Key` is covariant over
+    /// its lifetime, but the compiler treats generic associated types as
+    /// invariant, so this witness is needed in order to use a long lived key
+    /// within a shorter borrow of the arena. Implementations should just be
+    /// `k`.
+    fn shorten_key<'long: 'short, 'short>(k: Self::Key<'long>) -> Self::Key<'short>
+    where
+        Self: 'long;
 }
 
 /// An implementor of [SimpleOrdItem] that has a key `K: Ord` and associated
@@ -27,6 +36,13 @@ impl<K: Ord, V> SimpleOrdItem for OrdPair<K, V> {
 
     fn key(&self) -> Self::Key<'_> {
         &self.k
+    }
+
+    fn shorten_key<'long: 'short, 'short>(k: Self::Key<'long>) -> Self::Key<'short>
+    where
+        Self: 'long,
+    {
+        k
     }
 }
 

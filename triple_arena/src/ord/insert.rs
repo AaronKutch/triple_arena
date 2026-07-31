@@ -60,8 +60,8 @@ pub enum OrdInsertKind<P: Ptr, K: Ord> {
     /// `Ordering::Less`, the pair is inserted as a new entry before
     /// `p_target`. If `direction` is `Ordering::Greater`, the pair is
     /// inserted after `p_target`. Returns the replaced pair if there was one.
-    /// Returns the inserted element if `p_target` was invalid instead of
-    /// panicking unlike [SimpleOrdArena::insert_inx_manual_unwrap].
+    /// Succeeds if the arena was empty, and returns the inserted element if `p_target` was invalid instead of
+    /// panicking, unlike [SimpleOrdArena::insert_inx_manual_unwrap].
     Manual {
         p_target: P::Inx,
         direction: Ordering,
@@ -147,10 +147,10 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     // The tricky part about insertion is that equal keys get replaced in the
     // hereditary cases and no capacity change occurs. We have to do key finding
     // first
-    fn check_ord_insert_kind<'a, 'b>(
-        &'b self,
-        kind: OrdInsertKind<P, T::Key<'a>>,
-    ) -> InternalPrepared<P> where 'b: 'a {
+    // note that the key lifetime `'a` is deliberately unrelated to the borrow of
+    // `self`, the keys are shortened with `T::shorten_key` so that the borrow only
+    // lasts for the duration of this function
+    fn check_ord_insert_kind<'a>(&self, kind: OrdInsertKind<P, T::Key<'a>>) -> InternalPrepared<P> {
         // common collapse case so that all the branches from now on do not need to
         // consider it
         if self.is_empty() {
@@ -168,7 +168,7 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         match kind {
             OrdInsertKind::Empty => unreachable!(),
             OrdInsertKind::Normal(k) => {
-                let (p, direction) = self.find_similar_key(k).unwrap();
+                let (p, direction) = self.find_similar_key(T::shorten_key(k)).unwrap();
                 if direction.is_eq() {
                     InternalPrepared::Replace(p)
                 } else {
@@ -179,7 +179,7 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 }
             }
             OrdInsertKind::Nonhereditary(k) => {
-                let (p, direction) = self.find_similar_key(k).unwrap();
+                let (p, direction) = self.find_similar_key(T::shorten_key(k)).unwrap();
                 if direction.is_eq() {
                     // TODO I'm not sure which should be canonical, it can be returned in the middle
                     // of a group anyways
@@ -195,7 +195,9 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 }
             }
             OrdInsertKind::Linear { k, p_init, num } => {
-                let (p, direction) = self.find_similar_key_linear(p_init, num, k).unwrap();
+                let (p, direction) = self
+                    .find_similar_key_linear(p_init, num, T::shorten_key(k))
+                    .unwrap();
                 if direction.is_eq() {
                     InternalPrepared::Replace(p)
                 } else {
@@ -206,7 +208,9 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 }
             }
             OrdInsertKind::NonhereditaryLinear { k, p_init, num } => {
-                let (p, direction) = self.find_similar_key_linear(p_init, num, k).unwrap();
+                let (p, direction) = self
+                    .find_similar_key_linear(p_init, num, T::shorten_key(k))
+                    .unwrap();
                 if direction.is_eq() {
                     InternalPrepared::New {
                         p_target: p.inx(),
@@ -262,10 +266,10 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     }
 
     /// Following the style of [ArenaInsertTrait::entry_insert_within_capacity]
-    pub fn entry_insert_within_capacity<'a, 'b>(
-        &'a mut self,
-        kind: OrdInsertKind<P, T::Key<'b>>,
-    ) -> Result<SimpleOrdArenaInsertEntry<'_, P, T, B>, NotWithinCapacityError> where 'a: 'b {
+    pub fn entry_insert_within_capacity<'a>(
+        &mut self,
+        kind: OrdInsertKind<P, T::Key<'a>>,
+    ) -> Result<SimpleOrdArenaInsertEntry<'_, P, T, B>, NotWithinCapacityError> {
         match self.check_ord_insert_kind(kind) {
             // FIXME
             InternalPrepared::EmptyWhenNotEmpty => return Err(NotWithinCapacityError),
