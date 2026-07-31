@@ -328,7 +328,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         }
         if weight != (0, 0) {
             if let Some(p_ordering) = orderings.find_key(&pair) {
-                let tmp = &mut orderings.get_mut(p_ordering).unwrap().v;
+                let tmp = orderings.get_mut(p_ordering).unwrap().v_mut();
                 tmp.0 = tmp.0.saturating_add(weight.0);
                 tmp.1 = tmp.1.saturating_add(weight.1);
             } else {
@@ -376,7 +376,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
 
             // find the start of a region with `p1`
             if let Some((p_region_start, ord)) =
-                orderings.find_similar_with(|_, OrdPair { k: (p, _), v: _ }| match p1.cmp(p) {
+                orderings.find_similar_with(|_, pair| match p1.cmp(&pair.k().0) {
                     Ordering::Less => Ordering::Less,
                     Ordering::Equal => Ordering::Less,
                     Ordering::Greater => Ordering::Greater,
@@ -415,7 +415,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                 (p1, p0, (weight0.1, weight0.0))
             };
             if let Some(p_ordering) = orderings.find_key(&(p0, p1)) {
-                let tmp = &mut orderings.get_mut(p_ordering).unwrap().v;
+                let tmp = orderings.get_mut(p_ordering).unwrap().v_mut();
                 tmp.0 = tmp.0.saturating_add(weight.0);
                 tmp.1 = tmp.1.saturating_add(weight.1);
             } else if weight0.2 {

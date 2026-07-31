@@ -51,7 +51,7 @@ fn baseline(bencher: &mut Bencher) {
             match inst {
                 Ok(pair) => {
                     a.push(*pair);
-                    repr_inxs.push(pair.k);
+                    repr_inxs.push(*pair.k());
                 }
                 Err(inx) => {
                     a.swap_remove(*inx);
@@ -90,8 +90,8 @@ fn std_bench_std_btree(bencher: &mut Bencher) {
         for inst in &insts {
             match inst {
                 Ok(pair) => {
-                    repr_keys.push(pair.k);
-                    a.insert(pair.k, pair.v);
+                    repr_keys.push(*pair.k());
+                    a.insert(*pair.k(), *pair.v());
                 }
                 Err(inx) => {
                     a.remove(&repr_keys.swap_remove(*inx)).unwrap();
@@ -111,7 +111,7 @@ fn std_bench_ord_arena_find_to_remove(bencher: &mut Bencher) {
         for inst in &insts {
             match inst {
                 Ok(item) => {
-                    repr_keys.push(item.k);
+                    repr_keys.push(*item.k());
                     let _ = a.insert(*item);
                 }
                 Err(inx) => {
@@ -149,7 +149,7 @@ fn insert_only_std_btree(bencher: &mut Bencher) {
         let mut a = BTreeMap::<u128, u128>::new();
         let insts = get_insert_insts(get_next_seed());
         for inst in &insts {
-            a.insert(inst.k, inst.v);
+            a.insert(*inst.k(), *inst.v());
         }
     })
 }
@@ -172,8 +172,8 @@ fn find_only_std_btree(bencher: &mut Bencher) {
         let insts = get_insert_insts(get_next_seed());
         let mut repr_keys: Vec<u128> = vec![];
         for inst in &insts {
-            a.insert(inst.k, inst.v);
-            repr_keys.push(inst.k);
+            a.insert(*inst.k(), *inst.v());
+            repr_keys.push(*inst.k());
         }
         for key in &repr_keys {
             let tmp = a.get(key).unwrap();
@@ -190,7 +190,7 @@ fn find_only_ord_arena(bencher: &mut Bencher) {
         let mut repr_keys: Vec<u128> = vec![];
         for item in &insts {
             let _ = a.insert(*item);
-            repr_keys.push(item.k);
+            repr_keys.push(*item.k());
         }
         for key in &repr_keys {
             let tmp = a.find_key(key).unwrap();
@@ -206,8 +206,8 @@ fn remove_only_std_btree(bencher: &mut Bencher) {
         let insts = get_insert_insts(get_next_seed());
         let mut repr_keys: Vec<u128> = vec![];
         for item in &insts {
-            repr_keys.push(item.k);
-            a.insert(item.k, item.v);
+            repr_keys.push(*item.k());
+            a.insert(*item.k(), *item.v());
         }
         let insts = get_remove_insts(get_next_seed());
         for inst in &insts {

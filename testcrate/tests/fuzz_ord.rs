@@ -143,18 +143,20 @@ fn fuzz_ord() {
                         // start from anywhere
                         list[next_inx!(rng, len)].p
                     };
+                    let pair = OrdPair::new(k, v);
                     let entry = a.entry_insert(OrdInsertKind::Linear {
+                        k: pair.k(),
                         p_init: p_init.inx(),
                         num: 4,
                     });
-                    (entry.ptr(), entry.insert(OrdPair::new(k, v)))
+                    (entry.ptr().any(), entry.insert(pair))
                 };
                 let triple = Triple { p, k, v };
                 list.push(triple);
                 if let Some(set) = b.get_mut(&k) {
                     let k_v = k_v.unwrap();
-                    assert_eq!(k_v.k, k);
-                    let triple_replaced = set.remove(&k_v.v).unwrap();
+                    assert_eq!(*k_v.k(), k);
+                    let triple_replaced = set.remove(k_v.v()).unwrap();
                     // we have to find it in the list to remove
                     let mut tmp = None;
                     for (i, t) in list.iter().enumerate() {
@@ -175,9 +177,10 @@ fn fuzz_ord() {
                 // insert_nonhereditary, insert_nonhereditary_linear
                 let k = new_k();
                 let v = new_v();
+                let pair = OrdPair::new(k, v);
                 let (p, replaced) = if (rng.next_u32() % 100) < 90 {
-                    let entry = a.entry_insert(OrdInsertKind::Nonhereditary);
-                    (entry.ptr(), entry.insert(OrdPair::new(k, v)))
+                    let entry = a.entry_insert(OrdInsertKind::Nonhereditary(pair.k()));
+                    (entry.ptr().any(), entry.insert(pair))
                 } else {
                     let p_init = if a.is_empty() {
                         Ptr::invalid()
@@ -186,10 +189,11 @@ fn fuzz_ord() {
                         list[next_inx!(rng, len)].p
                     };
                     let entry = a.entry_insert(OrdInsertKind::NonhereditaryLinear {
+                        k: pair.k(),
                         p_init: p_init.inx(),
                         num: 4,
                     });
-                    (entry.ptr(), entry.insert(OrdPair::new(k, v)))
+                    (entry.ptr().any(), entry.insert(pair))
                 };
                 assert!(replaced.is_none());
                 let triple = Triple { p, k, v };
@@ -231,15 +235,15 @@ fn fuzz_ord() {
                     match ord {
                         Ordering::Less => {
                             if let Some(prev) = link.prev() {
-                                assert!(a.get_inx(prev).unwrap().1.k.lt(&new_k));
+                                assert!(a.get_inx(prev).unwrap().1.k().lt(&new_k));
                             }
-                            assert!(new_k.lt(&link.t.k));
+                            assert!(new_k.lt(link.t.k()));
                         }
                         Ordering::Equal => {
-                            assert_eq!(link.t.k, new_k);
+                            assert_eq!(*link.t.k(), new_k);
                         }
                         Ordering::Greater => {
-                            assert!(link.t.k.lt(&new_k));
+                            assert!(link.t.k().lt(&new_k));
                             if let Some(next) = link.next() {
                                 assert!(new_k.lt(a.get_inx(next).unwrap().1.k()));
                             }
@@ -263,7 +267,7 @@ fn fuzz_ord() {
                         a.find_key_linear(list[next_inx!(rng, len)].p, 4, &new_k)
                             .unwrap()
                     };
-                    let v = a.get(p).unwrap().v;
+                    let v = a.get(p).unwrap().v();
                     assert!(set.contains_key(&v));
                 } else if (rng.next_u32() & 1) == 0 {
                     assert!(a.find_key(&new_k).is_none());
@@ -316,13 +320,13 @@ fn fuzz_ord() {
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {
                     let p = a
-                        .find_with(|p, OrdPair { k, v }| {
-                            assert_eq!(a.get(p).unwrap(), &OrdPair::new(*k, *v));
-                            new_k.cmp(k)
+                        .find_with(|p, pair| {
+                            assert_eq!(a.get(p).unwrap(), pair);
+                            new_k.cmp(pair.k())
                         })
                         .unwrap();
-                    let v = a.get(p).unwrap().v;
-                    assert!(set.contains_key(&v));
+                    let v = a.get(p).unwrap().v();
+                    assert!(set.contains_key(v));
                 } else {
                     assert!(a.find_with(|_, pair| new_k.cmp(pair.k())).is_none());
                 }
@@ -332,9 +336,9 @@ fn fuzz_ord() {
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {
                     let (p, ord) = a
-                        .find_similar_with(|p, OrdPair { k, v }| {
-                            assert_eq!(a.get(p).unwrap().k_v(), (k, v));
-                            new_k.cmp(k)
+                        .find_similar_with(|p, pair| {
+                            assert_eq!(a.get(p).unwrap(), pair);
+                            new_k.cmp(pair.k())
                         })
                         .unwrap();
                     let v = a.get(p).unwrap().v();
@@ -348,14 +352,14 @@ fn fuzz_ord() {
                     match ord {
                         Ordering::Less => {
                             if let Some(prev) = a.get_inx_link_no_gen(p.inx()).unwrap().1.prev() {
-                                assert!(a.get_inx(prev).unwrap().1.k < new_k);
+                                assert!(*a.get_inx(prev).unwrap().1.k() < new_k);
                             }
                             assert!(new_k < *k);
                         }
                         Ordering::Equal => unreachable!(),
                         Ordering::Greater => {
                             if let Some(next) = a.get_inx_link_no_gen(p.inx()).unwrap().1.next() {
-                                assert!(new_k < a.get_inx(next).unwrap().1.k);
+                                assert!(new_k < *a.get_inx(next).unwrap().1.k());
                             }
                             assert!(*k < new_k);
                         }
@@ -367,8 +371,8 @@ fn fuzz_ord() {
                 let new_k = new_k();
                 if let Some(set) = b.get(&new_k) {
                     let p = a.find_key(&new_k).unwrap();
-                    let v = a.get(p).unwrap().v;
-                    assert!(set.contains_key(&v));
+                    let v = a.get(p).unwrap().v();
+                    assert!(set.contains_key(v));
                 } else {
                     assert!(a.find_key(&new_k).is_none())
                 }
@@ -433,17 +437,18 @@ fn fuzz_ord() {
                     let set = &b[pair.k()];
                     assert_eq!(set[pair.v()].p, p);
                     assert_eq!(q_gen, q.generation());
-                    tmp.insert(pair.v, Triple {
+                    tmp.insert(*pair.v(), Triple {
                         p: q,
-                        k: pair.k,
-                        v: pair.v,
+                        k: *pair.k(),
+                        v: *pair.v(),
                     });
-                }).allow();
+                })
+                .allow();
                 assert_eq!(tmp.len(), a.len());
                 generation = a.generation().get();
                 for (val, triple) in &tmp {
                     assert_eq!(val, a.get(triple.p).unwrap().v());
-                    assert_eq!(triple.k, a.get(triple.p).unwrap().k);
+                    assert_eq!(triple.k, *a.get(triple.p).unwrap().k());
                 }
                 // fix `Ptr`s
                 for (val, triple) in &tmp {

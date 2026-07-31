@@ -155,10 +155,11 @@ pub struct Node<P: Ptr, T> {
 ///
 /// Note: due to a known problem with cache locality, insert and find operations
 /// can take twice the time they would on a `BTreeMap`. A future `triple_arena`
-/// version will find a way to fix this for `OrdArena` (since its keys and
-/// values can be separated internally), however it should still be faster in
-/// many cases if `Ptr`s can be reused multiple times. Try to minimize
-/// the points where `find_key` is required.
+/// version will introduce an advanced `OrdArena<P, K, V, B>` (since its keys
+/// and values can be separated internally, the tradeoff being that its version
+/// of `SimpleOrdItem` will not have the same generality), however it should
+/// still be faster in many cases if `Ptr`s can be reused multiple times. Try to
+/// minimize the points where `find_key` is required.
 pub struct SimpleOrdArena<
     P: Ptr,
     T,

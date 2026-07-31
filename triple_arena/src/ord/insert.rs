@@ -60,8 +60,9 @@ pub enum OrdInsertKind<P: Ptr, K: Ord> {
     /// `Ordering::Less`, the pair is inserted as a new entry before
     /// `p_target`. If `direction` is `Ordering::Greater`, the pair is
     /// inserted after `p_target`. Returns the replaced pair if there was one.
-    /// Succeeds if the arena was empty, and returns the inserted element if `p_target` was invalid instead of
-    /// panicking, unlike [SimpleOrdArena::insert_inx_manual_unwrap].
+    /// Succeeds if the arena was empty, and returns the inserted element if
+    /// `p_target` was invalid instead of panicking, unlike
+    /// [SimpleOrdArena::insert_inx_manual_unwrap].
     Manual {
         p_target: P::Inx,
         direction: Ordering,
@@ -147,9 +148,6 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     // The tricky part about insertion is that equal keys get replaced in the
     // hereditary cases and no capacity change occurs. We have to do key finding
     // first
-    // note that the key lifetime `'a` is deliberately unrelated to the borrow of
-    // `self`, the keys are shortened with `T::shorten_key` so that the borrow only
-    // lasts for the duration of this function
     fn check_ord_insert_kind<'a>(&self, kind: OrdInsertKind<P, T::Key<'a>>) -> InternalPrepared<P> {
         // common collapse case so that all the branches from now on do not need to
         // consider it
@@ -276,7 +274,7 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             InternalPrepared::Replace(p) => Ok(SimpleOrdArenaInsertEntry {
                 a: self,
                 p,
-                p_target: P::invalid().inx(),
+                p_target: p.inx(),
                 direction: Ordering::Equal,
             }),
             InternalPrepared::New {
@@ -309,7 +307,7 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             InternalPrepared::Replace(p) => Ok(SimpleOrdArenaInsertEntry {
                 a: self,
                 p,
-                p_target: P::invalid().inx(),
+                p_target: p.inx(),
                 direction: Ordering::Equal,
             }),
             InternalPrepared::New {

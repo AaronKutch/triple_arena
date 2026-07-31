@@ -142,7 +142,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Finds a `Ptr` with an associated key that is equal to `k`. Returns
     /// `None` if such a key is not in the arena.
     #[must_use]
-    pub fn find_key<'a>(&'a self, k: T::Key<'a>) -> Option<P> {
+    pub fn find_key<'a>(&self, k: T::Key<'a>) -> Option<P> {
+        let k = T::shorten_key(k);
         if self.a.is_empty() {
             return None;
         }
@@ -162,7 +163,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// within `num` comparisons, or `p_init` is invalid, a normal search is
     /// used. Returns `None` if the key was not found.
     #[must_use]
-    pub fn find_key_linear<'a>(&'a self, p_init: P, num: usize, k: T::Key<'a>) -> Option<P> {
+    pub fn find_key_linear<'a>(&self, p_init: P, num: usize, k: T::Key<'a>) -> Option<P> {
+        let k = T::shorten_key(k);
         if !self.a.contains(p_init) {
             return self.find_key(k);
         }
@@ -213,7 +215,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// the similar entry, and `Ordering::Greater` indicating that `k` is
     /// greater than the similar entry. `None` is returned if `self.is_empty()`.
     #[must_use]
-    pub fn find_similar_key<'a>(&'a self, k: T::Key<'a>) -> Option<(P, Ordering)> {
+    pub fn find_similar_key<'a>(&self, k: T::Key<'a>) -> Option<(P, Ordering)> {
+        let k = T::shorten_key(k);
         if self.a.is_empty() {
             return None;
         }
@@ -244,11 +247,12 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// [OrdArena::find_key_linear]
     #[must_use]
     pub fn find_similar_key_linear<'a>(
-        &'a self,
+        &self,
         p_init: P::Inx,
         num: usize,
         k: T::Key<'a>,
     ) -> Option<(P, Ordering)> {
+        let k = T::shorten_key(k);
         if self.a.get_inx(p_init).is_none() {
             return self.find_similar_key(k);
         }

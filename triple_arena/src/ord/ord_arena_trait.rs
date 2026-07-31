@@ -1,6 +1,6 @@
 /// This should be implemented for an item that has a stable ordering with
-/// respect to [SimpleOrdItem::key]. Unlike [OrdPair] and [OrdArena] which
-/// implicitly require keys and values to be separate structs, the item
+/// respect to [SimpleOrdItem::key]. Unlike [OrdPair] and the future `OrdArena`
+/// which implicitly require keys and values to be separate structs, the item
 /// implementing this can project part of its internal structure as the key.
 pub trait SimpleOrdItem {
     type Key<'a>: Ord
@@ -13,19 +13,21 @@ pub trait SimpleOrdItem {
     /// Shortens the lifetime of a key. Any sensible `Key` is covariant over
     /// its lifetime, but the compiler treats generic associated types as
     /// invariant, so this witness is needed in order to use a long lived key
-    /// within a shorter borrow of the arena. Implementations should just be
-    /// `k`.
+    /// within a shorter borrow of the arena. Implementations should just have
+    /// the body `{ k }`.
     fn shorten_key<'long: 'short, 'short>(k: Self::Key<'long>) -> Self::Key<'short>
     where
         Self: 'long;
 }
 
 /// An implementor of [SimpleOrdItem] that has a key `K: Ord` and associated
-/// value `V`. `&K` is used as the key.
+/// value `V`. `&K` is used as the key. Note that this does not provide a
+/// `k_mut` function in order to guard against accidentally modifying the key of
+/// an &mut OrdPair<...> reference from a [SimpleOrdArena].
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OrdPair<K, V> {
-    pub k: K,
-    pub v: V,
+    k: K,
+    v: V,
 }
 
 impl<K: Ord, V> SimpleOrdItem for OrdPair<K, V> {
@@ -56,10 +58,6 @@ impl<K, V> OrdPair<K, V> {
         &self.k
     }
 
-    pub fn k_mut(&mut self) -> &mut K {
-        &mut self.k
-    }
-
     pub fn v(&self) -> &V {
         &self.v
     }
@@ -72,8 +70,8 @@ impl<K, V> OrdPair<K, V> {
         (&self.k, &self.v)
     }
 
-    pub fn k_v_mut(&mut self) -> (&mut K, &mut V) {
-        (&mut self.k, &mut self.v)
+    pub fn k_v_mut(&mut self) -> (&K, &mut V) {
+        (&self.k, &mut self.v)
     }
 
     pub fn into_k_v(self) -> (K, V) {
