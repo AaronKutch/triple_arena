@@ -1,3 +1,5 @@
+use core::fmt;
+
 /// This should be implemented for an item that has a stable ordering with
 /// respect to [SimpleOrdItem::key]. Unlike [OrdPair] and the future `OrdArena`
 /// which implicitly require keys and values to be separate structs, the item
@@ -30,7 +32,7 @@ pub trait SimpleOrdItem {
 /// value `V`. `&K` is used as the key. Note that this does not provide a
 /// `k_mut` function in order to guard against accidentally modifying the key of
 /// an &mut OrdPair<...> reference from a [SimpleOrdArena].
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OrdPair<K, V> {
     k: K,
     v: V,
@@ -51,6 +53,12 @@ impl<K: Ord, V> SimpleOrdItem for OrdPair<K, V> {
         Self: 'long,
     {
         k
+    }
+}
+
+impl<K: Ord + fmt::Debug, V: fmt::Debug> fmt::Debug for OrdPair<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("").field(self.k()).field(self.v()).finish()
     }
 }
 

@@ -276,84 +276,13 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             //self.a.clear_and_shrink();
         }
     }
-
-    // TODO probably have some from_ordered function
-
-    /// Assumes `!self.is_empty()`, and the keys are in order, raw entries are
-    /// compressed, and all `p_tree0`s and `p_tree1`s are preset to `None`.
-    pub(crate) fn raw_rebalance_assuming_compressed(&mut self) {
-        // redo the tree structure for better balance
-        let p_first = P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap();
-        self.first = p_first;
-        self.last = P::Inx::try_from_usize(NonZeroUsize::new(self.a.len()).unwrap()).unwrap();
-        let root_rank = (self
-            .a
-            .len()
-            .wrapping_sub(1)
-            .next_power_of_two()
-            .trailing_zeros() as u8)
-            .wrapping_add(1);
-        let mut i = NonZeroUsize::new(self.a.len()).unwrap();
-        loop {
-            let mut lvl = root_rank;
-            let p = P::Inx::try_from_usize(i).unwrap();
-            let mut subtree_first = 1;
-            let mut subtree_last = self.a.len();
-            let mut last_subtree_mid = None;
-            // TODO use a stack of 12
-            loop {
-                let subtree_len = subtree_last.wrapping_sub(subtree_first).wrapping_add(1);
-                let subtree_mid = subtree_first.wrapping_add(subtree_len.wrapping_shr(1));
-                if i.get() == subtree_mid {
-                    // important: actual accesses are only done at this time
-                    let node = self.a.get_inx_mut_unwrap(p);
-                    if subtree_len == 1 {
-                        node.rank = 1;
-                    } else if subtree_len == 2 {
-                        node.rank = 2;
-                    } else if subtree_len == 3 || subtree_len == 4 {
-                        node.rank = 3;
-                    } else {
-                        node.rank = lvl;
-                    }
-                    if let Some(last_subtree_mid) = last_subtree_mid {
-                        let p_back =
-                            P::Inx::try_from_usize(NonZeroUsize::new(last_subtree_mid).unwrap())
-                                .unwrap();
-                        node.p_back = Some(p_back);
-                        let node = self.a.get_inx_mut_unwrap(p_back);
-                        if i < P::Inx::try_into_usize(p_back).unwrap() {
-                            node.p_tree0 = Some(p);
-                        } else {
-                            node.p_tree1 = Some(p);
-                        }
-                    } else {
-                        node.p_back = None;
-                        self.root = p;
-                    }
-                    break;
-                } else if i.get() < subtree_mid {
-                    subtree_last = subtree_mid.wrapping_sub(1);
-                } else {
-                    subtree_first = subtree_mid.wrapping_add(1);
-                }
-                lvl = lvl.wrapping_sub(1);
-                last_subtree_mid = Some(subtree_mid);
-            }
-            i = if let Some(prev) = NonZeroUsize::new(i.get().wrapping_sub(1)) {
-                prev
-            } else {
-                break;
-            }
-        }
-    }
     */
 
     /// Assumes `!self.is_empty()`, and all `p_back`s, `p_tree0`s, and
     /// `p_tree1`s are preset to `None`. `root` can be invalid. However, all
     /// other invariants must be kept such as the keys being in order in a
     /// single acyclic chain, and the `first` and `last` `Ptr`s being set.
-    pub(crate) fn raw_rebalance_assuming_compressed(&mut self) {
+    pub(crate) fn raw_rebalance_assuming_prepared(&mut self) {
         /*
         If trying to make an `O(n)` pass to rebalance the tree, it seems that it is only possible to do so by starting, at least virtually, from the top down. Every set of entries has to be recursively cut about in half (there is some more extensive bound but if we are doing this, we may as well make it as balanced as possible). If not done so, it is inevitable with enough entries that a subtree is not only unbalanced but cannot even form a valid subtree because the ranks cannot be bridged.
 
@@ -558,6 +487,8 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             p_target = p_next;
         }
     }
+
+    // TODO probably have some from_ordered_chain function
 
     /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
