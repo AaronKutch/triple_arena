@@ -367,7 +367,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             .next_power_of_two()
             .trailing_zeros() as u8)
             .wrapping_add(1);
-        let i_end = NonZeroUsize::new(self.a.len()).unwrap();
+        let final_end = NonZeroUsize::new(self.a.len()).unwrap();
 
         #[derive(Clone, Copy)]
         struct Tracker<P: Ptr> {
@@ -404,84 +404,113 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         // logic, it contains the whole set
         stack.push(Tracker {
             i_start: from_checked_raw::<P>(NonZeroUsize::new(1).unwrap()),
-            subtree_len: from_checked_raw::<P>(i_end),
+            subtree_len: from_checked_raw::<P>(final_end),
         });
-        /*loop {
+        // descend to the first element so we can proceed by induction
+        loop {
             let last = *stack.get(NonZeroUsize::new(stack.len()).unwrap()).unwrap();
 
-            let subtree_len =
+            // for finding the midpoint, we choose the formulation of `start + (len / 2)`
+            // and make the element at the midpoint belong to subtree 1 (so
+            // `i_start..i_midpoint` is one subtree and `i_midpoint..i_end` (i_end being
+            // exclusive) is the other)
+
+            let i_midpoint =
                 NonZeroUsize::new(1usize.wrapping_add(last.subtree_len().get() / 2)).unwrap();
-            stack.push(Tracker {
-                i_start: from_checked_raw(NonZeroUsize::new(1).unwrap()),
-                subtree_len: from_checked_raw(subtree_len),
-            });
-            if subtree_len.get() == 1 {
+            let Some(subtree_len) = NonZeroUsize::new(i_midpoint.get().wrapping_sub(1)) else {
                 break;
-            }
-        }*/
+            };
+            stack.push(Tracker {
+                i_start: from_checked_raw::<P>(NonZeroUsize::new(1).unwrap()),
+                subtree_len: from_checked_raw::<P>(subtree_len),
+            });
+        }
 
         let mut p_target = Some(self.first);
-        for i_target in 1..i_end.get() {
-            let i_target = NonZeroUsize::new(i_target).unwrap();
+        // maintain that every loop starts at `i_target` being the midpoint of the last
+        // tracker on the stack
+        let mut i_target = NonZeroUsize::new(1).unwrap();
+        loop {
+            let last = *stack.get(NonZeroUsize::new(stack.len()).unwrap()).unwrap();
+            let subtree_len = last.subtree_len();
+            let i_start = last.i_start();
+            let i_midpoint = i_target;
+            let i_end = i_target.checked_add(subtree_len.get()).unwrap();
 
-            loop {
-                let last = *stack.get(NonZeroUsize::new(stack.len()).unwrap()).unwrap();
-                let subtree_len = last.subtree_len();
-                // when finding the midpoint, we choose the formulation of `start + (end / 2)`
-                // because it naturally avoids truncation to zero etc
-                let midpoint =
-                    NonZeroUsize::new(1usize.wrapping_add(last.subtree_len().get() / 2)).unwrap();
+            let p_this = p_target.unwrap();
+            // advance
+            p_target = self.a.get_inx_link_no_gen(p_this).unwrap().1.next();
+            let node = self.a.get_inx_mut_unwrap(p_this);
 
-                // because the traversal is in order, we will reach equality exactly when the
-                // stack reaches what it needs to be, and will not miss anything
-                if i_target == midpoint {
-                    let p_this = p_target.unwrap();
-                    // advance
-                    p_target = self.a.get_inx_link_no_gen(p_this).unwrap().1.next();
-                    let node = self.a.get_inx_mut_unwrap(p_this);
-
-                    match subtree_len.get() {
-                        // special base cases
-                        1 => {
-                            // a leaf node, forced to have this rank
-                            node.rank = 1;
-                        }
-                        2 => {
-                            // a node with one child being `None`, forced to have this rank
-                            node.rank = 2;
-                        }
-                        3 => {
-                            // a node with both children having rank 1, we have the option of rank 2
-                            // or 3, but it turns out that we need to choose the maximum rank in
-                            // general, there is an 18 node minimal case
-                            // where an impossibility shows up
-                            node.rank = 3;
-                        }
-                        4 => {
-                            // must have a rank 2 and rank 1 child, forced to have this rank
-                            node.rank = 3;
-                        }
-                        // possible in all other cases if we always chose best midpoint
-                        _ => {
-                            node.rank = root_rank - (stack.len() as u8);
-                        }
-                    }
-                    //node.p_back = Some();
-
-                    break;
-                } else {
-                    if last.subtree_len().get() == 1 {
-                        // unless
-                        todo!()
-                    } else {
-                        // descend subtree 0
-                        stack.push(Tracker {
-                            i_start: last.i_start,
-                            subtree_len: from_checked_raw::<P>(last.subtree_len()),
-                        });
-                    }
+            match subtree_len.get() {
+                // special base cases
+                1 => {
+                    // a leaf node, forced to have this rank
+                    node.rank = 1;
+                }
+                2 => {
+                    // a node with one child being `None`, forced to have this rank
+                    node.rank = 2;
+                }
+                3 => {
+                    // a node with both children having rank 1, we have the option of rank 2
+                    // or 3, but it turns out that we need to choose the maximum rank in
+                    // general, there is an 18 node minimal case
+                    // where an impossibility shows up
+                    node.rank = 3;
+                }
+                4 => {
+                    // must have a rank 2 and rank 1 child, forced to have this rank
+                    node.rank = 3;
+                }
+                // possible in all other cases if we always chose best midpoint
+                _ => {
+                    node.rank = root_rank.wrapping_sub(stack.len() as u8).wrapping_add(1);
                 }
             }
+
+            if i_target == final_end {
+                break;
+            }
+
+            // maintain
+            let next_target = i_target.checked_add(1).unwrap();
+            if subtree_len.get() != 1
+                && let Some(subtree1_len) =
+                    NonZeroUsize::new(i_end.get().wrapping_sub(i_midpoint.get()))
+            {
+                // must be in the interior, descend to subtree 1 once and then all the way down
+                // subtree 0
+
+                // descend subtree 1
+                stack.push(Tracker {
+                    i_start: from_checked_raw::<P>(i_midpoint),
+                    subtree_len: from_checked_raw::<P>(subtree1_len),
+                });
+                // descend subtree 0 all the way
+                loop {
+                    let last = *stack.get(NonZeroUsize::new(stack.len()).unwrap()).unwrap();
+                    let i_start = last.i_start();
+                    let i_midpoint =
+                        NonZeroUsize::new(i_start.get().wrapping_add(last.subtree_len().get() / 2))
+                            .unwrap();
+                    let Some(subtree0_len) =
+                        NonZeroUsize::new(i_midpoint.get().wrapping_sub(i_start.get()))
+                    else {
+                        break;
+                    };
+                    stack.push(Tracker {
+                        i_start: from_checked_raw::<P>(i_start),
+                        subtree_len: from_checked_raw::<P>(subtree0_len),
+                    });
+                }
+            } else {
+                // must be a leaf w.r.t. subtree 1, ascend until we step to the 1 direction
+                // once, also here is where most of the sets are done
+
+                todo!()
+            }
+            i_target = next_target;
         }
     }
 
