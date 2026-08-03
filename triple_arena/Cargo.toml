@@ -25,7 +25,7 @@ alloc = ["recasting/alloc"]
 std = ["alloc", "recasting/std"]
 serde_support = ["serde"]
 
-# FIXME review and add MSRV to recasting crate, bump minor version
+# FIXME review and add MSRV <=1.70 to recasting crate, bump minor version
 [dependencies]
 #recasting = { path = "../../recasting", default-features = false }
 recasting = { version = "0.2", default-features = false }

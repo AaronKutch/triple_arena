@@ -36,7 +36,6 @@ pub use crate::{ord::OrdPair, stack::StackBacking};
 
 /// Special utilities for advanced usage
 pub mod utils {
-    // FIXME rename? or put in another module, do the same with InternalSlot
     #[cfg(feature = "alloc")]
     pub use crate::stack::{
         NonZeroInxBoxedSlice, NonZeroInxBoxedSlicePushEntry, NonZeroInxLimitedVec,

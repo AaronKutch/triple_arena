@@ -33,7 +33,7 @@ impl<P: Ptr> OrdEntryKind<P> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrdInsertKind<P: Ptr, K: Ord> {
     /// Inserts an item into an empty arena. Fails if the arena is not empty.
     Empty,
@@ -68,9 +68,6 @@ pub enum OrdInsertKind<P: Ptr, K: Ord> {
         direction: Ordering,
     },
 }
-
-// FIXME
-//impl PartialEq for OrdInsertKind<>
 
 /// Insertion is cancelled when this is dropped, but note the processing time
 /// needed by some operations to find the entry has already happened, and any

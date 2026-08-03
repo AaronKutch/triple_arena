@@ -3,12 +3,15 @@
 use core::{
     borrow::Borrow,
     fmt::{self, Debug},
+    num::NonZeroUsize,
     ops::{Index, IndexMut},
 };
 
 use crate::{
     Arena, ChainArena, InvalidationOption, LinkNoGen,
+    arena::{from_checked_ptr, from_checked_raw},
     ord_iterators::{self, OrderedPtrAdvancer},
+    stack::{NonZeroInxArray, NonZeroInxGenericStack},
     traits::{ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
@@ -345,6 +348,142 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         }
     }
     */
+
+    /// Assumes `!self.is_empty()`, and all `p_back`s, `p_tree0`s, and
+    /// `p_tree1`s are preset to `None`. `root` can be invalid. However, all
+    /// other invariants must be kept such as the keys being in order in a
+    /// single acyclic chain, and the `first` and `last` `Ptr`s being set.
+    pub(crate) fn raw_rebalance_assuming_compressed(&mut self) {
+        /*
+        If trying to make an `O(n)` pass to rebalance the tree, it seems that it is only possible to do so by starting, at least virtually, from the top down. Every set of entries has to be recursively cut about in half (there is some more extensive bound but if we are doing this, we may as well make it as balanced as possible). If not done so, it is inevitable with enough entries that a subtree is not only unbalanced but cannot even form a valid subtree because the ranks cannot be bridged.
+
+        What we want to do is have an algorithm that can deterministically compute a node's placement in a tree only as a function of index (and we do it by requiring that all the tree `Ptr`s are `None` and then go through in one or two passes to idempotently set the `Ptr`s that require it.). Recalculating the recursive part would lead to `O(n log n)` complexity. However, we can have a stack to record intermediate parts. Even better, knowing what nodes to link to each other naturally falls out of this.
+        */
+
+        let root_rank = (self
+            .a
+            .len()
+            .wrapping_sub(1)
+            .next_power_of_two()
+            .trailing_zeros() as u8)
+            .wrapping_add(1);
+        let i_end = NonZeroUsize::new(self.a.len()).unwrap();
+
+        #[derive(Clone, Copy)]
+        struct Tracker<P: Ptr> {
+            // to conserve size on small index cases, we use `P::Inx` and can safely cast if
+            // inserts up to the current largest index slot were successful anyways
+            i_start: P::Inx,
+            subtree_len: P::Inx,
+        }
+
+        impl<P: Ptr> Tracker<P> {
+            fn i_start(self) -> NonZeroUsize {
+                from_checked_ptr::<P>(self.i_start)
+            }
+
+            fn subtree_len(self) -> NonZeroUsize {
+                from_checked_ptr::<P>(self.subtree_len)
+            }
+        }
+
+        // use the nonzero stack to minimize dependencies
+
+        // We can't use consts from generics here, but it only shaves off a few anyways.
+        // We use `usize::BITS` and not `usize::BITS - 1` because we need the extra
+        // superroot, and we would just use the power of two array size anyways.
+
+        // ~1024 bytes on typical 64 bit platforms and indexes, 64 bytes on very
+        // restricted 16 bit platforms, acceptable as long as this is a leaf function
+        const MAX_DEPTH: usize = usize::BITS as usize;
+        let mut stack = NonZeroInxArray::<Tracker<P>, MAX_DEPTH>::new();
+        // Setup the stack virtually. When jumping power of two domains, single depth
+        // backtracking has to be done but otherwise one pass is made.
+
+        // this is a superroot that isn't part of the tree and is just to simplify the
+        // logic, it contains the whole set
+        stack.push(Tracker {
+            i_start: from_checked_raw::<P>(NonZeroUsize::new(1).unwrap()),
+            subtree_len: from_checked_raw::<P>(i_end),
+        });
+        /*loop {
+            let last = *stack.get(NonZeroUsize::new(stack.len()).unwrap()).unwrap();
+
+            let subtree_len =
+                NonZeroUsize::new(1usize.wrapping_add(last.subtree_len().get() / 2)).unwrap();
+            stack.push(Tracker {
+                i_start: from_checked_raw(NonZeroUsize::new(1).unwrap()),
+                subtree_len: from_checked_raw(subtree_len),
+            });
+            if subtree_len.get() == 1 {
+                break;
+            }
+        }*/
+
+        let mut p_target = Some(self.first);
+        for i_target in 1..i_end.get() {
+            let i_target = NonZeroUsize::new(i_target).unwrap();
+
+            loop {
+                let last = *stack.get(NonZeroUsize::new(stack.len()).unwrap()).unwrap();
+                let subtree_len = last.subtree_len();
+                // when finding the midpoint, we choose the formulation of `start + (end / 2)`
+                // because it naturally avoids truncation to zero etc
+                let midpoint =
+                    NonZeroUsize::new(1usize.wrapping_add(last.subtree_len().get() / 2)).unwrap();
+
+                // because the traversal is in order, we will reach equality exactly when the
+                // stack reaches what it needs to be, and will not miss anything
+                if i_target == midpoint {
+                    let p_this = p_target.unwrap();
+                    // advance
+                    p_target = self.a.get_inx_link_no_gen(p_this).unwrap().1.next();
+                    let node = self.a.get_inx_mut_unwrap(p_this);
+
+                    match subtree_len.get() {
+                        // special base cases
+                        1 => {
+                            // a leaf node, forced to have this rank
+                            node.rank = 1;
+                        }
+                        2 => {
+                            // a node with one child being `None`, forced to have this rank
+                            node.rank = 2;
+                        }
+                        3 => {
+                            // a node with both children having rank 1, we have the option of rank 2
+                            // or 3, but it turns out that we need to choose the maximum rank in
+                            // general, there is an 18 node minimal case
+                            // where an impossibility shows up
+                            node.rank = 3;
+                        }
+                        4 => {
+                            // must have a rank 2 and rank 1 child, forced to have this rank
+                            node.rank = 3;
+                        }
+                        // possible in all other cases if we always chose best midpoint
+                        _ => {
+                            node.rank = root_rank - (stack.len() as u8);
+                        }
+                    }
+                    //node.p_back = Some();
+
+                    break;
+                } else {
+                    if last.subtree_len().get() == 1 {
+                        // unless
+                        todo!()
+                    } else {
+                        // descend subtree 0
+                        stack.push(Tracker {
+                            i_start: last.i_start,
+                            subtree_len: from_checked_raw::<P>(last.subtree_len()),
+                        });
+                    }
+                }
+            }
+        }
+    }
 
     /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of

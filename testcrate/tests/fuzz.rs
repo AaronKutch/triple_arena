@@ -227,7 +227,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
             let mut a = Arena::<P2, Cd<()>, FixedHeapBacking>::with_min_capacity(LIMIT).stack()?;
             let stats = basic_arena::Stats {
                 test_limit: LIMIT,
-                fixed_cap: Some(ArenaTrait::capacity(&a)), // FIXME
+                fixed_cap: Some(a.capacity()),
                 n: N,
                 iters999: None,
                 cd_gen: CdGen::new(),

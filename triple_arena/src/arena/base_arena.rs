@@ -159,8 +159,6 @@ pub struct Arena<
     pub(crate) generation: P::Gen,
 }
 
-// FIXME restrict visibility above to pub(in arena) and check other structs
-
 // FIXME we may want `unreachable` for assembly perf, see u32 Ptr case
 
 /// We assume that if a slot has been successfully pushed before (implying
@@ -481,11 +479,10 @@ where
         // the reduction below capacity case is specifically special anyways by
         // the documentation of `set_max_capacity`
 
-        // FIXME use the trait when the old capacity has been removed
         if self
             .max_capacity()
             .is_some_and(|old_max| max_capacity < old_max)
-            && max_capacity < self.m.capacity()
+            && max_capacity < self.capacity()
         {
             self.canonicalize_free_list();
         }

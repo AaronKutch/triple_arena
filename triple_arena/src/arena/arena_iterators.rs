@@ -81,8 +81,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for Vals<'a, P, T, B> {
     }
 }
 
-// REF(mutable_iterator_soundness)
-// But FIXME I think we will remove a bunch of these in favor of the impl Traits
+// FIXME remove a bunch of these in favor of the impl Traits
 
 /// A mutable iterator over `&mut T` in an `Arena`
 pub struct ValsMut<'a, P: Ptr, T, B: ArenaBacking> {
@@ -166,8 +165,7 @@ impl<P: Ptr, T, B: ArenaBacking> Iterator for Drain<'_, P, T, B> {
         // for global generation arenas, just do this for simplicity and so that the
         // invalidation is associated with a particular element
 
-        //  FIXME
-        match ArenaTrait::remove(self.arena, p) {
+        match self.arena.remove(p) {
             InvalidationResult::Success(t) => Some(InvalidationOption::Success((p, t))),
             InvalidationResult::GenerationOverflow(t) => {
                 Some(InvalidationOption::GenerationOverflow((p, t)))

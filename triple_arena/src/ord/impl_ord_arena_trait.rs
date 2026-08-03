@@ -110,8 +110,14 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
         reset_generation: bool,
         mut map: F,
     ) -> InvalidationOption<()> {
-        self.a
-            .compress_with(reset_generation, |p, node, q| map(p, &mut node.t, q))
+        self.a.compress_with(reset_generation, |p, node, q| {
+            // critical precondition for rebalance
+            node.p_back = None;
+            node.p_tree0 = None;
+            node.p_tree1 = None;
+
+            map(p, &mut node.t, q)
+        })
         // FIXME need generic rebalancer
     }
 }

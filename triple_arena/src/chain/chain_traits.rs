@@ -329,8 +329,11 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         p: P,
     ) -> Option<impl Iterator<Item = InvalidationOption<(P, LinkNoGen<P, T>)>>>;
 
-    // FIXME solve the advancer guarding problem and fix the iterators, and probably
-    // add the compress_from functions
+    // TODO solve the advancer guarding problem
+
+    // FIXME the standard recaster needs to be a direct insertion arena, have an
+    // even more generic `clone_from` function that asks for recasting when figuring
+    // out where to put things. Then make a compress_from function
 
     // TODO the problem with this currently is that in-place canonical compression
     // necessarily requires the map function to be called on an element multiple

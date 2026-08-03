@@ -27,6 +27,5 @@ rand_xoshiro = "0.8"
 ron = { version = "0.12", features = ["integer128"] }
 stacked_errors = "0.7"
 star_rng = { path = "../../star_rng" }
-# FIXME turn default features off
 triple_arena = { path = "../triple_arena", default-features = false }
 triple_arena_render = { path = "../triple_arena_render", optional = true }
