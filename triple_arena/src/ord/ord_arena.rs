@@ -367,7 +367,6 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             .next_power_of_two()
             .trailing_zeros() as u8)
             .wrapping_add(1);
-        let final_end = NonZeroUsize::new(self.a.len()).unwrap();
 
         // A set of elements, the midpoint of which is the root of the subtree.
         // For finding the midpoint, we choose the formulation of `start + (len / 2)`
@@ -411,7 +410,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         // the root
         stack.push(Tracker {
             i_start: from_checked_raw::<P>(NonZeroUsize::new(1).unwrap()),
-            subtree_len: from_checked_raw::<P>(final_end),
+            subtree_len: from_checked_raw::<P>(NonZeroUsize::new(self.a.len()).unwrap()),
             p_midpoint: None,
         });
         // descend to the first element so we can proceed by induction
@@ -477,10 +476,6 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 }
             }
 
-            if i_target == final_end {
-                break;
-            }
-
             // maintain
             let i_next = i_target.checked_add(1).unwrap();
             if subtree_len.get() != 1
@@ -525,9 +520,11 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 
                 loop {
                     let removed = stack.pop().unwrap();
-                    let last = stack
-                        .get_mut(NonZeroUsize::new(stack.len()).unwrap())
-                        .unwrap();
+                    let Some(last) = stack.get_mut(NonZeroUsize::new(stack.len()).unwrap()) else {
+                        return;
+                    };
+                    // must have been seet
+                    let p_removed = removed.p_midpoint.unwrap();
                     let ascended1 = removed
                         .i_start()
                         .checked_add(removed.subtree_len().get())
@@ -535,10 +532,20 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                         != i_end;
 
                     if ascended1 {
-                        last.p_midpoint = p_next;
+                        // this is guaranteed and required
+                        let p_last = p_next.unwrap();
+                        last.p_midpoint = Some(p_last);
+
+                        // all `p_tree0`s set here
+                        self.a.get_inx_mut_unwrap(p_last).p_tree0 = Some(p_removed);
+                        self.a.get_inx_mut_unwrap(p_removed).p_back = Some(p_last);
+                    } else {
+                        // this must have been set by the time we ascend from the right subtree
+                        let p_last = last.p_midpoint.unwrap();
+                        // all `p_tree1`s set here
+                        self.a.get_inx_mut_unwrap(p_last).p_tree1 = Some(p_removed);
+                        self.a.get_inx_mut_unwrap(p_removed).p_back = Some(p_last);
                     }
-                    let node = self.a.get_inx_mut_unwrap(p_this);
-                    node.p_back = last.p_midpoint;
 
                     if ascended1 {
                         break;
