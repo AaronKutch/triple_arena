@@ -369,12 +369,20 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             .wrapping_add(1);
         let final_end = NonZeroUsize::new(self.a.len()).unwrap();
 
+        // A set of elements, the midpoint of which is the root of the subtree.
+        // For finding the midpoint, we choose the formulation of `start + (len / 2)`
+        // and make the element at the midpoint belong to subtree 1 (so
+        // `i_start..i_midpoint` is one subtree and `i_midpoint..i_end` (`i_end` being
+        // exclusive) is the other)
         #[derive(Clone, Copy)]
         struct Tracker<P: Ptr> {
             // to conserve size on small index cases, we use `P::Inx` and can safely cast if
             // inserts up to the current largest index slot were successful anyways
             i_start: P::Inx,
             subtree_len: P::Inx,
+            // Stays `None` until ascending to this level from subtree0, this is needed to avoid
+            // retracking when the right child is found.
+            p_midpoint: Option<P::Inx>,
         }
 
         impl<P: Ptr> Tracker<P> {
@@ -393,36 +401,37 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         // We use `usize::BITS` and not `usize::BITS - 1` because we need the extra
         // superroot, and we would just use the power of two array size anyways.
 
-        // ~1024 bytes on typical 64 bit platforms and indexes, 64 bytes on very
+        // ~2048 bytes on typical 64 bit platforms and indexes, 128 bytes on very
         // restricted 16 bit platforms, acceptable as long as this is a leaf function
         const MAX_DEPTH: usize = usize::BITS as usize;
         let mut stack = NonZeroInxArray::<Tracker<P>, MAX_DEPTH>::new();
         // Setup the stack virtually. When jumping power of two domains, single depth
         // backtracking has to be done but otherwise one pass is made.
 
-        // this is a superroot that isn't part of the tree and is just to simplify the
-        // logic, it contains the whole set
+        // the root
         stack.push(Tracker {
             i_start: from_checked_raw::<P>(NonZeroUsize::new(1).unwrap()),
             subtree_len: from_checked_raw::<P>(final_end),
+            p_midpoint: None,
         });
         // descend to the first element so we can proceed by induction
         loop {
             let last = *stack.get(NonZeroUsize::new(stack.len()).unwrap()).unwrap();
 
-            // for finding the midpoint, we choose the formulation of `start + (len / 2)`
-            // and make the element at the midpoint belong to subtree 1 (so
-            // `i_start..i_midpoint` is one subtree and `i_midpoint..i_end` (i_end being
-            // exclusive) is the other)
-
             let i_midpoint =
                 NonZeroUsize::new(1usize.wrapping_add(last.subtree_len().get() / 2)).unwrap();
             let Some(subtree_len) = NonZeroUsize::new(i_midpoint.get().wrapping_sub(1)) else {
+                // need this for ascension
+                stack
+                    .get_mut(NonZeroUsize::new(stack.len()).unwrap())
+                    .unwrap()
+                    .p_midpoint = Some(self.first);
                 break;
             };
             stack.push(Tracker {
                 i_start: from_checked_raw::<P>(NonZeroUsize::new(1).unwrap()),
                 subtree_len: from_checked_raw::<P>(subtree_len),
+                p_midpoint: None,
             });
         }
 
@@ -438,8 +447,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             let i_end = i_target.checked_add(subtree_len.get()).unwrap();
 
             let p_this = p_target.unwrap();
-            // advance
-            p_target = self.a.get_inx_link_no_gen(p_this).unwrap().1.next();
+            let p_next = self.a.get_inx_link_no_gen(p_this).unwrap().1.next();
             let node = self.a.get_inx_mut_unwrap(p_this);
 
             match subtree_len.get() {
@@ -474,7 +482,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             }
 
             // maintain
-            let next_target = i_target.checked_add(1).unwrap();
+            let i_next = i_target.checked_add(1).unwrap();
             if subtree_len.get() != 1
                 && let Some(subtree1_len) =
                     NonZeroUsize::new(i_end.get().wrapping_sub(i_midpoint.get()))
@@ -486,6 +494,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 stack.push(Tracker {
                     i_start: from_checked_raw::<P>(i_midpoint),
                     subtree_len: from_checked_raw::<P>(subtree1_len),
+                    p_midpoint: None,
                 });
                 // descend subtree 0 all the way
                 loop {
@@ -497,20 +506,49 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                     let Some(subtree0_len) =
                         NonZeroUsize::new(i_midpoint.get().wrapping_sub(i_start.get()))
                     else {
+                        // need this for ascension
+                        stack
+                            .get_mut(NonZeroUsize::new(stack.len()).unwrap())
+                            .unwrap()
+                            .p_midpoint = p_next;
                         break;
                     };
                     stack.push(Tracker {
                         i_start: from_checked_raw::<P>(i_start),
                         subtree_len: from_checked_raw::<P>(subtree0_len),
+                        p_midpoint: None,
                     });
                 }
             } else {
                 // must be a leaf w.r.t. subtree 1, ascend until we step to the 1 direction
                 // once, also here is where most of the sets are done
 
-                todo!()
+                loop {
+                    let removed = stack.pop().unwrap();
+                    let last = stack
+                        .get_mut(NonZeroUsize::new(stack.len()).unwrap())
+                        .unwrap();
+                    let ascended1 = removed
+                        .i_start()
+                        .checked_add(removed.subtree_len().get())
+                        .unwrap()
+                        != i_end;
+
+                    if ascended1 {
+                        last.p_midpoint = p_next;
+                    }
+                    let node = self.a.get_inx_mut_unwrap(p_this);
+                    node.p_back = last.p_midpoint;
+
+                    if ascended1 {
+                        break;
+                    }
+                }
             }
-            i_target = next_target;
+
+            // advance
+            i_target = i_next;
+            p_target = p_next;
         }
     }
 

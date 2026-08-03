@@ -41,6 +41,8 @@ I almost considered `fn ok` instead of `fn allow` but that could easily lead to 
 
 I do not have `inx` variations of the `*_chain` methods, they are dangerous enough and usually the `Ptr` is around and `O(n)` anyways.
 The `Ptr`s are usually around for the chain connection or break functions as well.
+
+we _could_ get a mutable versions of the link functions like `get_link_no_gen` by returning `Link*<P, &mut ...>`, but I'd rather keep the number down and it would presumably be optimized to nothing if called next to `get_inx_mut` etc. I like the current set of 3 link functions because they are closer to what is actually happening at a low level, only `get_link` requires chasing and reconstructing a reference within the struct.
 */
 
 /// The base trait for `triple_arena` style Arenas. See [crate::Arena] for the
