@@ -417,7 +417,7 @@ fn fuzz_ord() {
                     assert!(a.first().is_none());
                 }
             }
-            997..999 => {
+            997..998 => {
                 // last
                 if len != 0 {
                     let set = b.last_entry().unwrap();
@@ -427,13 +427,12 @@ fn fuzz_ord() {
                     assert!(a.last().is_none());
                 }
             }
-            /*998 => {
-                // compress_and_shrink_with
-                // compress_and_shrink is difficult to test, we just note its definition is
-                // self.compress_and_shrink_with(|_, _, _| ())
+            998 => {
+                // compress_with
 
                 let mut tmp: HashMap<Val, Triple> = HashMap::new();
                 let q_gen = PtrGen::generational_inc(a.generation()).0;
+                SimpleOrdArena::_check_invariants(&a).unwrap();
                 a.compress_with(false, |p, pair, q| {
                     let set = &b[pair.k()];
                     assert_eq!(set[pair.v()].p, p);
@@ -468,7 +467,7 @@ fn fuzz_ord() {
                         }
                     }
                 }
-            }*/
+            }
             999 => {
                 match rng.next_u32() % 4 {
                     0 => {

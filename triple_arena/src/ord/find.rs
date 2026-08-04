@@ -354,44 +354,6 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     }
 }
 
-// example use of the below in debugging
-/*
-use std::path::PathBuf;
-use triple_arena::{ptr_struct, Arena, OrdArena};
-use triple_arena_render::{render_to_svg_file, DebugNode};
-// ...
-let debug_arena = a._debug_arena();
-let mut debug_arena2 = Arena::new();
-let res = OrdArena::_check_invariants(&a);
-if res.is_err() {
-    debug_arena2.clone_from_with(
-        &debug_arena,
-        |_, (rank, k, _, p_tree0, p_back, p_tree1)| DebugNode {
-            sources: if let Some(p_back) = p_back {
-                vec![(*p_back, String::new())]
-            } else {
-                vec![]
-            },
-            center: vec![format!("r: {rank}, k: {k}")],
-            sinks: {
-                let mut v = vec![];
-                if let Some(p_tree0) = p_tree0 {
-                    v.push((*p_tree0, "0".to_owned()));
-                }
-                if let Some(p_tree1) = p_tree1 {
-                    v.push((*p_tree1, "1".to_owned()));
-                }
-                v
-            },
-        },
-    );
-    render_to_svg_file(&debug_arena2, false, PathBuf::from("tmp.svg".to_owned()))
-        .unwrap();
-    println!("{}", a.debug());
-}
-res.unwrap();
-*/
-
 /// Used for development debugging only
 /// ```
 /// use std::path::PathBuf;

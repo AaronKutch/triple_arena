@@ -110,14 +110,27 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
         reset_generation: bool,
         mut map: F,
     ) -> InvalidationOption<()> {
+        // make sure this optimizes
+        let first = self.first;
+        let last = self.last;
+        let mut change_first = first;
+        let mut change_last = last;
         let res = self.a.compress_with(reset_generation, |p, node, q| {
             // critical precondition for rebalance
             node.p_back = None;
             node.p_tree0 = None;
             node.p_tree1 = None;
+            if p.inx() == first {
+                change_first = q.inx();
+            }
+            if p.inx() == last {
+                change_last = q.inx();
+            }
 
             map(p, &mut node.t, q)
         });
+        self.first = change_first;
+        self.last = change_last;
         self.raw_rebalance_assuming_prepared();
         res
     }
