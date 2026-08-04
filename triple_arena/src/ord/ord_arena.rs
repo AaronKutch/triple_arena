@@ -449,9 +449,10 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 
                 loop {
                     let removed = stack.pop().unwrap();
-                    let Some(last) = stack.get_mut(NonZeroUsize::new(stack.len()).unwrap()) else {
-                        return;
+                    let Some(len) = NonZeroUsize::new(stack.len()) else {
+                        return
                     };
+                    let last = stack.get_mut(len).unwrap();
                     // must have been seet
                     let p_removed = removed.p_midpoint.unwrap();
                     let ascended1 = removed

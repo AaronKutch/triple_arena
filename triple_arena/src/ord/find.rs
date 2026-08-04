@@ -404,42 +404,43 @@ res.unwrap();
 ///
 /// ptr_struct!(P0);
 ///
-/// fn main() {
-///     let mut a = SimpleOrdArena::<P0, OrdPair<String, ()>, HeapBacking>::new();
-///
-///     for i in 0..10 {
-///         // e.x. testing rebalancing
-///         let _ = a.insert(OrdPair::new(format!("K{i:X?}"), ()));
-///         a.compress(false).allow();
-///
-///         if let Err(e) = SimpleOrdArena::_check_invariants(&a) {
-///             let debug_arena = a._debug_arena();
-///             let mut debug_arena2 = Arena::<_, _, HeapBacking>::new();
-///             debug_arena2
-///                 .clone_from_with(&debug_arena, |_, (rank, pair, p_tree0, p_back, p_tree1)| {
-///                     DebugNode {
-///                         sources: if let Some(p_back) = p_back {
-///                             vec![(*p_back, String::new())]
-///                         } else {
-///                             vec![]
-///                         },
-///                         center: vec![format!("r: {rank}, pair: {pair:?}")],
-///                         sinks: {
-///                             let mut v = vec![];
-///                             if let Some(p_tree0) = p_tree0 {
-///                                 v.push((*p_tree0, "0".to_owned()));
-///                             }
-///                             if let Some(p_tree1) = p_tree1 {
-///                                 v.push((*p_tree1, "1".to_owned()));
-///                             }
-///                             v
-///                         },
-///                     }
-///                 })
-///                 .unwrap();
-///             //triple_arena_render::render_to_svg_file(&debug_arena2, false, PathBuf::from("tmp.svg".to_owned())).unwrap();
-///             panic!("{i}: debug: {}\nfailed with: {}", SimpleOrdArena::_debug(&a), e);
-///         }
+/// let mut a = SimpleOrdArena::<P0, OrdPair<String, ()>, HeapBacking>::new();
+/// 
+/// for i in 0..100 {
+///     let _ = a.insert(OrdPair::new(format!("K{i:X?}"), ()));
+///     a.compress(false).allow();
+/// 
+///     if let Err(e) = SimpleOrdArena::_check_invariants(&a) {
+///         let debug_arena = a._debug_arena();
+///         let mut debug_arena2 = Arena::<_, _, HeapBacking>::new();
+///         debug_arena2
+///             .clone_from_with(&debug_arena, |_, (rank, pair, p_tree0, p_back, p_tree1)| {
+///                 DebugNode {
+///                     sources: if let Some(p_back) = p_back {
+///                         vec![(*p_back, String::new())]
+///                     } else {
+///                         vec![]
+///                     },
+///                     center: vec![format!("r: {rank}, pair: {pair:?}")],
+///                     sinks: {
+///                         let mut v = vec![];
+///                         if let Some(p_tree0) = p_tree0 {
+///                             v.push((*p_tree0, "0".to_owned()));
+///                         }
+///                         if let Some(p_tree1) = p_tree1 {
+///                             v.push((*p_tree1, "1".to_owned()));
+///                         }
+///                         v
+///                     },
+///                 }
+///             })
+///             .unwrap();
+///         render_to_svg_file(&debug_arena2, false, PathBuf::from("tmp.svg".to_owned())).unwrap();
+///         panic!(
+///             "{i}: debug: {}\nfailed with: {}",
+///             SimpleOrdArena::_debug(&a),
+///             e
+///         );
 ///     }
 /// }
 /// ```
