@@ -278,10 +278,11 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     }
     */
 
-    /// Assumes all `p_back`s, `p_tree0`s, and `p_tree1`s are preset to `None`.
-    /// `root` can be invalid. However, all other invariants must be kept
-    /// such as the keys being in order in a single acyclic chain, and the
-    /// `first` and `last` `Ptr`s being set if nonempty.
+    /// Assumes all `p_back`s, `p_tree0`s, and `p_tree1`s are preset to `None`,
+    /// and all `rank`s are set to 0. `root` can be invalid. However, all
+    /// other invariants must be kept such as the keys being in order in a
+    /// single acyclic chain, and the `first` and `last` `Ptr`s being set if
+    /// nonempty.
     pub(crate) fn raw_rebalance_assuming_prepared(&mut self) {
         /*
         If trying to make an `O(n)` pass to rebalance the tree, it seems that it is only possible to do so by starting, at least virtually, from the top down. Every set of entries has to be recursively cut about in half (there is some more extensive bound but if we are doing this, we may as well make it as balanced as possible). If not done so, it is inevitable with enough entries that a subtree is not only unbalanced but cannot even form a valid subtree because the ranks cannot be bridged.
@@ -311,8 +312,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             // inserts up to the current largest index slot were successful anyways
             i_start: P::Inx,
             subtree_len: P::Inx,
-            // Stays `None` until ascending to this level from subtree0, this is needed to avoid
-            // retracking when the right child is found.
+            // Stays `None` until finding that the midpoint is `p_target`
             p_midpoint: Option<P::Inx>,
         }
 
@@ -345,18 +345,19 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             subtree_len: from_checked_raw::<P>(NonZeroUsize::new(self.a.len()).unwrap()),
             p_midpoint: None,
         });
-        // descend to the first element so we can proceed by induction
+        // descend to the first element, always ends up as a single element subtree, so
+        // we can proceed by induction
         loop {
-            let last = *stack.get(NonZeroUsize::new(stack.len()).unwrap()).unwrap();
+            let last = stack
+                .get_mut(NonZeroUsize::new(stack.len()).unwrap())
+                .unwrap();
 
             let i_midpoint =
                 NonZeroUsize::new(1usize.wrapping_add(last.subtree_len().get() / 2)).unwrap();
+            if i_midpoint == NonZeroUsize::new(1).unwrap() {
+                last.p_midpoint = Some(self.first);
+            }
             let Some(subtree_len) = NonZeroUsize::new(i_midpoint.get().wrapping_sub(1)) else {
-                // need this for ascension
-                stack
-                    .get_mut(NonZeroUsize::new(stack.len()).unwrap())
-                    .unwrap()
-                    .p_midpoint = Some(self.first);
                 break;
             };
             stack.push(Tracker {
@@ -366,93 +367,93 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             });
         }
 
-        let mut p_target = self.first;
         // maintain that every loop starts at `i_target` being the midpoint of the last
-        // tracker on the stack
+        // tracker on the stack, and that this is the largest set that has `i_target` as
+        // the midpoint (if descending wrongly, we can have a repeat of the midpoint
+        // which will lead to breaking the tree)
+        let mut p_target = self.first;
         let mut i_target = NonZeroUsize::new(1).unwrap();
         loop {
-            let last = *stack.get(NonZeroUsize::new(stack.len()).unwrap()).unwrap();
-            let subtree_len = last.subtree_len();
-            let i_start = last.i_start();
-            let i_midpoint = i_target;
-            let i_end = i_start.checked_add(subtree_len.get()).unwrap();
-
             let p_next = self.a.get_inx_link_no_gen(p_target).unwrap().1.next();
-            let node = self.a.get_inx_mut_unwrap(p_target);
-
-            match subtree_len.get() {
-                // special base cases
-                1 => {
-                    // a leaf node, forced to have this rank
-                    node.rank = 1;
-                }
-                2 => {
-                    // a node with one child being `None`, forced to have this rank
-                    node.rank = 2;
-                }
-                3 => {
-                    // a node with both children having rank 1, we have the option of rank 2
-                    // or 3, but it turns out that we need to choose the maximum rank in
-                    // general, there is an 18 node minimal case
-                    // where an impossibility shows up
-                    node.rank = 3;
-                }
-                4 => {
-                    // must have a rank 2 and rank 1 child, forced to have this rank
-                    node.rank = 3;
-                }
-                // possible in all other cases if we always chose best midpoint
-                _ => {
-                    node.rank = root_rank.wrapping_sub(stack.len() as u8).wrapping_add(1);
-                }
-            }
-
-            // maintain, note the extra `subtree1_len != 1` condition where the subtree
-            // would have the same midpoint as the current one
             let i_next = i_target.checked_add(1).unwrap();
-            if subtree_len.get() != 1
-                && let Some(subtree1_len) =
-                    NonZeroUsize::new(i_end.get().wrapping_sub(i_midpoint.get()))
-                && subtree1_len.get() != 1
-            {
-                // must be in the interior, descend to subtree 1 once and then all the way down
-                // subtree 0
 
-                // descend subtree 1
-                stack.push(Tracker {
-                    i_start: from_checked_raw::<P>(i_midpoint),
-                    subtree_len: from_checked_raw::<P>(subtree1_len),
-                    p_midpoint: None,
-                });
-                // descend subtree 0 all the way
-                loop {
-                    let last = *stack.get(NonZeroUsize::new(stack.len()).unwrap()).unwrap();
-                    let i_start = last.i_start();
-                    let i_midpoint =
-                        NonZeroUsize::new(i_start.get().wrapping_add(last.subtree_len().get() / 2))
-                            .unwrap();
-                    let Some(subtree0_len) =
-                        NonZeroUsize::new(i_midpoint.get().wrapping_sub(i_start.get()))
-                    else {
-                        // need this for ascension
-                        stack
-                            .get_mut(NonZeroUsize::new(stack.len()).unwrap())
-                            .unwrap()
-                            .p_midpoint = p_next;
-                        break;
-                    };
-                    stack.push(Tracker {
-                        i_start: from_checked_raw::<P>(i_start),
-                        subtree_len: from_checked_raw::<P>(subtree0_len),
-                        p_midpoint: None,
-                    });
+            let ascend = {
+                let stack_len = stack.len();
+                let last = stack
+                    .get_mut(NonZeroUsize::new(stack.len()).unwrap())
+                    .unwrap();
+                last.p_midpoint = Some(p_target);
+                let subtree_len = last.subtree_len();
+                let i_end = last
+                    .i_start()
+                    .checked_add(last.subtree_len().get())
+                    .unwrap();
+                let node = self.a.get_inx_mut_unwrap(p_target);
+                match subtree_len.get() {
+                    // special base cases
+                    1 => {
+                        // a leaf node, forced to have this rank
+                        node.rank = 1;
+                    }
+                    2 => {
+                        // a node with one child being `None`, forced to have this
+                        // rank
+                        node.rank = 2;
+                    }
+                    3 => {
+                        // a node with both children having rank 1, we have the
+                        // option
+                        // of rank 2 or 3, but it
+                        // turns out that we need to choose the maximum rank in
+                        // general, there is an 18 node minimal case
+                        // where an impossibility shows up
+                        node.rank = 3;
+                    }
+                    4 => {
+                        // must have a rank 2 and rank 1 child, forced to have this
+                        // rank
+                        node.rank = 3;
+                    }
+                    // possible in all other cases if we always chose best midpoint
+                    _ => {
+                        node.rank = root_rank.wrapping_sub(stack_len as u8).wrapping_add(1);
+                    }
                 }
-            } else {
-                // must be a leaf w.r.t. subtree 1, ascend until we step to the 1 direction
-                // once, also here is where most of the sets are done
 
+                // happens to always be if this
+                if subtree_len.get() == 2 {
+                    Some(i_end)
+                } else {
+                    None
+                }
+            };
+
+            // to find the correct stack state with the midpoint for `p_next`, if `i_next`
+            // is not in our set we ascend until we get it, else we descend until we see it
+            // for the first time.
+
+            if let Some(i_end) = ascend {
                 loop {
                     let removed = stack.pop().unwrap();
+                    let Some(len) = NonZeroUsize::new(stack.len()) else {
+                        // exit for when the root node had no `p_tree1`
+                        let p_removed = removed.p_midpoint.unwrap();
+                        self.root = p_removed;
+                        return;
+                    };
+                    let last = stack.get_mut(len).unwrap();
+                    // if the endpoint changes them we know we have reached the frame with the
+                    // midpoint being the next element
+                    if removed
+                        .i_start()
+                        .checked_add(last.subtree_len().get())
+                        .unwrap()
+                        != i_end
+                    {
+                        break;
+                    }
+                }
+                /*{
                     // must have been set
                     let p_removed = removed.p_midpoint.unwrap();
                     let Some(len) = NonZeroUsize::new(stack.len()) else {
@@ -467,10 +468,11 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                         .unwrap()
                         != i_end;
 
-                    if ascended1 {
+                        if ascended1 {
+                        // if ascending from `p_tree0`, another invariant we rely on is that `p_next` is the same as the midpoint of the superset
+
                         if let Some(p_last) = p_next {
                             last.p_midpoint = Some(p_last);
-
                             // all `p_tree0`s set here
                             self.a.get_inx_mut_unwrap(p_last).p_tree0 = Some(p_removed);
                             self.a.get_inx_mut_unwrap(p_removed).p_back = Some(p_last);
@@ -484,8 +486,59 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                         self.a.get_inx_mut_unwrap(p_last).p_tree1 = Some(p_removed);
                         self.a.get_inx_mut_unwrap(p_removed).p_back = Some(p_last);
                     }
+                }*/
+            } else {
+                // descend subtree 1
+                {
+                    let last = stack
+                        .get_mut(NonZeroUsize::new(stack.len()).unwrap())
+                        .unwrap();
+                    let subtree_len = last.subtree_len();
+                    let i_start = last.i_start();
+                    let i_midpoint = i_target;
+                    let i_end = i_start.checked_add(subtree_len.get()).unwrap();
+                    let subtree1_len =
+                        NonZeroUsize::new(i_end.get().wrapping_sub(i_midpoint.get())).unwrap();
+                    stack.push(Tracker {
+                        i_start: from_checked_raw::<P>(i_midpoint),
+                        subtree_len: from_checked_raw::<P>(subtree1_len),
+                        p_midpoint: None,
+                    });
+                }
+
+                // find the midpoint or keep descending subtree 0
+                loop {
+                    let last = stack
+                        .get_mut(NonZeroUsize::new(stack.len()).unwrap())
+                        .unwrap();
+                    let i_start = last.i_start();
+                    let i_midpoint =
+                        NonZeroUsize::new(i_start.get().wrapping_add(last.subtree_len().get() / 2))
+                            .unwrap();
+
+                    if i_midpoint == i_next {
+                        break;
+                    }
+
+                    let Some(subtree0_len) =
+                        NonZeroUsize::new(i_midpoint.get().wrapping_sub(i_start.get()))
+                    else {
+                        break;
+                    };
+                    stack.push(Tracker {
+                        i_start: from_checked_raw::<P>(i_start),
+                        subtree_len: from_checked_raw::<P>(subtree0_len),
+                        p_midpoint: None,
+                    });
                 }
             }
+
+            /*{
+                dbg!("after ascend", p_target);
+                for i in 1..=stack.len() {
+                    dbg!(stack.get(NonZeroUsize::new(i).unwrap()).unwrap());
+                }
+            }*/
 
             // advance
             let Some(p_next) = p_next else {

@@ -115,6 +115,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
             node.p_back = None;
             node.p_tree0 = None;
             node.p_tree1 = None;
+            node.rank = 0;
 
             map(p, &mut node.t, q)
         });
