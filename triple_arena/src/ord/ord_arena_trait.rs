@@ -1,5 +1,7 @@
 use core::fmt;
 
+use recasting::{Recast, Recaster};
+
 /// This should be implemented for an item that has a stable ordering with
 /// respect to [SimpleOrdItem::key]. Unlike [OrdPair] and the future `OrdArena`
 /// which implicitly require keys and values to be separate structs, the item
@@ -90,6 +92,14 @@ impl<K, V> OrdPair<K, V> {
 
     pub fn into_k_v(self) -> (K, V) {
         (self.k, self.v)
+    }
+}
+
+/// Recasts only the `V`
+impl<K, I, V: Recast<I>> Recast<I> for OrdPair<K, V> {
+    fn recast<R: Recaster<Item = I>>(&mut self, recaster: &R) -> Result<(), <R as Recaster>::Item> {
+        self.v_mut().recast(recaster)?;
+        Ok(())
     }
 }
 

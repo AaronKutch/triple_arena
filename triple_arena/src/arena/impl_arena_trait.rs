@@ -6,7 +6,7 @@ use crate::{
         InternalSlot::{self, *},
         base_arena::{from_checked_ptr, from_checked_raw},
     },
-    arena_iterators::{self, Drain},
+    arena_iterators::{self},
     errors::{AllocError, NotWithinCapacityError, ReallocationError},
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
@@ -118,20 +118,14 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     }
 
     fn advancer_inx(&self, inx: <P as Ptr>::Inx, rev: bool) -> Self::PtrAdvancer {
-        arena_iterators::PtrAdvancer {
-            inx: Some(inx),
-            rev,
-        }
+        self.internal_advancer_inx(inx, rev)
     }
 
     fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
     where
         T: 'a,
     {
-        arena_iterators::IterMut {
-            arena: self,
-            inx: Some(NonZeroUsize::new(1).unwrap()),
-        }
+        self.internal_iter_mut()
     }
 
     fn invalidate(&mut self, p: P) -> InvalidationResult<P> {
@@ -156,8 +150,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     }
 
     fn drain(&mut self) -> impl Iterator<Item = InvalidationOption<(P, T)>> {
-        let adv = self.advancer();
-        Drain { arena: self, adv }
+        self.internal_drain()
     }
 
     fn remove(&mut self, p: P) -> InvalidationResult<T> {

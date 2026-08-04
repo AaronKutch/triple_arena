@@ -10,7 +10,6 @@ use core::{
 use crate::{
     Arena, ChainArena, InvalidationOption, LinkNoGen,
     arena::{from_checked_ptr, from_checked_raw},
-    ord_iterators::{self, OrderedPtrAdvancer},
     stack::{NonZeroInxArray, NonZeroInxGenericStack},
     traits::{ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
     utils::traits::ArenaBacking,
@@ -232,19 +231,6 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Returns a whole internal node
     pub fn get_inx_node(&self, p: P::Inx) -> Option<(P::Gen, &LinkNoGen<P, Node<P, T>>)> {
         self.a.get_inx_link_no_gen(p)
-    }
-
-    /// This advances over all the entries in order with respect to their keys.
-    /// Starts from `p` and moves in reverse order if `rev` is set. Returns
-    /// `None` if `p` is invalid
-    pub fn advancer_ordered(&self, p: P, rev: bool) -> Option<OrderedPtrAdvancer<P>> {
-        if !self.contains(p) {
-            return None;
-        }
-        Some(ord_iterators::OrderedPtrAdvancer {
-            inx: Some(p.inx()),
-            rev,
-        })
     }
 
     /*

@@ -103,6 +103,8 @@ pub(crate) enum LinkInsertInxKind<P: Ptr> {
 /// Note that [ArenaTrait::remove] for chain arenas is modified to follow the
 /// interlink semantics of [ChainArenaTrait::remove_link_no_gen].
 pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
+    /// An advancer over the valid `Ptr`s of a chain
+    type ChainPtrAdvancer: Advancer<Self, Item = P>;
     type InsertionEntry<'a>: ArenaInsertEntryTrait<'a, P, T>
     where
         Self: 'a;
@@ -270,6 +272,34 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
             let p = adv.advance(self)?;
             Some((p, self.get_link_no_gen(p)?))
         })
+    }
+
+    /// Advances over every valid `Ptr` in the chain that contains `p_init`.
+    /// This does _not_ support invalidating `Ptr`s or changing the interlinks
+    /// of the chain of `p_init` during the loop.
+    ///
+    /// # Note
+    ///
+    /// This handles cyclical chains, however if links or interlinks of the
+    /// chain that contains `p_init` are invalidated during the loop, or if the
+    /// chain starts as noncyclical and is reconnected to become cyclical during
+    /// the loop, it can lead to a loop where the same `Ptr` can be returned
+    /// multiple times. There is a internal fail safe that prevents
+    /// non-termination.
+    fn advancer_chain(&self, p_init: P) -> Option<Self::ChainPtrAdvancer>;
+
+    /// Iteration over `(P, &LinkNoGen<P, T>)` tuples corresponding to all
+    /// links in the chain that `p_init` is connected to, according to the order
+    /// of [ChainArenaTrait::advancer_chain]
+    fn iter_chain<'a>(&'a self, p_init: P) -> Option<impl Iterator<Item = (P, &'a LinkNoGen<P, T>)>>
+    where
+        T: 'a,
+    {
+        let mut adv = self.advancer_chain(p_init)?;
+        Some(from_fn(move || {
+            let p = adv.advance(self)?;
+            Some((p, self.get_link_no_gen(p)?))
+        }))
     }
 
     /// Connects the interlinks of `p_prev` and `p_next` such that `p_prev` will

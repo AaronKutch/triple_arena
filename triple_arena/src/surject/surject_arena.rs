@@ -231,8 +231,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         // there should be exactly one key chain associated with each val
         let mut count = Arena::<PtrNoGen<P>, usize, B>::new();
         count.clone_from_with(&this.vals, |_, _| 0).unwrap();
-        for link in this.keys.vals() {
-            match count.get_mut(link.t.p_val) {
+        for key in this.keys.vals() {
+            match count.get_mut(key.p_val) {
                 Some(len) => *len = len.checked_add(1).unwrap(),
                 None => return Err("key points to nonexistent val"),
             }

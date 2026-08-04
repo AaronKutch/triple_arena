@@ -16,9 +16,9 @@ use crate::{
 
 /// An advancer over the valid `P`s of an `Arena`
 pub struct PtrAdvancer<P: Ptr> {
-    pub(in crate::arena) inx: Option<P::Inx>,
+    inx: Option<P::Inx>,
     // if in reverse
-    pub(in crate::arena) rev: bool,
+    rev: bool,
 }
 
 impl<P: Ptr, T, B: ArenaBacking> Advancer<Arena<P, T, B>> for PtrAdvancer<P> {
@@ -51,51 +51,6 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer<Arena<P, T, B>> for PtrAdvancer<P> {
     }
 }
 
-/// An iterator over the valid `P`s of an `Arena`
-pub struct Ptrs<'a, P: Ptr, T, B: ArenaBacking> {
-    arena: &'a Arena<P, T, B>,
-    adv: PtrAdvancer<P>,
-}
-
-impl<P: Ptr, T, B: ArenaBacking> Iterator for Ptrs<'_, P, T, B> {
-    type Item = P;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.adv.advance(self.arena)
-    }
-}
-
-/// An iterator over `&T` in an `Arena`
-pub struct Vals<'a, P: Ptr, T, B: ArenaBacking> {
-    arena: &'a Arena<P, T, B>,
-    adv: PtrAdvancer<P>,
-}
-
-impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for Vals<'a, P, T, B> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.adv
-            .advance(self.arena)
-            .map(|p| self.arena.get(p).unwrap())
-    }
-}
-
-// FIXME remove a bunch of these in favor of the impl Traits
-
-/// A mutable iterator over `&mut T` in an `Arena`
-pub struct ValsMut<'a, P: Ptr, T, B: ArenaBacking> {
-    iter: IterMut<'a, P, T, B>,
-}
-
-impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for ValsMut<'a, P, T, B> {
-    type Item = &'a mut T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        Some(self.iter.next()?.1)
-    }
-}
-
 /// An iterator over `(P, &T)` in an `Arena`
 pub struct Iter<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a Arena<P, T, B>,
@@ -119,8 +74,8 @@ We have to be very careful or else the mutable iterator implementation will be u
 
 /// A mutable iterator over `(P, &mut T)` in an `Arena`
 pub struct IterMut<'a, P: Ptr, T, B: ArenaBacking> {
-    pub(in crate::arena) arena: &'a mut Arena<P, T, B>,
-    pub(in crate::arena) inx: Option<NonZeroUsize>,
+    arena: &'a mut Arena<P, T, B>,
+    inx: Option<NonZeroUsize>,
 }
 
 // FIXME this is unsound, make `PtrInx` in particular unsafe
@@ -147,8 +102,8 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterMut<'a, P, T, B> {
 
 /// A draining iterator over `(P, T)` in an `Arena`
 pub struct Drain<'a, P: Ptr, T, B: ArenaBacking> {
-    pub(crate) arena: &'a mut Arena<P, T, B>,
-    pub(crate) adv: PtrAdvancer<P>,
+    arena: &'a mut Arena<P, T, B>,
+    adv: PtrAdvancer<P>,
 }
 
 impl<P: Ptr, T, B: ArenaBacking> Drop for Drain<'_, P, T, B> {
@@ -175,34 +130,6 @@ impl<P: Ptr, T, B: ArenaBacking> Iterator for Drain<'_, P, T, B> {
     }
 }
 
-/*
-/// A draining iterator over `(P, T)` in an `Arena`
-pub struct Drain<'a, P: Ptr, T, B: ArenaBacking> {
-    arena: &'a mut Arena<P, T, B>,
-    adv: PtrAdvancer<P>,
-}
-
-impl<P: Ptr, T, B: ArenaBacking> Drop for Drain<'_, P, T, B> {
-    fn drop(&mut self) {
-        if !self.arena.is_empty() {
-            self.arena.clear();
-        }
-        // else normal operation
-    }
-}
-
-impl<P: Ptr, T, B: ArenaBacking> Iterator for Drain<'_, P, T, B> {
-    type Item = (P, T);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // NOTE: I have not thought fully about how our new invariants interact with
-        // leaking the `Drain` struct, just use a normal advancer
-        self.adv
-            .advance(self.arena)
-            .map(|p| (p, self.arena.remove_internal_inx_unwrap(p.inx(), false)))
-    }
-}*/
-
 /// A capacity draining iterator over `(P, T)` in an `Arena`
 pub struct CapacityDrain<P: Ptr, T, B: ArenaBacking> {
     arena: Arena<P, T, B>,
@@ -220,11 +147,35 @@ impl<P: Ptr, T, B: ArenaBacking> Iterator for CapacityDrain<P, T, B> {
     }
 }
 
-impl<P: Ptr, T, B: ArenaBacking> IntoIterator for Arena<P, T, B> {
-    type IntoIter = CapacityDrain<P, T, B>;
-    type Item = (P, T);
+// TODO we could remove these in the future with associated `impl` types
+impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
+    pub(crate) fn internal_advancer_inx(&self, inx: P::Inx, rev: bool) -> PtrAdvancer<P> {
+        PtrAdvancer {
+            inx: Some(inx),
+            rev,
+        }
+    }
 
-    fn into_iter(self) -> Self::IntoIter {
+    pub(crate) fn internal_iter(&self) -> Iter<'_, P, T, B> {
+        Iter {
+            arena: self,
+            adv: self.advancer(),
+        }
+    }
+
+    pub(crate) fn internal_iter_mut(&mut self) -> IterMut<'_, P, T, B> {
+        IterMut {
+            arena: self,
+            inx: Some(NonZeroUsize::new(1).unwrap()),
+        }
+    }
+
+    pub(crate) fn internal_drain(&mut self) -> Drain<'_, P, T, B> {
+        let adv = self.advancer();
+        Drain { arena: self, adv }
+    }
+
+    pub(crate) fn internal_capacity_drain(self) -> CapacityDrain<P, T, B> {
         let adv = self.advancer();
         CapacityDrain { arena: self, adv }
     }
@@ -235,10 +186,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a Arena<P, T, B> {
     type Item = (P, &'a T);
 
     fn into_iter(self) -> Self::IntoIter {
-        Iter {
-            arena: self,
-            adv: self.advancer(),
-        }
+        self.internal_iter()
     }
 }
 
@@ -248,84 +196,16 @@ impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a mut Arena<P, T, B> {
 
     /// This returns an `IterMut`. Use `Arena::drain` for by-value consumption.
     fn into_iter(self) -> Self::IntoIter {
-        IterMut {
-            arena: self,
-            inx: Some(NonZeroUsize::new(1).unwrap()),
-        }
+        self.internal_iter_mut()
     }
 }
 
-/// All the iterators here can return values in arbitrary order
-impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
-    /// Advances over every valid `Ptr` in `self`.
-    ///
-    /// When using the correct loop structure, every `Ptr` valid from before the
-    /// loop began will be witnessed as long as it is kept valid during the
-    /// loop. The `Ptr`s of insertions that occur during the loop can both be
-    /// witnessed or not witnessed before the loop terminates.
-    pub fn old_advancer(&self) -> PtrAdvancer<P> {
-        PtrAdvancer {
-            // FIXME remove we fixed this in the trait
-            inx: Some(P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap()),
-            rev: false,
-        }
-    }
+impl<P: Ptr, T, B: ArenaBacking> IntoIterator for Arena<P, T, B> {
+    type IntoIter = CapacityDrain<P, T, B>;
+    type Item = (P, T);
 
-    /// Iteration over all valid `P` in the arena
-    pub fn old_ptrs(&self) -> Ptrs<'_, P, T, B> {
-        Ptrs {
-            arena: self,
-            adv: self.advancer(),
-        }
-    }
-
-    /// Iteration over `&T`
-    pub fn old_vals(&self) -> Vals<'_, P, T, B> {
-        Vals {
-            arena: self,
-            adv: self.advancer(),
-        }
-    }
-
-    /// Mutable iteration over `&mut T`
-    pub fn old_vals_mut(&mut self) -> ValsMut<'_, P, T, B> {
-        ValsMut {
-            iter: IterMut {
-                arena: self,
-                inx: Some(NonZeroUsize::new(1).unwrap()),
-            },
-        }
-    }
-
-    /// Iteration over `(P, &T)` tuples
-    pub fn old_iter(&self) -> Iter<'_, P, T, B> {
-        Iter {
-            arena: self,
-            adv: self.advancer(),
-        }
-    }
-
-    /// Mutable iteration over `(P, &mut T)` tuples
-    pub fn old_iter_mut(&mut self) -> IterMut<'_, P, T, B> {
-        IterMut {
-            arena: self,
-            inx: Some(NonZeroUsize::new(1).unwrap()),
-        }
-    }
-
-    /// By-value iteration over `(P, T)` tuples. Consumes all `T` in
-    /// `self`, but retains capacity.
-    ///
-    /// Note: When the `Drain` struct is dropped, any remaining iterations will
-    /// be consumed and dropped like normal. If the `Drain` struct is leaked
-    /// (such as with [core::mem::forget]), unspecified behavior will result.
-    pub fn old_drain(&mut self) -> Drain<'_, P, T, B> {
-        // NOTE: I have not thought fully about how our new invariants interact with
-        // leaking the `Drain` struct, just use a normal advancer
-
-        self.inc_generation().allow();
-        let adv = self.advancer();
-        Drain { arena: self, adv }
+    fn into_iter(self) -> Self::IntoIter {
+        self.internal_capacity_drain()
     }
 }
 

@@ -2,16 +2,16 @@
 
 use recasting::{Recast, Recaster};
 
-pub use crate::arena_iterators::{CapacityDrain, Drain, Iter, IterMut, Ptrs, Vals, ValsMut};
+pub use crate::arena_iterators::{CapacityDrain, Drain, Iter};
 use crate::{
     Arena, InvalidationOption, InvalidationResult, LinkNoGen, arena_iterators,
-    traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
+    traits::{Advancer, ArenaTrait, Ptr},
     utils::{ChainArena, traits::ArenaBacking},
 };
 
 /// An advancer over the valid `P`s of a `ChainArena`
 pub struct PtrAdvancer<P: Ptr> {
-    pub(in crate::chain) adv: arena_iterators::PtrAdvancer<P>,
+    adv: arena_iterators::PtrAdvancer<P>,
 }
 
 impl<P: Ptr, T, B: ArenaBacking> Advancer<ChainArena<P, T, B>> for PtrAdvancer<P> {
@@ -105,14 +105,14 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer<ChainArena<P, T, B>> for ChainPtrAdvan
     }
 }
 
-pub struct DrainChain<'a, P: Ptr, T, B: ArenaBacking> {
-    pub(crate) arena: &'a mut ChainArena<P, T, B>,
-    pub(crate) next_init: Option<P::Inx>,
-    pub(crate) target: Option<P::Inx>,
-    pub(crate) go_next: bool,
+pub struct ChainDrain<'a, P: Ptr, T, B: ArenaBacking> {
+    arena: &'a mut ChainArena<P, T, B>,
+    next_init: Option<P::Inx>,
+    target: Option<P::Inx>,
+    go_next: bool,
 }
 
-impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for DrainChain<'a, P, T, B> {
+impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for ChainDrain<'a, P, T, B> {
     type Item = InvalidationOption<(P, LinkNoGen<P, T>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -160,51 +160,21 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for DrainChain<'a, P, T, B> {
     }
 }
 
-impl<'a, P: Ptr, T, B: ArenaBacking> Drop for DrainChain<'a, P, T, B> {
+impl<'a, P: Ptr, T, B: ArenaBacking> Drop for ChainDrain<'a, P, T, B> {
     fn drop(&mut self) {
         while self.next().is_some() {}
     }
 }
 
-/// An iterator over `LinkNoGen<P, &mut T>` in a `ChainArena`
-pub struct ValsLinkMut<'a, P: Ptr, T, B: ArenaBacking> {
-    iter_mut: ValsMut<'a, P, LinkNoGen<P, T>, B>,
-}
-
-impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for ValsLinkMut<'a, P, T, B> {
-    type Item = LinkNoGen<P, &'a mut T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter_mut
-            .next()
-            .map(|link| LinkNoGen::new(link.prev_next(), &mut link.t))
-    }
-}
-
-/// An iterator for links in a chain in a `ChainArena`
-pub struct IterChain<'a, P: Ptr, T, B: ArenaBacking> {
-    arena: &'a ChainArena<P, T, B>,
-    adv: ChainPtrAdvancer<P>,
-}
-
-impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterChain<'a, P, T, B> {
-    type Item = (P, &'a LinkNoGen<P, T>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(p) = self.adv.advance(self.arena) {
-            Some((p, self.arena.get_link_no_gen(p).unwrap()))
-        } else {
-            None
-        }
-    }
-}
+// we have this because if we returned `&mut LinkNoGen<P, T>` it would allow
+// breaking the chain invariants
 
 /// A mutable iterator over `(P, LinkNoGen<P, &mut T>)` in a `ChainArena`
-pub struct IterLinkMut<'a, P: Ptr, T, B: ArenaBacking> {
-    iter_mut: IterMut<'a, P, LinkNoGen<P, T>, B>,
+pub struct IterMut<'a, P: Ptr, T, B: ArenaBacking> {
+    iter_mut: arena_iterators::IterMut<'a, P, LinkNoGen<P, T>, B>,
 }
 
-impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterLinkMut<'a, P, T, B> {
+impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterMut<'a, P, T, B> {
     type Item = (P, LinkNoGen<P, &'a mut T>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -214,51 +184,31 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterLinkMut<'a, P, T, B> {
     }
 }
 
-impl<P: Ptr, T, B: ArenaBacking> IntoIterator for ChainArena<P, T, B> {
-    type IntoIter = CapacityDrain<P, LinkNoGen<P, T>, B>;
-    type Item = (P, LinkNoGen<P, T>);
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.capacity_drain()
-    }
-}
-
-impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a ChainArena<P, T, B> {
-    type IntoIter = Iter<'a, P, LinkNoGen<P, T>, B>;
-    type Item = (P, &'a LinkNoGen<P, T>);
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a mut ChainArena<P, T, B> {
-    type IntoIter = IterLinkMut<'a, P, T, B>;
-    type Item = (P, LinkNoGen<P, &'a mut T>);
-
-    /// This returns an `IterMut`. Use `ChainArena::drain` for by-value
-    /// consumption.
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter_mut()
-    }
-}
-
 /// All the iterators here can return values in arbitrary order, except for
 /// [ChainArena::advancer_chain].
 impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
-    /// Advances over every valid `Ptr` in the chain that contains `p_init`.
-    /// This does _not_ support invalidating `Ptr`s or changing the interlinks
-    /// of the chain of `p_init` during the loop.
-    ///
-    /// # Note
-    ///
-    /// This handles cyclical chains, however if links or interlinks of the
-    /// chain that contains `p_init` are invalidated during the loop, or if the
-    /// chain starts as noncyclical and is reconnected to become cyclical during
-    /// the loop, it can lead to a loop where the same `Ptr` can be returned
-    /// multiple times. There is a internal fail safe that prevents
-    /// non-termination.
-    pub fn advancer_chain(&self, p_init: P) -> Option<ChainPtrAdvancer<P>> {
+    pub(crate) fn internal_advancer_inx(&self, inx: P::Inx, rev: bool) -> PtrAdvancer<P> {
+        PtrAdvancer {
+            adv: self.a.advancer_inx(inx, rev),
+        }
+    }
+
+    pub(crate) fn internal_drain_chain(&mut self, p: P) -> Option<ChainDrain<'_, P, T, B>> {
+        if !self.contains(p) {
+            return None;
+        }
+        let p_init = p.inx();
+        // first we go in the `prev` direction and then resume at `next_init`
+        let next_init = self.a.get_inx_unwrap(p_init).next();
+        Some(ChainDrain {
+            arena: self,
+            next_init,
+            target: Some(p_init),
+            go_next: false,
+        })
+    }
+
+    pub(crate) fn internal_advancer_chain(&self, p_init: P) -> Option<ChainPtrAdvancer<P>> {
         if !self.contains(p_init) {
             return None;
         }
@@ -270,71 +220,50 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         })
     }
 
-    /// Iteration over all valid `P`s in the arena
-    pub fn ptrs(&self) -> Ptrs<'_, P, LinkNoGen<P, T>, B> {
-        self.a.old_ptrs()
+    pub(crate) fn internal_iter(&self) -> Iter<'_, P, LinkNoGen<P, T>, B> {
+        self.a.internal_iter()
     }
 
-    /// Iteration over `&LinkNoGen<P, T>`
-    pub fn vals(&self) -> Vals<'_, P, LinkNoGen<P, T>, B> {
-        self.a.old_vals()
-    }
-
-    /// Mutable iteration over `LinkNoGen<P, &mut T>`
-    pub fn vals_mut(&mut self) -> ValsLinkMut<'_, P, T, B> {
-        ValsLinkMut {
-            iter_mut: self.a.old_vals_mut(),
+    pub(crate) fn internal_iter_mut(&mut self) -> IterMut<'_, P, T, B> {
+        IterMut {
+            iter_mut: self.a.internal_iter_mut(),
         }
     }
+}
 
-    /// Iteration over `(P, &LinkNoGen<P, T>)` tuples
-    pub fn iter(&self) -> Iter<'_, P, LinkNoGen<P, T>, B> {
-        IntoIterator::into_iter(&self.a)
+impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a ChainArena<P, T, B> {
+    type IntoIter = Iter<'a, P, LinkNoGen<P, T>, B>;
+    type Item = (P, &'a LinkNoGen<P, T>);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.a.internal_iter()
     }
+}
 
-    /// Iteration over `(P, &LinkNoGen<P, T>)` tuples corresponding to all
-    /// links in the chain that `p_init` is connected to, according to the order
-    /// of [ChainArena::advancer_chain]
-    pub fn iter_chain(&self, p_init: P) -> Option<IterChain<'_, P, T, B>> {
-        let adv = self.advancer_chain(p_init)?;
-        Some(IterChain { arena: self, adv })
+impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a mut ChainArena<P, T, B> {
+    type IntoIter = IterMut<'a, P, T, B>;
+    type Item = (P, LinkNoGen<P, &'a mut T>);
+
+    /// This returns an `IterMut`. Use `ChainArena::drain` for by-value
+    /// consumption.
+    fn into_iter(self) -> Self::IntoIter {
+        self.internal_iter_mut()
     }
+}
 
-    /// Mutable iteration over `(P, LinkNoGen<P, &mut T>)` tuples
-    pub fn iter_mut(&mut self) -> IterLinkMut<'_, P, T, B> {
-        IterLinkMut {
-            iter_mut: IntoIterator::into_iter(&mut self.a),
-        }
-    }
+impl<P: Ptr, T, B: ArenaBacking> IntoIterator for ChainArena<P, T, B> {
+    type IntoIter = CapacityDrain<P, LinkNoGen<P, T>, B>;
+    type Item = (P, LinkNoGen<P, T>);
 
-    /// Same as [crate::Arena::drain]
-    pub fn drain(&mut self) -> Drain<'_, P, LinkNoGen<P, T>, B> {
-        let adv = self.a.advancer();
-        Drain {
-            arena: &mut self.a,
-            adv,
-        }
-    }
-
-    pub fn capacity_drain(self) -> CapacityDrain<P, LinkNoGen<P, T>, B> {
-        IntoIterator::into_iter(self.a)
-    }
-
-    /// Performs [ChainArena::compress] and returns an `Arena<P,
-    /// P>` that can be used for [Recast]ing
-    pub fn compress_recaster(&mut self) -> crate::Arena<P, P, B> {
-        let mut res = crate::Arena::<P, P, B>::new();
-        self.clone_to_arena(&mut res, |_, _| P::invalid());
-        self.compress_with(false, |p, _, q| *res.get_mut(p).unwrap() = q)
-            .allow();
-        res
+    fn into_iter(self) -> Self::IntoIter {
+        self.a.internal_capacity_drain()
     }
 }
 
 impl<P: Ptr, I, T: Recast<I>, B: ArenaBacking> Recast<I> for ChainArena<P, T, B> {
     fn recast<R: Recaster<Item = I>>(&mut self, recaster: &R) -> Result<(), <R as Recaster>::Item> {
-        for val in self.vals_mut() {
-            val.t.recast(recaster)?;
+        for (_, t) in self.iter_mut() {
+            t.recast(recaster)?;
         }
         Ok(())
     }

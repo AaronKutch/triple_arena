@@ -65,9 +65,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainArena<P, T, B> {
     }
 
     fn advancer_inx(&self, inx: <P as Ptr>::Inx, rev: bool) -> Self::PtrAdvancer {
-        chain_iterators::PtrAdvancer {
-            adv: self.a.advancer_inx(inx, rev),
-        }
+        self.internal_advancer_inx(inx, rev)
     }
 
     fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
@@ -346,6 +344,7 @@ fn check_link_insert_kind<P: Ptr, T, B: ArenaBacking>(
 }
 
 impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
+    type ChainPtrAdvancer = chain_iterators::ChainPtrAdvancer<P>;
     type InsertionEntry<'a>
         = ChainArenaInsertEntry<'a, P, T, B>
     where
@@ -353,6 +352,10 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
 
     fn get_inx_link_no_gen(&self, p: <P as Ptr>::Inx) -> Option<(P::Gen, &LinkNoGen<P, T>)> {
         self.a.get_inx(p)
+    }
+
+    fn advancer_chain(&self, p_init: P) -> Option<Self::ChainPtrAdvancer> {
+        self.internal_advancer_chain(p_init)
     }
 
     fn entry_insert_within_capacity(
@@ -447,18 +450,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
         &mut self,
         p: P,
     ) -> Option<impl Iterator<Item = InvalidationOption<(P, LinkNoGen<P, T>)>>> {
-        if !self.contains(p) {
-            return None;
-        }
-        let p_init = p.inx();
-        // first we go in the `prev` direction and then resume at `next_init`
-        let next_init = self.a.get_inx_unwrap(p_init).next();
-        Some(chain_iterators::DrainChain {
-            arena: self,
-            next_init,
-            target: Some(p_init),
-            go_next: false,
-        })
+        self.internal_drain_chain(p)
     }
 
     fn compress_and_canonicalize_chains(

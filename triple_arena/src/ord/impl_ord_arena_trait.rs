@@ -70,16 +70,14 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
     }
 
     fn advancer_inx(&self, inx: <P as Ptr>::Inx, rev: bool) -> Self::PtrAdvancer {
-        ord_iterators::PtrAdvancer {
-            adv: self.a.a.advancer_inx(inx, rev),
-        }
+        self.internal_advancer_inx(inx, rev)
     }
 
     fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
     where
         T: 'a,
     {
-        self.a.iter_mut().map(|(p, link)| (p, &mut link.t.t))
+        self.a.iter_mut().map(|(p, node)| (p, &mut node.t))
     }
 
     fn invalidate(&mut self, p: P) -> InvalidationResult<P> {
@@ -87,7 +85,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
     }
 
     fn drain(&mut self) -> impl Iterator<Item = InvalidationOption<(P, T)>> {
-        self.a.drain().map(|o| o.map(|(p, link)| (p, link.t.t)))
+        self.a.drain().map(|o| o.map(|(p, node)| (p, node.t)))
     }
 
     fn remove(&mut self, p: P) -> InvalidationResult<T> {
