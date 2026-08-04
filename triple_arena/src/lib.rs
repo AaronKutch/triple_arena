@@ -4,7 +4,7 @@
 //! but when the alloc feature is optional, the parameter should always be
 //! specified.
 
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::type_complexity)]
 
 #[cfg(feature = "alloc")]

@@ -400,16 +400,16 @@ res.unwrap();
 ///     Arena, HeapBacking, OrdPair, SimpleOrdArena, ptr_struct,
 ///     traits::{ArenaCloneFromWith, ArenaTrait},
 /// };
-/// use triple_arena_render::{DebugNode};
+/// use triple_arena_render::DebugNode;
 ///
 /// ptr_struct!(P0);
 ///
 /// let mut a = SimpleOrdArena::<P0, OrdPair<String, ()>, HeapBacking>::new();
-/// 
+///
 /// for i in 0..100 {
 ///     let _ = a.insert(OrdPair::new(format!("K{i:X?}"), ()));
 ///     a.compress(false).allow();
-/// 
+///
 ///     if let Err(e) = SimpleOrdArena::_check_invariants(&a) {
 ///         let debug_arena = a._debug_arena();
 ///         let mut debug_arena2 = Arena::<_, _, HeapBacking>::new();

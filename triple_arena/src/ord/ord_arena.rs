@@ -278,10 +278,10 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     }
     */
 
-    /// Assumes `!self.is_empty()`, and all `p_back`s, `p_tree0`s, and
-    /// `p_tree1`s are preset to `None`. `root` can be invalid. However, all
-    /// other invariants must be kept such as the keys being in order in a
-    /// single acyclic chain, and the `first` and `last` `Ptr`s being set.
+    /// Assumes all `p_back`s, `p_tree0`s, and `p_tree1`s are preset to `None`.
+    /// `root` can be invalid. However, all other invariants must be kept
+    /// such as the keys being in order in a single acyclic chain, and the
+    /// `first` and `last` `Ptr`s being set if nonempty.
     pub(crate) fn raw_rebalance_assuming_prepared(&mut self) {
         /*
         If trying to make an `O(n)` pass to rebalance the tree, it seems that it is only possible to do so by starting, at least virtually, from the top down. Every set of entries has to be recursively cut about in half (there is some more extensive bound but if we are doing this, we may as well make it as balanced as possible). If not done so, it is inevitable with enough entries that a subtree is not only unbalanced but cannot even form a valid subtree because the ranks cannot be bridged.
@@ -289,6 +289,9 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         What we want to do is have an algorithm that can deterministically compute a node's placement in a tree only as a function of index (and we do it by requiring that all the tree `Ptr`s are `None` and then go through in one or two passes to idempotently set the `Ptr`s that require it.). Recalculating the recursive part would lead to `O(n log n)` complexity. However, we can have a stack to record intermediate parts. Even better, knowing what nodes to link to each other naturally falls out of this.
         */
 
+        if self.is_empty() {
+            return;
+        }
         let root_rank = (self
             .a
             .len()
@@ -302,7 +305,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         // and make the element at the midpoint belong to subtree 1 (so
         // `i_start..i_midpoint` is one subtree and `i_midpoint..i_end` (`i_end` being
         // exclusive) is the other)
-        #[derive(Clone, Copy)]
+        #[derive(Debug, Clone, Copy)]
         struct Tracker<P: Ptr> {
             // to conserve size on small index cases, we use `P::Inx` and can safely cast if
             // inserts up to the current largest index slot were successful anyways
@@ -363,7 +366,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             });
         }
 
-        let mut p_target = Some(self.first);
+        let mut p_target = self.first;
         // maintain that every loop starts at `i_target` being the midpoint of the last
         // tracker on the stack
         let mut i_target = NonZeroUsize::new(1).unwrap();
@@ -372,11 +375,10 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             let subtree_len = last.subtree_len();
             let i_start = last.i_start();
             let i_midpoint = i_target;
-            let i_end = i_target.checked_add(subtree_len.get()).unwrap();
+            let i_end = i_start.checked_add(subtree_len.get()).unwrap();
 
-            let p_this = p_target.unwrap();
-            let p_next = self.a.get_inx_link_no_gen(p_this).unwrap().1.next();
-            let node = self.a.get_inx_mut_unwrap(p_this);
+            let p_next = self.a.get_inx_link_no_gen(p_target).unwrap().1.next();
+            let node = self.a.get_inx_mut_unwrap(p_target);
 
             match subtree_len.get() {
                 // special base cases
@@ -405,11 +407,13 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 }
             }
 
-            // maintain
+            // maintain, note the extra `subtree1_len != 1` condition where the subtree
+            // would have the same midpoint as the current one
             let i_next = i_target.checked_add(1).unwrap();
             if subtree_len.get() != 1
                 && let Some(subtree1_len) =
                     NonZeroUsize::new(i_end.get().wrapping_sub(i_midpoint.get()))
+                && subtree1_len.get() != 1
             {
                 // must be in the interior, descend to subtree 1 once and then all the way down
                 // subtree 0
@@ -449,26 +453,30 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 
                 loop {
                     let removed = stack.pop().unwrap();
+                    // must have been set
+                    let p_removed = removed.p_midpoint.unwrap();
                     let Some(len) = NonZeroUsize::new(stack.len()) else {
-                        return
+                        // exit for when the root node had no `p_tree1`
+                        self.root = p_removed;
+                        return;
                     };
                     let last = stack.get_mut(len).unwrap();
-                    // must have been seet
-                    let p_removed = removed.p_midpoint.unwrap();
-                    let ascended1 = removed
+                    let ascended1 = last
                         .i_start()
-                        .checked_add(removed.subtree_len().get())
+                        .checked_add(last.subtree_len().get())
                         .unwrap()
                         != i_end;
 
                     if ascended1 {
-                        // this is guaranteed and required
-                        let p_last = p_next.unwrap();
-                        last.p_midpoint = Some(p_last);
+                        if let Some(p_last) = p_next {
+                            last.p_midpoint = Some(p_last);
 
-                        // all `p_tree0`s set here
-                        self.a.get_inx_mut_unwrap(p_last).p_tree0 = Some(p_removed);
-                        self.a.get_inx_mut_unwrap(p_removed).p_back = Some(p_last);
+                            // all `p_tree0`s set here
+                            self.a.get_inx_mut_unwrap(p_last).p_tree0 = Some(p_removed);
+                            self.a.get_inx_mut_unwrap(p_removed).p_back = Some(p_last);
+                        }
+
+                        break;
                     } else {
                         // this must have been set by the time we ascend from the right subtree
                         let p_last = last.p_midpoint.unwrap();
@@ -476,16 +484,21 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                         self.a.get_inx_mut_unwrap(p_last).p_tree1 = Some(p_removed);
                         self.a.get_inx_mut_unwrap(p_removed).p_back = Some(p_last);
                     }
-
-                    if ascended1 {
-                        break;
-                    }
                 }
             }
 
             // advance
-            i_target = i_next;
+            let Some(p_next) = p_next else {
+                // exit for all other nonempty cases
+                self.root = stack
+                    .get_mut(NonZeroUsize::new(1).unwrap())
+                    .unwrap()
+                    .p_midpoint
+                    .unwrap();
+                return;
+            };
             p_target = p_next;
+            i_target = i_next;
         }
     }
 

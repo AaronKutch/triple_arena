@@ -118,6 +118,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
 
             map(p, &mut node.t, q)
         });
+        self.root = P::invalid().inx();
         self.raw_rebalance_assuming_prepared();
         res
     }
