@@ -285,7 +285,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// nonempty.
     pub(crate) fn raw_rebalance_assuming_prepared(&mut self) {
         /*
-        If trying to make an `O(n)` pass to rebalance the tree, it seems that it is only possible to do so by starting, at least virtually, from the top down. Every set of entries has to be recursively cut about in half (there is some more extensive bound but if we are doing this, we may as well make it as balanced as possible). If not done so, it is inevitable with enough entries that a subtree is not only unbalanced but cannot even form a valid subtree because the ranks cannot be bridged.
+        If trying to make an `O(n)` pass to rebalance the tree, it seems that it is only possible to do so by starting, at least virtually, from the top down. Every set of entries has to be recursively cut about in half (there is some more extensive bound but if we are doing this, we may as well make it as even as possible). If not done so, it is inevitable with enough entries that a subtree is not only unbalanced but cannot even form a valid subtree because the ranks cannot be bridged.
 
         What we want to do is have an algorithm that can deterministically compute a node's placement in a tree only as a function of index (and we do it by requiring that all the tree `Ptr`s are `None` and then go through in one or two passes to idempotently set the `Ptr`s that require it.). Recalculating the recursive part would lead to `O(n log n)` complexity. However, we can have a stack to record intermediate parts. Even better, knowing what nodes to link to each other naturally falls out of this.
         */
@@ -304,15 +304,15 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         // A set of elements, the midpoint of which is the root of the subtree.
         // For finding the midpoint, we choose the formulation of `start + (len / 2)`
         // and make the element at the midpoint belong to subtree 1 (so
-        // `i_start..i_midpoint` is one subtree and `i_midpoint..i_end` (`i_end` being
-        // exclusive) is the other)
+        // `i_start..i_midpoint` is one subtree and `(i_midpoint + 1)..i_end` (`i_end`
+        // being exclusive), if it exists, is the other). Also note that an element will only appear as a midpoint once due to this construction.
         #[derive(Debug, Clone, Copy)]
         struct Tracker<P: Ptr> {
             // to conserve size on small index cases, we use `P::Inx` and can safely cast if
             // inserts up to the current largest index slot were successful anyways
             i_start: P::Inx,
             subtree_len: P::Inx,
-            // Stays `None` until finding that the midpoint is `p_target`
+            // This is needed to avoid a second pass when setting the `p_tree1` side
             p_midpoint: Option<P::Inx>,
         }
 
@@ -336,8 +336,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         // restricted 16 bit platforms, acceptable as long as this is a leaf function
         const MAX_DEPTH: usize = usize::BITS as usize;
         let mut stack = NonZeroInxArray::<Tracker<P>, MAX_DEPTH>::new();
-        // Setup the stack virtually. When jumping power of two domains, single depth
-        // backtracking has to be done but otherwise one pass is made.
+        // Setup the stack virtually. When jumping power of two domains, virtual backtracking has to be done but it is `O(2*n)` virtually, and only one pass is made on the real nodes and cache line accesses.
 
         // the root
         stack.push(Tracker {
@@ -351,13 +350,8 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             let last = stack
                 .get_mut(NonZeroUsize::new(stack.len()).unwrap())
                 .unwrap();
-
             let i_midpoint =
                 NonZeroUsize::new(1usize.wrapping_add(last.subtree_len().get() / 2)).unwrap();
-                // FIXME should be removable
-            if i_midpoint == NonZeroUsize::new(1).unwrap() {
-                last.p_midpoint = Some(self.first);
-            }
             let Some(subtree_len) = NonZeroUsize::new(i_midpoint.get().wrapping_sub(1)) else {
                 break;
             };
@@ -370,12 +364,11 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 
         // maintain that every loop starts at `i_target` being the midpoint of the last
         // tracker on the stack, and that this is the largest set that has `i_target` as
-        // the midpoint (if descending wrongly, we can have a repeat of the midpoint
-        // which will lead to ranks being assigned wrong)
+        // the midpoint
         let mut p_target = self.first;
         let mut i_target = NonZeroUsize::new(1).unwrap();
-        let mut p_next = self.a.get_inx_link_no_gen(p_target).unwrap().1.next();
         loop {
+            let p_next = self.a.get_inx_link_no_gen(p_target).unwrap().1.next();
             let i_next = i_target.checked_add(1).unwrap();
             let ascend = {
                 let stack_len = stack.len();
@@ -449,15 +442,15 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                     };
                     let last = stack.get_mut(len).unwrap();
                     // if the endpoint changes them we know we have reached the frame with the
-                    // midpoint being the next element, also this coincides with the first time ascending from `p_tree0` after ascending from `p_tree1` zero or more times
+                    // midpoint being the next element, also this coincides with the first time
+                    // ascending from `p_tree0` after ascending from `p_tree1` zero or more times
                     let ascended1 = last
                         .i_start()
                         .checked_add(last.subtree_len().get())
                         .unwrap()
                         != i_end;
-                    if ascended1
-                    {
-                        if let Some(p_next) = self.a.get_inx_link_no_gen(p_target).unwrap().1.next() {
+                    if ascended1 {
+                        if let Some(p_next) = p_next {
                             // all `p_tree0`s set here
                             self.a.get_inx_mut_unwrap(p_next).p_tree0 = Some(p_removed);
                             self.a.get_inx_mut_unwrap(p_removed).p_back = Some(p_next);
@@ -483,15 +476,16 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                     let i_end = i_start.checked_add(subtree_len.get()).unwrap();
                     let i_start1 = i_midpoint.checked_add(1).unwrap();
                     if let Some(subtree1_len) =
-                        NonZeroUsize::new(i_end.get().wrapping_sub(i_start1.get())) {
-                            stack.push(Tracker {
-                                i_start: from_checked_raw::<P>(i_start1),
-                                subtree_len: from_checked_raw::<P>(subtree1_len),
-                                p_midpoint: None,
-                            });
-                        } else {
-                            panic!()
-                        }
+                        NonZeroUsize::new(i_end.get().wrapping_sub(i_start1.get()))
+                    {
+                        stack.push(Tracker {
+                            i_start: from_checked_raw::<P>(i_start1),
+                            subtree_len: from_checked_raw::<P>(subtree1_len),
+                            p_midpoint: None,
+                        });
+                    } else {
+                        panic!()
+                    }
                 }
 
                 // find the midpoint or keep descending subtree 0
@@ -521,7 +515,6 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 }
             }
 
-            p_next = self.a.get_inx_link_no_gen(p_target).unwrap().1.next();
             p_target = p_next.unwrap();
             i_target = i_next;
         }
