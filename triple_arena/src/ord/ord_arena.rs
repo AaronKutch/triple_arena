@@ -421,7 +421,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 }
 
                 // happens to always be if this
-                if subtree_len.get() == 2 {
+                if subtree_len.get() <= 2 {
                     Some(i_end)
                 } else {
                     None
@@ -435,26 +435,6 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             if let Some(i_end) = ascend {
                 loop {
                     let removed = stack.pop().unwrap();
-                    let Some(len) = NonZeroUsize::new(stack.len()) else {
-                        // exit for when the root node had no `p_tree1`
-                        let p_removed = removed.p_midpoint.unwrap();
-                        self.root = p_removed;
-                        return;
-                    };
-                    let last = stack.get_mut(len).unwrap();
-                    // if the endpoint changes them we know we have reached the frame with the
-                    // midpoint being the next element
-                    if removed
-                        .i_start()
-                        .checked_add(last.subtree_len().get())
-                        .unwrap()
-                        != i_end
-                    {
-                        break;
-                    }
-                }
-                /*{
-                    // must have been set
                     let p_removed = removed.p_midpoint.unwrap();
                     let Some(len) = NonZeroUsize::new(stack.len()) else {
                         // exit for when the root node had no `p_tree1`
@@ -462,15 +442,15 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                         return;
                     };
                     let last = stack.get_mut(len).unwrap();
-                    let ascended1 = last
+                    // if the endpoint changes them we know we have reached the frame with the
+                    // midpoint being the next element, also this coincides with the first time ascending from `p_tree0` after ascending from `p_tree1` zero or more times
+                    let ascended1 = removed
                         .i_start()
                         .checked_add(last.subtree_len().get())
                         .unwrap()
                         != i_end;
-
-                        if ascended1 {
-                        // if ascending from `p_tree0`, another invariant we rely on is that `p_next` is the same as the midpoint of the superset
-
+                    if ascended1
+                    {
                         if let Some(p_last) = p_next {
                             last.p_midpoint = Some(p_last);
                             // all `p_tree0`s set here
@@ -486,7 +466,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                         self.a.get_inx_mut_unwrap(p_last).p_tree1 = Some(p_removed);
                         self.a.get_inx_mut_unwrap(p_removed).p_back = Some(p_last);
                     }
-                }*/
+                }
             } else {
                 // descend subtree 1
                 {
@@ -517,6 +497,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                             .unwrap();
 
                     if i_midpoint == i_next {
+                        last.p_midpoint = p_next;
                         break;
                     }
 
