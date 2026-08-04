@@ -278,8 +278,8 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     }
     */
 
-    /// Assumes all `p_back`s, `p_tree0`s, and `p_tree1`s are preset to `None`,
-    /// and all `rank`s are set to 0. `root` can be invalid. However, all
+    /// Assumes all `p_back`s, `p_tree0`s, and `p_tree1`s are preset to `None`.
+    /// `root` and the `rank`s can be anything. However, all
     /// other invariants must be kept such as the keys being in order in a
     /// single acyclic chain, and the `first` and `last` `Ptr`s being set if
     /// nonempty.
@@ -305,7 +305,8 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         // For finding the midpoint, we choose the formulation of `start + (len / 2)`
         // and make the element at the midpoint belong to subtree 1 (so
         // `i_start..i_midpoint` is one subtree and `(i_midpoint + 1)..i_end` (`i_end`
-        // being exclusive), if it exists, is the other). Also note that an element will only appear as a midpoint once due to this construction.
+        // being exclusive), if it exists, is the other). Also note that an element will
+        // only appear as a midpoint once due to this construction.
         #[derive(Debug, Clone, Copy)]
         struct Tracker<P: Ptr> {
             // to conserve size on small index cases, we use `P::Inx` and can safely cast if
@@ -336,7 +337,9 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         // restricted 16 bit platforms, acceptable as long as this is a leaf function
         const MAX_DEPTH: usize = usize::BITS as usize;
         let mut stack = NonZeroInxArray::<Tracker<P>, MAX_DEPTH>::new();
-        // Setup the stack virtually. When jumping power of two domains, virtual backtracking has to be done but it is `O(2*n)` virtually, and only one pass is made on the real nodes and cache line accesses.
+        // Setup the stack virtually. When jumping power of two domains, virtual
+        // backtracking has to be done but it is `O(2*n)` virtually, and only one pass
+        // is made on the real nodes and cache line accesses.
 
         // the root
         stack.push(Tracker {
@@ -370,69 +373,56 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         loop {
             let p_next = self.a.get_inx_link_no_gen(p_target).unwrap().1.next();
             let i_next = i_target.checked_add(1).unwrap();
-            let ascend = {
-                let stack_len = stack.len();
-                let last = stack
-                    .get_mut(NonZeroUsize::new(stack.len()).unwrap())
-                    .unwrap();
-                last.p_midpoint = Some(p_target);
-                let subtree_len = last.subtree_len();
-                let i_end = last
-                    .i_start()
-                    .checked_add(last.subtree_len().get())
-                    .unwrap();
-                let node = self.a.get_inx_mut_unwrap(p_target);
-                match subtree_len.get() {
-                    // special base cases
-                    1 => {
-                        // a leaf node, forced to have this rank
-                        node.rank = 1;
-                    }
-                    2 => {
-                        // a node with one child being `None`, forced to have this
-                        // rank
-                        node.rank = 2;
-                    }
-                    3 => {
-                        // a node with both children having rank 1, we have the
-                        // option
-                        // of rank 2 or 3, but it
-                        // turns out that we need to choose the maximum rank in
-                        // general, there is an 18 node minimal case
-                        // where an impossibility shows up
-                        node.rank = 3;
-                    }
-                    4 => {
-                        // must have a rank 2 and rank 1 child, forced to have this
-                        // rank
-                        node.rank = 3;
-                    }
-                    // possible in all other cases if we always chose best midpoint
-                    _ => {
-                        node.rank = root_rank.wrapping_sub(stack_len as u8).wrapping_add(1);
-                    }
-                }
 
-                // happens to always be if this
-                if subtree_len.get() <= 2 {
-                    Some(i_end)
-                } else {
-                    None
+            let stack_len = stack.len();
+            let last = stack
+                .get_mut(NonZeroUsize::new(stack.len()).unwrap())
+                .unwrap();
+            last.p_midpoint = Some(p_target);
+            let subtree_len = last.subtree_len();
+            let i_midpoint = i_target;
+            let i_end = last
+                .i_start()
+                .checked_add(last.subtree_len().get())
+                .unwrap();
+            let node = self.a.get_inx_mut_unwrap(p_target);
+            match subtree_len.get() {
+                // special base cases
+                1 => {
+                    // a leaf node, forced to have this rank
+                    node.rank = 1;
                 }
-            };
+                2 => {
+                    // a node with one child being `None`, forced to have this
+                    // rank
+                    node.rank = 2;
+                }
+                3 => {
+                    // a node with both children having rank 1, we have the
+                    // option
+                    // of rank 2 or 3, but it
+                    // turns out that we need to choose the maximum rank in
+                    // general, there is an 18 node minimal case
+                    // where an impossibility shows up
+                    node.rank = 3;
+                }
+                4 => {
+                    // must have a rank 2 and rank 1 child, forced to have this
+                    // rank
+                    node.rank = 3;
+                }
+                // possible in all other cases if we always chose best midpoint
+                _ => {
+                    node.rank = root_rank.wrapping_sub(stack_len as u8).wrapping_add(1);
+                }
+            }
 
             // to find the correct stack state with the midpoint for `p_next`, if `i_next`
             // is not in our set we ascend until we get it, else we descend until we see it
             // for the first time.
 
-            /*{
-                dbg!("before", p_target, ascend);
-                for i in 1..=stack.len() {
-                    dbg!(stack.get(NonZeroUsize::new(i).unwrap()).unwrap());
-                }
-            }*/
-
-            if let Some(i_end) = ascend {
+            // happens to always be if this
+            if subtree_len.get() <= 2 {
                 loop {
                     let removed = stack.pop().unwrap();
                     let p_removed = removed.p_midpoint.unwrap();
@@ -467,13 +457,6 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             } else {
                 // descend subtree 1, exclude the midpoint
                 {
-                    let last = stack
-                        .get_mut(NonZeroUsize::new(stack.len()).unwrap())
-                        .unwrap();
-                    let subtree_len = last.subtree_len();
-                    let i_start = last.i_start();
-                    let i_midpoint = i_target;
-                    let i_end = i_start.checked_add(subtree_len.get()).unwrap();
                     let i_start1 = i_midpoint.checked_add(1).unwrap();
                     if let Some(subtree1_len) =
                         NonZeroUsize::new(i_end.get().wrapping_sub(i_start1.get()))
