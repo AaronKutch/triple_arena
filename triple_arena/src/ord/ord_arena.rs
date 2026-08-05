@@ -471,10 +471,12 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     }
 
     /// This is a more advanced version of [ArenaTrait::compress] that reorders
-    /// the entries to be one after another internally and rebalances the tree,
-    /// completely canonicalizing in a deterministic way (assuming well ordered
-    /// keys). Improves cache locality, at least with respect to advancing
-    /// over the entries in order.
+    /// the entries to be one after another internally and rebalances the tree
+    /// deterministically, completely canonicalizing at every level (at least
+    /// with respect to the prexisting ordering, this preserves the
+    /// [LinkNoGen::prev_next] relations as they existed before this function
+    /// was called). Improves cache locality, at least with respect to
+    /// advancing over the entries in order.
     ///
     /// Because an element can be internally swapped multiple times to achieve
     /// this in-place in the allocation, this cannot have a map.
