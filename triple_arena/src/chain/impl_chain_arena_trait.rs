@@ -2,7 +2,7 @@ use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
     Arena, InvalidationOption, InvalidationResult, LinkInsertInxKind, LinkInsertKind, LinkNoGen,
-    arena::{InternalSlot::*, from_checked_ptr, from_checked_raw},
+    arena::{ArenaSlot::*, from_checked_ptr, from_checked_raw},
     chain::{ChainArena, chain_iterators},
     errors::{AllocError, ChainInsertionError, NotWithinCapacityError, ReallocationError},
     traits::{

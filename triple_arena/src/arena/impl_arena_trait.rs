@@ -8,7 +8,7 @@ use crate::{
         SingularGenerationArena,
     },
     utils::{
-        InternalSlot::*,
+        ArenaSlot::*,
         from_checked_ptr, from_checked_raw,
         traits::{
             ArenaBacking, NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, PtrGen,

@@ -151,10 +151,17 @@ impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
     ///
     /// # Safety
     ///
-    /// The `InternalEntry` allocation state must not be modified, or else the
+    /// The `DirectSlot` allocation state must not be modified, or else the
     /// entry length could be broken.
     pub unsafe fn backing_mut(&mut self) -> &mut B::Stack<DirectSlot<P, T>> {
         &mut self.m
+    }
+
+    /// # Safety
+    ///
+    /// Must follow internal invariants
+    pub unsafe fn set_len(&mut self, len: usize) {
+        self.len = len;
     }
 }
 

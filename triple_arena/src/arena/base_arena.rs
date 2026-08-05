@@ -20,7 +20,7 @@ use crate::{
 /// ZST in logically generationless cases, and there are niches in both if
 /// `NonZero*` is being used like it should.
 #[derive(Clone)]
-pub enum InternalSlot<P: Ptr, T> {
+pub enum ArenaSlot<P: Ptr, T> {
     /// A free slot with no `T`. This index points to the next free slot (and it
     /// is encoded as a `P::Inx` which can be smaller than a `usize`, this is
     /// safe because its limitations are the same as the limitations that could
@@ -31,7 +31,7 @@ pub enum InternalSlot<P: Ptr, T> {
     Allocated(P::Gen, T),
 }
 
-use InternalSlot::*;
+use ArenaSlot::*;
 
 /// An arena supporting non-Clone `T` (`T` has no requirements other than
 /// `Sized`, but some traits are only active if `T` implements them), deletion,
@@ -155,7 +155,7 @@ pub struct Arena<
     ///   incremented _and_ the allocation in question is turned into a `Free`,
     ///   or has its generation updated to equal the arena's `generation`. Newer
     ///   allocations must use the new `generation` value.
-    pub(crate) m: B::Stack<InternalSlot<P, T>>,
+    pub(crate) m: B::Stack<ArenaSlot<P, T>>,
     pub(crate) len: usize,
     /// Points to the root of the chain of freelist nodes
     pub(crate) freelist_root: Option<P::Inx>,
@@ -398,7 +398,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
 
     /// Directly returns a reference to the internal backing, for the purposes
     /// of accessing `ArenaBacking`-specific functions
-    pub fn backing(&self) -> &B::Stack<InternalSlot<P, T>> {
+    pub fn backing(&self) -> &B::Stack<ArenaSlot<P, T>> {
         &self.m
     }
 
@@ -412,10 +412,29 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     ///
     /// # Safety
     ///
-    /// The `InternalEntry` allocation state must not be modified, or else the
+    /// The `ArenaSlot` allocation state must not be modified, or else the
     /// freelist or entry length could be broken.
-    pub unsafe fn backing_mut(&mut self) -> &mut B::Stack<InternalSlot<P, T>> {
+    pub unsafe fn backing_mut(&mut self) -> &mut B::Stack<ArenaSlot<P, T>> {
         &mut self.m
+    }
+
+    /// # Safety
+    ///
+    /// Must follow internal invariants
+    pub unsafe fn set_len(&mut self, len: usize) {
+        self.len = len;
+    }
+
+    /// Returns internal implementation details
+    pub fn freelist_root(&self) -> Option<P::Inx> {
+        self.freelist_root
+    }
+
+    /// # Safety
+    ///
+    /// Must follow internal invariants
+    pub unsafe fn set_freelist_root(&mut self, freelist_root: Option<P::Inx>) {
+        self.freelist_root = freelist_root;
     }
 }
 
@@ -473,7 +492,7 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for Arena<P, T, B> {
 
 impl<P: Ptr, T, B: ArenaBacking> SetMaxCapacity for Arena<P, T, B>
 where
-    <B as ArenaBacking>::Stack<InternalSlot<P, T>>: SetMaxCapacity,
+    <B as ArenaBacking>::Stack<ArenaSlot<P, T>>: SetMaxCapacity,
 {
     fn set_max_capacity(&mut self, max_capacity: usize) -> Result<(), MaxCapacityReductionError> {
         // If reducing below the logical `self.capacity()`, we may need to pop off free

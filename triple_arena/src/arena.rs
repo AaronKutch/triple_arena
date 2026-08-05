@@ -11,7 +11,7 @@ pub use arena_traits::{
     ArenaCloneFromWith, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait, ArenaInsertEntryTrait,
     ArenaInsertTrait, ArenaTrait, SingularGenerationArena,
 };
-pub use base_arena::{Arena, InternalSlot};
+pub use base_arena::{Arena, ArenaSlot};
 pub(crate) use base_arena::{from_checked_ptr, from_checked_raw};
 pub use direct_insertion_arena::{DirectArena, DirectSlot};
 pub use impl_arena_trait::ArenaInsertEntry;

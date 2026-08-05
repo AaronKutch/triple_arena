@@ -43,7 +43,7 @@ pub mod utils {
         NonZeroInxLimitedVecPushEntry, NonZeroInxVec, NonZeroInxVecPushEntry,
     };
     pub use crate::{
-        arena::{ArenaInsertEntry, DirectSlot, InternalSlot},
+        arena::{ArenaInsertEntry, ArenaSlot, DirectSlot},
         chain::{ChainArena, chain_iterators},
         fundamental::PtrNoGen,
         ord::{Node, SimpleOrdArenaInsertEntry},

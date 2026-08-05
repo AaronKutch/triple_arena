@@ -6,7 +6,7 @@ use core::{
 
 use crate::{
     Arena, InvalidationOption, LinkNoGen,
-    arena::InternalSlot,
+    arena::ArenaSlot,
     traits::{
         ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait,
         Ptr,
@@ -141,7 +141,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
-        // needs to be done because of upstream manual `InternalEntry` handling
+        // needs to be done because of upstream manual `ArenaSlot` handling
         Arena::_check_invariants(&this.a)?;
         Self::_check_interlinks(this)?;
         Ok(())
@@ -235,7 +235,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
 
     /// Directly returns a reference to the internal backing, for the purposes
     /// of accessing `ArenaBacking`-specific functions
-    pub fn backing(&self) -> &B::Stack<InternalSlot<P, LinkNoGen<P, T>>> {
+    pub fn backing(&self) -> &B::Stack<ArenaSlot<P, LinkNoGen<P, T>>> {
         self.a.backing()
     }
 
@@ -244,10 +244,10 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     ///
     /// # Safety
     ///
-    /// The `InternalEntry` allocation state must not be modified, or else the
+    /// The `ArenaSlot` allocation state must not be modified, or else the
     /// freelist or entry length could be broken. The `LinkNoGen` interlinks
     /// must also not be modified, or else chain invariants could be broken.
-    pub unsafe fn backing_mut(&mut self) -> &mut B::Stack<InternalSlot<P, LinkNoGen<P, T>>> {
+    pub unsafe fn backing_mut(&mut self) -> &mut B::Stack<ArenaSlot<P, LinkNoGen<P, T>>> {
         // Safety: called in `unsafe` function with same invariants and added invariants
         unsafe { self.a.backing_mut() }
     }

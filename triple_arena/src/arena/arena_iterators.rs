@@ -2,14 +2,14 @@
 
 use core::num::NonZeroUsize;
 
-use InternalSlot::*;
+use ArenaSlot::*;
 use recasting::{Recast, Recaster};
 
 use crate::{
     Arena, InvalidationOption, InvalidationResult,
     traits::{Advancer, ArenaTrait, Ptr},
     utils::{
-        InternalSlot,
+        ArenaSlot,
         traits::{ArenaBacking, NonZeroInxGenericStack, PtrInx},
     },
 };

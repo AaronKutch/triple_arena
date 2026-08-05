@@ -219,7 +219,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
-        // needs to be done because of manual `InternalEntry` handling
+        // needs to be done because of manual `ArenaSlot` handling
         ChainArena::_check_invariants(&this.keys)?;
         Arena::_check_invariants(&this.vals)?;
         Self::_check_surjects(this)?;
@@ -751,7 +751,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         // do a special kind of manual compression on the values
         let mut first_unallocated = None;
         for i in self.vals.nziter() {
-            if matches!(self.vals.m.get(i).unwrap(), InternalSlot::Free(_)) {
+            if matches!(self.vals.m.get(i).unwrap(), ArenaSlot::Free(_)) {
                 first_unallocated = Some(i);
                 break;
             }
@@ -781,7 +781,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
                                     break;
                                 }
                                 let j_nz = NonZeroUsize::new(j).unwrap();
-                                if matches!(self.vals.m.get(j_nz).unwrap(), InternalSlot::Free(_)) {
+                                if matches!(self.vals.m.get(j_nz).unwrap(), ArenaSlot::Free(_)) {
                                     first_unallocated = Some(j_nz);
                                     break;
                                 }
@@ -811,7 +811,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         // to fit `self.vals`, completes the compression and fixes the likely broken
         // freelist
         while let Some(i) = NonZeroUsize::new(self.vals.m.len()) {
-            if let Some(InternalSlot::Free(_)) = self.vals.m.get(i) {
+            if let Some(ArenaSlot::Free(_)) = self.vals.m.get(i) {
                 self.vals.m.pop().unwrap();
             } else {
                 break;
