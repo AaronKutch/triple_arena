@@ -9,7 +9,7 @@ mod impl_direct_arena_trait;
 pub(crate) use arena_traits::handle_reallocation;
 pub use arena_traits::{
     ArenaCloneFromWith, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait, ArenaInsertEntryTrait,
-    ArenaInsertTrait, ArenaTrait, SingularGenerationArena,
+    ArenaInsertTrait, ArenaTrait, CompactArenaTrait,
 };
 pub use base_arena::{Arena, ArenaSlot};
 pub(crate) use base_arena::{from_checked_ptr, from_checked_raw};

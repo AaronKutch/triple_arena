@@ -6,9 +6,7 @@ use star_rng::StarRng;
 use triple_arena::{
     Arena, InvalidationOption, InvalidationResult, StackBacking,
     errors::{AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError},
-    traits::{
-        Advancer, ArenaCloneFromWith, ArenaInsertTrait, ArenaTrait, Ptr, SingularGenerationArena,
-    },
+    traits::{Advancer, ArenaCloneFromWith, ArenaInsertTrait, ArenaTrait, CompactArenaTrait, Ptr},
     utils::traits::{PtrGen, PtrInx},
 };
 
@@ -47,7 +45,7 @@ impl TryInternalDrop for Stats {
 
 pub fn fuzz<
     P: Ptr,
-    A: ArenaCloneFromWith<P, Cd<()>> + SingularGenerationArena<P> + ArenaInsertTrait<P, Cd<()>>,
+    A: ArenaCloneFromWith<P, Cd<()>> + CompactArenaTrait<P, Cd<()>> + ArenaInsertTrait<P, Cd<()>>,
 >(
     meta: &mut Meta<Stats>,
     a: &mut A,
@@ -94,7 +92,7 @@ pub fn fuzz<
                     return P::_from_raw(inx1, P::Gen::generational_inc(generation).0);
                 } else {
                     // the primary intention
-                    return P::_from_raw(inx1, arena.singular_generation());
+                    return P::_from_raw(inx1, arena.singular_generation().unwrap());
                 }
             }
             12..16 => {
@@ -106,7 +104,7 @@ pub fn fuzz<
                         return P::_from_raw(last_inx, P::Gen::generational_inc(generation).0);
                     } else {
                         // the primary intention
-                        return P::_from_raw(last_inx, arena.singular_generation());
+                        return P::_from_raw(last_inx, arena.singular_generation().unwrap());
                     }
                 }
             }
@@ -131,7 +129,7 @@ pub fn fuzz<
         }
         // if not incremented explicitly and the arena increments, then we get a
         // mismatch
-        ensure_eq!(a.singular_generation(), g.0);
+        ensure_eq!(a.singular_generation().unwrap(), g.0);
         check_invariants(a).stack()?;
 
         meta.i = i;
@@ -448,7 +446,7 @@ pub fn fuzz<
                         .is_err_and(|e| e == GetDisjointMutError::IndexOutOfBounds)
                 );
                 ensure!(
-                    a.get_disjoint_mut([P::_from_raw(i, a.singular_generation())])
+                    a.get_disjoint_mut([P::_from_raw(i, a.singular_generation().unwrap())])
                         .is_err_and(|e| e == GetDisjointMutError::IndexOutOfBounds)
                 );
 
@@ -756,7 +754,7 @@ pub fn fuzz<
                             }
                             ensure_eq!(a.max_capacity(), max_before);
                             ensure!(a.capacity() >= before);
-                            g.0 = a1.singular_generation();
+                            g.0 = a1.singular_generation().unwrap();
                             b_capacity = a.capacity();
                         }
                     }
@@ -800,7 +798,7 @@ pub fn fuzz<
                 if stats.fixed_cap.is_some() {
                     stats.fixed_cap = Some(a.capacity());
                 }
-                g.0 = a.singular_generation();
+                g.0 = a.singular_generation().unwrap();
                 b_capacity = a.capacity();
                 iters999 += 1;
             }
@@ -823,7 +821,7 @@ pub fn fuzz_multi_arena_step<D: Copy + Default, P: Ptr>(
 ) -> Result<(), StackedError> {
     let len: usize = a.len();
     ensure_eq!(len, b.len());
-    ensure_eq!(a.singular_generation(), g.0);
+    ensure_eq!(a.singular_generation().unwrap(), g.0);
     ensure_eq!(a.is_empty(), b.is_empty());
     if !cfg!(miri) {
         Arena::_check_invariants(a).unwrap();
@@ -901,7 +899,7 @@ pub fn fuzz_multi_arena(
                 for p in a1.ptrs() {
                     ensure!(a0.contains(p));
                 }
-                g0.0 = a1.singular_generation();
+                g0.0 = a1.singular_generation().unwrap();
             }
             950..1000 => {
                 b1.clear();
@@ -915,7 +913,7 @@ pub fn fuzz_multi_arena(
                 for p in a0.ptrs() {
                     ensure!(a1.contains(p));
                 }
-                g1.0 = a0.singular_generation();
+                g1.0 = a0.singular_generation().unwrap();
             }
             1000.. => unreachable!(),
         }

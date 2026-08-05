@@ -30,7 +30,8 @@ use DirectSlot::*;
 
 /// A freelist-less direct insertion arena implementing
 /// [ArenaDirectInsertTrait]. The main purpose of this type is to follow the
-/// state of another arena.
+/// state of another arena. There is no global generation, so
+/// [ArenaTrait::singular_generation] will always return `None`.
 ///
 /// Note that [ArenaTrait::invalidate] and the compress functions leave
 /// generations unchanged. No generation overflow can occur from any operations

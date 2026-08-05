@@ -1,11 +1,12 @@
 use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
-    Arena, InvalidationOption, InvalidationResult, arena_iterators,
+    Arena, InvalidationOption, InvalidationResult,
+    arena::CompactArenaTrait,
+    arena_iterators,
     errors::{AllocError, NotWithinCapacityError, ReallocationError},
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
-        SingularGenerationArena,
     },
     utils::{
         ArenaSlot::*,
@@ -56,6 +57,10 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
 
     fn len(&self) -> usize {
         self.len
+    }
+
+    fn singular_generation(&self) -> Option<<P as Ptr>::Gen> {
+        Some(self.generation())
     }
 
     fn get_inx(&self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &T)> {
@@ -233,18 +238,10 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     }
 }
 
-impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for Arena<P, T, B> {
-    fn singular_generation(&self) -> <P as Ptr>::Gen {
-        self.generation
-    }
-}
+impl<P: Ptr, T, B: ArenaBacking> CompactArenaTrait<P, T> for Arena<P, T, B> {}
 
 impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for Arena<P, T, B> {
-    fn clone_from_with<
-        U,
-        A: ArenaCloneFromWith<P, U> + SingularGenerationArena<P>,
-        F: FnMut(P, &U) -> T,
-    >(
+    fn clone_from_with<U, A: CompactArenaTrait<P, U>, F: FnMut(P, &U) -> T>(
         &mut self,
         source: &A,
         mut map: F,
@@ -256,7 +253,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for Arena<P, T, B> {
             self.m.clear();
             self.len = 0;
             self.freelist_root = None;
-            self.generation = source.singular_generation();
+            self.generation = source.singular_generation().unwrap_or(P::Gen::two());
             return Ok(());
         };
         // Be aware that `source` may not be linear and the `P`s coming from it can't be
@@ -273,7 +270,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for Arena<P, T, B> {
         // start modifying after the fallible points that we can reasonably deal with
         self.m.clear();
         self.len = 0;
-        self.generation = source.singular_generation();
+        self.generation = source.singular_generation().unwrap_or(P::Gen::two());
         // maintain invariants even with bad behavior, increment `len` at the right
         // moment and always call `canonicalize_free_list` after this point
         let res = 'outer: {

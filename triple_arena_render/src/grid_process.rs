@@ -47,11 +47,7 @@ impl<P: Ptr> Default for ANode<P> {
 // TODO this code could be improved and cleaned up more
 
 /// Processes an `Arena<P, T>` into a `RenderGrid<P>`
-pub fn grid_process<
-    P: Ptr,
-    T: DebugNodeTrait<P>,
-    A: ArenaCloneFromWith<P, T> + SingularGenerationArena<P>,
->(
+pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>, A: CompactArenaTrait<P, T>>(
     arena: &A,
     error_on_invalid_ptr: bool,
 ) -> Result<RenderGrid<P>, RenderError<P>> {

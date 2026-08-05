@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 
-use triple_arena::traits::{ArenaCloneFromWith, Ptr, SingularGenerationArena};
+use triple_arena::traits::*;
 
 use crate::{
     COLORS, DebugNodeTrait, FONT_FAMILY, NODE_FILL, NODE_PAD_Y, PAD, RELATION_WIDTH, RenderError,
@@ -176,11 +176,7 @@ pub(crate) fn gen_svg<P: Ptr>(rg: &RenderGrid<P>) -> String {
 /// If `error_on_invalid_ptr` then this will return an error if an invalid
 /// `Ptr` is encountered, otherwise it will insert `Ptr` nodes with
 /// "(invalid)" appended.
-pub fn render_to_svg<
-    P: Ptr,
-    T: DebugNodeTrait<P>,
-    A: ArenaCloneFromWith<P, T> + SingularGenerationArena<P>,
->(
+pub fn render_to_svg<P: Ptr, T: DebugNodeTrait<P>, A: CompactArenaTrait<P, T>>(
     arena: &A,
     error_on_invalid_ptr: bool,
 ) -> Result<String, RenderError<P>> {
@@ -189,11 +185,7 @@ pub fn render_to_svg<
 }
 
 /// Writes the result of [render_to_svg] to `out_file`
-pub fn render_to_svg_file<
-    P: Ptr,
-    T: DebugNodeTrait<P>,
-    A: ArenaCloneFromWith<P, T> + SingularGenerationArena<P>,
->(
+pub fn render_to_svg_file<P: Ptr, T: DebugNodeTrait<P>, A: CompactArenaTrait<P, T>>(
     arena: &A,
     error_on_invalid_ptr: bool,
     out_file: PathBuf,

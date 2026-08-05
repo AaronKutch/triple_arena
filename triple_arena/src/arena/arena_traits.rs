@@ -43,6 +43,10 @@ I do not have `inx` variations of the `*_chain` methods, they are dangerous enou
 The `Ptr`s are usually around for the chain connection or break functions as well.
 
 we _could_ get a mutable versions of the link functions like `get_link_no_gen` by returning `Link*<P, &mut ...>`, but I'd rather keep the number down and it would presumably be optimized to nothing if called next to `get_inx_mut` etc. I like the current set of 3 link functions because they are closer to what is actually happening at a low level, only `get_link` requires chasing and reconstructing a reference within the struct.
+
+`compress_with` can go on `ArenaTrait`, because in the worst case it can be a no-op that moves nothing.
+
+`ArenaTrait` will likely need to be broken up in the future if we want to support !Move, !Forget etc types
 */
 
 /// The base trait for `triple_arena` style Arenas. See [crate::Arena] for the
@@ -146,6 +150,16 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Returns the singular generation, if the arena supports one.
+    ///
+    /// Implemented for most "simple" arenas that also implement
+    /// [CompactArenaTrait]. The singular generation is also usually the
+    /// generation of entries that would be inserted now. Some arenas do not
+    /// have a global generation (and also usually come along with a complex
+    /// `P::Inx` that would not be suitable for use in compact arenas), and
+    /// thus should return `None`.
+    fn singular_generation(&self) -> Option<P::Gen>;
 
     /// Returns if `p` is a valid `Ptr`
     fn contains(&self, p: P) -> bool {
@@ -451,20 +465,18 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     ) -> InvalidationOption<()>;
 }
 
-/// Implemented for most "simple" arenas. Some arenas do not have a global
-/// generation (which also usually comes along with a complex `P::Inx` that
-/// would not be suitable for things like [ArenaCloneFromWith::clone_from_with],
-/// although that trait is separate because there are other conditions), and
-/// thus should not implement this.
-pub trait SingularGenerationArena<P: Ptr> {
-    /// Returns a singular generation for the arena, that is usually the
-    /// generation of entries that would be inserted now
-    fn singular_generation(&self) -> P::Gen;
-}
+/// A marker trait indicating that the arena has a "compact" internal
+/// representation, such that some special functions such as the `clone_from*`
+/// functions can safely clone from nonempty arenas. This trait does not go on
+/// the `Ptr` type, because compact arenas should also be checking their raw
+/// index conversions as entries are inserted. If the arena is existing with any
+/// successfully inserted entries, then we can know their `Ptr`s were already of
+/// the simple kind.
+pub trait CompactArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {}
 
 /// A type implementing this can have a fully generic mapping clone operation
-/// from another type implementing this.
-pub trait ArenaCloneFromWith<P: Ptr, T>: ArenaTrait<P, T> {
+/// from another type implementing [CompactArenaTrait].
+pub trait ArenaCloneFromWith<P: Ptr, T> {
     // `clone_from_with_within_capacity() -> Option<()>` is getting ridiculous and
     // the fallible return is only for if it was called in a trivially checkable
     // state, just make this one reallocating with a condition that it will never
@@ -474,8 +486,8 @@ pub trait ArenaCloneFromWith<P: Ptr, T>: ArenaTrait<P, T> {
     // growth problems that early versions of `triple_arena` ran into.
 
     // This function is fundamentally problematic in some scenarios, we have put it
-    // on its own trait and restrict the source to also require it. Wrappers can be
-    // used where needed.
+    // on its own trait and restrict the source to require `CompactArenaTrait`.
+    // Wrappers can be used where needed.
 
     /// Overwrites `self` with a clone of `source` (dropping all preexisting `T`
     /// and overwriting the singular generation counter if any with
@@ -489,11 +501,7 @@ pub trait ArenaCloneFromWith<P: Ptr, T>: ArenaTrait<P, T> {
     /// function is infallible. Does _not_ clone max capacity limits, and
     /// will fail if any set limit on `self` is exceeded. Returns an error
     /// upon reallocation failure.
-    fn clone_from_with<
-        U,
-        A: ArenaCloneFromWith<P, U> + SingularGenerationArena<P>,
-        F: FnMut(P, &U) -> T,
-    >(
+    fn clone_from_with<U, A: CompactArenaTrait<P, U>, F: FnMut(P, &U) -> T>(
         &mut self,
         source: &A,
         map: F,

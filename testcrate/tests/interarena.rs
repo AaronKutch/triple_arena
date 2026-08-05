@@ -1,4 +1,4 @@
-use triple_arena::{Arena, StackBacking, traits::*};
+use triple_arena::{Arena, DirectArena, StackBacking, traits::*};
 
 #[cfg(feature = "alloc")]
 #[test]
@@ -31,17 +31,14 @@ fn test_inst_framework() {
 // (This would be a standard function, except there are far too many choices to
 // make on the backing of the recaster arena and how fallibility should be
 // handled)
-fn compress_recaster<
-    P: Ptr,
-    T,
-    A: ArenaTrait<P, T> + SingularGenerationArena<P> + ArenaCloneFromWith<P, T>,
->(
+fn compress_recaster<P: Ptr, T, A: CompactArenaTrait<P, T>>(
     this: &mut A,
     reset_generation: bool,
-) -> Arena<P, P, StackBacking<4>> {
-    // this arena will be a recaster in which we create a mapping from the old `Ptr`
-    // domain to the new one
-    let mut res = Arena::<P, P, StackBacking<4>>::new();
+) -> DirectArena<P, P, StackBacking<4>> {
+    // This arena will be a recaster in which we create a mapping from the old `Ptr`
+    // domain to the new one. We use a `DirectArena` for this since it is its only
+    // use.
+    let mut res = DirectArena::<P, P, StackBacking<4>>::new();
     // this sets all the keys of the mapping by cloning the `Ptr` validities of the
     // pre-compression `self` into the recaster and puts in invalid placeholders for
     // the new domain

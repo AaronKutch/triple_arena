@@ -2,14 +2,17 @@ use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
     Arena, InvalidationOption, InvalidationResult, LinkInsertInxKind, LinkInsertKind, LinkNoGen,
-    arena::{ArenaSlot::*, from_checked_ptr, from_checked_raw},
     chain::{ChainArena, chain_iterators},
     errors::{AllocError, ChainInsertionError, NotWithinCapacityError, ReallocationError},
     traits::{
-        ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait, Ptr,
-        SingularGenerationArena,
+        ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait,
+        Ptr,
     },
-    utils::traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen},
+    utils::{
+        ArenaSlot::*,
+        from_checked_ptr, from_checked_raw,
+        traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen},
+    },
 };
 
 impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainArena<P, T, B> {
@@ -39,6 +42,10 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainArena<P, T, B> {
 
     fn len(&self) -> usize {
         self.a.len()
+    }
+
+    fn singular_generation(&self) -> Option<<P as Ptr>::Gen> {
+        Some(self.generation())
     }
 
     fn get_inx(&self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &T)> {
@@ -182,11 +189,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainArena<P, T, B> {
     }
 }
 
-impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for ChainArena<P, T, B> {
-    fn singular_generation(&self) -> <P as Ptr>::Gen {
-        self.a.singular_generation()
-    }
-}
+impl<P: Ptr, T, B: ArenaBacking> CompactArenaTrait<P, T> for ChainArena<P, T, B> {}
 
 pub struct ChainArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
     // REF(insertion_idempotency) we drop the entry when constructing this and are relying on

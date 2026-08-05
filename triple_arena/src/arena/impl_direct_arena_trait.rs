@@ -3,7 +3,10 @@ use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 use crate::{
     DirectArena, InvalidationOption, InvalidationResult, direct_arena_iterators,
     errors::{AllocError, DirectInsertionError, ReallocationError},
-    traits::{ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait, ArenaTrait, Ptr},
+    traits::{
+        Advancer, ArenaCloneFromWith, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait,
+        ArenaTrait, CompactArenaTrait, Ptr,
+    },
     utils::{
         DirectSlot::*,
         from_checked_raw,
@@ -44,6 +47,10 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for DirectArena<P, T, B> {
 
     fn len(&self) -> usize {
         self.len
+    }
+
+    fn singular_generation(&self) -> Option<<P as Ptr>::Gen> {
+        None
     }
 
     fn get_inx(&self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &T)> {
@@ -194,6 +201,74 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for DirectArena<P, T, B> {
         // remove free slots off the end
         self.canonicalize_free_slots();
         InvalidationOption::Success(())
+    }
+}
+
+impl<P: Ptr, T, B: ArenaBacking> CompactArenaTrait<P, T> for DirectArena<P, T, B> {}
+
+impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for DirectArena<P, T, B> {
+    fn clone_from_with<U, A: CompactArenaTrait<P, U>, F: FnMut(P, &U) -> T>(
+        &mut self,
+        source: &A,
+        mut map: F,
+    ) -> Result<(), ReallocationError> {
+        let Some(last) = source.find_last_inx_ptr() else {
+            // no entries
+
+            // same as `clear` but the generation is copied over
+            self.m.clear();
+            self.len = 0;
+            return Ok(());
+        };
+        // Be aware that `source` may not be linear and the `P`s coming from it can't be
+        // relied on, if this happens just return the `BeyondMaxCapacity` which is
+        // logical anyways
+        let e = Err(ReallocationError::BeyondMaxCapacity);
+        let Some(raw_last) = P::Inx::try_into_usize(last.inx()) else {
+            return e;
+        };
+        if raw_last.get() > self.m.capacity() {
+            // max capacity is tested here
+            self.reallocate_min_capacity(raw_last.get())?;
+        }
+        // start modifying after the fallible points that we can reasonably deal with
+        self.m.clear();
+        self.len = 0;
+        // maintain invariants even with bad behavior, increment `len` at the right
+        // moment and always call `canonicalize_free_list` after this point
+        let res = 'outer: {
+            let mut adv = source.advancer();
+            while let Some(p) = adv.advance(source) {
+                let Some(raw) = P::Inx::try_into_usize(p.inx()) else {
+                    break 'outer e;
+                };
+                if raw.get() <= self.m.len() {
+                    // the advancer is out of order
+                    break 'outer e;
+                }
+                // insert free entries in gaps
+                while raw.get() - 1 > self.m.len() {
+                    if self.m.push_within_capacity(Free).is_err() {
+                        break 'outer e;
+                    }
+                }
+                let Some(u) = source.get(p) else {
+                    break 'outer e;
+                };
+                let t = map(p, u);
+                if self
+                    .m
+                    .push_within_capacity(Allocated(p.generation(), t))
+                    .is_err()
+                {
+                    break 'outer e;
+                }
+                self.len = self.len.wrapping_add(1);
+            }
+            Ok(())
+        };
+        self.canonicalize_free_slots();
+        res
     }
 }
 

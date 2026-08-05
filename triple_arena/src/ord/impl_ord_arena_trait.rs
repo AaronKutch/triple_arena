@@ -5,7 +5,7 @@ use crate::{
     chain::ChainArena,
     errors::{AllocError, ReallocationError},
     ord_iterators,
-    traits::{ArenaTrait, Ptr, SingularGenerationArena},
+    traits::{ArenaTrait, CompactArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 
@@ -44,6 +44,10 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
 
     fn len(&self) -> usize {
         self.a.len()
+    }
+
+    fn singular_generation(&self) -> Option<<P as Ptr>::Gen> {
+        Some(self.generation())
     }
 
     fn get_inx(&self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &T)> {
@@ -134,8 +138,4 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
     }
 }
 
-impl<P: Ptr, T, B: ArenaBacking> SingularGenerationArena<P> for SimpleOrdArena<P, T, B> {
-    fn singular_generation(&self) -> <P as Ptr>::Gen {
-        self.a.singular_generation()
-    }
-}
+impl<P: Ptr, T, B: ArenaBacking> CompactArenaTrait<P, T> for SimpleOrdArena<P, T, B> {}
