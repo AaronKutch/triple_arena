@@ -481,6 +481,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Because an element can be internally swapped multiple times to achieve
     /// this in-place in the allocation, this cannot have a map.
     pub fn compress_and_canonicalize(&mut self, reset_generation: bool) -> InvalidationOption<()> {
+        // TODO single chain optimized internal version of this
         let res = self.a.compress_and_canonicalize_chains(reset_generation);
         if !self.is_empty() {
             // we can fortunately rely on the canonicalization

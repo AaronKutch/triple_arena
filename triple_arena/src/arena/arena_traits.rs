@@ -378,17 +378,14 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// // (This would be a standard function, except there are far too many choices to
     /// // make on the backing of the recaster arena and how fallibility should be
     /// // handled)
-    /// fn compress_recaster<
-    ///     P: Ptr,
-    ///     T,
-    ///     A: ArenaTrait<P, T> + SingularGenerationArena<P> + ArenaCloneFromWith<P, T>,
-    /// >(
+    /// fn compress_recaster<P: Ptr, T, A: CompactArenaTrait<P, T>>(
     ///     this: &mut A,
     ///     reset_generation: bool,
-    /// ) -> Arena<P, P, HeapBacking> {
-    ///     // this arena will be a recaster in which we create a mapping from the old `Ptr`
-    ///     // domain to the new one
-    ///     let mut res = Arena::<P, P, HeapBacking>::new();
+    /// ) -> DirectArena<P, P, HeapBacking> {
+    ///     // This arena will be a recaster in which we create a mapping from the old `Ptr`
+    ///     // domain to the new one. We use a `DirectArena` for this since it will only
+    ///     // be used for this purpose and then discarded.
+    ///     let mut res = DirectArena::<P, P, StackBacking<4>>::new();
     ///     // this sets all the keys of the mapping by cloning the `Ptr` validities of the
     ///     // pre-compression `self` into the recaster and puts in invalid placeholders for
     ///     // the new domain

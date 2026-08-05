@@ -36,8 +36,8 @@ fn compress_recaster<P: Ptr, T, A: CompactArenaTrait<P, T>>(
     reset_generation: bool,
 ) -> DirectArena<P, P, StackBacking<4>> {
     // This arena will be a recaster in which we create a mapping from the old `Ptr`
-    // domain to the new one. We use a `DirectArena` for this since it is its only
-    // use.
+    // domain to the new one. We use a `DirectArena` for this since it will only
+    // be used for this purpose and then discarded.
     let mut res = DirectArena::<P, P, StackBacking<4>>::new();
     // this sets all the keys of the mapping by cloning the `Ptr` validities of the
     // pre-compression `self` into the recaster and puts in invalid placeholders for

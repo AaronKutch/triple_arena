@@ -8,7 +8,7 @@ use crate::{
     Arena, InvalidationOption, LinkNoGen,
     arena::ArenaSlot,
     traits::{
-        ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait,
+        ArenaCloneFromWith, ArenaTrait, ChainArenaTrait,
         Ptr,
     },
     utils::traits::ArenaBacking,
@@ -276,45 +276,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         if inc_gen {
             self.a.inc_generation().allow();
         }
-    }
-
-    /// A variation of `compress_and_shrink_with` that is intended for a single
-    /// acyclic chain that has `first_link` as the first link in the chain.
-    pub(crate) fn compress_and_shrink_acyclic_chain_with<F: FnMut(P, &mut T, P)>(
-        &mut self,
-        first_link: P,
-        mut map: F,
-    ) {
-        self.a.inc_generation().allow();
-        let generation = self.generation();
-        let mut new = Arena::<P, LinkNoGen<P, T>, B>::with_min_capacity(self.len()).unwrap();
-        new.set_generation(generation);
-        let p_init = first_link;
-        let mut link = self.a.remove(p_init).allow().unwrap();
-        let mut p_next = link.next();
-        let entry = new.entry_insert();
-        let mut q_prev = entry.ptr();
-        map(p_init, &mut link.t, q_prev);
-        entry.insert(LinkNoGen::new((None, None), link.t));
-        loop {
-            p_next = if let Some(p_next) = p_next {
-                let p_gen = self.a.get_inx(p_next).unwrap().0;
-                let p = Ptr::_from_raw(p_next, p_gen);
-                let link = self.a.remove(p).allow().unwrap();
-                let tmp_next = link.next();
-                let mut t = link.t;
-                let entry = new.entry_insert();
-                let q = entry.ptr();
-                map(p, &mut t, q);
-                entry.insert(LinkNoGen::new((Some(q_prev.inx()), None), t));
-                new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q.inx());
-                q_prev = q;
-                tmp_next
-            } else {
-                break;
-            };
-        }
-        self.a = new;
     }
 
     /// Creates a `ChainArena<P, T>` directly from an
