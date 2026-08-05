@@ -143,6 +143,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         })
     }
 
+    /// Iterates in order from least to greatest
     pub fn iter_ordered(&self) -> Iter<'_, P, T, B> {
         let inx = if self.is_empty() {
             None
@@ -190,6 +191,13 @@ impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a SimpleOrdArena<P, T, B
     }
 }
 
+// I would add a mutable iterator since we already allow getting &mut T, but I
+// would also want it to be ordered like the other `IntoIterator`s here, and it
+// is not possible to make that sound currently (we would have to rely on `P`
+// conversions unlike the unordered case which can rely on directly accessing
+// the internal stack which has strong requirements)
+
+/// This is ordered from least to greatest.
 impl<P: Ptr, T, B: ArenaBacking> IntoIterator for SimpleOrdArena<P, T, B> {
     type IntoIter = CapacityDrain<P, T, B>;
     type Item = (P, T);

@@ -268,7 +268,7 @@ fn fuzz_ord() {
                             .unwrap()
                     };
                     let v = a.get(p).unwrap().v();
-                    assert!(set.contains_key(&v));
+                    assert!(set.contains_key(v));
                 } else if (rng.next_u32() & 1) == 0 {
                     assert!(a.find_key(&new_k).is_none());
                 } else if len == 0 {
@@ -343,7 +343,7 @@ fn fuzz_ord() {
                         })
                         .unwrap();
                     let v = a.get(p).unwrap().v();
-                    assert!(set.contains_key(&v));
+                    assert!(set.contains_key(v));
                     assert_eq!(ord, Ordering::Equal);
                 } else if a.is_empty() {
                     assert!(a.find_similar_with(|_, pair| new_k.cmp(pair.k())).is_none());

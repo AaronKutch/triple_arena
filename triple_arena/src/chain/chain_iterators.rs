@@ -193,6 +193,11 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         }
     }
 
+    // I would add a mutable ordered iterator but it is not possible to make that
+    // sound currently (we would have to rely on `P` conversions unlike the
+    // unordered iterator which can rely on directly accessing the internal stack
+    // which has strong requirements).
+
     pub(crate) fn internal_drain_chain(&mut self, p: P) -> Option<ChainDrain<'_, P, T, B>> {
         if !self.contains(p) {
             return None;

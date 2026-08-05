@@ -125,3 +125,34 @@ impl fmt::Display for ChainInsertionError {
 }
 
 impl Error for ChainInsertionError {}
+
+/// For ordered arena insertion
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum OrdInsertionError {
+    /// A `Ptr` was invalid or some requirement of a `OrdInsertKind` was failed
+    FailedOrdRequirement,
+    /// The operation would not be within existing capacity
+    NotWithinCapacity,
+    /// Extending the capacity further to the required amount would exceed a max
+    /// capacity limit
+    BeyondMaxCapacity,
+    /// There was an allocation error when attempting to reallocate
+    AllocError,
+}
+
+impl fmt::Display for OrdInsertionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FailedOrdRequirement => f.write_str("a `OrdInsertKind` requirement was not met"),
+            Self::NotWithinCapacity => {
+                f.write_str("an operation would not be within existing capacity")
+            }
+            Self::BeyondMaxCapacity => {
+                f.write_str("a max capacity limit prevents growing the capacity")
+            }
+            Self::AllocError => f.write_str("a memory reallocation failed"),
+        }
+    }
+}
+
+impl Error for OrdInsertionError {}

@@ -5,7 +5,7 @@ use core::{cmp::Ordering, mem};
 use crate::{
     LinkInsertKind, SimpleOrdArena, SimpleOrdItem,
     arena::ArenaInsertEntryTrait,
-    errors::{ChainInsertionError, NotWithinCapacityError, ReallocationError},
+    errors::{ChainInsertionError, OrdInsertionError},
     traits::{ArenaTrait, ChainArenaTrait, Ptr},
     utils::{Node, traits::ArenaBacking},
 };
@@ -60,8 +60,8 @@ pub enum OrdInsertKind<P: Ptr, K: Ord> {
     /// `Ordering::Less`, the pair is inserted as a new entry before
     /// `p_target`. If `direction` is `Ordering::Greater`, the pair is
     /// inserted after `p_target`. Returns the replaced pair if there was one.
-    /// Succeeds if the arena was empty, and returns the inserted element if
-    /// `p_target` was invalid instead of panicking, unlike
+    /// Causes an entry insertion error if `p_target` was invalid (which
+    /// necessarily includes the empty arena case) instead of panicking, unlike
     /// [SimpleOrdArena::insert_inx_manual_unwrap].
     Manual {
         p_target: P::Inx,
@@ -133,7 +133,7 @@ impl<'a, P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArenaInsertEntry<'a
 }
 
 enum InternalPrepared<P: Ptr> {
-    EmptyWhenNotEmpty,
+    Fail,
     New {
         p_target: P::Inx,
         direction: Ordering,
@@ -148,15 +148,14 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     fn check_ord_insert_kind<'a>(&self, kind: OrdInsertKind<P, T::Key<'a>>) -> InternalPrepared<P> {
         // common collapse case so that all the branches from now on do not need to
         // consider it
-        if self.is_empty() {
+        if self.is_empty() && !matches!(kind, OrdInsertKind::Manual { .. }) {
             return InternalPrepared::New {
                 p_target: P::invalid().inx(),
                 direction: Ordering::Equal,
             };
         } else {
             if matches!(kind, OrdInsertKind::Empty) {
-                // TODO get a proper enum
-                return InternalPrepared::EmptyWhenNotEmpty;
+                return InternalPrepared::Fail;
             }
         }
 
@@ -221,19 +220,21 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             OrdInsertKind::Manual {
                 p_target,
                 direction,
-            } => InternalPrepared::New {
-                p_target,
-                direction,
-            },
+            } => {
+                if self.get_inx(p_target).is_none() {
+                    return InternalPrepared::Fail;
+                }
+                InternalPrepared::New {
+                    p_target,
+                    direction,
+                }
+            }
         }
     }
 
     /// Following the style of [ArenaInsertTrait::insert_within_capacity]. Uses
     /// [OrdInsertKind::Normal].
-    pub fn insert_within_capacity(
-        &mut self,
-        t: T,
-    ) -> Result<(P, Option<T>), NotWithinCapacityError> {
+    pub fn insert_within_capacity(&mut self, t: T) -> Result<(P, Option<T>), OrdInsertionError> {
         let entry = self.entry_insert_within_capacity(OrdInsertKind::Normal(t.key()))?;
         let p = entry.ptr().any();
         Ok((p, entry.insert(t)))
@@ -241,7 +242,7 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 
     /// Following the style of [ArenaInsertTrait::insert_reallocating]. Uses
     /// [OrdInsertKind::Normal].
-    pub fn insert_reallocating(&mut self, t: T) -> Result<(P, Option<T>), ReallocationError> {
+    pub fn insert_reallocating(&mut self, t: T) -> Result<(P, Option<T>), OrdInsertionError> {
         let entry = self.entry_insert_reallocating(OrdInsertKind::Normal(t.key()))?;
         let p = entry.ptr().any();
         Ok((p, entry.insert(t)))
@@ -264,10 +265,9 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     pub fn entry_insert_within_capacity<'a>(
         &mut self,
         kind: OrdInsertKind<P, T::Key<'a>>,
-    ) -> Result<SimpleOrdArenaInsertEntry<'_, P, T, B>, NotWithinCapacityError> {
+    ) -> Result<SimpleOrdArenaInsertEntry<'_, P, T, B>, OrdInsertionError> {
         match self.check_ord_insert_kind(kind) {
-            // FIXME
-            InternalPrepared::EmptyWhenNotEmpty => return Err(NotWithinCapacityError),
+            InternalPrepared::Fail => Err(OrdInsertionError::FailedOrdRequirement),
             InternalPrepared::Replace(p) => Ok(SimpleOrdArenaInsertEntry {
                 a: self,
                 p,
@@ -281,7 +281,7 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 let entry = self
                     .a
                     .entry_insert_within_capacity(LinkInsertKind::Disconnected)
-                    .map_err(|_| NotWithinCapacityError)?;
+                    .map_err(|_| OrdInsertionError::NotWithinCapacity)?;
                 let p = entry.ptr();
                 Ok(SimpleOrdArenaInsertEntry {
                     a: self,
@@ -297,10 +297,9 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     pub fn entry_insert_reallocating<'a>(
         &mut self,
         kind: OrdInsertKind<P, T::Key<'a>>,
-    ) -> Result<SimpleOrdArenaInsertEntry<'_, P, T, B>, ReallocationError> {
+    ) -> Result<SimpleOrdArenaInsertEntry<'_, P, T, B>, OrdInsertionError> {
         match self.check_ord_insert_kind(kind) {
-            // FIXME
-            InternalPrepared::EmptyWhenNotEmpty => return Err(ReallocationError::AllocError),
+            InternalPrepared::Fail => Err(OrdInsertionError::FailedOrdRequirement),
             InternalPrepared::Replace(p) => Ok(SimpleOrdArenaInsertEntry {
                 a: self,
                 p,
@@ -317,9 +316,9 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 {
                     Ok(x) => x,
                     Err(ChainInsertionError::BeyondMaxCapacity) => {
-                        return Err(ReallocationError::BeyondMaxCapacity);
+                        return Err(OrdInsertionError::BeyondMaxCapacity);
                     }
-                    Err(_) => return Err(ReallocationError::AllocError),
+                    Err(_) => return Err(OrdInsertionError::AllocError),
                 };
                 let p = entry.ptr();
                 Ok(SimpleOrdArenaInsertEntry {

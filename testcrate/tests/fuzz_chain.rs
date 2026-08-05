@@ -392,7 +392,7 @@ fn fuzz_chain_no_gen() {
                 for (t, q) in &tmp {
                     assert_eq!(*t, a[q]);
                 }
-                for (q, link) in a.iter() {
+                for (q, link) in &a {
                     assert_eq!(q_gen, q.generation());
                     // make sure the modified interlinks agree with the `tmp2` mapping
                     if let Some(prev) = link.prev() {
@@ -406,7 +406,7 @@ fn fuzz_chain_no_gen() {
                         assert_eq!(tmp2[&Ptr::_from_raw(next, generation)], b[&p_next].0);
                     }
                 }
-                for (q, link) in a.iter() {
+                for (q, link) in &a {
                     b.get_mut(&link.t).unwrap().0 = q;
                 }
             }
@@ -536,18 +536,15 @@ fn fuzz_chain_no_gen() {
                 for ptr in a.ptrs() {
                     assert!(a.contains(ptr));
                 }
-                for link in a.vals() {
-                    assert!(b.contains_key(&link.t));
-                }
-                for link in a.vals_mut() {
-                    assert!(b.contains_key(link.t));
+                for t in a.vals() {
+                    assert!(b.contains_key(t));
                 }
             }
             996 => {
                 // drain
                 let prev_cap = a.capacity();
-                for (ptr, link) in a.drain().map(|x| x.allow()) {
-                    assert_eq!(b[&link.t].0, ptr);
+                for (ptr, t) in a.drain().map(|x| x.allow()) {
+                    assert_eq!(b[&t].0, ptr);
                     generation += 1;
                 }
                 assert_eq!(a.capacity(), prev_cap);
