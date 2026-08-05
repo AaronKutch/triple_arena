@@ -7,10 +7,7 @@ use core::{
 use crate::{
     Arena, InvalidationOption, LinkNoGen,
     arena::ArenaSlot,
-    traits::{
-        ArenaCloneFromWith, ArenaTrait, ChainArenaTrait,
-        Ptr,
-    },
+    traits::{ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 

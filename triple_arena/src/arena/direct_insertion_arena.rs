@@ -30,8 +30,15 @@ use DirectSlot::*;
 
 /// A freelist-less direct insertion arena implementing
 /// [ArenaDirectInsertTrait]. The main purpose of this type is to follow the
-/// state of another arena. There is no global generation, so
-/// [ArenaTrait::singular_generation] will always return `None`.
+/// state of another arena.
+///
+/// There is no global generation, so
+/// [ArenaTrait::singular_generation] will always return `None`, and no
+/// generation overflow can occur from any operations, except for
+/// [ArenaCloneFromWith::clone_general] which can return overflow if
+/// `!reset_generation && !source.is_empty() &&
+/// source.singular_generation().is_some()` and the generation of `source`
+/// overflows if incremented.
 ///
 /// Note that [ArenaTrait::invalidate] and the compress functions leave
 /// generations unchanged. No generation overflow can occur from any operations

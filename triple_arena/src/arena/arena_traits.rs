@@ -46,6 +46,8 @@ we _could_ get a mutable versions of the link functions like `get_link_no_gen` b
 
 `compress_with` can go on `ArenaTrait`, because in the worst case it can be a no-op that moves nothing.
 
+`clone_general` was named because there are so many factors, but it is really the most general clone I can think of needing. It should compress because I can't think of a reason not to on compact arenas at least, if you are going to change indexes to begin with. And the generations may as well be changed according to other compressor logic if indexes are going to change. I don't add "_reallocating" because the `Clone` impl and other `clone_*` functions implicitly mean reallocating anyways.
+
 `ArenaTrait` will likely need to be broken up in the future if we want to support !Move, !Forget etc types
 */
 
@@ -503,6 +505,23 @@ pub trait ArenaCloneFromWith<P: Ptr, T> {
         source: &A,
         map: F,
     ) -> Result<(), ReallocationError>;
+
+    /// Combines [ArenaTrait::compress_with] and
+    /// [ArenaCloneFromWith::clone_from_with]. This is not inplace and can
+    /// reallocate according to [ArenaCloneFromWith::clone_from_with], possibly
+    /// returning an allocation error.
+    fn clone_general<
+        U,
+        A: CompactArenaTrait<P, U>,
+        Adv: Advancer<A, Item = P>,
+        F: FnMut(P, &U, P) -> T,
+    >(
+        &mut self,
+        reset_generation: bool,
+        source: &A,
+        advancer: Adv,
+        map: F,
+    ) -> Result<InvalidationOption<()>, ReallocationError>;
 }
 
 pub(crate) fn handle_reallocation<P: Ptr, T, A: ArenaTrait<P, T>>(
