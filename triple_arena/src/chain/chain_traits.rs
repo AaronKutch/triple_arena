@@ -373,9 +373,10 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
 
     /// This is a more advanced version of [ArenaTrait::compress] that lays out
     /// links within the same chain to be continuous with one another, improving
-    /// cache locality. Because an element can be internally swapped multiple
-    /// times to achieve this in-place in the allocation, this cannot have a
-    /// map.
+    /// cache locality.
+    ///
+    /// Because an element can be internally swapped multiple times to achieve
+    /// this in-place in the allocation, this cannot have a map.
     fn compress_and_canonicalize_chains(
         &mut self,
         reset_generation: bool,
