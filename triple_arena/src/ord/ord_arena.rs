@@ -2,6 +2,7 @@
 
 use core::{
     borrow::Borrow,
+    cmp::Ordering,
     fmt::{self, Debug},
     num::NonZeroUsize,
     ops::{Index, IndexMut},
@@ -11,7 +12,7 @@ use crate::{
     Arena, ChainArena, InvalidationOption, LinkNoGen,
     arena::{from_checked_ptr, from_checked_raw},
     stack::{NonZeroInxArray, NonZeroInxGenericStack},
-    traits::{ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
+    traits::{Advancer, ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 
@@ -565,13 +566,12 @@ impl<P: Ptr, T: Debug, B: ArenaBacking> Debug for SimpleOrdArena<P, T, B> {
     }
 }
 
-// FIXME
-/*
 impl<P: Ptr, T: PartialEq, B0: ArenaBacking> SimpleOrdArena<P, T, B0> {
-    /// Checks if there is the same number of `T` and if all `T` are equal. This is sensitive to
-    /// nonhereditary ordering, but does not compare pointers, generations,
-    /// arena capacities, internal tree configuration, or `self.generation()`.
-    pub fn canonical_eq<Q: Ptr, B1>(&self, other: &SimpleOrdArena<Q, T, B1>) -> bool {
+    /// Checks if there is the same number of `T` and if all `T` in order are
+    /// equal. This is sensitive to nonhereditary ordering, but does not
+    /// compare pointers, generations, arena capacities, or internal tree
+    /// configuration, or `self.generation()`.
+    pub fn canonical_eq<Q: Ptr, B1: ArenaBacking>(&self, other: &SimpleOrdArena<Q, T, B1>) -> bool {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
@@ -589,24 +589,23 @@ impl<P: Ptr, T: PartialEq, B0: ArenaBacking> SimpleOrdArena<P, T, B0> {
     }
 }
 
-impl<P: Ptr, T: PartialOrd, B: ArenaBacking> SimpleOrdArena<P, T, B> {
-    /// Orders as if the arena were a `Vec<T>` in order (note this is ordering over the order of the `T` itself and not the substructure through [SimpleOrdItem::key]), returning early if
-    /// the prefix had a difference, checking the key before the value in the
-    /// pair, and returning based on which is longer. This is sensitive to
-    /// nonhereditary ordering, but does not compare pointers, generations,
-    /// arena capacities, internal tree configuration, or `self.generation()`.
-    pub fn canonical_partial_cmp(&self, other: &SimpleOrdArena<P, T, B>) -> Option<Ordering> {
+impl<P: Ptr, T: PartialOrd, B0: ArenaBacking> SimpleOrdArena<P, T, B0> {
+    /// Orders as if the arena were a `Vec<T>` in order, returning early if
+    /// the prefix had a difference, and returning based on which is longer.
+    /// This is sensitive to nonhereditary ordering, but does not compare
+    /// pointers, generations, arena capacities, internal tree
+    /// configuration, or `self.generation()`.
+    pub fn canonical_partial_cmp<Q: Ptr, B1: ArenaBacking>(
+        &self,
+        other: &SimpleOrdArena<Q, T, B1>,
+    ) -> Option<Ordering> {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
             if let Some(p1) = adv1.advance(other) {
                 let node0 = self.a.get_inx_unwrap(p0.inx());
                 let node1 = other.a.get_inx_unwrap(p1.inx());
-                match node0.k.partial_cmp(&node1.k) {
-                    Some(Ordering::Equal) => (),
-                    ord => return ord,
-                }
-                match node0.v.partial_cmp(&node1.v) {
+                match node0.t.partial_cmp(&node1.t) {
                     Some(Ordering::Equal) => (),
                     ord => return ord,
                 }
@@ -622,24 +621,23 @@ impl<P: Ptr, T: PartialOrd, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     }
 }
 
-impl<P: Ptr, K: Ord, V: Ord, B: ArenaBacking> OrdArena<P, K, V, B> {
-    /// Orders as if the arena were a `Vec<(K, V)>` in order, returning early if
-    /// the prefix had a difference, checking the key before the value in the
-    /// pair, and returning based on which is longer. This is sensitive to
-    /// nonhereditary ordering, but does not compare pointers, generations,
-    /// arena capacities, internal tree configuration, or `self.generation()`.
-    pub fn canonical_cmp(&self, other: &OrdArena<P, K, V, B>) -> Ordering {
+impl<P: Ptr, T: Ord, B0: ArenaBacking> SimpleOrdArena<P, T, B0> {
+    /// Orders as if the arena were a `Vec<T>` in order, returning early if
+    /// the prefix had a difference, and returning based on which is longer.
+    /// This is sensitive to nonhereditary ordering, but does not compare
+    /// pointers, generations, arena capacities, internal tree
+    /// configuration, or `self.generation()`.
+    pub fn canonical_cmp<Q: Ptr, B1: ArenaBacking>(
+        &self,
+        other: &SimpleOrdArena<Q, T, B1>,
+    ) -> Ordering {
         let mut adv0 = self.advancer();
         let mut adv1 = other.advancer();
         while let Some(p0) = adv0.advance(self) {
             if let Some(p1) = adv1.advance(other) {
                 let node0 = self.a.get_inx_unwrap(p0.inx());
                 let node1 = other.a.get_inx_unwrap(p1.inx());
-                match node0.k.cmp(&node1.k) {
-                    Ordering::Equal => (),
-                    ord => return ord,
-                }
-                match node0.v.cmp(&node1.v) {
+                match node0.t.cmp(&node1.t) {
                     Ordering::Equal => (),
                     ord => return ord,
                 }
@@ -654,4 +652,3 @@ impl<P: Ptr, K: Ord, V: Ord, B: ArenaBacking> OrdArena<P, K, V, B> {
         }
     }
 }
-*/

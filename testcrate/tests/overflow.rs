@@ -24,21 +24,16 @@ fn ptr_inx_no_truncate() {
 // note: we have two tests, because we need to make sure both that there is not
 // a premature panic and that there is a panic when is should happen
 
-/* FIXME
 #[test]
 fn overflow_inx() {
-    let mut a = Arena::<P0, (), HeapBacking>::new();
+    let mut a = Arena::<P0, (), StackBacking<512>>::new();
     for _ in 0..255 {
         a.insert(());
     }
-    let cap = a.capacity();
-    assert!(cap >= 255);
-    a.reallocate_min_capacity(256).unwrap();
-    // capacity should not change
-    assert_eq!(cap, a.capacity());
-    assert!(a.try_insert(()).is_err());
+    assert_eq!(a.max_capacity(), Some(512));
+    // FIXME
+    assert!(a.insert_within_capacity(()).is_err());
 }
-*/
 
 #[test]
 #[should_panic]
@@ -50,33 +45,20 @@ fn overflow_inx_panic() {
 }
 
 #[test]
-fn overflow_cap() {
+fn overflow_generation() {
     let mut a = Arena::<P1, (), StackBacking<512>>::new();
     for _ in 0..253 {
         let p = a.insert(());
-        a.remove(p).allow().unwrap();
-    }
-}
-
-/* FIXME
-// should force panic
-#[test]
-#[should_panic]
-fn overflow_cap_panic() {
-    let mut a = Arena::<P1, ()>::new();
-    for _ in 0..253 {
-        let p = a.insert(());
-        a.remove(p).unwrap();
+        a.remove(p).strict().unwrap();
     }
     let p = a.insert(());
-    let _ = a.remove(p);
+    assert!(a.remove(p).strict().is_err());
 }
-*/
 
-/* FIXME
+// makes sure that advancers behave around limits
 #[test]
 fn advance_cap() {
-    let mut a = Arena::<P2, ()>::new();
+    let mut a = Arena::<P2, (), StackBacking<512>>::new();
     let mut v = vec![];
     for _ in 0..255 {
         v.push(a.insert(()));
@@ -88,8 +70,10 @@ fn advance_cap() {
         i += 1;
     }
     assert_eq!(i, 255);
-    a.remove(v[0]).unwrap();
-    a.remove(v[254]).unwrap();
+    a.remove(v[0]).allow().unwrap();
+    a.remove(v[254]).allow().unwrap();
+
+    // check that it skips the ends
     let mut i = 1;
     let mut adv = a.advancer();
     while let Some(p) = adv.advance(&a) {
@@ -98,4 +82,3 @@ fn advance_cap() {
     }
     assert_eq!(i, 254);
 }
-*/
