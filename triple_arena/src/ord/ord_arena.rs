@@ -240,41 +240,10 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 
     // this is safe for the `SimpleOrdArena`
 
-    /// Returns a whole internal node
+    /// Returns a whole internal node, for advanced use only
     pub fn get_inx_node(&self, p: P::Inx) -> Option<(P::Gen, &LinkNoGen<P, Node<P, T>>)> {
         self.a.get_inx_link_no_gen(p)
     }
-
-    /*
-    /// Compresses the arena by moving around entries to be able to shrink the
-    /// capacity down to the length. All key-value relations remain, but all
-    /// `Ptr`s are invalidated. New `Ptr`s to the entries can be found again
-    /// by iterators and advancers. Additionally, cache locality is improved
-    /// by neighboring keys being moved close together in memory, and search
-    /// speed is improved by the tree being balanced close to the ideal
-    /// balancing.
-    pub fn compress_and_shrink(&mut self) {
-        self.compress_and_shrink_with(|_, _, _, _| ())
-    }
-
-    /// The same as [OrdArena::compress_and_shrink] except that `map` is run
-    /// on every `(P, &K, &mut V, P)` with the first `P` being the old `Ptr` and
-    /// the last `P` being the new `Ptr`.
-    pub fn compress_and_shrink_with<F: FnMut(P, &K, &mut V, P)>(&mut self, mut map: F) {
-        if let Some(min) = self.first() {
-            self.a
-                .compress_and_shrink_acyclic_chain_with(min, |p, node, q| {
-                    // handles partially exterior nodes for later
-                    node.p_tree0 = None;
-                    node.p_tree1 = None;
-                    map(p, &node.k, &mut node.v, q)
-                });
-            self.raw_rebalance_assuming_compressed();
-        } else {
-            //self.a.clear_and_shrink();
-        }
-    }
-    */
 
     /// Assumes all `p_back`s, `p_tree0`s, and `p_tree1`s are preset to `None`.
     /// `root` and the `rank`s can be anything. However, all
@@ -500,6 +469,61 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             i_target = i_next;
         }
     }
+
+    /// This is a more advanced version of [ArenaTrait::compress] that reorders
+    /// the entries to be one after another internally and rebalances the tree,
+    /// completely canonicalizing in a deterministic way (assuming well ordered
+    /// keys). Improves cache locality, at least with respect to advancing
+    /// over the entries in order.
+    ///
+    /// Because an element can be internally swapped multiple times to achieve
+    /// this in-place in the allocation, this cannot have a map.
+    fn compress_and_canonicalize(&mut self, reset_generation: bool) -> InvalidationOption<()> {
+        let res = self.a.compress_and_canonicalize_chains(reset_generation);
+        if !self.is_empty() {
+            // we can fortunately rely on the canonicalization
+            self.first = from_checked_raw::<P>(NonZeroUsize::new(1).unwrap());
+            self.last = from_checked_raw::<P>(NonZeroUsize::new(self.a.a.m.len()).unwrap());
+            for node in self.a.vals_mut() {
+                node.p_back = None;
+                node.p_tree0 = None;
+                node.p_tree1 = None;
+            }
+            self.raw_rebalance_assuming_prepared();
+        }
+        res
+    }
+
+    /*
+    /// Compresses the arena by moving around entries to be able to shrink the
+    /// capacity down to the length. All key-value relations remain, but all
+    /// `Ptr`s are invalidated. New `Ptr`s to the entries can be found again
+    /// by iterators and advancers. Additionally, cache locality is improved
+    /// by neighboring keys being moved close together in memory, and search
+    /// speed is improved by the tree being balanced close to the ideal
+    /// balancing.
+    pub fn compress_and_shrink(&mut self) {
+        self.compress_and_shrink_with(|_, _, _, _| ())
+    }
+
+    /// The same as [OrdArena::compress_and_shrink] except that `map` is run
+    /// on every `(P, &K, &mut V, P)` with the first `P` being the old `Ptr` and
+    /// the last `P` being the new `Ptr`.
+    pub fn compress_and_shrink_with<F: FnMut(P, &K, &mut V, P)>(&mut self, mut map: F) {
+        if let Some(min) = self.first() {
+            self.a
+                .compress_and_shrink_acyclic_chain_with(min, |p, node, q| {
+                    // handles partially exterior nodes for later
+                    node.p_tree0 = None;
+                    node.p_tree1 = None;
+                    map(p, &node.k, &mut node.v, q)
+                });
+            self.raw_rebalance_assuming_compressed();
+        } else {
+            //self.a.clear_and_shrink();
+        }
+    }
+    */
 
     // TODO probably have some from_ordered_chain function
 
