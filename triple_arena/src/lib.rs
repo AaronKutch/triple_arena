@@ -20,7 +20,7 @@ mod fundamental;
 mod surject;
 
 // reexport for the macros to use
-pub use arena::{Arena, arena_iterators};
+pub use arena::{Arena, DirectArena, arena_iterators, direct_arena_iterators};
 pub(crate) use chain::LinkInsertInxKind;
 pub use chain::{ChainArena, Link, LinkInsertKind, LinkNoGen, chain_iterators};
 /// Documentation on arenas and serialization
@@ -36,13 +36,14 @@ pub use crate::{ord::OrdPair, stack::StackBacking};
 
 /// Special utilities for advanced usage
 pub mod utils {
+    pub(crate) use crate::arena::{from_checked_ptr, from_checked_raw};
     #[cfg(feature = "alloc")]
     pub use crate::stack::{
         NonZeroInxBoxedSlice, NonZeroInxBoxedSlicePushEntry, NonZeroInxLimitedVec,
         NonZeroInxLimitedVecPushEntry, NonZeroInxVec, NonZeroInxVecPushEntry,
     };
     pub use crate::{
-        arena::{ArenaInsertEntry, InternalSlot},
+        arena::{ArenaInsertEntry, DirectSlot, InternalSlot},
         chain::{ChainArena, chain_iterators},
         fundamental::PtrNoGen,
         ord::{Node, SimpleOrdArenaInsertEntry},
@@ -74,8 +75,8 @@ pub mod traits {
 
     pub use crate::{
         arena::{
-            ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaInsertEntryTrait, ArenaInsertTrait,
-            ArenaTrait, SingularGenerationArena,
+            ArenaCloneFromWith, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait,
+            ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, SingularGenerationArena,
         },
         chain::ChainArenaTrait,
         fundamental::{Advancer, Ptr},

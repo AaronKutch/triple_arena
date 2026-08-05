@@ -5,19 +5,20 @@
 - Updated MSRV to 1.86
 
 ### Changes
-- All the Arenas have a new `B: ArenaBacking` third generic parameter that is defaulted so that existing uses use the same unlimited heap backing that they did before. Added stack backing (for which `const` support could be added in the future), limited heap backing, and fixed heap backing standard options.
+- All the Arenas have a new `B: ArenaBacking` third generic parameter that is defaulted with the "alloc" feature, so that existing uses use the same unlimited heap backing that they did before. Added stack backing (for which `const` support could be added in the future), limited heap backing, and fixed heap backing standard options.
 - Added new traits with new methods and put all traits under modules, they can be glob imported in some cases to preserve ease of use.
-- Unified `ChainNoGenArena` and `ChainArena` together so that there is just one `ChainArena` type now, optimized for space, since usually if the neighboring generation counters are needed, then you are probably accessing their cache lines anyways. The generation counters on interlinks are often not needed.
-- Added a `SimpleOrdArena` which is almost the same as the old `OrdArena` except that it allows getting the key from a substructure of a single `T`. `SimpleOrdArena` will be preserved as an ideal ordered arena into the future. A full `OrdArena<P, K, V, B>` arena with optimized cache locality will be added in a future version. `SimpleOrdArena<P, OrdPair<K, V>, B>` can be used to replicate the old `OrdArena`.
+- Added new `DirectArena` type.
+- Unified `ChainNoGenArena` and `ChainArena` so that there is just one `ChainArena` type now, optimized for space, since usually if the neighboring generation counters are needed, then you are probably accessing their cache lines anyways. The generation counters on interlinks are often not needed.
+- Removed the old `OrdArena`, added a `SimpleOrdArena` which is almost the same as the old `OrdArena` except that it allows getting the key from a substructure of a single `T`. `SimpleOrdArena` will be preserved as an ideal ordered arena into the future. A full `OrdArena<P, K, V, B>` arena with optimized cache locality will be added in a future version. `SimpleOrdArena<P, OrdPair<K, V>, B>` can be used to replicate the old `OrdArena`.
 - Be aware that the advancers and iterators that come with `ArenaTrait` are not ordered like they were previously for the ordered arena type. The `*_ordered` versions should be used instead if needed.
 - More ideal deterministic behavior, it should be stable for the forseeable future (but note however that the heap types can have nondeterminism in some capacity interactive cases from the allocator giving extra). For duplicating `Ptr` validities across arenas however, we recommend the new `ArenaDirectInsertTrait` and arenas that implement it to follow `ArenaInsertTrait` type arenas.
 - Generation overflow no longer panics, has the best possible behavior in the default case, and can be explicitly checked with various functions now.
 - The `PtrInx` and `PtrGen` traits have been changed to be safe, and have stricter semantics around conversion now
 - Removed `swap`, `replace_and_update_gen`, and `replace_and_keep_gen` because they were barely used, would have very awkward signatures with the new design, and wouldn't work with potential future `!Overwrite` abilities
-- Removed a bunch of `try_insert`, insert_with`, etc functions in favor of entry methods that are more general
+- Removed a bunch of `try_insert`, `insert_with`, etc functions in favor of entry methods that are more general
 - `Collection` is now a trait parameter on `Advancer`
 - Added a required `Advancer::empty` method
-- The `Advancer` trait now specifies that implemenations should always fuse
+- The `Advancer` trait now specifies that implementations should always fuse
 - The `Ptr` traits and `Advancer` now have `Sized + 'static` bounds, they should never have lifetimes due to their entire purposes, and I don't know of any use for `dyn Ptr`.
 - Removed `compress_and_shrink*` in favor of just `compress*` functions, `self.reallocate_min_capacity(self.len())` can be used afterwards to retain the original functionality
 - Removed the `remove_by`, `capacity_drain`, and `*_shrink` functions. With some backings, shrinking capacity is not actually possible. The `reallocate_min_capacity` method should be used in tandem with other functions instead.

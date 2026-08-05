@@ -2,29 +2,28 @@
 
 use core::num::NonZeroUsize;
 
-use InternalSlot::*;
 use recasting::{Recast, Recaster};
 
 use crate::{
-    Arena, InvalidationOption, InvalidationResult,
+    DirectArena, InvalidationOption,
     traits::{Advancer, ArenaTrait, Ptr},
     utils::{
-        InternalSlot,
+        DirectSlot::*,
         traits::{ArenaBacking, NonZeroInxGenericStack, PtrInx},
     },
 };
 
-/// An advancer over the valid `P`s of an `Arena`
+/// An advancer over the valid `P`s of a `DirectArena`
 pub struct PtrAdvancer<P: Ptr> {
     inx: Option<P::Inx>,
     // if in reverse
     rev: bool,
 }
 
-impl<P: Ptr, T, B: ArenaBacking> Advancer<Arena<P, T, B>> for PtrAdvancer<P> {
+impl<P: Ptr, T, B: ArenaBacking> Advancer<DirectArena<P, T, B>> for PtrAdvancer<P> {
     type Item = P;
 
-    fn advance(&mut self, collection: &Arena<P, T, B>) -> Option<Self::Item> {
+    fn advance(&mut self, collection: &DirectArena<P, T, B>) -> Option<Self::Item> {
         loop {
             let inx = self.inx?;
             // If the `Ptr` is not linear then this will always return `None` and the
@@ -51,9 +50,9 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer<Arena<P, T, B>> for PtrAdvancer<P> {
     }
 }
 
-/// An iterator over `(P, &T)` in an `Arena`
+/// An iterator over `(P, &T)` in a `DirectArena`
 pub struct Iter<'a, P: Ptr, T, B: ArenaBacking> {
-    arena: &'a Arena<P, T, B>,
+    arena: &'a DirectArena<P, T, B>,
     adv: PtrAdvancer<P>,
 }
 
@@ -69,12 +68,11 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for Iter<'a, P, T, B> {
 
 /*
 REF(mutable_iterator_soundness)
-We have to be very careful or else the mutable iterator implementation will be unsound due to `PtrInx` being a safe trait (we would rather not make it unsafe for various reasons). We can rely on the backing stack since `NonZeroInxGenericStack` is unsafe and strict. As long as we directly use and only increment or decrement a NonZeroUsize and don't roundtrip `P::Inx` after initialization, it is safe. But other iterators want to use `P::Inx` because it is more compact in some cases. We only need to special case `IterMut` and anything else mutable can safely inherit from it
 */
 
-/// A mutable iterator over `(P, &mut T)` in an `Arena`
+/// A mutable iterator over `(P, &mut T)` in a `DirectArena`
 pub struct IterMut<'a, P: Ptr, T, B: ArenaBacking> {
-    arena: &'a mut Arena<P, T, B>,
+    arena: &'a mut DirectArena<P, T, B>,
     inx: Option<NonZeroUsize>,
 }
 
@@ -99,9 +97,9 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterMut<'a, P, T, B> {
     }
 }
 
-/// A draining iterator over `(P, T)` in an `Arena`
+/// A draining iterator over `(P, T)` in a `DirectArena`
 pub struct Drain<'a, P: Ptr, T, B: ArenaBacking> {
-    arena: &'a mut Arena<P, T, B>,
+    arena: &'a mut DirectArena<P, T, B>,
     adv: PtrAdvancer<P>,
 }
 
@@ -116,22 +114,17 @@ impl<P: Ptr, T, B: ArenaBacking> Iterator for Drain<'_, P, T, B> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let p = self.adv.advance(self.arena)?;
-        // for global generation arenas, just do this for simplicity and so that the
-        // invalidation is associated with a particular element
-
-        match self.arena.remove(p) {
-            InvalidationResult::Success(t) => Some(InvalidationOption::Success((p, t))),
-            InvalidationResult::GenerationOverflow(t) => {
-                Some(InvalidationOption::GenerationOverflow((p, t)))
-            }
-            InvalidationResult::InvalidPtr => None,
-        }
+        // should always return `Success`
+        self.arena
+            .remove(p)
+            .allow()
+            .map(|t| InvalidationOption::Success((p, t)))
     }
 }
 
-/// A capacity draining iterator over `(P, T)` in an `Arena`
+/// A capacity draining iterator over `(P, T)` in an `DirectArena`
 pub struct CapacityDrain<P: Ptr, T, B: ArenaBacking> {
-    arena: Arena<P, T, B>,
+    arena: DirectArena<P, T, B>,
     adv: PtrAdvancer<P>,
 }
 
@@ -146,8 +139,7 @@ impl<P: Ptr, T, B: ArenaBacking> Iterator for CapacityDrain<P, T, B> {
     }
 }
 
-// TODO we could remove these in the future with associated `impl` types
-impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
+impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
     pub(crate) fn internal_advancer_inx(&self, inx: P::Inx, rev: bool) -> PtrAdvancer<P> {
         PtrAdvancer {
             inx: Some(inx),
@@ -180,7 +172,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     }
 }
 
-impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a Arena<P, T, B> {
+impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a DirectArena<P, T, B> {
     type IntoIter = Iter<'a, P, T, B>;
     type Item = (P, &'a T);
 
@@ -189,7 +181,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a Arena<P, T, B> {
     }
 }
 
-impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a mut Arena<P, T, B> {
+impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a mut DirectArena<P, T, B> {
     type IntoIter = IterMut<'a, P, T, B>;
     type Item = (P, &'a mut T);
 
@@ -198,7 +190,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> IntoIterator for &'a mut Arena<P, T, B> {
     }
 }
 
-impl<P: Ptr, T, B: ArenaBacking> IntoIterator for Arena<P, T, B> {
+impl<P: Ptr, T, B: ArenaBacking> IntoIterator for DirectArena<P, T, B> {
     type IntoIter = CapacityDrain<P, T, B>;
     type Item = (P, T);
 
@@ -207,7 +199,7 @@ impl<P: Ptr, T, B: ArenaBacking> IntoIterator for Arena<P, T, B> {
     }
 }
 
-impl<P: Ptr, B: ArenaBacking> Recaster for Arena<P, P, B> {
+impl<P: Ptr, B: ArenaBacking> Recaster for DirectArena<P, P, B> {
     type Item = P;
 
     fn recast_item(&self, item: &mut Self::Item) -> Result<(), Self::Item> {
@@ -220,7 +212,7 @@ impl<P: Ptr, B: ArenaBacking> Recaster for Arena<P, P, B> {
     }
 }
 
-impl<P: Ptr, B: ArenaBacking, I, T: Recast<I>> Recast<I> for Arena<P, T, B> {
+impl<P: Ptr, B: ArenaBacking, I, T: Recast<I>> Recast<I> for DirectArena<P, T, B> {
     fn recast<R: Recaster<Item = I>>(&mut self, recaster: &R) -> Result<(), <R as Recaster>::Item> {
         for val in self.vals_mut() {
             val.recast(recaster)?;

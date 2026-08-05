@@ -85,18 +85,25 @@ pub struct Node<P: Ptr, T> {
 }
 
 /// An Ordered Arena with three parameters: a `P: Ptr` type that gives single
-/// indirection access to elements, a `K: Ord` key type that is used to define
-/// an ordering among elements, and a `V` value type that is not ordered over
-/// but is associated with each `K`. `O(log n)` insertions, finds, and deletions
-/// are guaranteed.
+/// indirection access to elements, and a `T: SimpleOrdItem` key type that is
+/// used to define an ordering among elements. `O(log n)` insertions, finds, and
+/// deletions are guaranteed.
+///
+/// In common use, you want to use `SimpleOrdArena<P, OrdPair<K, V>, B>`, where
+/// `K: Ord` is the key used to define the ordering, and `V` is a value type
+/// that is not ordered over but is associated with each `K`. `OrdPair` makes it
+/// more difficult in practice to accidentally change a key in an arena, and in
+/// the future if Rust adds an `Overwrite` trait we will make it `!Overwrite`.
+/// `OrdPair<K, ()>` should be used in common cases where there is just a key.
+/// In other cases, you should implement `SimpleOrdItem` yourself for a type.
 ///
 /// This is similar to the standard `BTreeMap`, but is more powerful and
 /// performant because of the arena strategy. It internally uses a specialized
 /// WAVL tree on a `ChainArena` with one-to-one tree node and key-value pair
 /// storage, which enables all the properties of arenas including stable `Ptr`
 /// references (meaning that accesses are `O(1)` instead of `O(log n)` as long
-/// as the `Ptr` is kept, and no cumbersome `Entry` handling is needed like for
-/// `BTreeMap` or for hashmaps). The tree is balanced such that the number of
+/// as the `Ptr` is kept, with much more general `Ptr` advancing and entry
+/// insertion possibilities). The tree is balanced such that the number of
 /// internal lookups needed to find a key is at most about `1.44 *
 /// log_2(arena.len())` if only insertions and no removals are used, otherwise
 /// the worst case is `2 * log_2(arena.len())`.
@@ -106,11 +113,15 @@ pub struct Node<P: Ptr, T> {
 /// only for those keys.
 ///
 /// Note: it is a logic error for a key's ordering to change relative to other
-/// keys, or for a special function like `insert_inx_manual_unwrap` to be used
-/// incorrectly. The functions are constructed such that _no_ panics, aborts,
-/// memory leaks, or non-termination occurs. However, the well ordered property,
-/// `find_key`, and hereditary properties may be broken for any entry in the
-/// arena.
+/// keys (by using internal mutability or directly modifying the relevant part
+/// of the `T: SimpleOrdItem` while it is still in the arena), or for a special
+/// function like `insert_inx_manual_unwrap` or [OrdInsertKind::Manual] to be
+/// used incorrectly. Unlike some other implementations, the functions on
+/// `SimpleOrdArena`s are constructed such that _no_ panics (unless explicitly
+/// documented), aborts, memory leaks, or non-termination occurs, regardless of
+/// how inconsistent key orderings are. However, the well ordered property,
+/// `find_key` functions, and hereditary properties may be broken for any entry
+/// in the arena.
 ///
 /// ```
 /// use core::cmp::Ordering;

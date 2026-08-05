@@ -14,6 +14,8 @@ use crate::{
 
 // See REF(arena_terminology)
 
+// FIXME rename `ArenaSlot`
+
 /// Internal slot for an one-way linked freelist arena. Note the `P::Gen` is a
 /// ZST in logically generationless cases, and there are niches in both if
 /// `NonZero*` is being used like it should.
@@ -139,6 +141,7 @@ pub struct Arena<
 > {
     /// # Invariants
     ///
+    /// - `len` is equal to the number of allocated slots
     /// - If there are free slots, all free slots have their freelist nodes in a
     ///   single linked list with the start being pointed to by `freelist_root`
     ///   and the end pointing to itself
@@ -369,7 +372,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    /// Like [Arena::get], except generation counters are ignored and the
+    /// Like [ArenaTrait::get], except generation counters are ignored and the
     /// result is unwrapped internally
     #[doc(hidden)]
     //#[track_caller]
@@ -382,8 +385,8 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    /// Like [Arena::get_mut], except generation counters are ignored and the
-    /// result is unwrapped internally
+    /// Like [ArenaTrait::get_mut], except generation counters are ignored and
+    /// the result is unwrapped internally
     #[doc(hidden)]
     //#[track_caller]
     pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {

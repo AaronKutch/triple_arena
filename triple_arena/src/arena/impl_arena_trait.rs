@@ -1,19 +1,19 @@
 use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
-    Arena, InvalidationOption, InvalidationResult,
-    arena::{
-        InternalSlot::{self, *},
-        base_arena::{from_checked_ptr, from_checked_raw},
-    },
-    arena_iterators::{self},
+    Arena, InvalidationOption, InvalidationResult, arena_iterators,
     errors::{AllocError, NotWithinCapacityError, ReallocationError},
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, Ptr,
         SingularGenerationArena,
     },
-    utils::traits::{
-        ArenaBacking, NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, PtrGen, PtrInx,
+    utils::{
+        InternalSlot::*,
+        from_checked_ptr, from_checked_raw,
+        traits::{
+            ArenaBacking, NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, PtrGen,
+            PtrInx,
+        },
     },
 };
 
@@ -339,7 +339,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> ArenaInsertEntryTrait<'a, P, T>
         let inx = from_checked_ptr::<P>(self.p.inx());
         let generation = self.p.generation();
         if let Some(slot) = this.m.get_mut(inx) {
-            let InternalSlot::Free(next) = mem::replace(slot, Allocated(generation, t)) else {
+            let Free(next) = mem::replace(slot, Allocated(generation, t)) else {
                 unreachable!()
             };
             if next == self.p.inx() {
@@ -352,7 +352,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> ArenaInsertEntryTrait<'a, P, T>
         } else {
             // freelist remains unset
             this.m
-                .push_within_capacity(InternalSlot::Allocated(this.generation, t))
+                .push_within_capacity(Allocated(this.generation, t))
                 .ok()
                 .unwrap();
         }
@@ -371,7 +371,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaInsertTrait<P, T> for Arena<P, T, B> {
         let generation = self.generation;
         if let Some(inx) = self.freelist_root {
             let slot = self.m.get_mut(from_checked_ptr::<P>(inx)).unwrap();
-            let InternalSlot::Free(next) = mem::replace(slot, Allocated(generation, t)) else {
+            let Free(next) = mem::replace(slot, Allocated(generation, t)) else {
                 unreachable!()
             };
             if next == inx {
@@ -390,7 +390,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaInsertTrait<P, T> for Arena<P, T, B> {
             let entry = self.m.entry_push_within_capacity()?;
             let raw_inx = entry.inx();
             if let Some(inx) = P::Inx::try_from_usize(raw_inx) {
-                entry.push(InternalSlot::Allocated(self.generation, t));
+                entry.push(Allocated(self.generation, t));
                 self.len = self.len.wrapping_add(1);
                 Ok(P::_from_raw(inx, generation))
             } else {
