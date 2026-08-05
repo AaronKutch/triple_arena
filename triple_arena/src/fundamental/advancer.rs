@@ -62,10 +62,8 @@
 /// and when using them in generics it would require `'static` bounds on those
 /// parameters. But, if arenas were already sharing the same `P` parameter then
 /// it was easy to cross validity domains anyway. `Advancer`s are by their
-/// purpose detached and extremely flexible, and the `'static` bound has been
-/// added as well to the advancer type, which is not possible in almost any
-/// other kind of iterator.
-pub trait Advancer<Collection: ?Sized>: Sized + 'static {
+/// purpose detached and extremely flexible.
+pub trait Advancer<Collection: ?Sized> {
     /// The item that this advancer returns
     type Item;
 
