@@ -6,6 +6,10 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::type_complexity)]
+#![deny(clippy::cast_possible_truncation)]
+#![deny(clippy::cast_possible_wrap)]
+#![deny(clippy::indexing_slicing)]
+#![deny(clippy::cast_lossless)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

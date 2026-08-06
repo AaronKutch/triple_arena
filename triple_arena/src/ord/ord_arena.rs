@@ -263,6 +263,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         if self.is_empty() {
             return;
         }
+        #[allow(clippy::cast_possible_truncation)]
         let root_rank = (self
             .a
             .len()
@@ -382,6 +383,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                     node.rank = 3;
                 }
                 // possible in all other cases if we always chose best midpoint
+                #[allow(clippy::cast_possible_truncation)]
                 _ => {
                     node.rank = root_rank.wrapping_sub(stack_len as u8).wrapping_add(1);
                 }
