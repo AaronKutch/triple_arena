@@ -52,6 +52,15 @@ pub fn fuzz<
     mut check_invariants: impl FnMut(&mut A) -> Result<(), StackedError>,
     // set iff `SetMaxCapacity` is implemented
     mut set_max_capacity: Option<fn(&mut A, usize) -> Result<(), MaxCapacityReductionError>>,
+    // set iff `transfer_reallocating` is available
+    mut transfer_reallocating: Option<
+        fn(
+            &mut A,
+            P::Gen,
+            &mut Arena<P, Cd<D1>, StackBacking<128>>,
+            &mut dyn FnMut(P, InvalidationOption<Cd<D1>>, P) -> Cd<()>,
+        ) -> Result<(), ReallocationError>,
+    >,
 ) -> Result<(), StackedError> {
     let rng = &mut meta.rng;
     let stats = meta.stats.as_mut().stack()?;
@@ -65,6 +74,8 @@ pub fn fuzz<
 
     // set and used by the clone_from section
     let mut a1 = Arena::<P, Cd<D1>, StackBacking<128>>::new();
+    // so we have something to differentiate from generation 2
+    let gen3 = P::Gen::generational_inc(P::Gen::two()).0;
 
     // makes sure there is not some problem with the test harness itself or
     // determinism
@@ -698,10 +709,6 @@ pub fn fuzz<
             // these are mainly tested in `multi_arena`, but we want them here to test if
             // `self.m.len()` and `self.m.capacity()` detachments cause issues
             993 => {
-                // transfer
-            }
-            994 => {}
-            995 => {
                 // clone_from_with part 0
 
                 // `a1` and the like are set here, `a` will diverge again
@@ -719,7 +726,7 @@ pub fn fuzz<
                     ensure!(a1.contains(p));
                 }
             }
-            996 => {
+            994 => {
                 // clone_from_with part 1
 
                 // `a1` was unlimited, `a` can be limited and grow capacity and run into
@@ -766,6 +773,75 @@ pub fn fuzz<
                     ensure!(a.capacity() >= before);
                     g.0 = a1.singular_generation().unwrap();
                     b_capacity = a.capacity();
+                }
+            }
+            995 => {
+                // transfer_reallocating part 0
+
+                let mut i = 0;
+                let mut list = vec![];
+                a1.transfer_reallocating(gen3, a, |q, o, p| {
+                    assert_eq!(o.is_overflow(), g.invalidate());
+                    assert_eq!(*b.get(o.allow().key()).unwrap(), q);
+                    let (k, t) = cd_gen1.new_cd();
+                    list.push((p, k));
+                    i += 1;
+                    t
+                })
+                .unwrap();
+                ensure!(a.is_empty());
+                ensure_eq!(list.len(), len);
+                b.clear();
+                for (p, k) in list {
+                    ensure_eq!(a1.get(p).unwrap().key(), k);
+                }
+            }
+            996 => {
+                // transfer_reallocating part 1
+
+                if let Some(transfer_reallocating) = &mut transfer_reallocating {
+                    if rng.next_bool() {
+                        // add a high `Ptr` for fixed capacity cases to deal
+                        // with
+
+                        for _ in 0..stats.test_limit {
+                            a1.insert(cd_gen1.new_cd().1);
+                        }
+                    }
+
+                    let before = a.capacity();
+                    let max_before = a.max_capacity();
+                    let mut on_first_call = true;
+                    let mut map = |_q: P, _o: InvalidationOption<Cd<D1>>, p: P| -> Cd<()> {
+                        if on_first_call {
+                            b.clear();
+                            on_first_call = false;
+                        }
+                        let (k, t) = cd_gen.new_cd();
+                        b.insert(k, p);
+                        t
+                    };
+                    let res = (*transfer_reallocating)(a, gen3, &mut a1, &mut map);
+                    if let Some(max) = max_before
+                        && let Some(last) = a1.find_last_inx_ptr()
+                        && P::Inx::try_into_usize(last.inx()).unwrap().get() > max
+                    {
+                        ensure!(on_first_call);
+                        ensure_eq!(res, Err(ReallocationError::BeyondMaxCapacity));
+                    } else {
+                        // if `a1` was empty
+                        if on_first_call {
+                            b.clear();
+                        }
+                        ensure_eq!(res, Ok(()));
+                        for p in a1.ptrs() {
+                            ensure!(a.contains(p));
+                        }
+                        ensure_eq!(a.max_capacity(), max_before);
+                        ensure!(a.capacity() >= before);
+                        g.0 = gen3;
+                        b_capacity = a.capacity();
+                    }
                 }
             }
             997 => {

@@ -153,11 +153,11 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
             None
         } else if cfg!(debug_assertions) {
             Some(expect![[r#"
-                980
+                1036
             "#]])
         } else {
             Some(expect![[r#"
-                9852
+                9983
             "#]])
         };
         meta.test(
@@ -175,6 +175,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
                     &mut Arena::<P2, Cd<()>, StackBacking<LIMIT>>::new(),
                     check_arena,
                     None,
+                    Some(|a, new_gen, src, map| a.transfer_reallocating(new_gen, src, map)),
                 )
             },
         )
@@ -199,6 +200,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
                         &mut a,
                         check_arena,
                         Some(|a, max_capacity| a.set_max_capacity(max_capacity)),
+                        Some(|a, new_gen, src, map| a.transfer_reallocating(new_gen, src, map)),
                     )
                 },
             )
@@ -219,6 +221,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
                         &mut Arena::<P2, Cd<()>, HeapBacking>::new(),
                         check_arena,
                         None,
+                        Some(|a, new_gen, src, map| a.transfer_reallocating(new_gen, src, map)),
                     )
                 },
             )
@@ -234,7 +237,13 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
                 cd_gen1: CdGen::new(),
             };
             meta.test(stats, |meta| {
-                basic_arena::fuzz(meta, &mut a, check_arena, None)
+                basic_arena::fuzz(
+                    meta,
+                    &mut a,
+                    check_arena,
+                    None,
+                    Some(|a, new_gen, src, map| a.transfer_reallocating(new_gen, src, map)),
+                )
             })
             .stack()?;
         }
