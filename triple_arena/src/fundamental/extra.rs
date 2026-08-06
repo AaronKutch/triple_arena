@@ -12,7 +12,19 @@ pub enum InvalidationOption<T> {
     GenerationOverflow(T),
 }
 
+// FIXME scan through and update based on these methods
+
 impl<T> InvalidationOption<T> {
+    /// If `matches!(self, Self::Success(_))`
+    pub fn is_success(&self) -> bool {
+        matches!(self, Self::Success(_))
+    }
+
+    /// If `matches!(self, Self::GenerationOverflow(_))`
+    pub fn is_overflow(&self) -> bool {
+        matches!(self, Self::GenerationOverflow(_))
+    }
+
     /// Maps both options to `T`. This is the preferred method for most uses
     /// that don't care about the incredible difficulty of
     /// reaching generation overflow with the default `NonZeroU64`.
@@ -33,16 +45,20 @@ impl<T> InvalidationOption<T> {
         }
     }
 
-    /// If `matches!(self, Self::GenerationOverflow(_))`
-    pub fn is_overflow(&self) -> bool {
-        matches!(self, Self::GenerationOverflow(_))
-    }
-
     /// Maps `T` to `U` in the corresponding variants
     pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> InvalidationOption<U> {
         match self {
             Self::Success(t) => InvalidationOption::Success(f(t)),
             Self::GenerationOverflow(t) => InvalidationOption::GenerationOverflow(f(t)),
+        }
+    }
+
+    /// Maps `Success(T)` to `(T, false)` and `GenerationOverflow(T)` to `(T,
+    /// true)`
+    pub fn overflowing(self) -> (T, bool) {
+        match self {
+            Self::Success(t) => (t, false),
+            Self::GenerationOverflow(t) => (t, true),
         }
     }
 }
@@ -63,6 +79,21 @@ pub enum InvalidationResult<T> {
 }
 
 impl<T> InvalidationResult<T> {
+    /// If `matches!(self, Self::Success(_))`
+    pub fn is_success(&self) -> bool {
+        matches!(self, Self::Success(_))
+    }
+
+    /// If `matches!(self, Self::GenerationOverflow(_))`
+    pub fn is_overflow(&self) -> bool {
+        matches!(self, Self::GenerationOverflow(_))
+    }
+
+    /// If `matches!(self, Self::InvalidPtr)`
+    pub fn is_invalid(&self) -> bool {
+        matches!(self, Self::InvalidPtr)
+    }
+
     /// Maps both `Success` and `GenerationOverflow` to `Some`, and maps
     /// `InvalidPtr` to `None`. This is the preferred method for most uses
     /// that don't care about the incredible difficulty of
@@ -93,6 +124,32 @@ impl<T> InvalidationResult<T> {
             Self::Success(t) => InvalidationResult::Success(f(t)),
             Self::GenerationOverflow(t) => InvalidationResult::GenerationOverflow(f(t)),
             Self::InvalidPtr => InvalidationResult::InvalidPtr,
+        }
+    }
+
+    /// Maps `Success(T)` to `(Some(T), false)`, `GenerationOverflow(T)` to
+    /// `(Some(T), true)`, and `InvalidPtr` to `(None, false)`.
+    pub fn overflowing(self) -> (Option<T>, bool) {
+        match self {
+            Self::Success(t) => (Some(t), false),
+            Self::GenerationOverflow(t) => (Some(t), true),
+            Self::InvalidPtr => (None, false),
+        }
+    }
+
+    /// Maps to an `InvalidationOption`, panicking if `self.is_invalid()`.
+    ///
+    /// # Panics
+    ///
+    /// If `self.is_invalid()`.
+    #[track_caller]
+    pub fn unwrap(self) -> InvalidationOption<T> {
+        match self {
+            Self::Success(t) => InvalidationOption::Success(t),
+            Self::GenerationOverflow(t) => InvalidationOption::GenerationOverflow(t),
+            Self::InvalidPtr => {
+                panic!("called `InvalidationOption::unwrap()` on an `InvalidPtr` value")
+            }
         }
     }
 }

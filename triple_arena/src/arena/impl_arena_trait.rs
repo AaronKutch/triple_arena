@@ -264,9 +264,8 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for Arena<P, T, B> {
         // REF(careful_general_clone) Be aware that `source` may not be linear and the
         // `P`s coming from it can't be relied on, if this happens just return
         // the `BeyondMaxCapacity` which is logical anyways
-        let e = Err(ReallocationError::BeyondMaxCapacity);
         let Some(raw_last) = P::Inx::try_into_usize(last.inx()) else {
-            return e;
+            return Err(ReallocationError::BeyondMaxCapacity);
         };
         if raw_last.get() > self.m.capacity() {
             // max capacity is tested here
@@ -278,124 +277,41 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for Arena<P, T, B> {
         self.generation = source.singular_generation().unwrap_or(P::Gen::two());
         // maintain invariants even with bad behavior, increment `len` at the right
         // moment and always call `canonicalize_free_list` after this point
-        let res = 'outer: {
-            let mut adv = source.advancer();
-            while let Some(p) = adv.advance(source) {
-                let Some(raw) = P::Inx::try_into_usize(p.inx()) else {
-                    break 'outer e;
-                };
-                if raw.get() <= self.m.len() {
-                    // the advancer is out of order
-                    break 'outer e;
-                }
-                // insert free entries in gaps
-                while raw.get() - 1 > self.m.len() {
-                    if self
-                        .m
-                        .push_within_capacity(Free(P::invalid().inx()))
-                        .is_err()
-                    {
-                        break 'outer e;
-                    }
-                }
-                let Some(u) = source.get(p) else {
-                    break 'outer e;
-                };
-                let t = map(p, u);
+        let mut adv = source.advancer();
+        while let Some(p) = adv.advance(source) {
+            let Some(raw) = P::Inx::try_into_usize(p.inx()) else {
+                unreachable!();
+            };
+            if raw.get() <= self.m.len() {
+                // the advancer is out of order
+                unreachable!();
+            }
+            // insert free entries in gaps
+            while raw.get() - 1 > self.m.len() {
                 if self
                     .m
-                    .push_within_capacity(Allocated(p.generation(), t))
+                    .push_within_capacity(Free(P::invalid().inx()))
                     .is_err()
                 {
-                    break 'outer e;
+                    unreachable!();
                 }
-                self.len = self.len.wrapping_add(1);
             }
-            Ok(())
-        };
+            let Some(u) = source.get(p) else {
+                unreachable!();
+            };
+            let t = map(p, u);
+            if self
+                .m
+                .push_within_capacity(Allocated(p.generation(), t))
+                .is_err()
+            {
+                unreachable!();
+            }
+            self.len = self.len.wrapping_add(1);
+        }
         // has to be done with reverse iteration anyways
         self.canonicalize_free_list();
-        res
-    }
-
-    fn clone_general<
-        U,
-        A: CompactArenaTrait<P, U>,
-        Adv: Advancer<A, Item = P>,
-        F: FnMut(P, &U, P) -> T,
-    >(
-        &mut self,
-        reset_generation: bool,
-        source: &A,
-        mut advancer: Adv,
-        mut map: F,
-    ) -> Result<InvalidationOption<()>, ReallocationError> {
-        // need this to follow the `is_empty` generation handling correctly
-        if source.is_empty() {
-            self.m.clear();
-            self.len = 0;
-            self.freelist_root = None;
-            if reset_generation {
-                self.generation = P::Gen::two();
-            } else {
-                // this is a corner case that doesn't properly exist with `clone_from_with` or
-                // the inplace compress, I believe this to be the most correct thing to do over
-                // doing nothing
-                self.generation = source.singular_generation().unwrap_or(P::Gen::two());
-            }
-            return Ok(InvalidationOption::Success(()));
-        }
-        // REF(careful_general_clone)
-        let e = Err(ReallocationError::BeyondMaxCapacity);
-
-        // start modifying after the fallible points that we can reasonably deal with
-        self.m.clear();
-        self.len = 0;
-        // we are building as canonicalized in this case
-        self.freelist_root = None;
-
-        let res = if reset_generation {
-            self.generation = P::Gen::two();
-            InvalidationOption::Success(())
-        } else {
-            if let Some(next) = source.singular_generation() {
-                // not `self.inc_generation()`, need to get the incremented source generation
-                let tmp = P::Gen::generational_inc(next);
-                self.generation = tmp.0;
-                if tmp.1 {
-                    InvalidationOption::GenerationOverflow(())
-                } else {
-                    InvalidationOption::Success(())
-                }
-            } else {
-                self.generation = P::Gen::two();
-                InvalidationOption::Success(())
-            }
-        };
-        let new_gen = self.generation;
-
-        // maintain invariants even with bad behavior, increment `len` at the right
-        // moment and always maintain a canonical state with kept invariants
-        let mut i = NonZeroUsize::new(1).unwrap();
-        while let Some(p) = advancer.advance(source) {
-            let Some(inx_new) = P::Inx::try_from_usize(i) else {
-                return e;
-            };
-            let p_new = P::_from_raw(inx_new, new_gen);
-
-            let Some(u) = source.get(p) else {
-                return e;
-            };
-            let t = map(p, u, p_new);
-
-            // We push all Allocated entries as part of this being a compression function.
-            // It is safe to return from the function here immediately on error.
-            self.m.push_reallocating(Allocated(new_gen, t))?;
-            // immediately afterwards
-            self.len = self.len.wrapping_add(1);
-            i = i.checked_add(1).unwrap();
-        }
-        Ok(res)
+        Ok(())
     }
 }
 

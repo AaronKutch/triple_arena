@@ -11,8 +11,11 @@ use core::{
 use crate::{
     Arena, ChainArena, InvalidationOption, LinkNoGen,
     arena::{from_checked_ptr, from_checked_raw},
+    errors::ReallocationError,
     stack::{NonZeroInxArray, NonZeroInxGenericStack},
-    traits::{Advancer, ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
+    traits::{
+        Advancer, ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaTrait, ChainArenaTrait, Ptr,
+    },
     utils::traits::ArenaBacking,
 };
 
@@ -482,7 +485,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// this in-place in the allocation, this cannot have a map.
     pub fn compress_and_canonicalize(&mut self, reset_generation: bool) -> InvalidationOption<()> {
         // TODO single chain optimized internal version of this
-        let res = self.a.compress_and_canonicalize_chains(reset_generation);
+        let res = self.a.compress_and_canonicalize(reset_generation);
         if !self.is_empty() {
             // we can fortunately rely on the canonicalization
             self.first = from_checked_raw::<P>(NonZeroUsize::new(1).unwrap());
@@ -497,36 +500,43 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         res
     }
 
-    /*
-    /// Compresses the arena by moving around entries to be able to shrink the
-    /// capacity down to the length. All key-value relations remain, but all
-    /// `Ptr`s are invalidated. New `Ptr`s to the entries can be found again
-    /// by iterators and advancers. Additionally, cache locality is improved
-    /// by neighboring keys being moved close together in memory, and search
-    /// speed is improved by the tree being balanced close to the ideal
-    /// balancing.
-    pub fn compress_and_shrink(&mut self) {
-        self.compress_and_shrink_with(|_, _, _, _| ())
-    }
+    // TODO use a `OrdArenaTrait` for `source`
 
-    /// The same as [OrdArena::compress_and_shrink] except that `map` is run
-    /// on every `(P, &K, &mut V, P)` with the first `P` being the old `Ptr` and
-    /// the last `P` being the new `Ptr`.
-    pub fn compress_and_shrink_with<F: FnMut(P, &K, &mut V, P)>(&mut self, mut map: F) {
-        if let Some(min) = self.first() {
-            self.a
-                .compress_and_shrink_acyclic_chain_with(min, |p, node, q| {
-                    // handles partially exterior nodes for later
-                    node.p_tree0 = None;
-                    node.p_tree1 = None;
-                    map(p, &node.k, &mut node.v, q)
-                });
-            self.raw_rebalance_assuming_compressed();
-        } else {
-            //self.a.clear_and_shrink();
+    pub fn transfer_canonical_reallocating<
+        Q: Ptr,
+        U,
+        B1: ArenaBacking,
+        F: FnMut(Q, InvalidationOption<U>, P) -> T,
+        D: ArenaDirectInsertTrait<Q, P>,
+    >(
+        &mut self,
+        new_generation: P::Gen,
+        source: &mut SimpleOrdArena<Q, U, B1>,
+        mut map: F,
+        recaster: &mut D,
+    ) -> Result<(), ReallocationError> {
+        // by chain arena canonicalization this also sets it up how we want it
+        let res = self.a.transfer_canonical_reallocating(
+            new_generation,
+            &mut source.a,
+            |q, o, p| Node {
+                t: map(q, o.map(|node| node.t), p),
+                p_back: None,
+                p_tree0: None,
+                p_tree1: None,
+                rank: 0,
+            },
+            recaster,
+        );
+        if self.is_empty() || res.is_err() {
+            return res;
         }
+        // the `recaster` has been set now
+        self.first = recaster.get_inx(source.first).unwrap().1.inx();
+        self.last = recaster.get_inx(source.last).unwrap().1.inx();
+        self.raw_rebalance_assuming_prepared();
+        res
     }
-    */
 
     // TODO probably have some from_ordered_chain function
 

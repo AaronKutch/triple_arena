@@ -7,8 +7,12 @@ use core::{
 
 use crate::{
     InvalidationOption, InvalidationResult,
-    errors::MaxCapacityReductionError,
-    traits::{ArenaCloneFromWith, ArenaTrait, Ptr, SetMaxCapacity},
+    arena::{ArenaInsertEntryTrait, ArenaInsertTrait},
+    errors::{MaxCapacityReductionError, ReallocationError},
+    traits::{
+        Advancer, ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaTrait, CompactArenaTrait, Ptr,
+        SetMaxCapacity,
+    },
     utils::traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen, PtrInx},
 };
 
@@ -394,6 +398,46 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             Some(Allocated(_, t)) => t,
             _ => unreachable!(), /* panic!("get_inx_mut_unwrap of unallocated entry"), */
         }
+    }
+
+    pub fn transfer_reallocating<
+        Q: Ptr,
+        U,
+        A: CompactArenaTrait<Q, U>,
+        F: FnMut(Q, InvalidationOption<U>, P) -> T,
+    >(
+        &mut self,
+        new_generation: P::Gen,
+        source: &mut A,
+        mut map: F,
+    ) -> Result<(), ReallocationError> {
+        let Some(len) = NonZeroUsize::new(source.len()) else {
+            // follow what the other path would logically do
+            self.clear().allow();
+            self.set_generation(new_generation);
+            return Ok(());
+        };
+        // test highest pointer that would be created for if it is nonlinear or doesn't
+        // fit
+        if P::Inx::try_from_usize(len).is_none() {
+            return Err(ReallocationError::BeyondMaxCapacity);
+        };
+        if len.get() > self.capacity() {
+            // max capacity is tested here
+            self.reallocate_min_capacity(len.get())?;
+        }
+
+        // the rest should be infallible if soft invariants are followed
+        self.clear().allow();
+        self.set_generation(new_generation);
+
+        let mut adv = source.advancer();
+        while let Some(q) = adv.advance(source) {
+            let entry = self.entry_insert_within_capacity().unwrap();
+            let t = map(q, source.remove(q).unwrap(), entry.ptr());
+            entry.insert(t);
+        }
+        Ok(())
     }
 
     /// Directly returns a reference to the internal backing, for the purposes

@@ -1,14 +1,21 @@
 use core::{
     borrow::Borrow,
     fmt::{self, Debug},
+    num::NonZeroUsize,
     ops::{Index, IndexMut},
 };
 
 use crate::{
     Arena, InvalidationOption, LinkNoGen,
-    arena::ArenaSlot,
-    traits::{ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
-    utils::traits::ArenaBacking,
+    errors::ReallocationError,
+    traits::{
+        Advancer, ArenaCloneFromWith, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait,
+        ArenaInsertTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait, Ptr,
+    },
+    utils::{
+        ArenaSlot, from_checked_raw,
+        traits::{ArenaBacking, PtrInx},
+    },
 };
 
 /// A doubly-linked-list based on an arena for handling usecases involving
@@ -216,39 +223,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         self.a.inc_generation()
     }
 
-    /// Calls [Arena::get_inx_unwrap]
-    #[doc(hidden)]
-    //#[track_caller]
-    pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
-        &self.a.get_inx_unwrap(p).t
-    }
-
-    /// Calls [Arena::get_inx_mut_unwrap]
-    #[doc(hidden)]
-    //#[track_caller]
-    pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
-        &mut self.a.get_inx_mut_unwrap(p).t
-    }
-
-    /// Directly returns a reference to the internal backing, for the purposes
-    /// of accessing `ArenaBacking`-specific functions
-    pub fn backing(&self) -> &B::Stack<ArenaSlot<P, LinkNoGen<P, T>>> {
-        self.a.backing()
-    }
-
-    /// Directly returns a mutable reference to the internal backing, for the
-    /// purposes of accessing `ArenaBacking`-specific functions
-    ///
-    /// # Safety
-    ///
-    /// The `ArenaSlot` allocation state must not be modified, or else the
-    /// freelist or entry length could be broken. The `LinkNoGen` interlinks
-    /// must also not be modified, or else chain invariants could be broken.
-    pub unsafe fn backing_mut(&mut self) -> &mut B::Stack<ArenaSlot<P, LinkNoGen<P, T>>> {
-        // Safety: called in `unsafe` function with same invariants and added invariants
-        unsafe { self.a.backing_mut() }
-    }
-
     // this is tested by the `SurjectArena` fuzz test
     /// Like `remove_chain` but assumes the chain is cyclic and `p` is valid
     pub(crate) fn remove_cyclic_chain_internal(&mut self, p: P::Inx, inc_gen: bool) {
@@ -273,6 +247,104 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         if inc_gen {
             self.a.inc_generation().allow();
         }
+    }
+
+    pub fn transfer_canonical_reallocating<
+        Q: Ptr,
+        U,
+        A: ChainArenaTrait<Q, U> + CompactArenaTrait<Q, U>,
+        F: FnMut(Q, InvalidationOption<U>, P) -> T,
+        D: ArenaDirectInsertTrait<Q, P>,
+    >(
+        &mut self,
+        new_generation: P::Gen,
+        source: &mut A,
+        mut map: F,
+        recaster: &mut D,
+    ) -> Result<(), ReallocationError> {
+        let Some(len) = NonZeroUsize::new(source.len()) else {
+            // follow what the other path would logically do
+            recaster.clear().allow();
+            self.clear().allow();
+            self.set_generation(new_generation);
+            return Ok(());
+        };
+        // test highest pointer that would be created for if it is nonlinear or doesn't
+        // fit
+        if P::Inx::try_from_usize(len).is_none() {
+            return Err(ReallocationError::BeyondMaxCapacity);
+        };
+        if len.get() > self.capacity() {
+            // max capacity is tested here
+            self.reallocate_min_capacity(len.get())?;
+        }
+
+        // the rest should be infallible if soft invariants are followed
+        recaster.clear().allow();
+        self.clear().allow();
+        self.set_generation(new_generation);
+
+        let mut p_raw = NonZeroUsize::new(1).unwrap();
+        let mut adv_outer = source.advancer();
+        while let Some(q_start) = adv_outer.advance(source) {
+            if recaster.contains(q_start) {
+                // part of a chain that has already been mapped, critical to prevent `O(n^2)`
+                // because in the acyclic case `advancer_chain` will find the beginning of the
+                // chain
+                continue;
+            }
+            let mut adv_chain = source.advancer_chain(q_start).unwrap();
+            while let Some(q) = adv_chain.advance(source) {
+                // cannot panic for `Ptr`s following soft invariants since we checked the
+                // highest index
+                let p_inx = from_checked_raw::<P>(p_raw);
+                let p = P::_from_raw(p_inx, new_generation);
+                match recaster.direct_insert_within_capacity(q) {
+                    Ok(entry) => {
+                        entry.insert(p);
+                    }
+                    _ => unreachable!(),
+                }
+
+                // increment here as we find the pointers in the order that they will actually
+                // be drained, the repeat of the outer advancer and chain_drain will encounter
+                // in the same order
+                p_raw = p_raw.checked_add(1).unwrap();
+            }
+        }
+
+        let mut adv_outer = source.advancer();
+        while let Some(q_start) = adv_outer.advance(source) {
+            for o in source.drain_chain(q_start).unwrap() {
+                let ((q, q_link), o) = o.overflowing();
+                let p = *recaster.get(q).unwrap();
+                let prev_next = (
+                    if let Some(q_inx) = q_link.prev() {
+                        Some(recaster.get_inx(q_inx).unwrap().1.inx())
+                    } else {
+                        None
+                    },
+                    if let Some(q_inx) = q_link.next() {
+                        Some(recaster.get_inx(q_inx).unwrap().1.inx())
+                    } else {
+                        None
+                    },
+                );
+                let arg = if o {
+                    InvalidationOption::GenerationOverflow(q_link.t)
+                } else {
+                    InvalidationOption::Success(q_link.t)
+                };
+                let t = map(q, arg, p);
+                let p_link = LinkNoGen::<P, T>::new(prev_next, t);
+
+                // relying on standard behavior with slots and generation
+                if self.a.insert_within_capacity(p_link).is_err() {
+                    unreachable!()
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Creates a `ChainArena<P, T>` directly from an
@@ -309,6 +381,39 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     ) {
         arena.clone_from_with(&self.a, map).unwrap();
     }
+
+    /// Calls [Arena::get_inx_unwrap]
+    #[doc(hidden)]
+    //#[track_caller]
+    pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
+        &self.a.get_inx_unwrap(p).t
+    }
+
+    /// Calls [Arena::get_inx_mut_unwrap]
+    #[doc(hidden)]
+    //#[track_caller]
+    pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
+        &mut self.a.get_inx_mut_unwrap(p).t
+    }
+
+    /// Directly returns a reference to the internal backing, for the purposes
+    /// of accessing `ArenaBacking`-specific functions
+    pub fn backing(&self) -> &B::Stack<ArenaSlot<P, LinkNoGen<P, T>>> {
+        self.a.backing()
+    }
+
+    /// Directly returns a mutable reference to the internal backing, for the
+    /// purposes of accessing `ArenaBacking`-specific functions
+    ///
+    /// # Safety
+    ///
+    /// The `ArenaSlot` allocation state must not be modified, or else the
+    /// freelist or entry length could be broken. The `LinkNoGen` interlinks
+    /// must also not be modified, or else chain invariants could be broken.
+    pub unsafe fn backing_mut(&mut self) -> &mut B::Stack<ArenaSlot<P, LinkNoGen<P, T>>> {
+        // Safety: called in `unsafe` function with same invariants and added invariants
+        unsafe { self.a.backing_mut() }
+    }
 }
 
 impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> Index<Q> for ChainArena<P, T, B> {
@@ -331,7 +436,7 @@ impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for ChainArena<P, T, 
 
 impl<P: Ptr, T: Debug, B: ArenaBacking> Debug for ChainArena<P, T, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO try to group by chain like `compress_and_canonicalize_chains` does using
+        // FIXME try to group by chain like `compress_and_canonicalize` does using
         // canonical iterator?
         f.debug_map().entries(self.iter_link_no_gen()).finish()
     }

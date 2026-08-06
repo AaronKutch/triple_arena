@@ -1,17 +1,17 @@
 use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
-    Arena, InvalidationOption, InvalidationResult, LinkInsertInxKind, LinkInsertKind, LinkNoGen,
-    chain::{ChainArena, chain_iterators},
+    Arena, ChainArena, InvalidationOption, InvalidationResult, LinkInsertInxKind, LinkInsertKind,
+    LinkNoGen, chain_iterators,
     errors::{AllocError, ChainInsertionError, NotWithinCapacityError, ReallocationError},
     traits::{
-        ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait,
-        Ptr,
+        Advancer, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait, ArenaInsertEntryTrait,
+        ArenaInsertTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait, Ptr,
     },
     utils::{
         ArenaSlot::*,
         from_checked_ptr, from_checked_raw,
-        traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen},
+        traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen, PtrInx},
     },
 };
 
@@ -456,10 +456,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
         self.internal_drain_chain(p)
     }
 
-    fn compress_and_canonicalize_chains(
-        &mut self,
-        reset_generation: bool,
-    ) -> InvalidationOption<()> {
+    fn compress_and_canonicalize(&mut self, reset_generation: bool) -> InvalidationOption<()> {
         let res = if reset_generation {
             self.a.set_generation(<P::Gen as PtrGen>::two());
             InvalidationOption::Success(())
@@ -504,11 +501,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
                     if i == from_checked_ptr::<P>(target) {
                         // optimize and avoid edge case
                         if let Allocated(old_gen, _link) = self.a.m.get_mut(i).unwrap() {
-                            /*map(
-                                Ptr::_from_raw(from_checked_raw::<P>(i), *old_gen),
-                                &mut link.t,
-                                Ptr::_from_raw(from_checked_raw::<P>(i), new_gen),
-                            );*/
                             *old_gen = new_gen;
                             i = i.checked_add(1).unwrap();
                         }
@@ -556,17 +548,10 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
                     ) else {
                         unreachable!()
                     };
-                    //let p_old = Ptr::_from_raw(target, old_gen);
-                    //let p_new = Ptr::_from_raw(p_inx_new, new_gen);
-                    //map(p_old, &mut link.t, p_new);
                     let next = link.next();
 
-                    if i.get() > self.a.m.len() {
-                        panic!("{j:?} {init_j} {i} {}", self.a.m.len());
-                    }
                     let replaced =
                         mem::replace(self.a.m.get_mut(i).unwrap(), Allocated(new_gen, link));
-                    // preserve the generation because it is needed for the map to be accurate
                     if let Allocated(..) = replaced {
                         // finish 3 replacements to do the swap
                         let _ = mem::replace(self.a.m.get_mut(raw_target).unwrap(), replaced);

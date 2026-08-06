@@ -4,12 +4,16 @@ use fmt::Debug;
 
 use crate::{
     Arena, ChainArena, InvalidationOption, InvalidationResult, LinkInsertKind, LinkNoGen,
+    arena::ArenaDirectInsertEntryTrait,
     errors::{AllocError, ChainInsertionError, NotWithinCapacityError, ReallocationError},
     traits::{
-        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
-        ChainArenaTrait, Ptr,
+        Advancer, ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaInsertEntryTrait,
+        ArenaInsertTrait, ArenaTrait, ChainArenaTrait, Ptr,
     },
-    utils::{PtrNoGen, traits::ArenaBacking},
+    utils::{
+        PtrNoGen,
+        traits::{ArenaBacking, PtrInx},
+    },
 };
 
 #[derive(Clone)]
@@ -725,6 +729,101 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     pub fn clear(&mut self) -> InvalidationOption<()> {
         self.vals.clear().allow();
         self.keys.clear()
+    }
+
+    /// `aux_recaster` is for internal use only and is filled with arbirary data
+    /// unrelated to the logical keys.
+    ///
+    /// This mess of a function is used like so: FIXME
+    pub fn transfer_canonical_reallocating<
+        Q: Ptr,
+        K1,
+        V1,
+        B1: ArenaBacking,
+        F0: FnMut(Q, InvalidationOption<K1>, P) -> K,
+        F1: FnMut(V1) -> V,
+        D: ArenaDirectInsertTrait<Q, P>,
+        Aux: ArenaDirectInsertTrait<PtrNoGen<Q>, PtrNoGen<P>>,
+    >(
+        &mut self,
+        new_generation: P::Gen,
+        source: &mut SurjectArena<Q, K1, V1, B1>,
+        mut map_key: F0,
+        mut map_val: F1,
+        recaster: &mut D,
+        aux_recaster: &mut Aux,
+    ) -> Result<(), ReallocationError> {
+        // precheck both keys and values first, can't have atomic fallibility without it
+
+        let Some(len_keys) = NonZeroUsize::new(source.len_keys()) else {
+            // follow what the other path would logically do
+            recaster.clear().allow();
+            aux_recaster.clear().allow();
+            self.clear().allow();
+            self.set_generation(new_generation);
+            return Ok(());
+        };
+        if P::Inx::try_from_usize(len_keys).is_none() {
+            return Err(ReallocationError::BeyondMaxCapacity);
+        };
+        if len_keys.get() > self.capacity_keys() {
+            // max capacity is tested here
+            self.reallocate_min_capacity_keys(len_keys.get())?;
+        }
+
+        // guaranteed nonempty at this point
+        let len_vals = NonZeroUsize::new(source.len_vals()).unwrap();
+        if P::Inx::try_from_usize(len_vals).is_none() {
+            return Err(ReallocationError::BeyondMaxCapacity);
+        };
+        if len_vals.get() > self.capacity_vals() {
+            // max capacity is tested here
+            self.reallocate_min_capacity_vals(len_vals.get())?;
+        }
+
+        // the rest should be infallible if soft invariants are followed
+        recaster.clear().allow();
+        aux_recaster.clear().allow();
+        self.clear().allow();
+        self.set_generation(new_generation);
+
+        // setup `aux_recaster`
+        self.vals
+            .transfer_reallocating((), &mut source.vals, |q_val, o, p_val| {
+                aux_recaster
+                    .direct_insert_within_capacity(q_val)
+                    .unwrap()
+                    .insert(p_val);
+                // internal can't overflow
+                let val = o.allow();
+                Val {
+                    v: map_val(val.v),
+                    key_count: val.key_count,
+                }
+            })
+            .unwrap();
+
+        self.keys
+            .transfer_canonical_reallocating(
+                new_generation,
+                &mut source.keys,
+                |q, o, p| {
+                    let (key, o) = o.overflowing();
+                    let arg = if o {
+                        InvalidationOption::GenerationOverflow(key.k)
+                    } else {
+                        InvalidationOption::Success(key.k)
+                    };
+                    Key {
+                        k: map_key(q, arg, p),
+                        p_val: *aux_recaster.get(key.p_val).unwrap(),
+                    }
+                },
+                recaster,
+            )
+            .unwrap();
+
+        Ok(())
     }
 
     // FIXME can only be a `canonicalize` version

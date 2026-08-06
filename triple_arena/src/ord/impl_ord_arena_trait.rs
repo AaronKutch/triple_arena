@@ -139,3 +139,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
 }
 
 impl<P: Ptr, T, B: ArenaBacking> CompactArenaTrait<P, T> for SimpleOrdArena<P, T, B> {}
+
+// TODO? If this is common enough do this
+//struct SimpleOrdArenaRecaster(SimpleOrdArena<R, OrdPair<P, Q>, B>)
+//impl ArenaDirectInsertTrait<Q, P> for SimpleOrdArenaRecaster

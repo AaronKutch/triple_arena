@@ -6,10 +6,14 @@ use core::{
 };
 
 use crate::{
-    errors::MaxCapacityReductionError,
-    traits::{ArenaTrait, Ptr, SetMaxCapacity},
+    InvalidationOption,
+    errors::{MaxCapacityReductionError, ReallocationError},
+    traits::{
+        Advancer, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait, ArenaTrait,
+        CompactArenaTrait, Ptr, SetMaxCapacity,
+    },
     utils::{
-        from_checked_ptr,
+        from_checked_ptr, from_checked_raw,
         traits::{ArenaBacking, NonZeroInxGenericStack, PtrInx},
     },
 };
@@ -119,6 +123,46 @@ impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
                 Some((generation, t))
             }
         }
+    }
+
+    pub fn transfer_reallocating<
+        Q: Ptr,
+        U,
+        A: CompactArenaTrait<Q, U>,
+        F: FnMut(Q, InvalidationOption<U>, P) -> T,
+    >(
+        &mut self,
+        new_generation: P::Gen,
+        source: &mut A,
+        mut map: F,
+    ) -> Result<(), ReallocationError> {
+        let Some(len) = NonZeroUsize::new(source.len()) else {
+            // follow what the other path would logically do
+            self.clear().allow();
+            return Ok(());
+        };
+        // test highest pointer that would be created for if it is nonlinear or doesn't
+        // fit
+        if P::Inx::try_from_usize(len).is_none() {
+            return Err(ReallocationError::BeyondMaxCapacity);
+        };
+        if len.get() > self.capacity() {
+            // max capacity is tested here
+            self.reallocate_min_capacity(len.get())?;
+        }
+
+        // the rest should be infallible if soft invariants are followed
+        self.clear().allow();
+
+        let mut p_raw = NonZeroUsize::new(1).unwrap();
+        let mut adv = source.advancer();
+        while let Some(q) = adv.advance(source) {
+            let p = P::_from_raw(from_checked_raw::<P>(p_raw), new_generation);
+            let t = map(q, source.remove(q).unwrap(), p);
+            self.direct_insert_within_capacity(p).unwrap().insert(t);
+            p_raw = p_raw.checked_add(1).unwrap();
+        }
+        Ok(())
     }
 
     /// Like [ArenaTrait::get], except generation counters are ignored and the

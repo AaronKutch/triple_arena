@@ -35,6 +35,8 @@ I wanted to avoid adding new error enums for chain insertion and would have used
 
 The `drain` function ends up allowing invalidating every element separately because of "certain arena designs that have a generation per internal slot or domain". For singular generation arenas I also considered maybe adding an invariant that the generation counter equals the number of element invalidations minus 2, but I don't know of a use for it and it costs more and it is awkward to deal with edge cases with `drain` iterator dropping. I decide that we just make `drain` dropping just guarantee a single unseen `clear` invalidation (if there are elements), and make `clear` do a single invalidation if there are any entries. `drain` individually dropping could also make more sense if it stopped part way through on iterator drop, but `clear` by default is safer. The `compress` functions make sense to only increment the generation once.
 
+The `transfer_*` functions all pass `InvalidationOption`s in their closures for the same reason as the `drain` function, they will all have generic sources that could have multiplicitous generations at least in the future.
+
 I almost considered `fn ok` instead of `fn allow` but that could easily lead to confusion and would make finding these uses difficult
 
 `insert` could have returned `(P, &mut T)` as an extension of what stacks do, but it definitely does not carry its weight and the entry methods replace most places where it would be used.
@@ -42,13 +44,20 @@ I almost considered `fn ok` instead of `fn allow` but that could easily lead to 
 I do not have `inx` variations of the `*_chain` methods, they are dangerous enough and usually the `Ptr` is around and `O(n)` anyways.
 The `Ptr`s are usually around for the chain connection or break functions as well.
 
+I would want to have an `advancer_canonical` for chain arenas, but the problem is that there is not a compact advancer state `O(n)` way to know which chains you have already visited, when dealing with scrambled chains. Instead, we have `transfer_canonical_reallocating` which can work by doing `drain_chain`.
+
 we _could_ get a mutable versions of the link functions like `get_link_no_gen` by returning `Link*<P, &mut ...>`, but I'd rather keep the number down and it would presumably be optimized to nothing if called next to `get_inx_mut` etc. I like the current set of 3 link functions because they are closer to what is actually happening at a low level, only `get_link` requires chasing and reconstructing a reference within the struct.
 
 `compress_with` can go on `ArenaTrait`, because in the worst case it can be a no-op that moves nothing.
 
-`clone_general` was named because there are so many factors, but it is really the most general clone I can think of needing. It should compress because I can't think of a reason not to on compact arenas at least, if you are going to change indexes to begin with. And the generations may as well be changed according to other compressor logic if indexes are going to change. I don't add "_reallocating" because the `Clone` impl and other `clone_*` functions implicitly mean reallocating anyways.
+I don't add "_reallocating" to `clone_from_with` because the `Clone` impls and other `clone_*` functions implicitly mean reallocating anyways. They are also designed for the suboperations to be infallible as long as certain things are following soft invariants, so I don't have a way to return fallibility from the closure. Any context specific domain checking should be done before `clone_from_with` anyways
+
+I considered a `clone_general` that combined `compress_with` and `clone_from_with`, but the problem is that usually what we want is the `transfer_*` functions (whereas taking the `source` arena by reference prevents proper moves), and `clone_general` can be implemented as desired externally. `clone_general` was going to take an advancer when selecting what the map should go over, and it would have dealt with `reset_generation` complications etc, but there are simply too many things piling up like it wanting `push_reallocating` and a fallible map internally unlike the `compress*` and `transfer*` and `clone_from_with` functions which can guarantee atomic operation on failure (except for strange cases we don't care about anyways).
+
+`transfer_canonical_reallocating` could have had `reset_generation` semantics but I thought the ability to have different `Ptr` types was more important
 
 `ArenaTrait` will likely need to be broken up in the future if we want to support !Move, !Forget etc types
+
 */
 
 /// The base trait for `triple_arena` style Arenas. See [crate::Arena] for the
@@ -505,23 +514,6 @@ pub trait ArenaCloneFromWith<P: Ptr, T> {
         source: &A,
         map: F,
     ) -> Result<(), ReallocationError>;
-
-    /// Combines [ArenaTrait::compress_with] and
-    /// [ArenaCloneFromWith::clone_from_with]. This is not inplace and can
-    /// reallocate according to [ArenaCloneFromWith::clone_from_with], possibly
-    /// returning an allocation error.
-    fn clone_general<
-        U,
-        A: CompactArenaTrait<P, U>,
-        Adv: Advancer<A, Item = P>,
-        F: FnMut(P, &U, P) -> T,
-    >(
-        &mut self,
-        reset_generation: bool,
-        source: &A,
-        advancer: Adv,
-        map: F,
-    ) -> Result<InvalidationOption<()>, ReallocationError>;
 }
 
 pub(crate) fn handle_reallocation<P: Ptr, T, A: ArenaTrait<P, T>>(

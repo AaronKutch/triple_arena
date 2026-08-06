@@ -4,7 +4,9 @@ use crate::{
     InvalidationOption, InvalidationResult, Link, LinkNoGen,
     arena::handle_reallocation,
     errors::{ChainInsertionError, ReallocationError},
-    traits::{Advancer, ArenaInsertEntryTrait, ArenaTrait, Ptr},
+    traits::{
+        Advancer, ArenaDirectInsertTrait, ArenaInsertEntryTrait, ArenaTrait, CompactArenaTrait, Ptr,
+    },
 };
 
 // The comments for this are in arena_traits.rs
@@ -274,6 +276,8 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         })
     }
 
+    // TODO solve the advancer guarding problem
+
     /// Advances over every valid `Ptr` in the chain that contains `p_init`.
     /// This does _not_ support invalidating `Ptr`s or changing the interlinks
     /// of the chain of `p_init` during the loop.
@@ -359,26 +363,11 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         p: P,
     ) -> Option<impl Iterator<Item = InvalidationOption<(P, LinkNoGen<P, T>)>>>;
 
-    // TODO solve the advancer guarding problem
-
-    // FIXME the standard recaster needs to be a direct insertion arena, have an
-    // even more generic `clone_from` function that asks for recasting when figuring
-    // out where to put things. Then make a compress_from function
-
-    // TODO the problem with this currently is that in-place canonical compression
-    // necessarily requires the map function to be called on an element multiple
-    // times, and even if we accept that and have some contraption to prevent users
-    // assuming otherwise, implementing recasters properly takes an entire other
-    // buffer. I think we should instead have a `compress_from*`.
-
     /// This is a more advanced version of [ArenaTrait::compress] that lays out
     /// links within the same chain to be continuous with one another, improving
     /// cache locality.
     ///
     /// Because an element can be internally swapped multiple times to achieve
     /// this in-place in the allocation, this cannot have a map.
-    fn compress_and_canonicalize_chains(
-        &mut self,
-        reset_generation: bool,
-    ) -> InvalidationOption<()>;
+    fn compress_and_canonicalize(&mut self, reset_generation: bool) -> InvalidationOption<()>;
 }

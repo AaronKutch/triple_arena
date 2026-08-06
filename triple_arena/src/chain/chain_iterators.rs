@@ -120,7 +120,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for ChainDrain<'a, P, T, B> {
         // TODO when we get the ability to enforce !Forget, optimize so that we don't
         // need to deal with interlinks
 
-        /*let ((generation, link), o) = match self.arena.a.remove_inx(p) {
+        /*let ((generation, link), o) = match self.arena.a.remove_inx(p).unwrap().overflowing() {
             InvalidationResult::Success(x) => (x, false),
             InvalidationResult::GenerationOverflow(x) => (x, true),
             InvalidationResult::InvalidPtr => unreachable!(),
