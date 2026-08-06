@@ -5,13 +5,13 @@ use crate::{
     LinkNoGen, chain_iterators,
     errors::{AllocError, ChainInsertionError, NotWithinCapacityError, ReallocationError},
     traits::{
-        Advancer, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait, ArenaInsertEntryTrait,
-        ArenaInsertTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait, Ptr,
+        ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait,
+        Ptr,
     },
     utils::{
         ArenaSlot::*,
         from_checked_ptr, from_checked_raw,
-        traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen, PtrInx},
+        traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen},
     },
 };
 

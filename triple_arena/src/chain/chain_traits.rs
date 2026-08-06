@@ -4,9 +4,7 @@ use crate::{
     InvalidationOption, InvalidationResult, Link, LinkNoGen,
     arena::handle_reallocation,
     errors::{ChainInsertionError, ReallocationError},
-    traits::{
-        Advancer, ArenaDirectInsertTrait, ArenaInsertEntryTrait, ArenaTrait, CompactArenaTrait, Ptr,
-    },
+    traits::{Advancer, ArenaInsertEntryTrait, ArenaTrait, Ptr},
 };
 
 // The comments for this are in arena_traits.rs

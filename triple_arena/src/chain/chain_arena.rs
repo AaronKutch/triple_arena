@@ -319,16 +319,12 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
                 let ((q, q_link), o) = o.overflowing();
                 let p = *recaster.get(q).unwrap();
                 let prev_next = (
-                    if let Some(q_inx) = q_link.prev() {
-                        Some(recaster.get_inx(q_inx).unwrap().1.inx())
-                    } else {
-                        None
-                    },
-                    if let Some(q_inx) = q_link.next() {
-                        Some(recaster.get_inx(q_inx).unwrap().1.inx())
-                    } else {
-                        None
-                    },
+                    q_link
+                        .prev()
+                        .map(|q_inx| recaster.get_inx(q_inx).unwrap().1.inx()),
+                    q_link
+                        .next()
+                        .map(|q_inx| recaster.get_inx(q_inx).unwrap().1.inx()),
                 );
                 let arg = if o {
                     InvalidationOption::GenerationOverflow(q_link.t)

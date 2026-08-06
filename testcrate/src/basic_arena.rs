@@ -643,6 +643,8 @@ pub fn fuzz<
                 if reset {
                     g.0 = P::Gen::two();
                     ensure!(!o);
+                } else if a.is_empty() {
+                    ensure!(!o);
                 } else {
                     ensure_eq!(o, g.invalidate());
                 }
@@ -671,6 +673,8 @@ pub fn fuzz<
                     .is_overflow();
                 if reset {
                     g.0 = P::Gen::two();
+                    ensure!(!o);
+                } else if a.is_empty() {
                     ensure!(!o);
                 } else {
                     ensure_eq!(o, g.invalidate());

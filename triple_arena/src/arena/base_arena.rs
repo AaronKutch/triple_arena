@@ -7,11 +7,10 @@ use core::{
 
 use crate::{
     InvalidationOption, InvalidationResult,
-    arena::{ArenaInsertEntryTrait, ArenaInsertTrait},
     errors::{MaxCapacityReductionError, ReallocationError},
     traits::{
-        Advancer, ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaTrait, CompactArenaTrait, Ptr,
-        SetMaxCapacity,
+        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
+        CompactArenaTrait, Ptr, SetMaxCapacity,
     },
     utils::traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen, PtrInx},
 };
