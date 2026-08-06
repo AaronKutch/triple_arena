@@ -781,6 +781,24 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             self.reallocate_min_capacity_vals(len_vals.get())?;
         }
 
+        let q_last = source.keys.find_last_inx_ptr().unwrap();
+        let Some(raw_last) = Q::Inx::try_into_usize(q_last.inx()) else {
+            return Err(ReallocationError::BeyondMaxCapacity);
+        };
+        if raw_last.get() > recaster.capacity() {
+            // max capacity is tested here
+            recaster.reallocate_min_capacity(raw_last.get())?;
+        }
+
+        let q_last = source.vals.find_last_inx_ptr().unwrap();
+        let Some(raw_last) = Q::Inx::try_into_usize(q_last.inx()) else {
+            return Err(ReallocationError::BeyondMaxCapacity);
+        };
+        if raw_last.get() > aux_recaster.capacity() {
+            // max capacity is tested here
+            aux_recaster.reallocate_min_capacity(raw_last.get())?;
+        }
+
         // the rest should be infallible if soft invariants are followed
         recaster.clear().allow();
         aux_recaster.clear().allow();

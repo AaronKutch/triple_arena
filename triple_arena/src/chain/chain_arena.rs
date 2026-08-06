@@ -279,6 +279,15 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
             self.reallocate_min_capacity(len.get())?;
         }
 
+        let q_last = source.find_last_inx_ptr().unwrap();
+        let Some(raw_last) = Q::Inx::try_into_usize(q_last.inx()) else {
+            return Err(ReallocationError::BeyondMaxCapacity);
+        };
+        if raw_last.get() > recaster.capacity() {
+            // max capacity is tested here
+            recaster.reallocate_min_capacity(raw_last.get())?;
+        }
+
         // the rest should be infallible if soft invariants are followed
         recaster.clear().allow();
         self.clear().allow();
