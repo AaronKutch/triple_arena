@@ -826,22 +826,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         Ok(())
     }
 
-    // FIXME can only be a `canonicalize` version
+    // TODO a mapless `canonicalize` version?
     /*
-    /// Compresses the arena by moving around entries to be able to shrink the
-    /// capacities of the keys and values down to their respective lengths. All
-    /// surject relations remain, but all `Ptr`s are invalidated. New `Ptr`s
-    /// to the entries can be found again by iterators and advancers.
-    /// Notably, when iterating or advancing after a call to this type of
-    /// function or during `map`ping with
-    /// [SurjectArena::compress_and_shrink_with], whole surjects at a time
-    /// are advanced through without discontinuity. Additionally, cache locality
-    /// is improved by keys within the same surject being moved close together
-    /// in memory.
-    pub fn compress_and_shrink(&mut self) {
-        self.compress_and_shrink_with(|_, _, _, _| ())
-    }
-
     /// The same as [SurjectArena::compress_and_shrink] except that `map` is run
     /// on every `(P, &mut K, &mut V, P)` with the first `P` being the old `Ptr`
     /// and the last `P` being the new `Ptr`.
