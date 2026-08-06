@@ -1,6 +1,6 @@
 use std::num::{NonZeroU8, NonZeroU128};
 
-use triple_arena::{Arena, StackBacking, ptr_struct, traits::*};
+use triple_arena::{Arena, HeapBacking, LimitedHeapBacking, StackBacking, ptr_struct, traits::*};
 
 ptr_struct!(P0[NonZeroU8]);
 ptr_struct!(P1(NonZeroU8));
@@ -25,13 +25,50 @@ fn ptr_inx_no_truncate() {
 // a premature panic and that there is a panic when is should happen
 
 #[test]
-fn overflow_inx() {
+fn overflow_inx_stack() {
     let mut a = Arena::<P0, (), StackBacking<512>>::new();
+    // it caps to the index limit and not the stack cap
+    a.reallocate_min_capacity(255).unwrap();
+    assert!(a.reallocate_min_capacity(256).is_err());
+    assert_eq!(a.capacity(), 255);
+    assert_eq!(a.max_capacity(), Some(255));
     for _ in 0..255 {
         a.insert(());
     }
-    assert_eq!(a.max_capacity(), Some(512));
-    // FIXME
+    assert!(a.insert_within_capacity(()).is_err());
+}
+
+#[test]
+fn overflow_inx_heap() {
+    let mut a = Arena::<P0, (), HeapBacking>::new();
+    // it caps to the index limit and not the stack cap
+    a.reallocate_min_capacity(255).unwrap();
+    assert!(a.reallocate_min_capacity(256).is_err());
+    assert_eq!(a.capacity(), 255);
+    // this is strange especially with small indexes, but I consider it more
+    // important as a signal that we are dealing with a dynamic type that can fail
+    // whenever from allocation problems. The limited heap backing types (which
+    // should be used anyways if you are concerned about capacity limits), will show
+    // the index limit.
+    assert_eq!(a.max_capacity(), None);
+    for _ in 0..255 {
+        a.insert(());
+    }
+    assert!(a.insert_within_capacity(()).is_err());
+}
+
+#[test]
+fn overflow_inx_limited_heap() {
+    let mut a = Arena::<P0, (), LimitedHeapBacking>::new();
+    a.set_max_capacity(255).unwrap();
+    // it caps to the index limit and not the stack cap
+    a.reallocate_min_capacity(255).unwrap();
+    assert!(a.reallocate_min_capacity(256).is_err());
+    assert_eq!(a.capacity(), 255);
+    assert_eq!(a.max_capacity(), Some(255));
+    for _ in 0..255 {
+        a.insert(());
+    }
     assert!(a.insert_within_capacity(()).is_err());
 }
 

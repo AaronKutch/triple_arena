@@ -1,5 +1,6 @@
 use core::{
     borrow::Borrow,
+    cmp::min,
     fmt, mem,
     num::NonZeroUsize,
     ops::{Index, IndexMut},
@@ -71,8 +72,13 @@ impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
     /// Used by tests. Note that some errors are only for "soft" invariants.
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
-        if this.capacity() != this.m.capacity() {
-            return Err("virtual capacity != m.capacity()");
+        if this.capacity()
+            != min(
+                this.m.capacity(),
+                P::Inx::max_index().map(|i| i.get()).unwrap_or(usize::MAX),
+            )
+        {
+            return Err("virtual capacity != expected");
         }
         let mut n_allocated = 0usize;
         for i in this.nziter() {

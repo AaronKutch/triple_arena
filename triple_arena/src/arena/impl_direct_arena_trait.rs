@@ -1,4 +1,4 @@
-use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
+use core::{cmp::min, mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
     DirectArena, InvalidationOption, InvalidationResult, direct_arena_iterators,
@@ -32,16 +32,29 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for DirectArena<P, T, B> {
     }
 
     fn capacity(&self) -> usize {
-        self.m.capacity()
+        min(
+            self.m.capacity(),
+            P::Inx::max_index().map(|i| i.get()).unwrap_or(usize::MAX),
+        )
     }
 
     fn max_capacity(&self) -> Option<usize> {
-        self.m.max_capacity()
+        self.m.max_capacity().map(|res| {
+            min(
+                res,
+                P::Inx::max_index().map(|i| i.get()).unwrap_or(usize::MAX),
+            )
+        })
     }
 
     fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), ReallocationError> {
         // so that capacity on the end is not used up by unallocated slots
         self.canonicalize_free_slots();
+        if let Some(max) = P::Inx::max_index()
+            && min_capacity > max.get()
+        {
+            return Err(ReallocationError::BeyondMaxCapacity);
+        }
         self.m.reallocate_min_capacity(min_capacity)
     }
 
@@ -224,7 +237,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for DirectArena<P, T, 
         let Some(raw_last) = P::Inx::try_into_usize(last.inx()) else {
             return Err(ReallocationError::BeyondMaxCapacity);
         };
-        if raw_last.get() > self.m.capacity() {
+        if raw_last.get() > self.capacity() {
             // max capacity is tested here
             self.reallocate_min_capacity(raw_last.get())?;
         }
@@ -302,7 +315,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaDirectInsertTrait<P, T> for DirectArena<P,
         let Some(raw) = PtrInx::try_into_usize(p.inx()) else {
             return Err(DirectInsertionError::NotWithinCapacity);
         };
-        if raw.get() > self.m.capacity() {
+        if raw.get() > self.capacity() {
             return Err(DirectInsertionError::NotWithinCapacity);
         }
         if let Some(Allocated(..)) = self.m.get(raw) {

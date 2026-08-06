@@ -1,4 +1,4 @@
-use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
+use core::{cmp::min, mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
     Arena, InvalidationOption, InvalidationResult,
@@ -40,11 +40,19 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     }
 
     fn capacity(&self) -> usize {
-        self.m.capacity()
+        min(
+            self.m.capacity(),
+            P::Inx::max_index().map(|i| i.get()).unwrap_or(usize::MAX),
+        )
     }
 
     fn max_capacity(&self) -> Option<usize> {
-        self.m.max_capacity()
+        self.m.max_capacity().map(|res| {
+            min(
+                res,
+                P::Inx::max_index().map(|i| i.get()).unwrap_or(usize::MAX),
+            )
+        })
     }
 
     fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), ReallocationError> {
@@ -52,6 +60,11 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         // up the freelist if this function was called under any circumstance, it is
         // understood that it is a `O(n)` operation anyway.
         self.canonicalize_free_list();
+        if let Some(max) = P::Inx::max_index()
+            && min_capacity > max.get()
+        {
+            return Err(ReallocationError::BeyondMaxCapacity);
+        }
         self.m.reallocate_min_capacity(min_capacity)
     }
 
@@ -267,7 +280,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for Arena<P, T, B> {
         let Some(raw_last) = P::Inx::try_into_usize(last.inx()) else {
             return Err(ReallocationError::BeyondMaxCapacity);
         };
-        if raw_last.get() > self.m.capacity() {
+        if raw_last.get() > self.capacity() {
             // max capacity is tested here
             self.reallocate_min_capacity(raw_last.get())?;
         }

@@ -921,7 +921,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             }
         }
         self.vals.freelist_root = None;
-        let _ = self.vals.m.reallocate_min_capacity(0);
+        let _ = self.vals.reallocate_min_capacity(0);
     }
     */
 

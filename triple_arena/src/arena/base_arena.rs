@@ -1,5 +1,6 @@
 use core::{
     borrow::Borrow,
+    cmp::min,
     fmt, mem,
     num::NonZeroUsize,
     ops::{Index, IndexMut},
@@ -196,8 +197,13 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         if this.generation() < P::Gen::two() {
             return Err("bad generation");
         }
-        if this.capacity() != this.m.capacity() {
-            return Err("virtual capacity != m.capacity()");
+        if this.capacity()
+            != min(
+                this.m.capacity(),
+                P::Inx::max_index().map(|i| i.get()).unwrap_or(usize::MAX),
+            )
+        {
+            return Err("virtual capacity != expected");
         }
         let mut n_allocated = 0usize;
         for i in this.nziter() {
