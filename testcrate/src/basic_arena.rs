@@ -627,7 +627,7 @@ pub fn fuzz<
                 ensure_eq!(i, len);
             }
             // future
-            930..994 => {
+            930..991 => {
                 if let Some((_, p)) = b.get_rand(rng) {
                     let p = *p;
                     ensure!(a.contains(p));
@@ -636,7 +636,7 @@ pub fn fuzz<
                     ensure!(!a.contains(p));
                 }
             }
-            994 => {
+            991 => {
                 // compress
                 let reset = rng.next_bool();
                 let o = a.compress(reset).is_overflow();
@@ -661,7 +661,7 @@ pub fn fuzz<
                     );
                 }
             }
-            995 => {
+            992 => {
                 // compress_with
                 let mut new_map = vec![];
                 let reset = rng.next_bool();
@@ -695,74 +695,77 @@ pub fn fuzz<
                     );
                 }
             }
+            // these are mainly tested in `multi_arena`, but we want them here to test if
+            // `self.m.len()` and `self.m.capacity()` detachments cause issues
+            993 => {
+                // transfer
+            }
+            994 => {}
+            995 => {
+                // clone_from_with part 0
+
+                // `a1` and the like are set here, `a` will diverge again
+
+                let mut i = 0;
+                a1.clone_from_with(a, |p, u| {
+                    assert_eq!(a.get(p).unwrap().key(), u.key());
+                    let (_, t) = cd_gen1.new_cd();
+                    i += 1;
+                    t
+                })
+                .unwrap();
+                ensure_eq!(len, i);
+                for p in a.ptrs() {
+                    ensure!(a1.contains(p));
+                }
+            }
             996 => {
-                // clone_from_with, this is mainly tested in `multi_arena`, but we want
-                // them here to test if `self.m.len()` and `self.m.capacity()` detachments cause
-                // issues.
-                match rng.index(2).unwrap() {
-                    // `a1` and the like are set here, `a` will diverge again
-                    0 => {
-                        let mut i = 0;
-                        a1.clone_from_with(a, |p, u| {
-                            assert_eq!(a.get(p).unwrap().key(), u.key());
-                            let (_, t) = cd_gen1.new_cd();
-                            i += 1;
-                            t
-                        })
-                        .unwrap();
-                        ensure_eq!(len, i);
-                        for p in a.ptrs() {
-                            ensure!(a1.contains(p));
-                        }
+                // clone_from_with part 1
+
+                // `a1` was unlimited, `a` can be limited and grow capacity and run into
+                // changed limits
+
+                if rng.next_bool() {
+                    // add a high `Ptr` for fixed capacity cases to deal
+                    // with
+
+                    for _ in 0..stats.test_limit {
+                        a1.insert(cd_gen1.new_cd().1);
                     }
-                    1 => {
-                        // `a1` was unlimited, `a` can be limited and grow capacity and run into
-                        // changed limits
+                }
 
-                        if rng.next_bool() {
-                            // add a high `Ptr` for fixed capacity cases to deal
-                            // with
-
-                            for _ in 0..stats.test_limit {
-                                a1.insert(cd_gen1.new_cd().1);
-                            }
-                        }
-
-                        let before = a.capacity();
-                        let max_before = a.max_capacity();
-                        let mut on_first_call = true;
-                        let res = a.clone_from_with(&a1, |p, u| {
-                            assert_eq!(a1.get(p).unwrap().key(), u.key());
-                            if on_first_call {
-                                b.clear();
-                                on_first_call = false;
-                            }
-                            let (k, t) = cd_gen.new_cd();
-                            b.insert(k, p);
-                            t
-                        });
-                        if let Some(max) = max_before
-                            && let Some(last) = a1.find_last_inx_ptr()
-                            && P::Inx::try_into_usize(last.inx()).unwrap().get() > max
-                        {
-                            ensure!(on_first_call);
-                            ensure_eq!(res, Err(ReallocationError::BeyondMaxCapacity));
-                        } else {
-                            // if `a1` was empty
-                            if on_first_call {
-                                b.clear();
-                            }
-                            ensure_eq!(res, Ok(()));
-                            for p in a1.ptrs() {
-                                ensure!(a.contains(p));
-                            }
-                            ensure_eq!(a.max_capacity(), max_before);
-                            ensure!(a.capacity() >= before);
-                            g.0 = a1.singular_generation().unwrap();
-                            b_capacity = a.capacity();
-                        }
+                let before = a.capacity();
+                let max_before = a.max_capacity();
+                let mut on_first_call = true;
+                let res = a.clone_from_with(&a1, |p, u| {
+                    assert_eq!(a1.get(p).unwrap().key(), u.key());
+                    if on_first_call {
+                        b.clear();
+                        on_first_call = false;
                     }
-                    _ => unreachable!(),
+                    let (k, t) = cd_gen.new_cd();
+                    b.insert(k, p);
+                    t
+                });
+                if let Some(max) = max_before
+                    && let Some(last) = a1.find_last_inx_ptr()
+                    && P::Inx::try_into_usize(last.inx()).unwrap().get() > max
+                {
+                    ensure!(on_first_call);
+                    ensure_eq!(res, Err(ReallocationError::BeyondMaxCapacity));
+                } else {
+                    // if `a1` was empty
+                    if on_first_call {
+                        b.clear();
+                    }
+                    ensure_eq!(res, Ok(()));
+                    for p in a1.ptrs() {
+                        ensure!(a.contains(p));
+                    }
+                    ensure_eq!(a.max_capacity(), max_before);
+                    ensure!(a.capacity() >= before);
+                    g.0 = a1.singular_generation().unwrap();
+                    b_capacity = a.capacity();
                 }
             }
             997 => {
