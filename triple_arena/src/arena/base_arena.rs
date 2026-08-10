@@ -173,13 +173,21 @@ pub struct Arena<
 /// before), then passing the same raw index again to this will not fail,
 /// this function is to check places where this assumption happens
 pub(crate) fn from_checked_raw<P: Ptr>(inx: NonZeroUsize) -> P::Inx {
-    <P::Inx as PtrInx>::try_from_usize(inx)
-        .expect("`<P::Inx as PtrInx>::try_from_usize` failed on a value that has succeeded before")
+    let Some(inx) = <P::Inx as PtrInx>::try_from_usize(inx) else {
+        unreachable!(
+            "`<P::Inx as PtrInx>::try_from_usize` failed on a value that has succeeded before"
+        )
+    };
+    inx
 }
 
 pub(crate) fn from_checked_ptr<P: Ptr>(inx: P::Inx) -> NonZeroUsize {
-    <P::Inx as PtrInx>::try_into_usize(inx)
-        .expect("`<P::Inx as PtrInx>::try_into_usize` failed on a value that has succeeded before")
+    let Some(inx) = <P::Inx as PtrInx>::try_into_usize(inx) else {
+        unreachable!(
+            "`<P::Inx as PtrInx>::try_into_usize` failed on a value that has succeeded before"
+        )
+    };
+    inx
 }
 
 impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {

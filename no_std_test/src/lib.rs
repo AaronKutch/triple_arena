@@ -34,6 +34,10 @@ pub fn asm_arena_get(a: &Arena<P0, u64, HeapBacking>, inx: P0) -> u64 {
     *a.get(inx).unwrap()
 }
 
+pub fn asm_arena_get_optional(a: &Arena<P0, u64, HeapBacking>, inx: P0) -> Option<u64> {
+    a.get(inx).copied()
+}
+
 pub fn asm_arena_get_gen(a: &Arena<P1, u64, HeapBacking>, inx: P1) -> u64 {
     *a.get(inx).unwrap()
 }

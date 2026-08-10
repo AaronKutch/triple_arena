@@ -29,7 +29,7 @@
         # A pinned stable toolchain for testing no_std
         rust-pinned = pkgs.fenix.fromToolchainFile {
           file = ./rust-toolchain.toml;
-          sha256 = "sha256-h+t2xTBz5yt2YIO+1VMIIGlCU7gyp2LYOFvaV1nwOXU=";
+          sha256 = "sha256-A1abGIbOtcBSdrUMhDGrER3pRM1hQP4fp9gh3Y4PKc8=";
         };
 
         rust-msrv =
@@ -40,6 +40,7 @@
 
         commonTools = with pkgs; [
           just
+          cargo-show-asm
           cargo-nextest
           cargo-sort
           cargo-machete
