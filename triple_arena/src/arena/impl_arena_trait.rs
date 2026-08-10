@@ -47,12 +47,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     }
 
     fn max_capacity(&self) -> Option<usize> {
-        self.m.max_capacity().map(|res| {
-            min(
-                res,
-                P::Inx::max_index().map(|i| i.get()).unwrap_or(usize::MAX),
-            )
-        })
+        self.m.max_capacity()
     }
 
     fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), ReallocationError> {
@@ -63,7 +58,9 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         if let Some(max) = P::Inx::max_index()
             && min_capacity > max.get()
         {
-            return Err(ReallocationError::BeyondMaxCapacity);
+            // this is not a max capacity concern (according to the `max_capacity` kind of
+            // maximum)
+            return Err(ReallocationError::AllocError);
         }
         self.m.reallocate_min_capacity(min_capacity)
     }

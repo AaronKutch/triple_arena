@@ -31,7 +31,10 @@ fn overflow_inx_stack() {
     a.reallocate_min_capacity(255).unwrap();
     assert!(a.reallocate_min_capacity(256).is_err());
     assert_eq!(a.capacity(), 255);
-    assert_eq!(a.max_capacity(), Some(255));
+    // this is by consequence of `set_max_capacity` needing to unconditionally
+    // succeed on arbitrary increases and setting `max_capacity` exactly to the
+    // argument, see arena_traits.rs
+    assert_eq!(a.max_capacity(), Some(512));
     for _ in 0..255 {
         a.insert(());
     }
@@ -45,11 +48,6 @@ fn overflow_inx_heap() {
     a.reallocate_min_capacity(255).unwrap();
     assert!(a.reallocate_min_capacity(256).is_err());
     assert_eq!(a.capacity(), 255);
-    // this is strange especially with small indexes, but I consider it more
-    // important as a signal that we are dealing with a dynamic type that can fail
-    // whenever from allocation problems. The limited heap backing types (which
-    // should be used anyways if you are concerned about capacity limits), will show
-    // the index limit.
     assert_eq!(a.max_capacity(), None);
     for _ in 0..255 {
         a.insert(());

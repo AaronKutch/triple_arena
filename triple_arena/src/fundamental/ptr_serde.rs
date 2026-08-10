@@ -148,7 +148,7 @@ pub trait PtrInx:
     /// `NonZeroUsize`
     fn try_into_usize(this: Self) -> Option<NonZeroUsize>;
     /// The max index, used to inform arenas if they should clamp their capacity
-    /// and max capacities to this. Should return `None` together with
+    /// and achievable capacities to this. Should return `None` together with
     /// `try_from_usize` and `try_into_usize` if nonlinear.
     fn max_index() -> Option<NonZeroUsize>;
     /// Returns the invalid index most likely to be unvalid if given to an
@@ -174,14 +174,14 @@ macro_rules! impl_ptr_inx {
                     NonZeroUsize::new(this.get().try_into().ok()?)
                 }
 
-                fn best_effort_invalid() -> Self {
-                    $nz::MAX
-                }
-
                 #[allow(clippy::cast_possible_truncation)]
                 fn max_index() -> Option<NonZeroUsize> {
                     // truncates and widens correctly
                     Some(NonZeroUsize::new($nz::MAX.get() as usize).unwrap())
+                }
+
+                fn best_effort_invalid() -> Self {
+                    $nz::MAX
                 }
 
                 #[inline]

@@ -1,4 +1,9 @@
-use std::{cmp::max, mem, num::NonZeroUsize, slice::GetDisjointMutError};
+use std::{
+    cmp::{max, min},
+    mem,
+    num::NonZeroUsize,
+    slice::GetDisjointMutError,
+};
 
 use expect_test::Expect;
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
@@ -202,7 +207,7 @@ pub fn fuzz<
                 if let Some(max_capacity) = a.max_capacity()
                     && max_capacity < usize::MAX
                 {
-                    let new_cap = rng.index_inclusive(max_capacity);
+                    let new_cap = rng.index_inclusive(min(max_capacity, stats.test_limit));
                     a.reallocate_min_capacity(new_cap).stack()?;
                     ensure!(a.capacity() >= new_cap)
                 } else {
@@ -222,10 +227,9 @@ pub fn fuzz<
                         a.reallocate_min_capacity(max_capacity + 1),
                         Err(ReallocationError::BeyondMaxCapacity)
                     );
-                    ensure_eq!(
-                        a.reallocate_min_capacity(usize::MAX),
-                        Err(ReallocationError::BeyondMaxCapacity)
-                    );
+                    // can be both because of the max index limit, which should take priority even
+                    // if a `BeyondMaxCapacity` could also fire
+                    ensure!(a.reallocate_min_capacity(usize::MAX).is_err());
                 } else {
                     // could succeed for ZSTs
                     ensure_eq!(
