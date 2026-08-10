@@ -16,7 +16,7 @@ use triple_arena::{
 };
 
 use crate::{
-    P2, TestGen,
+    TestGen,
     cdgen::{Cd, CdGen, CkMap, TryInternalDrop},
     misc::{D1, Meta},
 };
@@ -79,8 +79,6 @@ pub fn fuzz<
 
     // set and used by the clone_from section
     let mut a1 = Arena::<P, Cd<D1>, StackBacking<128>>::new();
-    // so we have something to differentiate from generation 2
-    let gen3 = P::Gen::generational_inc(P::Gen::two()).0;
 
     // makes sure there is not some problem with the test harness itself or
     // determinism
@@ -784,7 +782,9 @@ pub fn fuzz<
 
                 let mut i = 0;
                 let mut list = vec![];
-                a1.transfer_reallocating(gen3, a, |q, o, p| {
+                // do something that isn't setting to a low constant
+                let next_gen = P::Gen::generational_inc(g.0).0;
+                a1.transfer_reallocating(next_gen, a, |q, o, p| {
                     assert_eq!(o.is_overflow(), g.invalidate());
                     assert_eq!(*b.get(o.allow().key()).unwrap(), q);
                     let (k, t) = cd_gen1.new_cd();
@@ -825,7 +825,8 @@ pub fn fuzz<
                         b.insert(k, p);
                         t
                     };
-                    let res = (*transfer_reallocating)(a, gen3, &mut a1, &mut map);
+                    let next_gen = P::Gen::generational_inc(g.0).0;
+                    let res = (*transfer_reallocating)(a, next_gen, &mut a1, &mut map);
                     if let Some(max) = max_before
                         && let Some(last) = a1.find_last_inx_ptr()
                         && P::Inx::try_into_usize(last.inx()).unwrap().get() > max
@@ -843,7 +844,7 @@ pub fn fuzz<
                         }
                         ensure_eq!(a.max_capacity(), max_before);
                         ensure!(a.capacity() >= before);
-                        g.0 = gen3;
+                        g.0 = next_gen;
                         b_capacity = a.capacity();
                     }
                 }
@@ -941,26 +942,25 @@ pub fn fuzz_multi_arena_step<D: Copy + Default, P: Ptr>(
     Ok(())
 }
 
-#[derive(Clone, Copy)]
 pub struct MultiStats {
     pub n: usize,
-    pub max_len: Option<usize>,
+    pub max_len: Option<Expect>,
 }
 
 // for testing `clone_from_with` which interact between multiple arenas, we just
 // hardcode the heap backed arena in here
-pub fn fuzz_multi_arena(
+pub fn fuzz_multi_arena<P: Ptr>(
     rng: &mut StarRng,
     stats: MultiStats,
     cd_gen0: &mut CdGen<()>,
     cd_gen1: &mut CdGen<D1>,
 ) -> Result<(), StackedError> {
-    let mut a0 = Arena::<P2, Cd<()>, StackBacking<128>>::new();
-    let mut a1 = Arena::<P2, Cd<D1>, StackBacking<128>>::new();
+    let mut a0 = Arena::<P, Cd<()>, StackBacking<128>>::new();
+    let mut a1 = Arena::<P, Cd<D1>, StackBacking<128>>::new();
     let mut g0 = TestGen(a0.generation());
     let mut g1 = TestGen(a1.generation());
-    let mut b0 = CkMap::<(), P2>::new();
-    let mut b1 = CkMap::<D1, P2>::new();
+    let mut b0 = CkMap::<(), P>::new();
+    let mut b1 = CkMap::<D1, P>::new();
 
     // makes sure there is not some problem with the test harness itself or
     // determinism
@@ -973,7 +973,59 @@ pub fn fuzz_multi_arena(
         match rng.index(1000).unwrap() {
             // do no major operations most of the time, rack up some random insertions and removals
             // in `inner`
-            0..900 => (),
+            0..800 => (),
+            800..850 => {
+                let mut i = 0;
+                let mut list = vec![];
+                let len = b1.len();
+                // don't set to just anything, don't want to cause the fuzzer to never hit
+                // overflow
+                let transfer_generation = P::Gen::generational_inc(a1.generation()).0;
+                b0.clear();
+                a0.transfer_reallocating(transfer_generation, &mut a1, |q, o, p| {
+                    assert_eq!(o.is_overflow(), g1.invalidate());
+                    assert_eq!(*b1.get(o.allow().key()).unwrap(), q);
+                    let (k, t) = cd_gen0.new_cd();
+                    list.push((p, k));
+                    b0.insert(k, p);
+                    i += 1;
+                    t
+                })
+                .unwrap();
+                g0.0 = transfer_generation;
+                b1.clear();
+                ensure!(a1.is_empty());
+                ensure_eq!(list.len(), len);
+                for (p, k) in list {
+                    ensure_eq!(a0.get(p).unwrap().key(), k);
+                }
+            }
+            850..900 => {
+                let mut i = 0;
+                let mut list = vec![];
+                let len = b0.len();
+                // don't set to just anything, don't want to cause the fuzzer to never hit
+                // overflow
+                let transfer_generation = P::Gen::generational_inc(a0.generation()).0;
+                b1.clear();
+                a1.transfer_reallocating(transfer_generation, &mut a0, |q, o, p| {
+                    assert_eq!(o.is_overflow(), g0.invalidate());
+                    assert_eq!(*b0.get(o.allow().key()).unwrap(), q);
+                    let (k, t) = cd_gen1.new_cd();
+                    list.push((p, k));
+                    b1.insert(k, p);
+                    i += 1;
+                    t
+                })
+                .unwrap();
+                g1.0 = transfer_generation;
+                b0.clear();
+                ensure!(a0.is_empty());
+                ensure_eq!(list.len(), len);
+                for (p, k) in list {
+                    ensure_eq!(a1.get(p).unwrap().key(), k);
+                }
+            }
             900..950 => {
                 b0.clear();
                 a0.clone_from_with(&a1, |p, u| {
@@ -1005,8 +1057,8 @@ pub fn fuzz_multi_arena(
             1000.. => unreachable!(),
         }
     }
-    if let Some(max_len1) = stats.max_len {
-        ensure_eq!(max_len, max_len1);
+    if let Some(max) = stats.max_len {
+        max.assert_debug_eq(&max_len);
     }
     Ok(())
 }

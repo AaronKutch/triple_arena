@@ -143,6 +143,8 @@ pub trait PtrInx:
     /// modulo something and dispatches to different substructures), then it
     /// should always return `None`, so that any of the simple arenas will
     /// report the inability to allocate if given a `Ptr` with a complex index.
+    /// When linear, this should also agree with `max_index` such that, iff the
+    /// index is larger than the max index, this returns `None`.
     fn try_from_usize(inx: NonZeroUsize) -> Option<Self>;
     /// See [PtrInx::try_from_usize], this is the same except for converting to
     /// `NonZeroUsize`

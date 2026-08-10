@@ -45,6 +45,9 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for DirectArena<P, T, B> {
     fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), ReallocationError> {
         // so that capacity on the end is not used up by unallocated slots
         self.canonicalize_free_slots();
+        // using `max_index` because we are dealing with a plain `usize` and testing for
+        // linearity, this equivalently does the check that `P::Inx::try_from_usize`
+        // would succeed.
         if let Some(max) = P::Inx::max_index()
             && min_capacity > max.get()
         {
@@ -230,9 +233,9 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for DirectArena<P, T, 
             self.len = 0;
             return Ok(());
         };
-        // REF(careful_general_clone)
+        // REF(careful_index_checking)
         let Some(raw_last) = P::Inx::try_into_usize(last.inx()) else {
-            return Err(ReallocationError::BeyondMaxCapacity);
+            return Err(ReallocationError::AllocError);
         };
         if raw_last.get() > self.capacity() {
             // max capacity is tested here

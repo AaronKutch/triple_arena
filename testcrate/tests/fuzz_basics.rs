@@ -1,4 +1,4 @@
-use expect_test::expect;
+use expect_test::{Expect, expect};
 use stacked_errors::{StackableErr, StackedError};
 use star_rng::StarRng;
 use testcrate::{
@@ -271,18 +271,25 @@ fn fuzz_multi_arena() -> Result<(), StackedError> {
     } else {
         10_000_000
     };
-    const MAX_LEN: usize = if cfg!(miri) {
-        18
+    const MAX_LEN: Expect = if cfg!(miri) {
+        expect![[r#"
+            15
+        "#]]
     } else if cfg!(debug_assertions) {
-        75
+        expect![[r#"
+            40
+        "#]]
     } else {
-        96
+        expect![[r#"
+            43
+        "#]]
     };
 
     let stats = basic_arena::MultiStats {
         n: N,
         max_len: Some(MAX_LEN),
     };
-    basic_arena::fuzz_multi_arena(&mut rng, stats, &mut CdGen::new(), &mut CdGen::new()).stack()?;
+    basic_arena::fuzz_multi_arena::<P2>(&mut rng, stats, &mut CdGen::new(), &mut CdGen::new())
+        .stack()?;
     Ok(())
 }

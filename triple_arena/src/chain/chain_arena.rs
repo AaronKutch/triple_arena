@@ -269,19 +269,19 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
             self.set_generation(new_generation);
             return Ok(());
         };
-        // test highest pointer that would be created for if it is nonlinear or doesn't
-        // fit
+        // REF(careful_index_checking)
         if P::Inx::try_from_usize(len).is_none() {
-            return Err(ReallocationError::BeyondMaxCapacity);
+            return Err(ReallocationError::AllocError);
         };
         if len.get() > self.capacity() {
             // max capacity is tested here
             self.reallocate_min_capacity(len.get())?;
         }
 
+        // REF(careful_index_checking)
         let q_last = source.find_last_inx_ptr().unwrap();
         let Some(raw_last) = Q::Inx::try_into_usize(q_last.inx()) else {
-            return Err(ReallocationError::BeyondMaxCapacity);
+            return Err(ReallocationError::AllocError);
         };
         if raw_last.get() > recaster.capacity() {
             // max capacity is tested here

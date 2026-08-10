@@ -147,10 +147,9 @@ impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
             self.clear().allow();
             return Ok(());
         };
-        // test highest pointer that would be created for if it is nonlinear or doesn't
-        // fit
+        // REF(careful_index_checking)
         if P::Inx::try_from_usize(len).is_none() {
-            return Err(ReallocationError::BeyondMaxCapacity);
+            return Err(ReallocationError::AllocError);
         };
         if len.get() > self.capacity() {
             // max capacity is tested here

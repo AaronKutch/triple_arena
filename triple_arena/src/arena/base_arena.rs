@@ -405,6 +405,17 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
+    /// The most general way to translate between domains. Given any `source`
+    /// implementing `CompactArenaTrait` with any `Q: Ptr` and `U` entry type,
+    /// this will transfer all of the entries by reallocating `self` if
+    /// necessary, clearing `self`, and removing every entry from `source` and
+    /// inserting a mapped `T` into `self`. Every entry is given by value to map
+    /// `map` with the original source `Q: Ptr`, an `InvalidationOption<U>` for
+    /// being able to determine if the removal caused a generation overflow, the
+    /// destination `P: Ptr`, and then `map` must return the `T` that will be
+    /// inserted into `self`. The new entries are all given `new_generation`.
+    /// The entries are guaranteed to be compressed in `self`. Reallocation only
+    /// occurs if `
     pub fn transfer_reallocating<
         Q: Ptr,
         U,
@@ -422,10 +433,9 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             self.set_generation(new_generation);
             return Ok(());
         };
-        // test highest pointer that would be created for if it is nonlinear or doesn't
-        // fit
+        // REF(careful_index_checking)
         if P::Inx::try_from_usize(len).is_none() {
-            return Err(ReallocationError::BeyondMaxCapacity);
+            return Err(ReallocationError::AllocError);
         };
         if len.get() > self.capacity() {
             // max capacity is tested here

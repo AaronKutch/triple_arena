@@ -55,6 +55,9 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         // up the freelist if this function was called under any circumstance, it is
         // understood that it is a `O(n)` operation anyway.
         self.canonicalize_free_list();
+        // using `max_index` because we are dealing with a plain `usize` and testing for
+        // linearity, this equivalently does the check that `P::Inx::try_from_usize`
+        // would succeed.
         if let Some(max) = P::Inx::max_index()
             && min_capacity > max.get()
         {
@@ -271,11 +274,13 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for Arena<P, T, B> {
             self.generation = source.singular_generation().unwrap_or(P::Gen::two());
             return Ok(());
         };
-        // REF(careful_general_clone) Be aware that `source` may not be linear and the
-        // `P`s coming from it can't be relied on, if this happens just return
-        // the `BeyondMaxCapacity` which is logical anyways
+        // REF(careful_index_checking) Be aware that `source` may not be linear and the
+        // `P`s coming from it can't be relied on. We have to check here because the
+        // `reallocate_min_capacity` may not be called to check for us, and `AllocError`
+        // is the correct error to returned based on the logic of standard
+        // `ArenaTrait::reallocate_min_capacity`.
         let Some(raw_last) = P::Inx::try_into_usize(last.inx()) else {
-            return Err(ReallocationError::BeyondMaxCapacity);
+            return Err(ReallocationError::AllocError);
         };
         if raw_last.get() > self.capacity() {
             // max capacity is tested here

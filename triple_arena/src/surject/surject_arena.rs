@@ -763,8 +763,9 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             self.set_generation(new_generation);
             return Ok(());
         };
+        // REF(careful_index_checking) here and in the rest of this function
         if P::Inx::try_from_usize(len_keys).is_none() {
-            return Err(ReallocationError::BeyondMaxCapacity);
+            return Err(ReallocationError::AllocError);
         };
         if len_keys.get() > self.capacity_keys() {
             // max capacity is tested here
@@ -774,7 +775,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         // guaranteed nonempty at this point
         let len_vals = NonZeroUsize::new(source.len_vals()).unwrap();
         if P::Inx::try_from_usize(len_vals).is_none() {
-            return Err(ReallocationError::BeyondMaxCapacity);
+            return Err(ReallocationError::AllocError);
         };
         if len_vals.get() > self.capacity_vals() {
             // max capacity is tested here
@@ -783,7 +784,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
 
         let q_last = source.keys.find_last_inx_ptr().unwrap();
         let Some(raw_last) = Q::Inx::try_into_usize(q_last.inx()) else {
-            return Err(ReallocationError::BeyondMaxCapacity);
+            return Err(ReallocationError::AllocError);
         };
         if raw_last.get() > recaster.capacity() {
             // max capacity is tested here
@@ -792,7 +793,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
 
         let q_last = source.vals.find_last_inx_ptr().unwrap();
         let Some(raw_last) = Q::Inx::try_into_usize(q_last.inx()) else {
-            return Err(ReallocationError::BeyondMaxCapacity);
+            return Err(ReallocationError::AllocError);
         };
         if raw_last.get() > aux_recaster.capacity() {
             // max capacity is tested here
