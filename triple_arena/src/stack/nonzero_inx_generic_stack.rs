@@ -354,36 +354,43 @@ pub trait SetMaxCapacity {
     ///
     /// To reiterate, there can be 3 different values at play:
     /// - The logical capacity according to `self.capacity()`, which is what
-    ///   `self.len()` and other logical element operations are limited by
+    ///   `self.len()` and other logical element operations are limited by.
     /// - A hidden internal allocated capacity (which can be separate from the
     ///   logical capacity in some implementations because some allocators can
     ///   allocate more than was requested, but an exact `self.capacity()` is
-    ///   desired for logical determinism reasons)
+    ///   desired for logical determinism reasons).
     /// - The `self.max_capacity()`, which is not either of the previous two and
     ///   is simply a _limit_ on `self.capacity()` and a way to directly control
     ///   the exact value of `self.capacity()` when the `*_min_capacity`
-    ///   functions are only able to establish a floor. The hidden internal
-    ///   allocated capacity actually exists and has a live memory impact, and
-    ///   we also want this value for cases where we want a limit but not via
-    ///   having the entire capacity physically allocated up front.
+    ///   functions are only able to establish a floor. In dynamic limited
+    ///   capacity types, we want to be able to set an arbitrary limit that does
+    ///   not require having all of the capacity physically allocated up front.
+    ///   The current internal allocated capacity, and the logical capacity
+    ///   within it, should be the only things that require a live memory
+    ///   impact.
     ///
-    /// In most circumstances, users just want to set the max capacity once at
-    /// creation and don't have to worry about the decreasing max_capacity
-    /// cases. Most structures can start with zero capacity and max capacity
-    /// with their `new` functions, such that a `new` function followed by
-    /// calling `set_max_capacity` followed by `reallocate_min_capacity` usually
-    /// accomplishes this with only one allocation fallible point. But be aware
-    /// this is not always the case.
+    /// In most circumstances, users should just set the max capacity once at
+    /// creation, and don't have to worry about the decreasing max_capacity
+    /// cases. Most structures can start with zero logical capacity and zero max
+    /// capacity with their `new` functions, such that a `new` function
+    /// followed by calling `set_max_capacity`, further followed by
+    /// `reallocate_min_capacity`, usually accomplishes this with only one
+    /// actually fallible point (since we require that increasing the maximum
+    /// capacity should be infallible).
     ///
-    /// If reducing the capacity, the internal allocated capacity does not
-    /// change and memory usage will not actually be reduced until
-    /// `reallocate_min_capacity(self.capacity())` is called afterwards. If
-    /// `self.capacity()` was limited by the maximum capacity, it is possible
-    /// for `self.capacity()` to increase by this method if the implementation
-    /// had available internal allocation capacity (this happens usually because
-    /// `self.capacity()` is calculated as the minimum of the internal allocated
-    /// capacity and the max capacity, and if the max capacity was the limiting
-    /// factor then increasing it increased the logical capacity.)
+    /// If reducing the max capacity, the internal allocated capacity will never
+    /// change from calling this function, and memory usage will not actually be
+    /// reduced until `reallocate_min_capacity(self.capacity())` is called
+    /// afterwards.
+    ///
+    /// If `self.capacity()` was limited by the maximum capacity, it is possible
+    /// for `self.capacity()` to actually increase by this method if the
+    /// implementation had available internal allocation capacity (this
+    /// happens without actual change to the internal allocated capacity,
+    /// usually because `self.capacity()` is calculated as the minimum of
+    /// the internal allocated capacity and the max capacity, and if the max
+    /// capacity was the limiting factor, then increasing the max capacity
+    /// also increases the logical capacity).
     ///
     /// The max capacity can be set to `usize::MAX`, but the allocation
     /// functions will usually fail before the capacity can actually reach the
@@ -394,9 +401,9 @@ pub trait SetMaxCapacity {
     /// unreachabilities and cannot be relied upon for reallocation
     /// infallibility.
     ///
-    /// This is usually an `O(1)` operation, but if `self.capacity()` reduces it
-    /// can be an `O(n)` operation (not because it reallocates, but because of
-    /// things like freelist canonicalization in order to achieve the lowest
-    /// possible capacity).
+    /// This is usually an `O(1)` operation, but if `self.capacity()` decreases,
+    /// it can be an `O(n)` operation (not because it reallocates, but
+    /// because of things like freelist canonicalization in order to achieve
+    /// the lowest possible capacity).
     fn set_max_capacity(&mut self, max_capacity: usize) -> Result<(), MaxCapacityReductionError>;
 }

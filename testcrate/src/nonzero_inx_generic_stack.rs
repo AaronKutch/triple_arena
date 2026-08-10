@@ -33,7 +33,7 @@ impl TryInternalDrop for Stats {
     fn try_internal_drop(&mut self) -> Result<(), StackedError> {
         let res = self.cd_gen.try_internal_drop().stack();
         if res.is_err() {
-            return res.stack_err(format!("{self:#?}"));
+            return res.stack_err(format!("cd_gen.try_internal_drop: {self:#?}"));
         }
         Ok(())
     }

@@ -4,6 +4,9 @@ use std::{cell::RefCell, collections::HashMap, marker::PhantomData, num::NonZero
 use stacked_errors::StackedError;
 use star_rng::StarRng;
 
+/// This is for test types where dropping in a certain state causes a panic (to
+/// prevent silent failures), but we want to be able to cause an internal drop
+/// that does the same thing but returning an error we can handle
 pub trait TryInternalDrop {
     fn try_internal_drop(&mut self) -> Result<(), StackedError>;
 }
@@ -59,8 +62,8 @@ struct Inner<D: Copy> {
     drop_handled: bool,
 }
 
-/// When this drops, this panics if not all [Cd]s have been dropped. Dhe `D`
-/// here is for domain separation.
+/// When this drops, this panics if not all [Cd]s generated from this have been
+/// dropped. The `D` here is for domain separation.
 pub struct CdGen<D: Copy + Default> {
     inner: Rc<RefCell<Inner<D>>>,
 }

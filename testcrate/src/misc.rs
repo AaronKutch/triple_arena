@@ -34,6 +34,7 @@ impl<T: fmt::Debug + TryInternalDrop> Meta<T> {
         }
     }
 
+    /// This prevents drop errors from overriding the normal errors
     pub fn test<F: FnOnce(&mut Meta<T>) -> Result<(), StackedError>>(
         &mut self,
         stats: T,
