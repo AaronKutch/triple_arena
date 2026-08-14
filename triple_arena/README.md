@@ -16,3 +16,18 @@ generation counter to check for invalidity (zero cost when omitted). `no_std` co
 
 Note: there are "alloc" (enabled by default), "std", and "serde_support" feature flags.
 When the default "alloc" feature is enabled, the arenas have a defaulted `B: ArenaBacking = triple_arena::utils::HeapBacking` parameter, but when disabled the parameter must be specified.
+
+#### License
+
+<sup>
+Licensed under either of <a href="LICENSE-APACHE">Apache License, Version
+2.0</a> or <a href="LICENSE-MIT">MIT license</a> at your option.
+</sup>
+
+<br>
+
+<sub>
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this crate by you, as defined in the Apache-2.0 license, shall
+be dual licensed as above, without any additional terms or conditions.
+</sub>
