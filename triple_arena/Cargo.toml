@@ -3,8 +3,9 @@ name = "triple_arena"
 # change the dependency used by `triple_arena_render` when the minor version or higher is changed
 version = "0.14.0"
 edition = "2024"
-# when updating, update `rust-msrv` in flake.nix and `msrv_test_suite` in ci.yml, and separately
-# bump rust-toolchain.toml
+# `flake.nix` and `ci.yml` read this automatically, but run `nix flake update`
+# and fix any hashes. The pinned toolchain in `pinned-toolchain.toml` is
+# bumped separately.
 rust-version = "1.86"
 authors = ["Aaron Kutch <aaronkutch@att.net>"]
 license = "MIT OR Apache-2.0"

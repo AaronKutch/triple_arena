@@ -239,11 +239,13 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     ///
     /// Incurs only one internal lookup because of invariants.
     fn are_neighbors(&self, p_prev: P, p_next: P) -> bool {
-        if let Some(link) = self.get_link_no_gen(p_prev)
-            && let Some(p) = link.next()
-        {
-            //  if equal,`p_next` must implicitly exist because of invariants
-            p == p_next.inx()
+        if let Some(link) = self.get_link_no_gen(p_prev) {
+            if let Some(p) = link.next() {
+                //  if equal,`p_next` must implicitly exist because of invariants
+                p == p_next.inx()
+            } else {
+                false
+            }
         } else {
             false
         }
@@ -252,11 +254,13 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// The same as [ChainArenaTrait::are_neighbors] but generation counters are
     /// ignored
     fn are_neighbors_inx(&self, p_prev: P::Inx, p_next: P::Inx) -> bool {
-        if let Some((_, link)) = self.get_inx_link_no_gen(p_prev)
-            && let Some(p) = link.next()
-        {
-            //  if equal,`p_next` must implicitly exist because of invariants
-            p == p_next
+        if let Some((_, link)) = self.get_inx_link_no_gen(p_prev) {
+            if let Some(p) = link.next() {
+                //  if equal,`p_next` must implicitly exist because of invariants
+                p == p_next
+            } else {
+                false
+            }
         } else {
             false
         }

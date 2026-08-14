@@ -366,7 +366,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>, A: CompactArenaTrait<P, T>>(
         }
     }
 
-    // now do the transitive propogations, for transitivity we do not need the
+    // now do the transitive propagations, for transitivity we do not need the
     // reversed orderings
     let mut buf = vec![];
     for _ in 0..2 {
@@ -668,7 +668,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>, A: CompactArenaTrait<P, T>>(
     // want to compress horizontally. The idea is that every node has a desired
     // location to be in, either the average horizontal positions of their sources
     // and sinks or some median of them. If a node would collide with another if it
-    // would try to move, a "force" is propogated that says how many places it wants
+    // would try to move, a "force" is propagated that says how many places it wants
     // to travel and the intensity.
 
     //let mut prioritize = BinaryHeap::<(usize, P)>::new();
