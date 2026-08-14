@@ -18,8 +18,6 @@ use crate::{
 
 // See REF(arena_terminology)
 
-// FIXME rename `ArenaSlot`
-
 /// Internal slot for an one-way linked freelist arena. Note the `P::Gen` is a
 /// ZST in logically generationless cases, and there are niches in both if
 /// `NonZero*` is being used like it should.
@@ -166,7 +164,7 @@ pub struct Arena<
     pub(crate) generation: P::Gen,
 }
 
-// FIXME we may want `unreachable` for assembly perf, see u32 Ptr case
+// may need `unreachable` for assembly perf, see u32 Ptr case
 
 /// We assume that if a slot has been successfully pushed before (implying
 /// that `P::Inx::try_from_usize` has succeeded with this exact value

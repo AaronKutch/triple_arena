@@ -441,8 +441,8 @@ impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for ChainArena<P, T, 
 
 impl<P: Ptr, T: Debug, B: ArenaBacking> Debug for ChainArena<P, T, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // FIXME try to group by chain like `compress_and_canonicalize` does using
-        // canonical iterator?
+        // grouping by chain is not efficiently possible without extra state
+        // unfortunately
         f.debug_map().entries(self.iter_link_no_gen()).finish()
     }
 }
