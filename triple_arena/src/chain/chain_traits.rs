@@ -40,7 +40,7 @@ pub enum LinkInsertKind<P: Ptr> {
     /// Insert a link inbetween two `P` that have an interlink between them,
     /// maintaining continuity of the chain. The insertion will fail if the two
     /// links are not neighbors. Note that the arguments are directionally
-    /// sensitive, calling [crate::Link::next] on the link at `next_to` must
+    /// sensitive: calling [crate::Link::next] on the link at `next_to` must
     /// result in `prev_to` and not the other way around. Note that this can
     /// act on a single link cyclic chain with `next_to == prev_to`, but
     /// `next_to == prev_to` is allowed only in that case as the "inbetween"
@@ -94,13 +94,13 @@ pub(crate) enum LinkInsertInxKind<P: Ptr> {
 /// described on the [ArenaTrait] documentation, except that chain arenas
 /// automatically update internal interlinks to maintain the linked-list nature
 /// of the chains. The public interface has been designed such that it is not
-/// possible to break the doubly linked invariant that each interlink `Ptr` from
-/// one link to its neighbor has exactly one corresponding interlink `Ptr`
-/// pointing from the neighbor back to itself. However, note that copies of
-/// interlinks made external to the arena or put in the custom `T`
-/// may be indirectly invalidated by operations on a neighboring link.
+/// possible to break the doubly linked invariant, which says that each
+/// interlink `Ptr` from one link to its neighbor has exactly one corresponding
+/// interlink `Ptr` pointing from that neighbor back to itself. However, note
+/// that copies of interlinks made external to the arena or put in the custom
+/// `T` may be indirectly invalidated by operations on a neighboring link.
 ///
-/// Note that [ArenaTrait::remove] for chain arenas is modified to follow the
+/// Note that [ArenaTrait::remove] is modified for chain arenas to follow the
 /// interlink semantics of [ChainArenaTrait::remove_link_no_gen].
 pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// An advancer over the valid `Ptr`s of a chain

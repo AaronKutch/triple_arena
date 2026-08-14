@@ -5,7 +5,7 @@ use crate::{fundamental::PtrInx, traits::Ptr};
 /// The same as [crate::Link] except that the interlinks do not have a
 /// generation counter
 pub struct LinkNoGen<P: Ptr, T> {
-    // I think the code generation should be overall better if this is done
+    // I think the code gen should be overall better with this ordering
     pub(crate) prev_next: (Option<P::Inx>, Option<P::Inx>),
     pub t: T,
 }
@@ -116,9 +116,9 @@ impl<P: Ptr, T: Ord> Ord for LinkNoGen<P, T> {
 }
 
 /// This represents a link in a `ChainArena` that has a public `t: T` field and
-/// `Option<Ptr<P>>` interlinks to the previous and next links.
+/// `Option<P>` interlinks to the previous and next links. [LinkNoGen] is
+/// preferred when generations on the interlinks are not needed.
 pub struct Link<P: Ptr, T> {
-    // I think the code gen should be overall better if this is done
     pub(crate) prev_next: (Option<P>, Option<P>),
     pub t: T,
 }

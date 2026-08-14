@@ -166,7 +166,7 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
 
     /// Returns the singular generation, if the arena supports one.
     ///
-    /// Implemented for most "simple" arenas that also implement
+    /// This is set for most "simple" arenas that also implement
     /// [CompactArenaTrait]. The singular generation is also usually the
     /// generation of entries that would be inserted now. Some arenas do not
     /// have a global generation (and also usually come along with a complex
@@ -242,12 +242,12 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
         indices: [P::Inx; N],
     ) -> Result<[(P::Gen, &mut T); N], GetDisjointMutError>;
 
-    /// Finds the index-first valid `Ptr` in terms of the `P::Inx` ordering, be
-    /// aware that this can be an `O(n)` operation on some implementations
+    /// Finds the first valid `Ptr` in terms of the `P::Inx` ordering, be
+    /// aware that this is an `O(n)` operation on many implementations
     fn find_first_inx_ptr(&self) -> Option<P>;
 
-    /// Finds the index-last valid `Ptr` in terms of the `P::Inx` ordering, be
-    /// aware that this can be an `O(n)` operation on some implementations
+    /// Finds the last valid `Ptr` in terms of the `P::Inx` ordering, be
+    /// aware that this is an `O(n)` operation on many implementations
     fn find_last_inx_ptr(&self) -> Option<P>;
 
     /// Advances over every valid `Ptr` in `self` starting from the first.
@@ -507,11 +507,12 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
 
 /// A marker trait indicating that the arena has a "compact" internal
 /// representation, such that some special functions such as the `clone_from*`
-/// functions can safely clone from nonempty arenas. This trait does not go on
-/// the `Ptr` type, because compact arenas should also be checking their raw
-/// index conversions as entries are inserted. If the arena is existing with any
-/// successfully inserted entries, then we can know their `Ptr`s were already of
-/// the simple kind.
+/// functions can safely clone from nonempty arenas.
+///
+/// This trait does not go on the `Ptr` type, because compact arenas should also
+/// be checking their raw index conversions as entries are inserted. If the
+/// arena is existing with any successfully inserted entries, then we can know
+/// their `Ptr`s were already of the simple kind.
 pub trait CompactArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {}
 
 /// A type implementing this can have a fully generic mapping clone operation
@@ -583,9 +584,11 @@ pub trait ArenaInsertEntryTrait<'a, P: Ptr, T> {
     fn insert(self, t: T);
 }
 
-/// The standard trait for insertion into [ArenaTrait] arenas. Some arenas do
-/// not have a freelist however, and this trait could not be implemented
-/// efficiently. The [ArenaDirectInsertTrait] trait is a separate trait because
+/// The standard trait for insertion into [ArenaTrait] arenas.
+///
+/// Some arenas do not have a freelist however, and this trait could not be
+/// implemented efficiently, so this is a separate trait from [ArenaTrait]. The
+/// [ArenaDirectInsertTrait] trait is also separate trait, because
 /// direct insertions would not be efficient on an arena with a one-way linked
 /// freelist.
 pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
@@ -674,8 +677,9 @@ pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
 
     /// Returns an entry for direct insertion at `p.inx()`, if the index points
     /// to an internal slot that fits within existing capacity, and there is not
-    /// already another element allocated at that index. `p.generation()` is
-    /// always accepted and used as the valid generation for use with this
+    /// already another element allocated at that index. The given
+    /// `p.generation()` is always accepted and, if insertion occurs,
+    /// `p.generation()` used as the valid generation for use with this
     /// entry.
     fn direct_insert_within_capacity(
         &mut self,

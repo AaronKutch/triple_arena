@@ -3,12 +3,12 @@
 use recasting::{Recast, Recaster};
 
 use crate::{
-    Arena, LinkNoGen, SurjectArena,
-    arena_iterators::{self},
+    Arena, LinkNoGen, SurjectArena, arena_iterators,
     chain::ChainArena,
+    chain_iterators,
     surject::{Key, Val},
     traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
-    utils::{PtrNoGen, chain_iterators, traits::ArenaBacking},
+    utils::{PtrNoGen, traits::ArenaBacking},
 };
 
 /// An advancer over the valid `P`s of a `SurjectArena`

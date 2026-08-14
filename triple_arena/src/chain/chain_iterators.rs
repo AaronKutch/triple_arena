@@ -4,9 +4,9 @@ use recasting::{Recast, Recaster};
 
 pub use crate::arena_iterators::{CapacityDrain, Drain, Iter};
 use crate::{
-    Arena, InvalidationOption, InvalidationResult, LinkNoGen, arena_iterators,
+    Arena, ChainArena, InvalidationOption, InvalidationResult, LinkNoGen, arena_iterators,
     traits::{Advancer, ArenaTrait, Ptr},
-    utils::{ChainArena, traits::ArenaBacking},
+    utils::traits::ArenaBacking,
 };
 
 /// An advancer over the valid `P`s of a `ChainArena`
