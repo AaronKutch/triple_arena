@@ -361,7 +361,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 ///     Arena, HeapBacking, OrdPair, SimpleOrdArena, ptr_struct,
 ///     traits::{ArenaCloneFromWith, ArenaTrait},
 /// };
-/// use triple_arena_render::DebugNode;
+/// use triple_arena_render::{DebugNode, render_to_svg_file};
 ///
 /// ptr_struct!(P0);
 ///

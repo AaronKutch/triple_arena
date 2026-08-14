@@ -93,7 +93,7 @@ pub struct SimpleOrdArenaNode<P: Ptr, T> {
 /// [crate::utils::traits::SimpleOrdItem::key] used to define an ordering among
 /// elements. `O(log n)` insertions, finds, and deletions are guaranteed.
 ///
-/// In common use, you want to use `SimpleOrdArena<P, OrdPair<K, V>, B>`, where
+/// In common use, you should use `SimpleOrdArena<P, OrdPair<K, V>, B>`, where
 /// `K: Ord` is the key used to define the ordering, and `V` is a value type
 /// that is not ordered over but is associated with each `K`. `OrdPair` makes it
 /// more difficult in practice to accidentally change a key in an arena, and in
@@ -130,23 +130,23 @@ pub struct SimpleOrdArenaNode<P: Ptr, T> {
 /// ```
 /// use core::cmp::Ordering;
 ///
-/// use triple_arena::{OrdArena, ptr_struct};
+/// use triple_arena::{HeapBacking, OrdPair, SimpleOrdArena, ptr_struct, traits::*};
 ///
 /// ptr_struct!(P0);
-/// let mut a: OrdArena<P0, u64, ()> = OrdArena::new();
+/// let mut a = SimpleOrdArena::<P0, OrdPair<u64, ()>, HeapBacking>::new();
 ///
-/// let p50 = a.insert(50, ()).0;
-/// let p30 = a.insert(30, ()).0;
-/// let p70 = a.insert(70, ()).0;
-/// let p60 = a.insert(60, ()).0;
-/// let p10 = a.insert(10, ()).0;
+/// let p50 = a.insert(OrdPair::new(50, ())).0;
+/// let p30 = a.insert(OrdPair::new(30, ())).0;
+/// let p70 = a.insert(OrdPair::new(70, ())).0;
+/// let p60 = a.insert(OrdPair::new(60, ())).0;
+/// let p10 = a.insert(OrdPair::new(10, ())).0;
 ///
 /// assert_eq!(a.first().unwrap(), p10);
 /// assert_eq!(a.last().unwrap(), p70);
 ///
 /// // note that this is `O(1)` because we are using a `Ptr` to directly
 /// // index
-/// assert_eq!(*a.get_key(p50).unwrap(), 50);
+/// assert_eq!(*a.get(p50).unwrap().k(), 50);
 ///
 /// // the `insert_*`, `find_*`, and `remove` operations are the only
 /// // `O(log n)` per-element operations
@@ -157,18 +157,21 @@ pub struct SimpleOrdArenaNode<P: Ptr, T> {
 /// assert_eq!(a.find_similar_key(&53).unwrap(), (p60, Ordering::Less));
 ///
 /// // in `O(1)` time get the previous and next pairs
-/// assert_eq!(a.get_link(p60).unwrap().prev_next(), (Some(p50), Some(p70)));
+/// assert_eq!(
+///     a.get_inx_link_no_gen(p60.inx()).unwrap().1.prev_next(),
+///     (Some(p50.inx()), Some(p70.inx()))
+/// );
 ///
 /// // `remove` does have to do `O(log n)` tree rebalancing, but it avoids
 /// // needing to redo the lookup if the `Ptr` is kept around
-/// let link = a.remove(p50).unwrap();
-/// assert_eq!(link, (50, ()));
+/// let pair = a.remove(p50).allow().unwrap();
+/// assert_eq!(pair.into_k_v(), (50, ()));
 ///
-/// // The iterators are fully deterministic and iterate from the
+/// // The `*_ordered` iterators are fully deterministic and iterate from the
 /// // least element to the greatest
 /// let expected = [(p10, 10), (p30, 30), (p60, 60), (p70, 70)];
-/// for (i, (p, key, _)) in a.iter().enumerate() {
-///     assert_eq!(expected[i], (p, *key));
+/// for (i, (p, pair)) in a.iter_ordered().enumerate() {
+///     assert_eq!(expected[i], (p, *pair.k()));
 /// }
 /// ```
 ///

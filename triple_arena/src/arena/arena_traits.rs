@@ -387,7 +387,7 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// This can be used to create a custom [crate::traits::Recaster] for
     /// recasting external `Ptr`s:
     /// ```
-    /// use triple_arena::{Arena, HeapBacking, ptr_struct, traits::*};
+    /// use triple_arena::{Arena, DirectArena, HeapBacking, ptr_struct, traits::*};
     ///
     /// // (This would be a standard function, except there are far too many choices to
     /// // make on the backing of the recaster arena and how fallibility should be
@@ -439,16 +439,16 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// assert_eq!(
     ///     &format!("{a:#?}"),
     ///     r#"{
-    /// P0[2](2): (
-    ///     42,
-    ///     None,
-    /// ),
-    /// P0[4](2): (
-    ///     1337,
-    ///     Some(
-    ///         P0[2](2),
+    ///     P0[2](2): (
+    ///         42,
+    ///         None,
     ///     ),
-    /// ),
+    ///     P0[4](2): (
+    ///         1337,
+    ///         Some(
+    ///             P0[2](2),
+    ///         ),
+    ///     ),
     /// }"#
     /// );
     ///
@@ -463,8 +463,8 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// assert_eq!(
     ///     &format!("{recaster:#?}"),
     ///     r#"{
-    /// P0[2](2): P0[1](5),
-    /// P0[4](2): P0[2](5),
+    ///     P0[2](2): P0[1](5),
+    ///     P0[4](2): P0[2](5),
     /// }"#
     /// );
     /// // now the allocated slots are compressed, and we could shrink capacity or use
@@ -472,16 +472,16 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// assert_eq!(
     ///     &format!("{a:#?}"),
     ///     r#"{
-    /// P0[1](5): (
-    ///     42,
-    ///     None,
-    /// ),
-    /// P0[2](5): (
-    ///     1337,
-    ///     Some(
-    ///         P0[1](5),
+    ///     P0[1](5): (
+    ///         42,
+    ///         None,
     ///     ),
-    /// ),
+    ///     P0[2](5): (
+    ///         1337,
+    ///         Some(
+    ///             P0[1](5),
+    ///         ),
+    ///     ),
     /// }"#
     /// );
     ///

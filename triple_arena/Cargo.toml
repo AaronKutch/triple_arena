@@ -34,3 +34,4 @@ serde = { version = "1.0", default-features = false, optional = true }
 
 [dev-dependencies]
 ron = "0.12"
+triple_arena_render = { path = "../triple_arena_render" }
