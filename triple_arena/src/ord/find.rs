@@ -42,21 +42,20 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             if !this.a.contains(p) {
                 return Err("invalid Ptr");
             }
-            if let Some(prev) = prev {
-                if Ord::cmp(
+            if let Some(prev) = prev
+                && Ord::cmp(
                     &this.a.get_inx(prev.inx()).unwrap().1.t.key(),
                     &this.a.get_inx(p.inx()).unwrap().1.t.key(),
                 ) == Ordering::Greater
-                {
-                    return Err("incorrect ordering");
-                }
+            {
+                return Err("incorrect ordering");
             }
             prev = Some(p);
         }
-        if let Some(prev) = prev {
-            if prev.inx() != this.last {
-                return Err("this.last is not correct");
-            }
+        if let Some(prev) = prev
+            && prev.inx() != this.last
+        {
+            return Err("this.last is not correct");
         }
         if count != this.a.len() {
             return Err("multiple chains");

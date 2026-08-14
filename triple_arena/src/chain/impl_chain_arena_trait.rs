@@ -317,29 +317,29 @@ fn check_link_insert_kind<P: Ptr, T, B: ArenaBacking>(
             .then_some(LinkInsertInxKind::InternalConnect { next_to, prev_to }),
         LinkInsertKind::Bridge { end, start } => {
             let mut res = None;
-            if let Some(link0) = a.get(end) {
-                if let Some(link1) = a.get(start) {
-                    if link0.next().is_none() && link1.prev().is_none() {
-                        res = Some(LinkInsertInxKind::InternalConnect {
-                            next_to: end.inx(),
-                            prev_to: start.inx(),
-                        })
-                    }
-                }
+            if let Some(link0) = a.get(end)
+                && let Some(link1) = a.get(start)
+                && link0.next().is_none()
+                && link1.prev().is_none()
+            {
+                res = Some(LinkInsertInxKind::InternalConnect {
+                    next_to: end.inx(),
+                    prev_to: start.inx(),
+                })
             }
             res
         }
         LinkInsertKind::BridgeInx { end, start } => {
             let mut res = None;
-            if let Some((_, link0)) = a.get_inx(end) {
-                if let Some((_, link1)) = a.get_inx(start) {
-                    if link0.next().is_none() && link1.prev().is_none() {
-                        res = Some(LinkInsertInxKind::InternalConnect {
-                            next_to: end,
-                            prev_to: start,
-                        })
-                    }
-                }
+            if let Some((_, link0)) = a.get_inx(end)
+                && let Some((_, link1)) = a.get_inx(start)
+                && link0.next().is_none()
+                && link1.prev().is_none()
+            {
+                res = Some(LinkInsertInxKind::InternalConnect {
+                    next_to: end,
+                    prev_to: start,
+                })
             }
             res
         }

@@ -219,14 +219,14 @@ pub fn nzusize_iter(
     start: NonZeroUsize,
     end_inclusive: Option<NonZeroUsize>,
 ) -> IntoNonZeroUsizeIterator {
-    if let Some(end_inclusive) = end_inclusive {
-        if start > end_inclusive {
-            // must make empty
-            return IntoNonZeroUsizeIterator(NonZeroUsizeIterator {
-                start,
-                end_inclusive: None,
-            });
-        }
+    if let Some(end_inclusive) = end_inclusive
+        && start > end_inclusive
+    {
+        // must make empty
+        return IntoNonZeroUsizeIterator(NonZeroUsizeIterator {
+            start,
+            end_inclusive: None,
+        });
     }
     IntoNonZeroUsizeIterator(NonZeroUsizeIterator {
         start,

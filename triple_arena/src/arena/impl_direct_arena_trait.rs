@@ -48,12 +48,12 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for DirectArena<P, T, B> {
         // using `max_index` because we are dealing with a plain `usize` and testing for
         // linearity, this equivalently does the check that `P::Inx::try_from_usize`
         // would succeed.
-        if let Some(max) = P::Inx::max_index() {
-            if min_capacity > max.get() {
-                // this is not a max capacity concern (according to the `max_capacity` kind of
-                // maximum)
-                return Err(ReallocationError::AllocError);
-            }
+        if let Some(max) = P::Inx::max_index()
+            && min_capacity > max.get()
+        {
+            // this is not a max capacity concern (according to the `max_capacity` kind of
+            // maximum)
+            return Err(ReallocationError::AllocError);
         }
         self.m.reallocate_min_capacity(min_capacity)
     }

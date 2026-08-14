@@ -115,11 +115,11 @@ impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
         match allocation {
             Free => None,
             Allocated(generation1, _) => {
-                if let Some(generation) = generation {
-                    if *generation1 != generation {
-                        // invalid by generation
-                        return None;
-                    }
+                if let Some(generation) = generation
+                    && *generation1 != generation
+                {
+                    // invalid by generation
+                    return None;
                 }
 
                 let Allocated(generation, t) = mem::replace(allocation, Free) else {
