@@ -73,7 +73,7 @@ pub struct OrdArena<
 
 /// Internal node for a [SimpleOrdArena]
 #[derive(Clone)]
-pub struct Node<P: Ptr, T> {
+pub struct SimpleOrdArenaNode<P: Ptr, T> {
     pub t: T,
     /// Pointer back to parent
     pub p_back: Option<P::Inx>,
@@ -188,7 +188,7 @@ pub struct SimpleOrdArena<
     pub(crate) root: P::Inx,
     pub(crate) first: P::Inx,
     pub(crate) last: P::Inx,
-    pub(crate) a: ChainArena<P, Node<P, T>, B>,
+    pub(crate) a: ChainArena<P, SimpleOrdArenaNode<P, T>, B>,
 }
 
 impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
@@ -244,7 +244,10 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     // this is safe for the `SimpleOrdArena`
 
     /// Returns a whole internal node, for advanced use only
-    pub fn get_inx_node(&self, p: P::Inx) -> Option<(P::Gen, &LinkNoGen<P, Node<P, T>>)> {
+    pub fn get_inx_node(
+        &self,
+        p: P::Inx,
+    ) -> Option<(P::Gen, &LinkNoGen<P, SimpleOrdArenaNode<P, T>>)> {
         self.a.get_inx_link_no_gen(p)
     }
 
@@ -521,7 +524,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         let res = self.a.transfer_canonical_reallocating(
             new_generation,
             &mut source.a,
-            |q, o, p| Node {
+            |q, o, p| SimpleOrdArenaNode {
                 t: map(q, o.map(|node| node.t), p),
                 p_back: None,
                 p_tree0: None,

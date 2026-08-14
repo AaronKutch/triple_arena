@@ -7,7 +7,7 @@ use crate::{
     arena::ArenaInsertEntryTrait,
     errors::{ChainInsertionError, OrdInsertionError},
     traits::{ArenaTrait, ChainArenaTrait, Ptr},
-    utils::{Node, traits::ArenaBacking},
+    utils::{SimpleOrdArenaNode, traits::ArenaBacking},
 };
 
 // this enum prevents certain bugs and allows anticipating replacement
@@ -107,7 +107,7 @@ impl<'a, P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArenaInsertEntry<'a
         let c = &mut a.a;
         if c.is_empty() {
             assert_eq!(
-                c.insert_within_capacity(LinkInsertKind::Disconnected, Node {
+                c.insert_within_capacity(LinkInsertKind::Disconnected, SimpleOrdArenaNode {
                     t,
                     p_back: None,
                     p_tree0: None,
@@ -389,7 +389,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             }
         };
         if direction {
-            let new_node = Node {
+            let new_node = SimpleOrdArenaNode {
                 t,
                 p_back: Some(p),
                 p_tree0: None,
@@ -410,7 +410,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 unreachable!()
             }
         } else {
-            let new_node = Node {
+            let new_node = SimpleOrdArenaNode {
                 t,
                 p_back: Some(p),
                 p_tree0: None,

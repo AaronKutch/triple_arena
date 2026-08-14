@@ -50,7 +50,7 @@ pub mod utils {
         arena::{ArenaInsertEntry, ArenaSlot, DirectSlot},
         chain::{ChainArena, chain_iterators},
         fundamental::PtrNoGen,
-        ord::{Node, SimpleOrdArenaInsertEntry},
+        ord::{SimpleOrdArenaInsertEntry, SimpleOrdArenaNode},
         stack::{NonZeroInxArray, NonZeroInxArrayPushEntry},
     };
     /// A reexport used by the macros

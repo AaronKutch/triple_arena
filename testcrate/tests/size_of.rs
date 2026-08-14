@@ -6,7 +6,7 @@ use std::{
 use triple_arena::{
     Link, ptr_struct,
     traits::*,
-    utils::{ArenaSlot, Node, PtrNoGen},
+    utils::{ArenaSlot, PtrNoGen, SimpleOrdArenaNode},
 };
 
 ptr_struct!(P0);
@@ -31,15 +31,21 @@ fn size_of_ptr() {
 fn size_of_node() {
     use triple_arena::LinkNoGen;
 
-    assert_eq!(size_of::<Node<P0, ()>>(), 32);
+    assert_eq!(size_of::<SimpleOrdArenaNode<P0, ()>>(), 32);
     assert_eq!(size_of::<Link<P0, ()>>(), 32);
     assert_eq!(size_of::<LinkNoGen<P0, ()>>(), 16);
     assert_eq!(size_of::<ArenaSlot<P0, ()>>(), 16);
-    assert_eq!(size_of::<ArenaSlot<P0, Link<P0, Node<P0, ()>>>>(), 72);
+    assert_eq!(
+        size_of::<ArenaSlot<P0, Link<P0, SimpleOrdArenaNode<P0, ()>>>>(),
+        72
+    );
 
-    assert_eq!(size_of::<Node<P1, ()>>(), 32);
+    assert_eq!(size_of::<SimpleOrdArenaNode<P1, ()>>(), 32);
     assert_eq!(size_of::<Link<P1, ()>>(), 16);
     assert_eq!(size_of::<LinkNoGen<P1, ()>>(), 16);
     assert_eq!(size_of::<ArenaSlot<P1, ()>>(), 8);
-    assert_eq!(size_of::<ArenaSlot<P1, Link<P1, Node<P1, ()>>>>(), 56);
+    assert_eq!(
+        size_of::<ArenaSlot<P1, Link<P1, SimpleOrdArenaNode<P1, ()>>>>(),
+        56
+    );
 }

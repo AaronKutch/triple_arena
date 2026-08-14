@@ -7,5 +7,5 @@ pub mod ord_iterators;
 mod remove;
 
 pub use insert::{OrdInsertKind, SimpleOrdArenaInsertEntry};
-pub use ord_arena::{Node, SimpleOrdArena};
+pub use ord_arena::{SimpleOrdArena, SimpleOrdArenaNode};
 pub use ord_arena_trait::{OrdPair, SimpleOrdItem};
