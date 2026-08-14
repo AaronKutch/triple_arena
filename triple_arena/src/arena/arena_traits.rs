@@ -398,16 +398,19 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     ///     // This arena will be a recaster in which we create a mapping from the old `Ptr`
     ///     // domain to the new one. We use a `DirectArena` for this since it will only
     ///     // be used for this purpose and then discarded.
-    ///     let mut res = DirectArena::<P, P, StackBacking<4>>::new();
-    ///     // this sets all the keys of the mapping by cloning the `Ptr` validities of the
-    ///     // pre-compression `self` into the recaster and puts in invalid placeholders for
-    ///     // the new domain
-    ///     res.clone_from_with(this, |_, _| P::invalid()).unwrap();
-    ///     // compress and write the new `Ptr`s at the indexes of the corresponding old
-    ///     // ones, completing the mapping
-    ///     this.compress_with(reset_generation, |p, _, q| *res.get_mut(p).unwrap() = q)
-    ///         .allow();
-    ///     res
+    ///     let mut recaster = DirectArena::<P, P, HeapBacking>::new();
+    ///     // This all the keys of the mapping, by cloning the `Ptr` validities of the
+    ///     // pre-compression `this` into the recaster, and puts in invalid placeholders
+    ///     // for the new domain because we do not know them yet.
+    ///     recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
+    ///     // Compress and write the new `Ptr`s at the indexes of the corresponding old
+    ///     // `Ptr`s, and using the values seen by the closure to complete the mapping of
+    ///     // the old domain to the new domain.
+    ///     this.compress_with(reset_generation, |p, _, q| {
+    ///         *recaster.get_mut(p).unwrap() = q
+    ///     })
+    ///     .allow();
+    ///     recaster
     /// }
     ///
     /// ptr_struct!(P0);
@@ -433,8 +436,19 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// a.remove(p1).allow().unwrap();
     ///
     /// assert_eq!(
-    ///     &format!("{a:?}"),
-    ///     "{P0[2](2): (42, None), P0[4](2): (1337, Some(P0[2](2)))}"
+    ///     &format!("{a:#?}"),
+    ///     r#"{
+    /// P0[2](2): (
+    ///     42,
+    ///     None,
+    /// ),
+    /// P0[4](2): (
+    ///     1337,
+    ///     Some(
+    ///         P0[2](2),
+    ///     ),
+    /// ),
+    /// }"#
     /// );
     ///
     /// // This is what the `Recast` trait is for. We call this before
@@ -443,19 +457,35 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// // relations are preserved.
     /// let recaster = compress_recaster(&mut a, false);
     /// a.recast(&recaster).unwrap();
-    /// // the recaster had this
+    ///
+    /// // the recaster had this, a complete description of where entries went
     /// assert_eq!(
-    ///     &format!("{recaster:?}"),
-    ///     "{P0[2](2): P0[1](5), P0[4](2): P0[2](5)}"
+    ///     &format!("{recaster:#?}"),
+    ///     r#"{
+    /// P0[2](2): P0[1](5),
+    /// P0[4](2): P0[2](5),
+    /// }"#
     /// );
-    /// // now the allocated slots are compressed and we could shrink capacity or use
+    /// // now the allocated slots are compressed, and we could shrink capacity or use
     /// // this for compact serialization
     /// assert_eq!(
-    ///     &format!("{a:?}"),
-    ///     "{P0[1](5): (42, None), P0[2](5): (1337, Some(P0[1](5)))}"
+    ///     &format!("{a:#?}"),
+    ///     r#"{
+    /// P0[1](5): (
+    ///     42,
+    ///     None,
+    /// ),
+    /// P0[2](5): (
+    ///     1337,
+    ///     Some(
+    ///         P0[1](5),
+    ///     ),
+    /// ),
+    /// }"#
     /// );
     ///
-    /// // try again but with resetting the generation, useful in some cases
+    /// // try again but with resetting the generation, be aware this can cause ABA
+    /// // violations or worse if `Ptr`s from the old domain are not all recast
     /// let recaster = compress_recaster(&mut a, true);
     /// a.recast(&recaster).unwrap();
     /// // maps all the generations down to a minimal value

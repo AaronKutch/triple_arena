@@ -105,6 +105,8 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer<ChainArena<P, T, B>> for ChainPtrAdvan
     }
 }
 
+/// A draining iterator for a single chain. Drops the rest of the chain when
+/// this iterator is dropped.
 pub struct ChainDrain<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a mut ChainArena<P, T, B>,
     next_init: Option<P::Inx>,

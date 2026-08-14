@@ -99,7 +99,8 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterMut<'a, P, T, B> {
     }
 }
 
-/// A draining iterator over `(P, T)` in an `Arena`
+/// A draining iterator over `(P, T)` in an `Arena`. The arena is cleared when
+/// this iterator is dropped.
 pub struct Drain<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a mut Arena<P, T, B>,
     adv: PtrAdvancer<P>,

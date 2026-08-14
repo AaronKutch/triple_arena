@@ -1,10 +1,13 @@
+//! Documentation on arenas and serialization.
+//!
 //! It is rarely a good idea to directly serialize an arena (and in fact we
-//! deliberately do not implement serialization on the arena types even though
-//! we implement serialization for some things like `Ptr`s). The proper way to
-//! serialize a `triple_arena` arena-like structure is different depending on
-//! the problem, and in each case the user should use advancers or iterators and
-//! helper structs as intermediates in serialization. There are a few different
-//! things that should be considered:
+//! deliberately do not implement serialization on the arena types, even though
+//! we implement serialization for building blocks like `Ptr`s and
+//! `LinkNoGen`s). The proper way to serialize a `triple_arena` arena-like
+//! structure, in practice, has to be completely tailored to each use case, and
+//! the user should use advancers or iterators and helper structs as
+//! intermediates in serialization. There are a few different things that should
+//! be considered:
 //!
 //! - Whether compression and recasting should be used (highly preferred, note
 //!   that `reset_generation` options should be set when possible, see the

@@ -27,7 +27,7 @@ mod surject;
 pub use arena::{Arena, DirectArena, arena_iterators, direct_arena_iterators};
 pub(crate) use chain::LinkInsertInxKind;
 pub use chain::{ChainArena, Link, LinkInsertKind, LinkNoGen, chain_iterators};
-/// Documentation on arenas and serialization
+// this renders a crate level doc correctly
 #[cfg(feature = "serde_support")]
 pub use fundamental::serde_docs;
 pub use fundamental::{InvalidationOption, InvalidationResult, errors};
