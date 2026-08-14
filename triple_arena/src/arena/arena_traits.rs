@@ -92,11 +92,12 @@ I considered a `clone_general` that combined `compress_with` and `clone_from_wit
 /// wraps around and skips the invalid `Ptr` generation case, and does not
 /// panic.
 ///
-/// For example, in most cases, you should just use [ArenaInsertTrait::insert]
-/// to insert elements into the arena and [InvalidationResult::allow] on
-/// invalidation operations. If the arena backing type is limited or you must
-/// handle allocation failures, then [ArenaInsertTrait::insert_reallocating] and
-/// similar should be used.
+/// For example, in most cases, you should just use
+/// [crate::traits::ArenaInsertTrait::insert] to insert elements into the arena
+/// and [InvalidationResult::allow] on invalidation operations. If the arena
+/// backing type is limited or you must handle allocation failures, then
+/// [crate::traits::ArenaInsertTrait::insert_reallocating] and similar should be
+/// used.
 pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// An advancer over the valid `Ptr`s of this arena
     type PtrAdvancer: Advancer<Self, Item = P>;
@@ -662,14 +663,14 @@ pub trait ArenaDirectInsertEntryTrait<'a, P: Ptr, T> {
     fn insert(self, t: T);
 }
 
-/// See [ArenaInsertTrait], this mainly is for special arenas without a
-/// freelist, that are supposed to follow the state of another arena.
+/// See [crate::traits::ArenaInsertTrait], this mainly is for special arenas
+/// without a freelist, that are supposed to follow the state of another arena.
 ///
 /// Note: An analogous chain arena version of this trait would not be feasible
 /// because of questions around intermediate validities, however it can be
 /// mimicked to arbitrary degrees by using a direct insertion arena and using
-/// the [Link] struct directly in custom values. The same can be used for the
-/// other arena types
+/// the [crate::Link] struct directly in custom values. The same can be used for
+/// the other arena types
 pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     type DirectInsertionEntry<'a>: ArenaDirectInsertEntryTrait<'a, P, T>
     where

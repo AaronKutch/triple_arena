@@ -157,7 +157,7 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         }
     }
 
-    /// The same as [OrdArena::find_key], except it uses linear
+    /// The same as [SimpleOrdArena::find_key], except it uses linear
     /// comparisons starting at `p_init`. If the key is not found
     /// within `num` comparisons, or `p_init` is invalid, a normal search is
     /// used. Returns `None` if the key was not found.
@@ -242,8 +242,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         }
     }
 
-    /// Combines the behaviors of [OrdArena::find_similar_key] and
-    /// [OrdArena::find_key_linear]
+    /// Combines the behaviors of [SimpleOrdArena::find_similar_key] and
+    /// [SimpleOrdArena::find_key_linear]
     #[must_use]
     pub fn find_similar_key_linear<'a>(
         &self,
@@ -316,11 +316,11 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         }
     }
 
-    /// The same as [OrdArena::find_with], except that if `f` does not return
-    /// `Ordering::Equal` by the end of the binary search (and in which case the
-    /// returned ordering will be `Ordering::Equal`), it will instead return a
-    /// similar `Ptr` with the last `Ordering` returned by `f`. `None` is only
-    /// returned if `self.is_empty()`
+    /// The same as [SimpleOrdArena::find_with], except that if `f` does not
+    /// return `Ordering::Equal` by the end of the binary search (and in
+    /// which case the returned ordering will be `Ordering::Equal`), it will
+    /// instead return a similar `Ptr` with the last `Ordering` returned by
+    /// `f`. `None` is only returned if `self.is_empty()`
     pub fn find_similar_with<F: FnMut(P, &T) -> Ordering>(
         &self,
         mut f: F,

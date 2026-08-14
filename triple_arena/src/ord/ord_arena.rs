@@ -118,8 +118,8 @@ pub struct SimpleOrdArenaNode<P: Ptr, T> {
 /// Note: it is a logic error for a key's ordering to change relative to other
 /// keys (by using internal mutability or directly modifying the relevant part
 /// of the `T: SimpleOrdItem` while it is still in the arena), or for a special
-/// function like `insert_inx_manual_unwrap` or [OrdInsertKind::Manual] to be
-/// used incorrectly. Unlike some other implementations, the functions on
+/// function like `insert_inx_manual_unwrap` or [crate::OrdInsertKind::Manual]
+/// to be used incorrectly. Unlike some other implementations, the functions on
 /// `SimpleOrdArena`s are constructed such that _no_ panics (unless explicitly
 /// documented), aborts, memory leaks, or non-termination occurs, regardless of
 /// how inconsistent key orderings are. However, the well ordered property,

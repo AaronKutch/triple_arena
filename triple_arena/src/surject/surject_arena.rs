@@ -168,7 +168,7 @@ pub struct SurjectArena<
 
 // REF(insertion_idempotency)
 
-/// See [ArenaInsertTrait]
+/// See [crate::traits::ArenaInsertTrait]
 pub struct SurjectArenaInsertEntry<'a, P: Ptr, K, V, B: ArenaBacking> {
     this: &'a mut SurjectArena<P, K, V, B>,
     p: P,
@@ -190,7 +190,7 @@ impl<'a, P: Ptr, K, V, B: ArenaBacking> SurjectArenaInsertEntry<'a, P, K, V, B> 
     }
 }
 
-/// See [ArenaInsertTrait]
+/// See [crate::traits::ArenaInsertTrait]
 pub struct SurjectArenaInsertKeyEntry<'a, P: Ptr, K, V, B: ArenaBacking> {
     this: &'a mut SurjectArena<P, K, V, B>,
     p_target: P::Inx,

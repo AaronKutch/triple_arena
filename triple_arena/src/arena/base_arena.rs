@@ -364,7 +364,7 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     }
 
     /// Returns the singular arena generation counter, the same as
-    /// [crate::traits::SingularGenerationArena::singular_generation]
+    /// [crate::traits::ArenaTrait::singular_generation]
     #[inline]
     pub fn generation(&self) -> P::Gen {
         self.generation

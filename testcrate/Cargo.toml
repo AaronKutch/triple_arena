@@ -25,8 +25,8 @@ expect-test = "1.5"
 postcard = { version = "1.0", features = ["alloc"] }
 rand_xoshiro = "0.8"
 ron = { version = "0.12", features = ["integer128"] }
-#stacked_errors = "0.7"
-stacked_errors = { path = "../../stacked_errors" }
+#stacked_errors = { version = "0.7", features = ["supports-color"] }
+stacked_errors = { path = "../../stacked_errors", features = ["supports-color"] }
 star_rng = { path = "../../star_rng" }
 triple_arena = { path = "../triple_arena", default-features = false }
 triple_arena_render = { path = "../triple_arena_render", optional = true }

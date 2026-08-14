@@ -10,8 +10,8 @@ use crate::{
     InvalidationOption,
     errors::{MaxCapacityReductionError, ReallocationError},
     traits::{
-        Advancer, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait, ArenaTrait,
-        CompactArenaTrait, Ptr, SetMaxCapacity,
+        Advancer, ArenaCloneFromWith, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait,
+        ArenaTrait, CompactArenaTrait, Ptr, SetMaxCapacity,
     },
     utils::{
         from_checked_ptr, from_checked_raw,
@@ -37,17 +37,10 @@ use DirectSlot::*;
 /// [ArenaDirectInsertTrait]. The main purpose of this type is to follow the
 /// state of another arena.
 ///
-/// There is no global generation, so
-/// [ArenaTrait::singular_generation] will always return `None`, and no
-/// generation overflow can occur from any operations, except for
-/// [ArenaCloneFromWith::clone_general] which can return overflow if
-/// `!reset_generation && !source.is_empty() &&
-/// source.singular_generation().is_some()` and the generation of `source`
-/// overflows if incremented.
-///
-/// Note that [ArenaTrait::invalidate] and the compress functions leave
-/// generations unchanged. No generation overflow can occur from any operations
-/// on this arena.
+/// There is no global generation and [ArenaTrait::singular_generation] will
+/// always return `None`. Note that [ArenaTrait::invalidate] and the compress
+/// functions leave generations unchanged. No generation overflow can occur from
+/// any operations on this arena.
 pub struct DirectArena<
     P: Ptr,
     T,
@@ -252,11 +245,9 @@ impl<P: Ptr, T: fmt::Debug, B: ArenaBacking> fmt::Debug for DirectArena<P, T, B>
     }
 }
 
-// FIXME
-/*
 /// Implemented if `T: Clone`.
 impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for DirectArena<P, T, B> {
-    /// When a `DirectArena<P, T>` is cloned, the `P`s to an original `T` will
+    /// When an `DirectArena<P, T>` is cloned, the `P`s to an original `T` will
     /// initially be valid to the corresponding `T` in the cloned arena.
     /// Invalidations will continue independently, so the meaning of the `Ptr`
     /// with respect to the different arenas can diverge.
@@ -276,7 +267,6 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for DirectArena<P, T, B> {
             .expect("failed when cloning arena");
     }
 }
-*/
 
 impl<P: Ptr, T, B: ArenaBacking> SetMaxCapacity for DirectArena<P, T, B>
 where

@@ -33,7 +33,7 @@ pub trait SimpleOrdItem {
 /// An implementor of [SimpleOrdItem] that has a key `K: Ord` and associated
 /// value `V`. `&K` is used as the key. Note that this does not provide a
 /// `k_mut` function in order to guard against accidentally modifying the key of
-/// an &mut OrdPair<...> reference from a [SimpleOrdArena].
+/// an `&mut OrdPair<...>` reference from a [crate::SimpleOrdArena].
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OrdPair<K, V> {
     k: K,

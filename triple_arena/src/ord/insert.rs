@@ -232,7 +232,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         }
     }
 
-    /// Following the style of [ArenaInsertTrait::insert_within_capacity]. Uses
+    /// Following the style of
+    /// [crate::traits::ArenaInsertTrait::insert_within_capacity]. Uses
     /// [OrdInsertKind::Normal].
     pub fn insert_within_capacity(&mut self, t: T) -> Result<(P, Option<T>), OrdInsertionError> {
         let entry = self.entry_insert_within_capacity(OrdInsertKind::Normal(t.key()))?;
@@ -240,7 +241,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         Ok((p, entry.insert(t)))
     }
 
-    /// Following the style of [ArenaInsertTrait::insert_reallocating]. Uses
+    /// Following the style of
+    /// [crate::traits::ArenaInsertTrait::insert_reallocating]. Uses
     /// [OrdInsertKind::Normal].
     pub fn insert_reallocating(&mut self, t: T) -> Result<(P, Option<T>), OrdInsertionError> {
         let entry = self.entry_insert_reallocating(OrdInsertKind::Normal(t.key()))?;
@@ -248,7 +250,7 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         Ok((p, entry.insert(t)))
     }
 
-    /// Following the style of [ArenaInsertTrait::insert]. Uses
+    /// Following the style of [crate::traits::ArenaInsertTrait::insert]. Uses
     /// [OrdInsertKind::Normal]. Panics if there was a reallocation error or if
     /// max capacity was reached.
     ///
@@ -261,7 +263,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             .expect("`SimpleOrdArena::insert_reallocating` failed")
     }
 
-    /// Following the style of [ArenaInsertTrait::entry_insert_within_capacity]
+    /// Following the style of
+    /// [crate::traits::ArenaInsertTrait::entry_insert_within_capacity]
     pub fn entry_insert_within_capacity<'a>(
         &mut self,
         kind: OrdInsertKind<P, T::Key<'a>>,
@@ -293,7 +296,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         }
     }
 
-    /// Following the style of [ArenaInsertTrait::entry_insert_reallocating]
+    /// Following the style of
+    /// [crate::traits::ArenaInsertTrait::entry_insert_reallocating]
     pub fn entry_insert_reallocating<'a>(
         &mut self,
         kind: OrdInsertKind<P, T::Key<'a>>,
@@ -331,9 +335,9 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         }
     }
 
-    /// Following the style of [ArenaInsertTrait::entry_insert]. Panics if there
-    /// was a reallocation error, or if max capacity was reached, or if a
-    /// `OrdInsertKind` requirement was violated.
+    /// Following the style of [crate::traits::ArenaInsertTrait::entry_insert].
+    /// Panics if there was a reallocation error, or if max capacity was
+    /// reached, or if a `OrdInsertKind` requirement was violated.
     ///
     /// # Panics
     ///

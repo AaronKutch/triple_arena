@@ -14,7 +14,7 @@ pub unsafe trait ArenaBacking {
 }
 
 /// The default heap backing for arenas. When creating new arenas, this will not
-/// allocate until the first insertion or reallocation.
+/// allocate until the first reallocation.
 #[cfg(feature = "alloc")]
 pub struct HeapBacking;
 

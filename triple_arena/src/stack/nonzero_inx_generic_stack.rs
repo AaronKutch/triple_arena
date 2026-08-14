@@ -35,10 +35,14 @@ Regarding entry methods (this is talking generally, the index logic becomes more
 #[must_use]
 pub trait NonZeroInxGenericStackPushEntryTrait<'a, T> {
     /// The index at which the element will be, if inserted. This is always
+    /// `NonZeroUsize::new_unchecked(self.len())` based on `self.len()` right
+    /// before the call.
     fn inx(&self) -> NonZeroUsize;
     fn push(self, t: T);
 }
 
+// the `Option<impl triple_arena::Ptr>` is on purpose in case we extract this to
+// a different crate
 /// A trait for `Vec`-like collection structs that are one-indexed by
 /// `NonZeroUsize` instead of zero-indexed.
 ///
@@ -48,7 +52,7 @@ pub trait NonZeroInxGenericStackPushEntryTrait<'a, T> {
 /// out independent indexes. It is important that these indexes can be a
 /// `NonZero` integer for niche optimization purposes (e.x. this stops aligned
 /// `Option<impl triple_arena::Ptr>` from unnecessarily exploding the memory
-/// footprint).
+/// footprint everywhere it is used).
 ///
 /// This will never support slices and zero indexing (Besides
 /// one-indexing being horrible for this, there may be discontiguous
@@ -60,8 +64,8 @@ pub trait NonZeroInxGenericStackPushEntryTrait<'a, T> {
 /// - `self.is_empty() == (self.len() == 0)`
 /// - `self.len() <= self.capacity()`
 /// - `self.capacity() <= self.max_capacity()` if set
-/// - After calling `reallocate_min_capacity` and getting Ok, `self.capacity()
-///   >= min_capacity`
+/// - `self.capacity() >= min_capacity` must hold after succeeding with
+///   `reallocate_min_capacity`
 /// - Must act consistently as a stack should with regards to pushes, pops,
 ///   `self.capacity()`, and accesses
 /// - See the functions for other requirements
