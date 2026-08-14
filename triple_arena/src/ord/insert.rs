@@ -3,11 +3,14 @@
 use core::{cmp::Ordering, mem};
 
 use crate::{
-    LinkInsertKind, SimpleOrdArena, SimpleOrdItem,
+    LinkInsertKind, SimpleOrdArena,
     arena::ArenaInsertEntryTrait,
     errors::{ChainInsertionError, OrdInsertionError},
     traits::{ArenaTrait, ChainArenaTrait, Ptr},
-    utils::{SimpleOrdArenaNode, traits::ArenaBacking},
+    utils::{
+        SimpleOrdArenaNode,
+        traits::{ArenaBacking, SimpleOrdItem},
+    },
 };
 
 // this enum prevents certain bugs and allows anticipating replacement

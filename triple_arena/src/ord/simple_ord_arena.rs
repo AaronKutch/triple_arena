@@ -87,10 +87,11 @@ pub struct SimpleOrdArenaNode<P: Ptr, T> {
     pub rank: u8,
 }
 
-/// An Ordered Arena with three parameters: a `P: Ptr` type that gives single
-/// indirection access to elements, and a `T: SimpleOrdItem` key type that is
-/// used to define an ordering among elements. `O(log n)` insertions, finds, and
-/// deletions are guaranteed.
+/// An Ordered Arena with two main parameters: a `P: Ptr` type that gives single
+/// indirection access to elements, and a `T: SimpleOrdItem` type that functions
+/// as a unified key and value type, with
+/// [crate::utils::traits::SimpleOrdItem::key] used to define an ordering among
+/// elements. `O(log n)` insertions, finds, and deletions are guaranteed.
 ///
 /// In common use, you want to use `SimpleOrdArena<P, OrdPair<K, V>, B>`, where
 /// `K: Ord` is the key used to define the ordering, and `V` is a value type

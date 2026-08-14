@@ -1,9 +1,9 @@
 use core::cmp::{Ordering, min};
 
 use crate::{
-    ChainArena, SimpleOrdArena, SimpleOrdItem,
+    ChainArena, SimpleOrdArena,
     traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
-    utils::traits::ArenaBacking,
+    utils::traits::{ArenaBacking, SimpleOrdItem},
 };
 
 impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {

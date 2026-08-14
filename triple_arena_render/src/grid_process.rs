@@ -6,7 +6,8 @@ use std::{
 };
 
 use triple_arena::{
-    Arena, ChainArena, LinkNoGen, OrdPair, SimpleOrdArena, SimpleOrdItem, ptr_struct, traits::*,
+    Arena, ChainArena, LinkNoGen, OrdPair, SimpleOrdArena, ptr_struct, traits::*,
+    utils::traits::SimpleOrdItem,
 };
 
 use crate::{DebugNodeTrait, RenderError, render_grid::RenderGrid};
