@@ -50,6 +50,7 @@
           cargo-machete
           cargo-nextest
           cargo-show-asm
+          cargo-llvm-cov
         ];
 
         # NOTE: `packages` is the field for things that just need to be on the `PATH`,

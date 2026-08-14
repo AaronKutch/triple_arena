@@ -67,6 +67,14 @@ run *ARGS:
 doc *ARGS:
   {{cargo}} doc --open {{ARGS}}
 
+coverage:
+  {{cargo}} llvm-cov clean --workspace
+  {{cargo}} llvm-cov --no-report --branch nextest --no-default-features --features=std
+  {{cargo}} llvm-cov --no-report --branch nextest --no-default-features --features=serde_support
+  {{cargo}} llvm-cov --no-report --branch nextest --all-features
+  {{cargo}} llvm-cov report --branch --lcov --output-path target/llvm-cov/lcov.info --ignore-filename-regex '(testcrate|no_std_test)/'
+  {{cargo}} llvm-cov report --branch --html --ignore-filename-regex '(testcrate|no_std_test)/'
+
 clean:
   {{cargo}} clean
 
