@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # reads the `rust-version` of Cargo.toml
+      # reads the `rust-version` of triple_arena/Cargo.toml
       - name: Install MSRV
         run: |
           rustup set profile minimal

@@ -2,7 +2,7 @@
 
 ## [0.15.0] - TODO
 ### Crate
-- Updated MSRV to 1.86
+- MSRV 1.88
 
 ### Changes
 - All the Arenas have a new `B: ArenaBacking` third generic parameter that is defaulted with the "alloc" feature, so that existing uses use the same unlimited heap backing that they did before. Added stack backing (for which `const` support could be added in the future), limited heap backing, and fixed heap backing standard options.
