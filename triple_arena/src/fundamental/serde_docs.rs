@@ -11,8 +11,9 @@
 //!
 //! - Whether compression and recasting should be used (highly preferred, note
 //!   that `reset_generation` options should be set when possible, see the
-//!   example on [crate::traits::ArenaTrait::compress_with])
-//! - If [crate::traits::ArenaDirectInsertTrait]-based arenas should be used
+//!   example on [compress_with](crate::traits::ArenaTrait::compress_with))
+//! - If [ArenaDirectInsertTrait](crate::traits::ArenaDirectInsertTrait)-based
+//!   arenas should be used
 //! - If generation counters should be omitted
 //! - If indexes can be implicit. After compression on a simple arena, the
 //!   entries have no gaps between them, and the entries could be simply read

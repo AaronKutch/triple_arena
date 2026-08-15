@@ -29,6 +29,37 @@ fn ptrs() {
     assert!(
         <NonZeroU8 as PtrInx>::try_from_usize(NonZeroUsize::new(1usize << 8).unwrap()).is_none()
     );
+    // every linear `PtrInx` must report truncation rather than wrapping, and
+    // must agree with `max_index`
+    assert!(
+        <NonZeroU16 as PtrInx>::try_from_usize(NonZeroUsize::new(1usize << 16).unwrap()).is_none()
+    );
+    #[cfg(target_pointer_width = "64")]
+    assert!(
+        <NonZeroU32 as PtrInx>::try_from_usize(NonZeroUsize::new(1usize << 32).unwrap()).is_none()
+    );
+    assert_eq!(
+        <NonZeroU8 as PtrInx>::max_index().unwrap().get(),
+        u8::MAX as usize
+    );
+    assert_eq!(
+        <NonZeroU16 as PtrInx>::max_index().unwrap().get(),
+        u16::MAX as usize
+    );
+    assert_eq!(
+        <NonZeroU32 as PtrInx>::max_index().unwrap().get(),
+        u32::MAX as usize
+    );
+    assert_eq!(
+        <NonZeroUsize as PtrInx>::max_index().unwrap().get(),
+        usize::MAX
+    );
+    // widening `max_index` saturates at `usize::MAX` rather than truncating to
+    // something smaller
+    assert_eq!(
+        <NonZeroU128 as PtrInx>::max_index().unwrap().get(),
+        usize::MAX
+    );
 
     let x: NonZeroU128 =
         <NonZeroU128 as PtrInx>::try_from_usize(NonZeroUsize::new(usize::MAX).unwrap()).unwrap();

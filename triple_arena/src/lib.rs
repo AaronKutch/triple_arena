@@ -10,6 +10,8 @@
 #![deny(clippy::cast_possible_wrap)]
 #![deny(clippy::indexing_slicing)]
 #![deny(clippy::cast_lossless)]
+#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(rustdoc::private_intra_doc_links)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -48,7 +50,7 @@ pub mod utils {
     };
     pub use crate::{
         arena::{ArenaInsertEntry, ArenaSlot, DirectSlot},
-        fundamental::PtrNoGen,
+        fundamental::{IntoNonZeroUsizeIterator, NonZeroUsizeIterator, PtrNoGen, nzusize_iter},
         ord::{SimpleOrdArenaInsertEntry, SimpleOrdArenaNode},
         stack::{NonZeroInxArray, NonZeroInxArrayPushEntry},
     };

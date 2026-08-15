@@ -148,14 +148,19 @@ impl<T> InvalidationResult<T> {
             Self::Success(t) => InvalidationOption::Success(t),
             Self::GenerationOverflow(t) => InvalidationOption::GenerationOverflow(t),
             Self::InvalidPtr => {
-                panic!("called `InvalidationOption::unwrap()` on an `InvalidPtr` value")
+                panic!("called `InvalidationResult::unwrap()` on an `InvalidPtr` value")
             }
         }
     }
 }
 
+/// Iterates over an inclusive range of `NonZeroUsize`, which is needed because
+/// the standard library range types cannot represent the full `NonZeroUsize`
+/// range without either excluding the maximum value or overflowing. Produced by
+/// [nzusize_iter].
 pub struct NonZeroUsizeIterator {
-    // invariant: if `end_inclusive.is_some()`, `start <= end_inclusive.get()` must be true
+    // invariant: if `end_inclusive.is_some()`, `start <= end_inclusive.get()` must be true, and
+    // the range yet to be yielded is exactly `start..=end_inclusive`
     start: NonZeroUsize,
     end_inclusive: Option<NonZeroUsize>,
 }
@@ -167,13 +172,15 @@ impl Iterator for NonZeroUsizeIterator {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(end_inclusive) = self.end_inclusive {
             let res = self.start;
-            // safety: this is safe since `start < end_inclusive.get()` and
-            // `end_inclusive` cannot be more than the maximum, meaning it
-            // cannot overflow into zero. We maintain the invariant by checking
-            // for equality.
-            self.start = NonZeroUsize::new(res.get().wrapping_add(1)).unwrap();
-            if self.start > end_inclusive {
+            if res == end_inclusive {
+                // The range is now empty. Note that we must detect this before
+                // incrementing rather than after, because `end_inclusive` can be
+                // the maximum value, in which case incrementing `start` would
+                // wrap into zero.
                 self.end_inclusive = None;
+            } else {
+                // `res < end_inclusive` here, so this cannot wrap into zero
+                self.start = NonZeroUsize::new(res.get().wrapping_add(1)).unwrap();
             }
             Some(res)
         } else {
@@ -191,8 +198,8 @@ impl DoubleEndedIterator for NonZeroUsizeIterator {
                 // the range is now empty
                 self.end_inclusive = None;
             } else {
-                // safety: `1 <= self.start < res`, so `res.get() - 1 >= 1` and
-                // cannot underflow into zero.
+                // `1 <= self.start < res`, so `res.get() - 1 >= 1` and cannot
+                // underflow into zero.
                 self.end_inclusive = Some(NonZeroUsize::new(res.get() - 1).unwrap());
             }
             Some(res)
@@ -202,6 +209,8 @@ impl DoubleEndedIterator for NonZeroUsizeIterator {
     }
 }
 
+/// The [IntoIterator] form of [NonZeroUsizeIterator], returned by
+/// [nzusize_iter]
 pub struct IntoNonZeroUsizeIterator(NonZeroUsizeIterator);
 
 impl IntoIterator for IntoNonZeroUsizeIterator {
@@ -214,22 +223,19 @@ impl IntoIterator for IntoNonZeroUsizeIterator {
     }
 }
 
+/// Returns an iterator over `start..=end_inclusive`, or an empty iterator if
+/// `end_inclusive` is `None` or is less than `start`. Unlike the standard
+/// library range types, this can represent the whole `NonZeroUsize` range
+/// including the maximum value.
 #[inline]
 pub fn nzusize_iter(
     start: NonZeroUsize,
     end_inclusive: Option<NonZeroUsize>,
 ) -> IntoNonZeroUsizeIterator {
-    if let Some(end_inclusive) = end_inclusive
-        && start > end_inclusive
-    {
-        // must make empty
-        return IntoNonZeroUsizeIterator(NonZeroUsizeIterator {
-            start,
-            end_inclusive: None,
-        });
-    }
     IntoNonZeroUsizeIterator(NonZeroUsizeIterator {
         start,
-        end_inclusive,
+        // maintains the invariant by making the iterator empty if the range is
+        // inverted
+        end_inclusive: end_inclusive.filter(|end_inclusive| start <= *end_inclusive),
     })
 }

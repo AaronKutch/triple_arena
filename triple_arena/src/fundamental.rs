@@ -11,7 +11,10 @@ pub mod serde;
 pub mod serde_docs;
 
 pub use advancer::Advancer;
-pub use extra::{IntoNonZeroUsizeIterator, InvalidationOption, InvalidationResult, nzusize_iter};
+pub use extra::{
+    IntoNonZeroUsizeIterator, InvalidationOption, InvalidationResult, NonZeroUsizeIterator,
+    nzusize_iter,
+};
 #[cfg(not(feature = "serde_support"))]
 pub use ptr::{Ptr, PtrGen, PtrInx, PtrNoGen};
 #[cfg(feature = "serde_support")]

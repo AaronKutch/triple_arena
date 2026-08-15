@@ -85,5 +85,30 @@ fn serde() -> Result<(), StackedError> {
     );
     ensure_eq!(ron::to_string(&link).unwrap(), "(None,None,\"67\")");
 
+    // Serialization errors must propagate rather than panic. Buffers that are
+    // too small make each individual element write fail in turn.
+    let p0 = P0::_from_raw(NonZeroU32::new(7).unwrap(), NonZeroU128::new(42).unwrap());
+    let p1 = P0::_from_raw(NonZeroU32::new(6).unwrap(), NonZeroU128::new(7).unwrap());
+    let link: Link<P0, String> = Link::new((Some(p0), Some(p1)), "67".to_owned());
+    // the full size is 9 bytes: 3 for `prev`, 3 for `next`, and 3 for `t`
+    for too_small in [0usize, 3, 6] {
+        ensure!(postcard::to_slice(&link, &mut vec![0u8; too_small]).is_err());
+    }
+    ensure!(postcard::to_slice(&link, &mut [0u8; 9]).is_ok());
+
+    let link: LinkNoGen<P0, String> =
+        LinkNoGen::new((Some(p0.inx()), Some(p1.inx())), "67".to_owned());
+    // the full size is 7 bytes: 2 for `prev`, 2 for `next`, and 3 for `t`
+    for too_small in [0usize, 2, 4] {
+        ensure!(postcard::to_slice(&link, &mut vec![0u8; too_small]).is_err());
+    }
+    ensure!(postcard::to_slice(&link, &mut [0u8; 7]).is_ok());
+
+    // deserialization errors propagate for every `Ptr` shape
+    ensure!(postcard::from_bytes::<PtrNoGen<P0>>(&[]).is_err());
+    ensure!(postcard::from_bytes::<P3>(&[]).is_err());
+    ensure!(postcard::from_bytes::<Link<P0, String>>(&[1]).is_err());
+    ensure!(postcard::from_bytes::<LinkNoGen<P0, String>>(&[1]).is_err());
+
     Ok(())
 }

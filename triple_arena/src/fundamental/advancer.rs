@@ -50,9 +50,9 @@
 /// Not all collection types and advancers have the same properties like the
 /// above example, be sure to check the documentation in each case.
 ///
-/// `Advancers` should guarantee that any `Some(..)` will always be a valid
-/// `Item` for the start of the loop, and it should never return the same `Item`
-/// more than once. `Advancers` should also always fuse to always return `None`
+/// `Advancer`s should guarantee that any `Some(..)` will always be a valid
+/// `Item` for the start of the loop, and they should never return the same
+/// `Item` more than once. `Advancer`s should also fuse, always returning `None`
 /// after the first time `None` is returned.
 ///
 /// `Collection` would have been an associated type (as an extra guard against

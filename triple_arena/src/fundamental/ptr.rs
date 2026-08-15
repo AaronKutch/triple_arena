@@ -35,20 +35,20 @@ pub trait PtrGen:
 {
     /// Returns generation 1, which we designate as a representable invalid
     /// generation value, because Arenas with generation counters always
-    /// start at generation 2, and [PtrGen::generational_inc] skips generation
-    /// 2, which means invalid pointers can be constructed with this
-    /// generation and be guaranteed to always be invalid.
+    /// start at generation 2, and [generational_inc](PtrGen::generational_inc)
+    /// skips generation 2, which means invalid pointers can be constructed
+    /// with this generation and be guaranteed to always be invalid.
     fn one() -> Self;
     /// The first valid generation value
     fn two() -> Self;
     /// A special overflowing increment function. For all values (including
-    /// [PtrGen::one], but this shouldn't normally be done) except for the
+    /// [one](PtrGen::one), but this shouldn't normally be done) except for the
     /// maximum value, this simply returns the incremented integer value and
     /// `false`. Upon being called on the maximum value, this overflows by
     /// skipping both the unrepresentable generation 0 and invalid generation 1
-    /// values, resulting in [PtrGen::two] and a `true` value for overflow.
+    /// values, resulting in [two](PtrGen::two) and a `true` value for overflow.
     fn generational_inc(this: Self) -> (Self, bool);
-    /// This exists so that thinks like interlinks can be printed out in hex.
+    /// This exists so that things like interlinks can be printed out in hex.
     /// `()` does not implement `LowerHex` so we can't do it directly.
     fn fmt_hex(this: Self, f: &mut fmt::Formatter<'_>) -> core::fmt::Result;
 }
@@ -101,6 +101,7 @@ impl PtrGen for () {
         ((), false)
     }
 
+    #[inline]
     fn fmt_hex(_this: Self, f: &mut fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("()")
     }
@@ -108,7 +109,6 @@ impl PtrGen for () {
 
 /// The trait for Arena index types. Users should never have to implement this
 /// for simple arenas, it is implemented for the primitive unsigned integers.
-#[allow(clippy::missing_safety_doc)]
 pub trait PtrInx:
     Debug
     + Hash
@@ -141,17 +141,26 @@ pub trait PtrInx:
     /// When linear, this should also agree with `max_index` such that, iff the
     /// index is larger than the max index, this returns `None`.
     fn try_from_usize(inx: NonZeroUsize) -> Option<Self>;
-    /// See [PtrInx::try_from_usize], this is the same except for converting to
-    /// `NonZeroUsize`
+    /// See [try_from_usize](PtrInx::try_from_usize), this is the same except
+    /// for converting to `NonZeroUsize`
     fn try_into_usize(this: Self) -> Option<NonZeroUsize>;
     /// The max index, used to inform arenas if they should clamp their capacity
-    /// and achievable capacities to this. Should return `None` together with
-    /// `try_from_usize` and `try_into_usize` if nonlinear.
+    /// and achievable capacities to this.
+    ///
+    /// A linear implementation must return `Some`, agreeing with
+    /// [try_from_usize](PtrInx::try_from_usize) and
+    /// [try_into_usize](PtrInx::try_into_usize) such that those return `None`
+    /// iff the index is larger than this.
+    ///
+    /// A nonlinear implementation must return `None`, together with those
+    /// always returning `None`. Arenas can treat `None` as never needing to
+    /// clamp capacities, which is harmless in the nonlinear case if they
+    /// also never allow slots existing at a nonlinear index in the first place.
     fn max_index() -> Option<NonZeroUsize>;
-    /// Returns the invalid index most likely to be unvalid if given to an
+    /// Returns the invalid index most likely to be invalid if given to an
     /// arena, which is usually the max value
     fn best_effort_invalid() -> Self;
-    /// This exists so that thinks like interlinks can be printed out in hex
+    /// This exists so that things like interlinks can be printed out in hex
     fn fmt_hex(this: Self, f: &mut fmt::Formatter<'_>) -> core::fmt::Result;
 }
 
@@ -171,12 +180,14 @@ macro_rules! impl_ptr_inx {
                     NonZeroUsize::new(this.get().try_into().ok()?)
                 }
 
+                #[inline]
                 #[allow(clippy::cast_possible_truncation)]
                 fn max_index() -> Option<NonZeroUsize> {
                     // truncates and widens correctly
                     Some(NonZeroUsize::new($nz::MAX.get() as usize).unwrap())
                 }
 
+                #[inline]
                 fn best_effort_invalid() -> Self {
                     $nz::MAX
                 }
@@ -201,9 +212,9 @@ impl_ptr_inx!(
 
 /// A trait containing index and generation information for the `Arena` type.
 ///
-/// Users should never have to manually implement this, use the `ptr_trait`
-/// macro for automatically implementing types implementing this trait safely
-/// and efficiently.
+/// Users should never have to manually implement this, use the
+/// [ptr_struct](crate::ptr_struct) macro for automatically implementing types
+/// implementing this trait correctly and efficiently.
 ///
 /// This trait also has many bounds on it, so that users do not regularly
 /// encounter friction with using `Ptr`s in data structures.
@@ -212,8 +223,7 @@ impl_ptr_inx!(
 /// crate, the function descriptions should be followed. The `PartialEq`/`Eq`
 /// implementation should differentiate between pointers at the same index but
 /// different generation. `Default` should use the `invalid` function.
-#[allow(clippy::missing_safety_doc)]
-pub unsafe trait Ptr:
+pub trait Ptr:
     Debug
     + Hash
     + Clone
@@ -272,7 +282,7 @@ pub unsafe trait Ptr:
 /// used for the generation type. The struct name can be followed by square
 /// brackets containing the type used for the index which can include
 /// `NonZeroU8` through `NonZeroU128`. After the optional square brackets,
-/// optional parenthesis can be added which contain the the generation type
+/// optional parenthesis can be added which contain the generation type
 /// which can be `NonZeroU8` through `NonZeroU128`. The parenthesis can also be
 /// empty in which case the Arena will not use generation counters. This all can
 /// be followed by a comma separated list of attributes.
@@ -329,7 +339,7 @@ macro_rules! ptr_struct {
                 _internal_gen: $gen_type,
             }
 
-            unsafe impl $crate::traits::Ptr for $struct_name {
+            impl $crate::traits::Ptr for $struct_name {
                 type Inx = $inx_type;
                 type Gen = $gen_type;
 
@@ -419,7 +429,7 @@ macro_rules! ptr_struct {
                 _internal_gen: (),
             }
 
-            unsafe impl $crate::traits::Ptr for $struct_name {
+            impl $crate::traits::Ptr for $struct_name {
                 type Inx = $inx_type;
                 type Gen = ();
 
@@ -540,7 +550,7 @@ pub struct PtrNoGen<P: Ptr> {
     _internal_gen: (),
 }
 
-unsafe impl<P: Ptr> Ptr for PtrNoGen<P> {
+impl<P: Ptr> Ptr for PtrNoGen<P> {
     type Gen = ();
     type Inx = P::Inx;
 
