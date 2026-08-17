@@ -4,6 +4,9 @@
 //! but when the alloc feature is optional, the parameter should always be
 //! specified.
 
+// Disclaimer: there is some LLM generated code, but besides some localized fixes, I have kept any
+// plain vibe coding to the tests folder and extraneous things. See all commits mentioning "LLM".
+
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::type_complexity)]
 #![deny(clippy::cast_possible_truncation)]
