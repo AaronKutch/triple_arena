@@ -62,8 +62,8 @@ I considered a `clone_general` that combined `compress_with` and `clone_from_wit
 
 */
 
-/// The base trait for `triple_arena` style Arenas. See [crate::Arena] for the
-/// standard implementor.
+/// The base trait for `triple_arena` style Arenas. See [Arena](crate::Arena)
+/// for the standard implementor.
 ///
 /// # Note
 ///
@@ -93,11 +93,11 @@ I considered a `clone_general` that combined `compress_with` and `clone_from_wit
 /// panic.
 ///
 /// For example, in most cases, you should just use
-/// [crate::traits::ArenaInsertTrait::insert] to insert elements into the arena
-/// and [InvalidationResult::allow] on invalidation operations. If the arena
+/// [insert](ArenaInsertTrait::insert) to insert elements into the arena and
+/// [InvalidationResult::allow] on invalidation operations. If the arena
 /// backing type is limited or you must handle allocation failures, then
-/// [crate::traits::ArenaInsertTrait::insert_reallocating] and similar should be
-/// used.
+/// [insert_reallocating](ArenaInsertTrait::insert_reallocating) and similar
+/// should be used.
 pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// An advancer over the valid `Ptr`s of this arena
     type PtrAdvancer: Advancer<Self, Item = P>;
@@ -105,15 +105,16 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// Creates an empty arena, which may have any capacity to start with
     fn new() -> Self;
 
-    /// Creates an empty stack with a minimum capacity of at least
+    /// Creates an empty arena with a minimum capacity of at least
     /// `min_capacity`. The max capacity, if set, is also initialized to at
-    /// least the capacity of the returned stack. Returns an error upon
+    /// least the capacity of the returned arena. Returns an error upon
     /// allocation failure.
     ///
-    /// In most cases [ArenaTrait::new] followed by
-    /// [ArenaTrait::reallocate_min_capacity] would be sufficient,
-    /// but this function needs to exist for certain fixed capacity structures
-    /// that can only have their capacity set once at construction time.
+    /// In most cases [new](ArenaTrait::new) followed by
+    /// [reallocate_min_capacity](ArenaTrait::reallocate_min_capacity) would be
+    /// sufficient, but this function needs to exist for certain fixed capacity
+    /// structures that can only have their capacity set once at construction
+    /// time.
     fn with_min_capacity(min_capacity: usize) -> Result<Self, AllocError>;
 
     /// Returns the existing capacity, in elements, already in memory for
@@ -126,10 +127,10 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// elements they could ever hold (and should hold `self.capacity` to that
     /// constant). Dynamically allocated types can also return a maximum, if
     /// they internally limit themselves in order to bound memory (and their
-    /// [ArenaTrait::reallocate_min_capacity] behaves strictly to
-    /// avoid `self.capacity()` exceeding this limit). But most dynamically
-    /// allocated types would return `None` to indicate that they will try
-    /// to increase in length until memory allocation failure. If set,
+    /// [reallocate_min_capacity](ArenaTrait::reallocate_min_capacity) behaves
+    /// strictly to avoid `self.capacity()` exceeding this limit). But most
+    /// dynamically allocated types would return `None` to indicate that they
+    /// will try to increase in length until memory allocation failure. If set,
     /// `self.capacity() <= self.max_capacity()` is always true.
     fn max_capacity(&self) -> Option<usize>;
 
@@ -140,9 +141,9 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// `self.len()` (because `Ptr` indexes need to be stable, a single element
     /// allocated at a high index can prevent removing all the unallocated slots
     /// less than it). This can be fixed by compressing with a function like
-    /// [ArenaTrait::compress_with], calling this function afterwards, and
-    /// fixing any external `Ptr`s with recasting. This will never remove
-    /// elements and will always result in a capacity of at least
+    /// [compress_with](ArenaTrait::compress_with), calling this function
+    /// afterwards, and fixing any external `Ptr`s with recasting. This will
+    /// never remove elements and will always result in a capacity of at least
     /// `self.len()`. Can return an allocation error in all cases depending
     /// on implementor choice and allocator behavior, even `min_capacity <=
     /// self.capacity()`.
@@ -284,13 +285,14 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     {
         let mut adv = self.advancer();
         from_fn(move || {
-            // we would need to handle the ability to handle invalidation in the middle of
-            // advancing, but `advance` is supposed to return a guaranteed valid `Ptr` that
-            // is good if we immediately use it here
+            // we would otherwise need to handle invalidation in the middle of advancing,
+            // but we are borrowing `self` and `advance` is supposed to return a
+            // guaranteed valid `Ptr` that is good if we immediately use it here
             adv.advance(self).and_then(|p| self.get(p))
         })
     }
 
+    /// Iteration over all `&mut T` in the arena
     fn vals_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut T>
     where
         T: 'a,
@@ -304,10 +306,7 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
         T: 'a,
     {
         let mut adv = self.advancer();
-        from_fn(move || {
-            let p = adv.advance(self)?;
-            Some((p, self.get(p)?))
-        })
+        from_fn(move || adv.advance(self).and_then(|p| self.get(p).map(|t| (p, t))))
     }
 
     /// Iteration over all `(P, &mut T)` in the arena
@@ -359,6 +358,11 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// any single one overflowed).
     ///
     /// Does not invalidate and is always successful if `self.is_empty()`.
+    ///
+    /// # Unwind Safety
+    ///
+    /// A panicking `T::drop` still leaves the arena empty and in a valid state,
+    /// with the invalidation already applied.
     fn clear(&mut self) -> InvalidationOption<()>;
 
     /// Compresses the arena as much as possible by moving all internal
@@ -384,8 +388,8 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// be set in order to reset the generation counter on all of the new
     /// `Ptr`s (and `InvalidationOption::Success` will always be returned).
     ///
-    /// This can be used to create a custom [crate::traits::Recaster] for
-    /// recasting external `Ptr`s:
+    /// This can be used to create a custom
+    /// [Recaster](crate::traits::Recaster) for recasting external `Ptr`s:
     /// ```
     /// use triple_arena::{Arena, DirectArena, HeapBacking, ptr_struct, traits::*};
     ///
@@ -499,6 +503,12 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     ///     "{P0[1](2): (42, None), P0[2](2): (1337, Some(P0[1](2)))}"
     /// );
     /// ```
+    ///
+    /// # Unwind Safety
+    ///
+    /// If `map` panics, the entry it was called with is lost if it was in the
+    /// middle of being moved, and the arena is left partially compressed, but
+    /// it is otherwise left in a valid state.
     fn compress_with<F: FnMut(P, &mut T, P)>(
         &mut self,
         reset_generation: bool,
@@ -510,10 +520,19 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
 /// representation, such that some special functions such as the `clone_from*`
 /// functions can safely clone from nonempty arenas.
 ///
+/// # Note to implementors
+///
 /// This trait does not go on the `Ptr` type, because compact arenas should also
 /// be checking their raw index conversions as entries are inserted. If the
 /// arena is existing with any successfully inserted entries, then we can know
 /// their `Ptr`s were already of the simple kind.
+///
+/// [advancer](ArenaTrait::advancer) must yield strictly increasing `P::Inx`s
+/// that are all valid, and related functions like
+/// [find_last_inx_ptr](ArenaTrait::find_last_inx_ptr) must follow the ordering
+/// exactly. Other implementors of functions like
+/// [clone_from_with](ArenaCloneFromWith::clone_from_with) can panic if this is
+/// not followed.
 pub trait CompactArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {}
 
 /// A type implementing this can have a fully generic mapping clone operation
@@ -532,17 +551,23 @@ pub trait ArenaCloneFromWith<P: Ptr, T> {
     // Wrappers can be used where needed.
 
     /// Overwrites `self` with a clone of `source` (dropping all preexisting `T`
-    /// and overwriting the singular generation counter if any with
-    /// `source.singular_generation()`. The `Ptr` validities are also cloned so
-    /// that the `P` associated with a `U` in `source` is also precisely the
-    /// valid `Ptr` to its mapped `T`. Reallocation occurs if the capacity
-    /// of `self` is not large enough. With simple arenas and indexes, if
-    /// the `P::Inx` from the highest index is such that
-    /// `source.find_last_inx_ptr(). unwrap().inx().get() <=
-    /// self.capacity()`, this is guaranteed to _not_ reallocate and the
+    /// and overwriting the singular generation counter, if any, with
+    /// `source.singular_generation()`). The `Ptr` validities are also cloned
+    /// such that the `P` associated with a `U` in `source` is also
+    /// precisely the valid `Ptr` to its mapped `T` in `self`. Reallocation
+    /// occurs if the capacity of `self` is not large enough. With simple
+    /// arenas and indexes, if the raw index of
+    /// `source.find_last_inx_ptr().unwrap()` is less than or equal
+    /// to `self.capacity()`, this is guaranteed to _not_ reallocate and the
     /// function is infallible. Does _not_ clone max capacity limits, and
     /// will fail if any set limit on `self` is exceeded. Returns an error
-    /// upon reallocation failure.
+    /// upon reallocation failure, in which case `self` is left logically
+    /// unchanged.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If `map` panics, `self` is left with just the entries that were already
+    /// mapped, and is otherwise left in a valid state.
     fn clone_from_with<U, A: CompactArenaTrait<P, U>, F: FnMut(P, &U) -> T>(
         &mut self,
         source: &A,
@@ -556,7 +581,8 @@ pub(crate) fn handle_reallocation<P: Ptr, T, A: ArenaTrait<P, T>>(
     if this.len() == this.capacity() {
         // REF(better_reallocation)
 
-        // follow `RawVec`
+        // Follow `RawVec`. The internal slots are larger than `size_of::<T>()`, but
+        // this is only a heuristic starting size.
         let mut next = if this.capacity() == 0 {
             if size_of::<T>() <= 1024 { 4 } else { 1 }
         } else {
@@ -581,7 +607,7 @@ pub trait ArenaInsertEntryTrait<'a, P: Ptr, T> {
     /// The `Ptr` at which this entry could be referenced, if inserted
     fn ptr(&self) -> P;
 
-    /// Inserts `T` into the arena
+    /// Inserts `t` into the arena at [ptr](ArenaInsertEntryTrait::ptr)
     fn insert(self, t: T);
 }
 
@@ -589,7 +615,7 @@ pub trait ArenaInsertEntryTrait<'a, P: Ptr, T> {
 ///
 /// Some arenas do not have a freelist however, and this trait could not be
 /// implemented efficiently, so this is a separate trait from [ArenaTrait]. The
-/// [ArenaDirectInsertTrait] trait is also separate trait, because
+/// [ArenaDirectInsertTrait] trait is also a separate trait, because
 /// direct insertions would not be efficient on an arena with a one-way linked
 /// freelist.
 pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
@@ -597,14 +623,18 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     where
         Self: 'a;
 
-    /// Inserts `t` into the arena and returns a `Ptr` to it. Returns an error
-    /// if there was no available capacity.
+    /// Inserts `t` into the arena and returns a `Ptr` to it. If there was no
+    /// available capacity, `t` is dropped and an error is returned (use
+    /// [entry_insert_within_capacity](
+    /// ArenaInsertTrait::entry_insert_within_capacity) instead if `t` needs to
+    /// be recovered).
     fn insert_within_capacity(&mut self, t: T) -> Result<P, NotWithinCapacityError>;
 
-    /// Inserts `t` into the arena and returns a `Ptr` to it. Automatically
-    /// reallocates if needing more capacity. Returns the `t`
-    /// if an allocation error occurs or if [ArenaTrait::max_capacity] is used
-    /// up.
+    /// The same as
+    /// [insert_within_capacity](ArenaInsertTrait::insert_within_capacity),
+    /// except that it will automatically reallocate to try and extend the
+    /// capacity upon running out. `t` is dropped upon an allocation error or
+    /// using up [max_capacity](ArenaTrait::max_capacity).
     fn insert_reallocating(&mut self, t: T) -> Result<P, ReallocationError> {
         handle_reallocation(self)?;
         // an error shouldn't happen, but if it does it is logically the allocator's
@@ -613,8 +643,10 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
             .map_err(|NotWithinCapacityError| ReallocationError::AllocError)
     }
 
-    /// Inserts `t` into the arena and returns a `Ptr` to it. Panics if an
-    /// allocation error occurs or if [ArenaTrait::max_capacity] is used up.
+    /// The same as
+    /// [insert_reallocating](ArenaInsertTrait::insert_reallocating), except
+    /// that this panics upon an allocation error or using up
+    /// [max_capacity](ArenaTrait::max_capacity).
     ///
     /// # Panics
     ///
@@ -627,23 +659,26 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     }
 
     /// If capacity is available, an insertion entry for inserting into the
-    /// arena is returned. Returns if there was no available capacity.
+    /// arena is returned. Returns an error if there was no available capacity.
     fn entry_insert_within_capacity(
         &mut self,
     ) -> Result<Self::InsertionEntry<'_>, NotWithinCapacityError>;
 
     /// Returns an insertion entry, reallocating if necessary and returning an
-    /// error if reallocation failed or if [ArenaTrait::max_capacity] is used
-    /// up. Be aware that any reallocation happens upon calling this method, and
-    /// the affects remain even if inserting into the arena is cancelled.
+    /// error if reallocation failed or if
+    /// [max_capacity](ArenaTrait::max_capacity) is used up. Be aware that any
+    /// reallocation happens upon calling this method, and the effects remain
+    /// even if inserting into the arena is cancelled.
     fn entry_insert_reallocating(&mut self) -> Result<Self::InsertionEntry<'_>, ReallocationError> {
         handle_reallocation(self)?;
         self.entry_insert_within_capacity()
             .map_err(|NotWithinCapacityError| ReallocationError::AllocError)
     }
 
-    /// Returns an insertion entry, panicking if an allocation error occurs or
-    /// if [ArenaTrait::max_capacity] is used up.
+    /// The same as
+    /// [entry_insert_reallocating](ArenaInsertTrait::entry_insert_reallocating),
+    /// except that this panics upon an allocation error or using up
+    /// [max_capacity](ArenaTrait::max_capacity).
     ///
     /// # Panics
     ///
@@ -659,18 +694,18 @@ pub trait ArenaInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
 /// Dropping the struct cancels the insertion
 #[must_use]
 pub trait ArenaDirectInsertEntryTrait<'a, P: Ptr, T> {
-    /// Inserts `T` into the arena
+    /// Inserts `t` into the arena at the `P` this entry was created with
     fn insert(self, t: T);
 }
 
-/// See [crate::traits::ArenaInsertTrait], this mainly is for special arenas
-/// without a freelist, that are supposed to follow the state of another arena.
+/// See [ArenaInsertTrait], this mainly is for special arenas without a
+/// freelist, that are supposed to follow the state of another arena.
 ///
 /// Note: An analogous chain arena version of this trait would not be feasible
 /// because of questions around intermediate validities, however it can be
 /// mimicked to arbitrary degrees by using a direct insertion arena and using
-/// the [crate::Link] struct directly in custom values. The same can be used for
-/// the other arena types
+/// the [Link](crate::Link) struct directly in custom values. The same can be
+/// used for the other arena types
 pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     type DirectInsertionEntry<'a>: ArenaDirectInsertEntryTrait<'a, P, T>
     where

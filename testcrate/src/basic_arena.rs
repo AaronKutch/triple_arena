@@ -11,7 +11,10 @@ use star_rng::StarRng;
 use triple_arena::{
     Arena, InvalidationOption, InvalidationResult, StackBacking,
     errors::{AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError},
-    traits::{Advancer, ArenaCloneFromWith, ArenaInsertTrait, ArenaTrait, CompactArenaTrait, Ptr},
+    traits::{
+        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
+        CompactArenaTrait, Ptr,
+    },
     utils::traits::{PtrGen, PtrInx},
 };
 
@@ -502,15 +505,31 @@ pub fn fuzz<
                 |b, rng| b.get_mut_rand(rng),
             )
             .stack()?,
-            // FIXME entry versions in this same 250..500 range
             250..300 => {
-                // insert_within_capacity
+                // insert_within_capacity, entry_insert_within_capacity
+                let use_entry = rng.next_bool();
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
-                    let Ok(p) = a.insert_within_capacity(t) else {
-                        bail!()
+                    let p = if use_entry {
+                        let Ok(entry) = a.entry_insert_within_capacity() else {
+                            bail!()
+                        };
+                        let p = entry.ptr();
+                        entry.insert(t);
+                        p
+                    } else {
+                        let Ok(p) = a.insert_within_capacity(t) else {
+                            bail!()
+                        };
+                        p
                     };
+                    ensure_eq!(p.generation(), g.0);
+                    ensure_eq!(a.get(p).stack()?.key(), k);
                     b.insert(k, p);
+                } else if use_entry {
+                    if a.entry_insert_within_capacity().is_ok() {
+                        bail!("expected `NotWithinCapacityError`")
+                    }
                 } else {
                     let (_, t) = cd_gen.new_cd();
                     ensure_eq!(
@@ -520,8 +539,9 @@ pub fn fuzz<
                 }
             }
             300..350 => {
-                // insert_reallocating
+                // insert_reallocating, entry_insert_reallocating
 
+                let use_entry = rng.next_bool();
                 let max_reached = a
                     .max_capacity()
                     .is_some_and(|max_capacity| max_capacity == len)
@@ -529,34 +549,66 @@ pub fn fuzz<
 
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
-                    let Ok(p) = a.insert_reallocating(t) else {
-                        bail!()
+                    let p = if use_entry {
+                        let Ok(entry) = a.entry_insert_reallocating() else {
+                            bail!()
+                        };
+                        let p = entry.ptr();
+                        entry.insert(t);
+                        p
+                    } else {
+                        let Ok(p) = a.insert_reallocating(t) else {
+                            bail!()
+                        };
+                        p
                     };
+                    ensure_eq!(p.generation(), g.0);
+                    ensure_eq!(a.get(p).stack()?.key(), k);
                     b.insert(k, p);
                 } else if max_reached {
-                    let (_, t) = cd_gen.new_cd();
-                    ensure_eq!(
-                        a.insert_reallocating(t).map(|_| ()),
-                        Err(ReallocationError::BeyondMaxCapacity)
-                    );
+                    if use_entry {
+                        match a.entry_insert_reallocating() {
+                            Ok(_) => bail!("expected `BeyondMaxCapacity`"),
+                            Err(e) => ensure_eq!(e, ReallocationError::BeyondMaxCapacity),
+                        }
+                    } else {
+                        let (_, t) = cd_gen.new_cd();
+                        ensure_eq!(
+                            a.insert_reallocating(t).map(|_| ()),
+                            Err(ReallocationError::BeyondMaxCapacity)
+                        );
+                    }
                 } else if len >= stats.test_limit {
                     // do nothing
                 } else {
                     // can increase capacity
                     let (k, t) = cd_gen.new_cd();
                     let cap = a.capacity();
-                    let Ok(p) = a.insert_reallocating(t) else {
-                        bail!()
+                    let p = if use_entry {
+                        let Ok(entry) = a.entry_insert_reallocating() else {
+                            bail!()
+                        };
+                        let p = entry.ptr();
+                        entry.insert(t);
+                        p
+                    } else {
+                        let Ok(p) = a.insert_reallocating(t) else {
+                            bail!()
+                        };
+                        p
                     };
                     // check that capacity increased
                     ensure!(a.capacity() > cap);
+                    ensure_eq!(p.generation(), g.0);
+                    ensure_eq!(a.get(p).stack()?.key(), k);
                     b.insert(k, p);
                     b_capacity = a.capacity();
                 }
             }
             350..500 => {
-                // insert
+                // insert, entry_insert
 
+                let use_entry = rng.next_bool();
                 let max_reached = a
                     .max_capacity()
                     .is_some_and(|max_capacity| max_capacity == len)
@@ -564,16 +616,34 @@ pub fn fuzz<
 
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
-                    let p = a.insert(t);
+                    let p = if use_entry {
+                        let entry = a.entry_insert();
+                        let p = entry.ptr();
+                        entry.insert(t);
+                        p
+                    } else {
+                        a.insert(t)
+                    };
+                    ensure_eq!(p.generation(), g.0);
+                    ensure_eq!(a.get(p).stack()?.key(), k);
                     b.insert(k, p);
                 } else if max_reached || len >= stats.test_limit {
                     // do nothing
                 } else {
                     let (k, t) = cd_gen.new_cd();
                     let cap = a.capacity();
-                    let p = a.insert(t);
+                    let p = if use_entry {
+                        let entry = a.entry_insert();
+                        let p = entry.ptr();
+                        entry.insert(t);
+                        p
+                    } else {
+                        a.insert(t)
+                    };
                     // check that capacity increased
                     ensure!(a.capacity() > cap);
+                    ensure_eq!(p.generation(), g.0);
+                    ensure_eq!(a.get(p).stack()?.key(), k);
                     b.insert(k, p);
                     b_capacity = a.capacity();
                 }
@@ -627,8 +697,40 @@ pub fn fuzz<
                     }
                 }
             }
-            // FIXME insert invalids here
-            750..770 => {
+            750..775 => {
+                // entry insertion with cancellation
+
+                let cap = a.capacity();
+                let max_reached = a
+                    .max_capacity()
+                    .is_some_and(|max_capacity| max_capacity == len)
+                    || stats.fixed_cap.is_some_and(|cap| cap == len);
+                if len < cap {
+                    let Ok(entry) = a.entry_insert_within_capacity() else {
+                        bail!("expected capacity to be available")
+                    };
+                    let p = entry.ptr();
+                    ensure_eq!(p.generation(), g.0);
+                    drop(entry);
+                    ensure!(!a.contains(p));
+                    // the capacity is not affected either
+                    ensure_eq!(a.capacity(), cap);
+                } else if !max_reached && len < stats.test_limit {
+                    // `len == cap` here, so an entry can only be produced by growing
+                    let Ok(entry) = a.entry_insert_reallocating() else {
+                        bail!("expected the capacity to be able to grow")
+                    };
+                    let p = entry.ptr();
+                    ensure_eq!(p.generation(), g.0);
+                    drop(entry);
+                    ensure!(!a.contains(p));
+                    // the reallocation still occurred
+                    ensure!(a.capacity() > cap);
+                    b_capacity = a.capacity();
+                }
+                ensure_eq!(a.len(), len);
+            }
+            775..800 => {
                 // remove, remove_inx all invalid
                 let invalid = gen_invalid(rng, a);
                 ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr));
@@ -639,7 +741,7 @@ pub fn fuzz<
                     ));
                 }
             }
-            770..800 => {
+            800..825 => {
                 // advancer
                 let mut i = 0;
                 let mut rand_remove_i = if len == 0 { 0 } else { rng.index(len).unwrap() };
@@ -674,7 +776,7 @@ pub fn fuzz<
                 b_capacity = a.capacity();
             }
             // extra room
-            800..1015 => {
+            825..1015 => {
                 if let Some((_, p)) = b.get_rand(rng) {
                     let p = *p;
                     ensure!(a.contains(p));

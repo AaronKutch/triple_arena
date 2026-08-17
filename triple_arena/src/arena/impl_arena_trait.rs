@@ -1,4 +1,9 @@
-use core::{cmp::min, mem, num::NonZeroUsize, slice::GetDisjointMutError};
+use core::{
+    cmp::min,
+    mem::{self, ManuallyDrop},
+    num::NonZeroUsize,
+    slice::GetDisjointMutError,
+};
 
 use crate::{
     Arena, InvalidationOption, InvalidationResult,
@@ -17,6 +22,27 @@ use crate::{
         },
     },
 };
+
+// REF(canonicalize_guard) This guard runs `canonicalize_freelist` upon being
+// dropped so that a valid arena is left upon unwind. `canonicalize_freelist`
+// only pops `Free` slots that have no drop code.
+struct Canonicalize<'a, P: Ptr, T, B: ArenaBacking>(&'a mut Arena<P, T, B>);
+
+impl<'a, P: Ptr, T, B: ArenaBacking> Canonicalize<'a, P, T, B> {
+    /// Cancels running `canonicalize_freelist`
+    pub fn cancel(self) {
+        // fun: `let Canonicalize(_) = self` does not match and does nothing
+
+        // nothing is leaked because this is a reference
+        let _ = ManuallyDrop::new(self);
+    }
+}
+
+impl<P: Ptr, T, B: ArenaBacking> Drop for Canonicalize<'_, P, T, B> {
+    fn drop(&mut self) {
+        self.0.canonicalize_freelist();
+    }
+}
 
 impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     type PtrAdvancer = arena_iterators::PtrAdvancer<P>;
@@ -54,7 +80,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         // so that capacity on the end is not used up by unallocated slots, and just fix
         // up the freelist if this function was called under any circumstance, it is
         // understood that it is a `O(n)` operation anyway.
-        self.canonicalize_free_list();
+        self.canonicalize_freelist();
         // using `max_index` because we are dealing with a plain `usize` and testing for
         // linearity, this equivalently does the check that `P::Inx::try_from_usize`
         // would succeed.
@@ -181,19 +207,19 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
     }
 
     fn clear(&mut self) -> InvalidationOption<()> {
-        let was_empty = self.is_empty();
         // always do these steps to make sure the freelist is clear (make it canonical,
         // may be logically empty but still have a messed up freelist)
         // REF(zero_before_drop)
-        self.len = 0;
-        self.freelist_root = None;
-        self.m.clear();
-        if was_empty {
+        let res = if self.is_empty() {
             InvalidationOption::Success(())
         } else {
             // only if there was any element
             self.inc_generation()
-        }
+        };
+        self.len = 0;
+        self.freelist_root = None;
+        self.m.clear();
+        res
     }
 
     fn compress_with<F: FnMut(P, &mut T, P)>(
@@ -213,12 +239,14 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
             }
         };
         let new_gen = self.generation;
+        // REF(canonicalize_guard)
+        let this = Canonicalize(self);
         // we are moving from `j` to `i`
         let mut i = NonZeroUsize::new(1).unwrap();
-        for j in self.nziter() {
+        for j in this.0.nziter() {
             if i == j {
                 // optimize for the front part being compressed already
-                if let Allocated(old_gen, t) = self.m.get_mut(j).unwrap() {
+                if let Allocated(old_gen, t) = this.0.m.get_mut(j).unwrap() {
                     map(
                         Ptr::_from_raw(from_checked_raw::<P>(j), *old_gen),
                         t,
@@ -230,28 +258,28 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
                 continue;
             }
             let entry = mem::replace(
-                self.m.get_mut(j).unwrap(),
+                this.0.m.get_mut(j).unwrap(),
                 // this will be overwritten or dropped
                 Free(P::invalid().inx()),
             );
             if let Allocated(old_gen, mut t) = entry {
+                // decrement first for unwind safety
+                this.0.len = this.0.len.wrapping_sub(1);
                 map(
                     Ptr::_from_raw(from_checked_raw::<P>(j), old_gen),
                     &mut t,
                     Ptr::_from_raw(from_checked_raw::<P>(i), new_gen),
                 );
-                let _ = mem::replace(self.m.get_mut(i).unwrap(), Allocated(new_gen, t));
+                let _ = mem::replace(this.0.m.get_mut(i).unwrap(), Allocated(new_gen, t));
+                this.0.len = this.0.len.wrapping_add(1);
                 i = i.checked_add(1).unwrap();
             }
         }
-        // remove free slots off the end
-        for inx in self.nziter().into_iter().rev() {
-            if let Free(_) = self.m.get(inx).unwrap() {
-                self.m.pop();
-            } else {
-                break;
-            }
-        }
+        // avoid extra `O(n)` search in canonicalization since there are no free slots
+        // in the middle
+        this.cancel();
+        self.remove_free_end_slots();
+        // we were relying on the drop to fix this
         self.freelist_root = None;
         res
     }
@@ -295,19 +323,22 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for Arena<P, T, B> {
         self.generation = source.singular_generation().unwrap_or(P::Gen::two());
         self.m.clear();
         // maintain invariants even with bad behavior, increment `len` at the right
-        // moment and always call `canonicalize_free_list` after this point
+        // moment and always canonicalize the freelist after this point
+        // REF(canonicalize_guard)
+        let this = Canonicalize(self);
         let mut adv = source.advancer();
         while let Some(p) = adv.advance(source) {
             let Some(raw) = P::Inx::try_into_usize(p.inx()) else {
                 unreachable!();
             };
-            if raw.get() <= self.m.len() {
+            if raw.get() <= this.0.m.len() {
                 // the advancer is out of order
                 unreachable!();
             }
             // insert free entries in gaps
-            while raw.get() - 1 > self.m.len() {
-                if self
+            while raw.get() - 1 > this.0.m.len() {
+                if this
+                    .0
                     .m
                     .push_within_capacity(Free(P::invalid().inx()))
                     .is_err()
@@ -319,17 +350,18 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for Arena<P, T, B> {
                 unreachable!();
             };
             let t = map(p, u);
-            if self
+            if this
+                .0
                 .m
                 .push_within_capacity(Allocated(p.generation(), t))
                 .is_err()
             {
                 unreachable!();
             }
-            self.len = self.len.wrapping_add(1);
+            this.0.len = this.0.len.wrapping_add(1);
         }
         // has to be done with reverse iteration anyways
-        self.canonicalize_free_list();
+        drop(this);
         Ok(())
     }
 }
@@ -369,7 +401,7 @@ impl<'a, P: Ptr, T, B: ArenaBacking> ArenaInsertEntryTrait<'a, P, T>
         } else {
             // freelist remains unset
             this.m
-                .push_within_capacity(Allocated(this.generation, t))
+                .push_within_capacity(Allocated(generation, t))
                 .ok()
                 .unwrap();
         }
@@ -407,7 +439,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaInsertTrait<P, T> for Arena<P, T, B> {
             let entry = self.m.entry_push_within_capacity()?;
             let raw_inx = entry.inx();
             if let Some(inx) = P::Inx::try_from_usize(raw_inx) {
-                entry.push(Allocated(self.generation, t));
+                entry.push(Allocated(generation, t));
                 self.len = self.len.wrapping_add(1);
                 Ok(P::_from_raw(inx, generation))
             } else {

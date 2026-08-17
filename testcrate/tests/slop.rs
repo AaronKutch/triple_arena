@@ -7,7 +7,7 @@
 
 use core::{
     fmt,
-    num::{NonZeroU8, NonZeroUsize},
+    num::{NonZeroU8, NonZeroU128, NonZeroUsize},
     slice::GetDisjointMutError,
 };
 use std::{
@@ -19,15 +19,18 @@ use triple_arena::{
     Arena, InvalidationOption, InvalidationResult, StackBacking,
     errors::{AllocError, NotWithinCapacityError, ReallocationError},
     ptr_struct,
-    traits::{ArenaInsertTrait, ArenaTrait, Ptr, Recast},
+    traits::{
+        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
+        CompactArenaTrait, Ptr, Recast,
+    },
     utils::{
-        NonZeroInxArray, PtrNoGen, nzusize_iter,
-        traits::{NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, PtrGen},
+        ArenaSlot, NonZeroInxArray, PtrNoGen, nzusize_iter,
+        traits::{NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, PtrGen, PtrInx},
     },
 };
 #[cfg(feature = "alloc")]
 use triple_arena::{
-    FixedHeapBacking,
+    FixedHeapBacking, HeapBacking,
     utils::{NonZeroInxBoxedSlice, NonZeroInxVec},
 };
 
@@ -541,4 +544,516 @@ fn faulty_stack_push_panic() {
 #[should_panic = "`NonZeroInxGenericStack::entry_push_reallocating` failed"]
 fn faulty_stack_entry_push_panic() {
     FaultyStack::new().entry_push();
+}
+
+// `crate::arena`
+
+ptr_struct!(QLarge[NonZeroU128]);
+
+type A8 = Arena<Q0, u8, StackBacking<8>>;
+
+/// Returns an arena of capacity 8 with slots `[Allocated, Free, Allocated]`
+fn arena_with_hole() -> A8 {
+    let mut a = A8::new();
+    a.insert(0);
+    let p = a.insert(1);
+    a.insert(2);
+    a.remove(p).allow().unwrap();
+    a
+}
+
+fn q0_inx(i: usize) -> <Q0 as Ptr>::Inx {
+    PtrInx::try_from_usize(nz(i)).unwrap()
+}
+
+#[test]
+fn arena_default_and_indexing() {
+    let a = A8::default();
+    assert!(a.is_empty());
+    assert_eq!(a.freelist_root(), None);
+    assert_eq!(a.backing().len(), 0);
+
+    let mut a = arena_with_hole();
+    assert_eq!(a.freelist_root(), Some(q0_inx(2)));
+    // the free slot is still a slot in the backing
+    assert_eq!(a.backing().len(), 3);
+
+    let p = a.find_first_inx_ptr().unwrap();
+    assert_eq!(a[p], 0);
+    // `Index` is also implemented for anything that borrows a `Ptr`
+    assert_eq!(a[&p], 0);
+    a[p] = 3;
+    a[&p] = 4;
+    assert_eq!(a[p], 4);
+}
+
+#[test]
+#[should_panic = "indexed `Arena` with invalidated `Ptr`"]
+fn arena_index_panic() {
+    let a = arena_with_hole();
+    let _ = a[Q0::invalid()];
+}
+
+#[test]
+#[should_panic = "indexed `Arena` with invalidated `Ptr`"]
+fn arena_index_mut_panic() {
+    let mut a = arena_with_hole();
+    a[Q0::invalid()] = 0;
+}
+
+#[test]
+#[should_panic]
+fn arena_get_inx_unwrap_panic() {
+    // the hidden index based accessors used by the higher layers assume an
+    // allocated slot, the free slot in the middle is not one
+    let a = arena_with_hole();
+    let _ = a.get_inx_unwrap(q0_inx(2));
+}
+
+#[test]
+#[should_panic]
+fn arena_get_inx_mut_unwrap_panic() {
+    let mut a = arena_with_hole();
+    let _ = a.get_inx_mut_unwrap(q0_inx(2));
+}
+
+#[test]
+#[should_panic]
+fn arena_get_inx_unwrap_untranslatable_panic() {
+    // an index that no slot could exist at also has no `T` to unwrap
+    let mut a = Arena::<QLarge, u8, StackBacking<4>>::new();
+    a.insert(0);
+    let _ = a.get_inx_unwrap(NonZeroU128::new(1 << 64).unwrap());
+}
+
+#[test]
+fn arena_into_iterators() {
+    let a = arena_with_hole();
+    let ptrs: Vec<Q0> = a.ptrs().collect();
+
+    // `&Arena`
+    let by_ref: Vec<(Q0, u8)> = (&a).into_iter().map(|(p, t)| (p, *t)).collect();
+    assert_eq!(by_ref, vec![(ptrs[0], 0), (ptrs[1], 2)]);
+
+    // `&mut Arena`
+    let mut a = a;
+    for (_, t) in &mut a {
+        *t = t.wrapping_add(10);
+    }
+    let by_ref: Vec<(Q0, u8)> = (&a).into_iter().map(|(p, t)| (p, *t)).collect();
+    assert_eq!(by_ref, vec![(ptrs[0], 10), (ptrs[1], 12)]);
+
+    // `Arena`, which drains the arena along with its capacity
+    let owned: Vec<(Q0, u8)> = a.into_iter().collect();
+    assert_eq!(owned, vec![(ptrs[0], 10), (ptrs[1], 12)]);
+}
+
+#[test]
+fn arena_recast_values() {
+    // `Recast for Arena` maps over the values, and propagates the item that the
+    // recaster does not recognize
+    let mut recaster = Arena::<Q1, Q1, StackBacking<4>>::new();
+    let old = recaster.insert(Q1::invalid());
+    let new = recaster.insert(Q1::invalid());
+    *recaster.get_mut(old).unwrap() = new;
+
+    let mut a = Arena::<Q0, Q1, StackBacking<4>>::new();
+    a.insert(old);
+    assert_eq!(a.recast(&recaster), Ok(()));
+    assert_eq!(*a.vals().next().unwrap(), new);
+
+    let mut a = Arena::<Q0, Q1, StackBacking<4>>::new();
+    a.insert(Q1::invalid());
+    assert_eq!(a.recast(&recaster), Err(Q1::invalid()));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn arena_large_element_growth() {
+    // the automatic reallocation starts at a capacity of 1 instead of 4 for
+    // elements larger than 1024 bytes
+    let mut a = Arena::<Q0, [u8; 2048], HeapBacking>::new();
+    assert_eq!(a.capacity(), 0);
+    a.insert([0; 2048]);
+    assert_eq!(a.capacity(), 1);
+    a.insert([1; 2048]);
+    assert!(a.capacity() >= 2);
+}
+
+#[test]
+fn arena_clone() {
+    let a = arena_with_hole();
+    // the `Ptr` validities are cloned along with the entries
+    let b = a.clone();
+    for (p, t) in a.iter() {
+        assert_eq!(b.get(p), Some(t));
+    }
+    assert_eq!(b.len(), a.len());
+    assert_eq!(b.generation(), a.generation());
+    assert_eq!(format!("{a:?}"), format!("{b:?}"));
+
+    // `clone_from` reuses the capacity of the destination
+    let mut c = A8::new();
+    c.insert(42);
+    c.clone_from(&a);
+    for (p, t) in a.iter() {
+        assert_eq!(c.get(p), Some(t));
+    }
+    assert_eq!(c.len(), a.len());
+
+    // cloning from an empty arena copies the generation and clears
+    let mut empty = A8::new();
+    let _ = empty.clear();
+    c.clone_from(&empty);
+    assert!(c.is_empty());
+    assert_eq!(c.generation(), empty.generation());
+}
+
+#[test]
+fn arena_compress_with_panicking_map() {
+    // an unwinding closure loses the entry it was called with, but the arena must
+    // be left usable and internally consistent
+
+    // panicking on the first call, where the entry is compressed in place and so
+    // never leaves its slot
+    let mut a = arena_with_hole();
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let _ = a.compress_with(false, |_, _, _| panic!("map"));
+    }));
+    assert!(res.is_err());
+    assert_eq!(a.len(), 2);
+    assert_eq!(Arena::_check_invariants(&a), Ok(()));
+
+    // panicking on the second call, which is the one that has to move an entry from
+    // a later slot into the hole and therefore has it in flight
+    let mut a = arena_with_hole();
+    let mut n = 0;
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let _ = a.compress_with(false, |_, _, _| {
+            n += 1;
+            assert_ne!(n, 2, "map");
+        });
+    }));
+    assert!(res.is_err());
+    // only the entry that was in flight was lost
+    assert_eq!(a.len(), 1);
+    assert_eq!(Arena::_check_invariants(&a), Ok(()));
+    // and insertion still works instead of following a half rewritten freelist
+    let p = a.insert(5);
+    assert_eq!(a[p], 5);
+    assert_eq!(Arena::_check_invariants(&a), Ok(()));
+}
+
+#[test]
+fn arena_clear_invalidates_through_panicking_drop() {
+    // the generation is incremented before any `T::drop` runs, so that an unwinding
+    // drop still leaves every old `Ptr` invalidated
+    let mut a = Arena::<Q0, PanickyDrop, StackBacking<4>>::new();
+    let p = a.insert(PanickyDrop(false));
+    a.insert(PanickyDrop(true));
+    let generation = a.generation();
+    assert_eq!(
+        count_drops_of_panicking(|| {
+            let _ = a.clear();
+        }),
+        2
+    );
+    assert!(a.generation() > generation);
+    assert!(!a.contains(p));
+    assert!(a.is_empty());
+    assert_eq!(Arena::_check_invariants(&a), Ok(()));
+}
+
+#[test]
+fn arena_clone_from_with_panicking_map() {
+    let source = arena_with_hole();
+    let mut a = A8::new();
+    a.insert(42);
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let _ = a.clone_from_with(&source, |_, _| -> u8 { panic!("map") });
+    }));
+    assert!(res.is_err());
+    // the preexisting entry was dropped and nothing was cloned in, and the gap
+    // filling free slots did not corrupt anything
+    assert!(a.is_empty());
+    assert_eq!(Arena::_check_invariants(&a), Ok(()));
+    let p = a.insert(5);
+    assert_eq!(a[p], 5);
+    assert_eq!(Arena::_check_invariants(&a), Ok(()));
+}
+
+/// A minimal third party [CompactArenaTrait] that breaks the trait's
+/// requirements in a configurable way, in order to reach the defensive
+/// `unreachable`s of
+/// [clone_from_with](triple_arena::traits::ArenaCloneFromWith::clone_from_with).
+/// Only the few methods that function actually uses are implemented.
+struct FaultyArena {
+    /// what [find_last_inx_ptr](ArenaTrait::find_last_inx_ptr) reports
+    last: Option<QLarge>,
+    /// what the advancer yields, in order
+    ptrs: Vec<QLarge>,
+    /// if [get_inx](ArenaTrait::get_inx) should fail for everything
+    no_get: bool,
+}
+
+impl FaultyArena {
+    fn new(last: u128, ptrs: &[u128], no_get: bool) -> Self {
+        let ptr =
+            |inx: u128| -> QLarge { Ptr::_from_raw(NonZeroU128::new(inx).unwrap(), PtrGen::two()) };
+        Self {
+            last: Some(ptr(last)),
+            ptrs: ptrs.iter().map(|inx| ptr(*inx)).collect(),
+            no_get,
+        }
+    }
+}
+
+struct FaultyAdvancer(usize);
+
+impl Advancer<FaultyArena> for FaultyAdvancer {
+    type Item = QLarge;
+
+    fn advance(&mut self, collection: &FaultyArena) -> Option<QLarge> {
+        let res = collection.ptrs.get(self.0).copied();
+        self.0 = self.0.saturating_add(1);
+        res
+    }
+
+    fn empty() -> Self {
+        Self(usize::MAX)
+    }
+}
+
+impl ArenaTrait<QLarge, u8> for FaultyArena {
+    type PtrAdvancer = FaultyAdvancer;
+
+    fn singular_generation(&self) -> Option<<QLarge as Ptr>::Gen> {
+        Some(PtrGen::two())
+    }
+
+    fn get_inx(&self, _p: <QLarge as Ptr>::Inx) -> Option<(<QLarge as Ptr>::Gen, &u8)> {
+        if self.no_get {
+            None
+        } else {
+            Some((PtrGen::two(), &0))
+        }
+    }
+
+    fn find_first_inx_ptr(&self) -> Option<QLarge> {
+        self.ptrs.first().copied()
+    }
+
+    fn find_last_inx_ptr(&self) -> Option<QLarge> {
+        self.last
+    }
+
+    fn advancer_inx(&self, _inx: <QLarge as Ptr>::Inx, _rev: bool) -> Self::PtrAdvancer {
+        FaultyAdvancer(0)
+    }
+
+    // none of the rest is used by `clone_from_with`
+
+    fn new() -> Self {
+        unimplemented!()
+    }
+
+    fn with_min_capacity(_min_capacity: usize) -> Result<Self, AllocError> {
+        unimplemented!()
+    }
+
+    fn capacity(&self) -> usize {
+        unimplemented!()
+    }
+
+    fn max_capacity(&self) -> Option<usize> {
+        unimplemented!()
+    }
+
+    fn reallocate_min_capacity(&mut self, _min_capacity: usize) -> Result<(), ReallocationError> {
+        unimplemented!()
+    }
+
+    fn len(&self) -> usize {
+        unimplemented!()
+    }
+
+    fn get_disjoint_inx_mut<const N: usize>(
+        &mut self,
+        _indices: [<QLarge as Ptr>::Inx; N],
+    ) -> Result<[(<QLarge as Ptr>::Gen, &mut u8); N], GetDisjointMutError> {
+        unimplemented!()
+    }
+
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (QLarge, &'a mut u8)>
+    where
+        u8: 'a,
+    {
+        core::iter::empty()
+    }
+
+    fn drain(&mut self) -> impl Iterator<Item = InvalidationOption<(QLarge, u8)>> {
+        core::iter::empty()
+    }
+
+    fn invalidate(&mut self, _p: QLarge) -> InvalidationResult<QLarge> {
+        unimplemented!()
+    }
+
+    fn remove(&mut self, _p: QLarge) -> InvalidationResult<u8> {
+        unimplemented!()
+    }
+
+    fn remove_inx(
+        &mut self,
+        _p: <QLarge as Ptr>::Inx,
+    ) -> InvalidationResult<(<QLarge as Ptr>::Gen, u8)> {
+        unimplemented!()
+    }
+
+    fn clear(&mut self) -> InvalidationOption<()> {
+        unimplemented!()
+    }
+
+    fn compress_with<F: FnMut(QLarge, &mut u8, QLarge)>(
+        &mut self,
+        _reset_generation: bool,
+        _map: F,
+    ) -> InvalidationOption<()> {
+        unimplemented!()
+    }
+}
+
+impl CompactArenaTrait<QLarge, u8> for FaultyArena {}
+
+/// Clones from `source` into a fresh arena with a capacity of exactly 4
+fn clone_from_faulty(source: &FaultyArena) -> Result<(), ReallocationError> {
+    let mut a = Arena::<QLarge, u8, StackBacking<4>>::new();
+    assert_eq!(a.capacity(), 4);
+    a.clone_from_with(source, |_, u| *u)
+}
+
+#[test]
+fn faulty_arena_last_inx_too_big() {
+    // an index that no arena could have inserted at is an allocation error rather
+    // than a panic, because `reallocate_min_capacity` is not reached to report it
+    assert_eq!(
+        clone_from_faulty(&FaultyArena::new(1 << 64, &[], false)),
+        Err(ReallocationError::AllocError)
+    );
+}
+
+#[test]
+#[should_panic]
+fn faulty_arena_advance_inx_too_big() {
+    let _ = clone_from_faulty(&FaultyArena::new(1, &[1 << 64], false));
+}
+
+#[test]
+#[should_panic]
+fn faulty_arena_advance_out_of_order() {
+    let _ = clone_from_faulty(&FaultyArena::new(2, &[2, 1], false));
+}
+
+#[test]
+#[should_panic]
+fn faulty_arena_gap_beyond_capacity() {
+    // `find_last_inx_ptr` said 1, so only a capacity of 1 was ensured and filling
+    // the gap up to index 6 runs out
+    let _ = clone_from_faulty(&FaultyArena::new(1, &[6], false));
+}
+
+#[test]
+#[should_panic]
+fn faulty_arena_entry_beyond_capacity() {
+    // the gap filling exactly uses up the capacity, so the entry itself is the one
+    // that does not fit
+    let _ = clone_from_faulty(&FaultyArena::new(1, &[5], false));
+}
+
+#[test]
+#[should_panic]
+fn faulty_arena_advance_unknown_ptr() {
+    let _ = clone_from_faulty(&FaultyArena::new(1, &[1], true));
+}
+
+/// Returns an arena whose freelist root points at an allocated slot, which is
+/// exactly what the `# Safety` section of
+/// [set_freelist_root](Arena::set_freelist_root) forbids
+fn arena_with_broken_freelist() -> A8 {
+    let mut a = arena_with_hole();
+    unsafe { a.set_freelist_root(Some(q0_inx(1))) };
+    a
+}
+
+#[test]
+#[should_panic]
+fn arena_broken_freelist_insert_panic() {
+    let _ = arena_with_broken_freelist().insert_within_capacity(9);
+}
+
+#[test]
+#[should_panic]
+fn arena_broken_freelist_entry_insert_panic() {
+    let mut a = arena_with_broken_freelist();
+    let entry = a.entry_insert_within_capacity().unwrap();
+    entry.insert(9);
+}
+
+#[test]
+fn arena_check_invariants_detects_corruption() {
+    let mut a = arena_with_hole();
+    assert_eq!(Arena::_check_invariants(&a), Ok(()));
+
+    // the generation must never be below the first valid generation
+    let generation = a.generation();
+    a.set_generation(PtrGen::one());
+    assert_eq!(Arena::_check_invariants(&a), Err("bad generation"));
+    a.set_generation(generation);
+
+    // `len` counts allocated entries and cannot exceed the capacity
+    unsafe { a.set_len(usize::MAX) };
+    assert_eq!(Arena::_check_invariants(&a), Err("len > capacity"));
+    unsafe { a.set_len(1) };
+    assert_eq!(Arena::_check_invariants(&a), Err("len != n_allocated"));
+    unsafe { a.set_len(2) };
+    assert_eq!(Arena::_check_invariants(&a), Ok(()));
+
+    // there is a free slot, so the freelist root cannot be unset
+    unsafe { a.set_freelist_root(None) };
+    assert_eq!(Arena::_check_invariants(&a), Err("bad freelist_root"));
+    // the root must point at an existing slot
+    unsafe { a.set_freelist_root(Some(q0_inx(9))) };
+    assert_eq!(Arena::_check_invariants(&a), Err("getting entry failed"));
+    // ... and that slot must be a free one
+    unsafe { a.set_freelist_root(Some(q0_inx(1))) };
+    assert_eq!(Arena::_check_invariants(&a), Err("bad freelist node"));
+    unsafe { a.set_freelist_root(Some(q0_inx(2))) };
+    assert_eq!(Arena::_check_invariants(&a), Ok(()));
+
+    // every free slot must be reachable from the root
+    let mut a = A8::new();
+    let p0 = a.insert(0);
+    let p1 = a.insert(1);
+    a.insert(2);
+    a.remove(p0).allow().unwrap();
+    a.remove(p1).allow().unwrap();
+    assert_eq!(Arena::_check_invariants(&a), Ok(()));
+    unsafe { a.set_freelist_root(Some(q0_inx(1))) };
+    assert_eq!(Arena::_check_invariants(&a), Err("freelist discontinuous"));
+
+    // the freelist must terminate by pointing at itself
+    unsafe {
+        *a.backing_mut().get_mut(nz(1)).unwrap() = ArenaSlot::Free(q0_inx(2));
+        *a.backing_mut().get_mut(nz(2)).unwrap() = ArenaSlot::Free(q0_inx(1));
+    }
+    assert_eq!(Arena::_check_invariants(&a), Err("endless loop"));
+
+    // an index that cannot round trip back to a `NonZeroUsize` is caught
+    let mut a = Arena::<QLarge, u8, StackBacking<4>>::new();
+    let p = a.insert(0);
+    a.insert(1);
+    a.remove(p).allow().unwrap();
+    assert_eq!(Arena::_check_invariants(&a), Ok(()));
+    unsafe { a.set_freelist_root(Some(NonZeroU128::new(1 << 64).unwrap())) };
+    assert_eq!(Arena::_check_invariants(&a), Err("try_into_usize failed"));
 }

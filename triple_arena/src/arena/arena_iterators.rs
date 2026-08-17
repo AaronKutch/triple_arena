@@ -6,7 +6,7 @@ use ArenaSlot::*;
 use recasting::{Recast, Recaster};
 
 use crate::{
-    Arena, InvalidationOption, InvalidationResult,
+    Arena, InvalidationOption,
     traits::{Advancer, ArenaTrait, Ptr},
     utils::{
         ArenaSlot,
@@ -119,14 +119,7 @@ impl<P: Ptr, T, B: ArenaBacking> Iterator for Drain<'_, P, T, B> {
         let p = self.adv.advance(self.arena)?;
         // for global generation arenas, just do this for simplicity and so that the
         // invalidation is associated with a particular element
-
-        match self.arena.remove(p) {
-            InvalidationResult::Success(t) => Some(InvalidationOption::Success((p, t))),
-            InvalidationResult::GenerationOverflow(t) => {
-                Some(InvalidationOption::GenerationOverflow((p, t)))
-            }
-            InvalidationResult::InvalidPtr => None,
-        }
+        Some(self.arena.remove(p).map(|t| (p, t)).unwrap())
     }
 }
 

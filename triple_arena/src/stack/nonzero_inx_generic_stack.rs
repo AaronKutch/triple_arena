@@ -238,8 +238,10 @@ pub unsafe trait NonZeroInxGenericStack<T>: Sized {
             .map_err(|NotWithinCapacityError| ReallocationError::AllocError)
     }
 
-    /// Returns an insertion entry, panicking if an allocation error occurs or
-    /// if [max_capacity](NonZeroInxGenericStack::max_capacity) is used up.
+    /// The same as
+    /// [entry_push_reallocating](NonZeroInxGenericStack::entry_push_reallocating),
+    /// except that this panics upon an allocation error or using up
+    /// [max_capacity](NonZeroInxGenericStack::max_capacity).
     ///
     /// # Panics
     ///
@@ -332,6 +334,11 @@ pub unsafe trait NonZeroInxGenericStack<T>: Sized {
 
     /// Clears all elements, dropping all `T`. This has no effect on allocated
     /// capacity.
+    ///
+    /// # Unwind Safety
+    ///
+    /// A panicking `T::drop` must leave the stack empty and must not lead to
+    /// double drops if `catch_unwind` later allows reaching `self` again.
     fn clear(&mut self);
 }
 

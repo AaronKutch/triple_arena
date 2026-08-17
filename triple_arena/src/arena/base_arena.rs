@@ -1,6 +1,5 @@
 use core::{
     borrow::Borrow,
-    cmp::min,
     fmt, mem,
     num::NonZeroUsize,
     ops::{Index, IndexMut},
@@ -203,13 +202,9 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         if this.generation() < P::Gen::two() {
             return Err("bad generation");
         }
-        if this.capacity()
-            != min(
-                this.m.capacity(),
-                P::Inx::max_index().map(|i| i.get()).unwrap_or(usize::MAX),
-            )
-        {
-            return Err("virtual capacity != expected");
+        // clamped by both backing limits and the max `P::Inx`
+        if (this.len() > this.capacity()) || (this.m.len() > this.capacity()) {
+            return Err("len > capacity");
         }
         let mut n_allocated = 0usize;
         for i in this.nziter() {
@@ -254,36 +249,6 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
             return Err("freelist discontinuous");
         }
         Ok(())
-    }
-
-    /// Pops off free slots on the end, and rebuilds the freelist so it is
-    /// ordered to allocate from the earliest free slot forwards
-    pub(crate) fn canonicalize_free_list(&mut self) {
-        // remove free slots off the end
-        for inx in self.nziter().into_iter().rev() {
-            if let Free(_) = self.m.get(inx).unwrap() {
-                self.m.pop();
-            } else {
-                break;
-            }
-        }
-
-        let mut earliest_free = None;
-        for inx in self.nziter().into_iter().rev() {
-            if let Free(overwrite) = self.m.get_mut(inx).unwrap() {
-                if let Some(next) = earliest_free {
-                    // point to the next free slot, the last one we encountered
-                    *overwrite = next;
-                    earliest_free = Some(from_checked_raw::<P>(inx));
-                } else {
-                    // point to self on first one going in reverse
-                    *overwrite = from_checked_raw::<P>(inx);
-                    earliest_free = Some(*overwrite);
-                }
-            }
-        }
-        // there being no free slots is automatically handled
-        self.freelist_root = earliest_free;
     }
 
     /// `remove` but with optional generation counter increment
@@ -361,8 +326,9 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         }
     }
 
-    /// Returns the singular arena generation counter, the same as
-    /// [crate::traits::ArenaTrait::singular_generation]
+    /// Returns the singular arena generation counter, the same value that
+    /// [singular_generation](crate::traits::ArenaTrait::singular_generation)
+    /// returns in its `Some`
     #[inline]
     pub fn generation(&self) -> P::Gen {
         self.generation
@@ -389,6 +355,10 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
 
     /// Like [ArenaTrait::get], except generation counters are ignored and the
     /// result is unwrapped internally
+    ///
+    /// # Panics
+    ///
+    /// If `p` does not point to an allocated entry
     #[doc(hidden)]
     //#[track_caller]
     pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
@@ -402,6 +372,10 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
 
     /// Like [ArenaTrait::get_mut], except generation counters are ignored and
     /// the result is unwrapped internally
+    ///
+    /// # Panics
+    ///
+    /// If `p` does not point to an allocated entry
     #[doc(hidden)]
     //#[track_caller]
     pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
@@ -412,16 +386,32 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     }
 
     /// The most general way to translate between domains. Given any `source`
-    /// implementing `CompactArenaTrait` with any `Q: Ptr` and `U` entry type,
+    /// implementing [CompactArenaTrait] with any `Q: Ptr` and `U` entry type,
     /// this will transfer all of the entries by reallocating `self` if
     /// necessary, clearing `self`, and removing every entry from `source` and
-    /// inserting a mapped `T` into `self`. Every entry is given by value to map
-    /// `map` with the original source `Q: Ptr`, an `InvalidationOption<U>` for
-    /// being able to determine if the removal caused a generation overflow, the
-    /// destination `P: Ptr`, and then `map` must return the `T` that will be
-    /// inserted into `self`. The new entries are all given `new_generation`.
-    /// The entries are guaranteed to be compressed in `self`. Reallocation only
-    /// occurs if `
+    /// inserting a mapped `T` into `self`. Every entry is given by value to
+    /// `map` with the original source `Q: Ptr`, an [InvalidationOption]`<U>`
+    /// for being able to determine if the removal caused a generation overflow
+    /// in `source`, the destination `P: Ptr`, and then `map` must return
+    /// the `T` that will be inserted into `self`. The new entries are all
+    /// given `new_generation`. The entries are guaranteed to be canonically
+    /// compressed in `self`, such that their `P::Inx`s are
+    /// `1..=source.len()` in advancer order.
+    ///
+    /// Reallocation only occurs if `source.len() > self.capacity()`. All of the
+    /// fallible points happen before anything is modified, such that `self` and
+    /// `source` are logically unchanged if an error is returned. An error is
+    /// returned if the reallocation fails, if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit prevents the
+    /// reallocation, or if `source.len()` is more than what `P::Inx` can
+    /// represent.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If `map` panics, the entry it was called with is lost to whatever `map`
+    /// does, and `self` and `source` are left with the entries that were
+    /// already transferred and the entries that have yet to be transferred
+    /// respectively.
     pub fn transfer_reallocating<
         Q: Ptr,
         U,
@@ -461,6 +451,39 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         Ok(())
     }
 
+    /// Removes free end slots internally
+    pub fn remove_free_end_slots(&mut self) {
+        for inx in self.nziter().into_iter().rev() {
+            if let Free(_) = self.m.get(inx).unwrap() {
+                self.m.pop();
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// Pops off free slots on the end, and rebuilds the freelist so it is
+    /// ordered to allocate from the earliest free slot forwards
+    pub fn canonicalize_freelist(&mut self) {
+        self.remove_free_end_slots();
+        let mut earliest_free = None;
+        for inx in self.nziter().into_iter().rev() {
+            if let Free(overwrite) = self.m.get_mut(inx).unwrap() {
+                if let Some(next) = earliest_free {
+                    // point to the next free slot, the last one we encountered
+                    *overwrite = next;
+                    earliest_free = Some(from_checked_raw::<P>(inx));
+                } else {
+                    // point to self on first one going in reverse
+                    *overwrite = from_checked_raw::<P>(inx);
+                    earliest_free = Some(*overwrite);
+                }
+            }
+        }
+        // there being no free slots is automatically handled
+        self.freelist_root = earliest_free;
+    }
+
     /// Directly returns a reference to the internal backing, for the purposes
     /// of accessing `ArenaBacking`-specific functions
     pub fn backing(&self) -> &B::Stack<ArenaSlot<P, T>> {
@@ -483,21 +506,27 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
         &mut self.m
     }
 
+    /// Directly sets the number of allocated entries
+    ///
     /// # Safety
     ///
-    /// Must follow internal invariants
+    /// `len` must be kept equal to the number of allocated slots, or else other
+    /// methods can panic or misbehave. See also
+    /// [backing_mut](Arena::backing_mut).
     pub unsafe fn set_len(&mut self, len: usize) {
         self.len = len;
     }
 
-    /// Returns internal implementation details
+    /// Returns the root of the freelist
     pub fn freelist_root(&self) -> Option<P::Inx> {
         self.freelist_root
     }
 
+    /// Directly sets the root of the freelist
+    ///
     /// # Safety
     ///
-    /// Must follow internal invariants
+    /// Must follow internal invariants.
     pub unsafe fn set_freelist_root(&mut self, freelist_root: Option<P::Inx>) {
         self.freelist_root = freelist_root;
     }
@@ -512,6 +541,13 @@ impl<P: Ptr, T, B: ArenaBacking> Default for Arena<P, T, B> {
 impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> Index<Q> for Arena<P, T, B> {
     type Output = T;
 
+    /// Returns a reference to the `T` pointed to by `inx`. Use
+    /// [get](ArenaTrait::get) if invalid `Ptr`s need to be handled.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
     fn index(&self, inx: Q) -> &T {
         let p: P = *inx.borrow();
         self.get(p).expect("indexed `Arena` with invalidated `Ptr`")
@@ -519,6 +555,13 @@ impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> Index<Q> for Arena<P, T, B> {
 }
 
 impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for Arena<P, T, B> {
+    /// Returns a mutable reference to the `T` pointed to by `inx`. Use
+    /// [get_mut](ArenaTrait::get_mut) if invalid `Ptr`s need to be handled.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
     fn index_mut(&mut self, inx: Q) -> &mut T {
         let p: P = *inx.borrow();
         self.get_mut(p)
@@ -538,6 +581,19 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for Arena<P, T, B> {
     /// initially be valid to the corresponding `T` in the cloned arena.
     /// Invalidations will continue independently, so the meaning of the `Ptr`
     /// with respect to the different arenas can diverge.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure, or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit of the fresh `Self::new`
+    /// arena prevents reaching the needed capacity. Use
+    /// [clone_from_with](ArenaCloneFromWith::clone_from_with) if these need to
+    /// be handled.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If a `T::clone` panics, the partially cloned arena is dropped.
+    #[track_caller]
     fn clone(&self) -> Self {
         let mut res = Self::new();
         res.clone_from_with(self, |_, t| t.clone())
@@ -549,6 +605,21 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for Arena<P, T, B> {
     /// generation counter) with a clone of `source`. Has the validity cloning
     /// property of arena cloning, but now the capacity of `self` is reused.
     /// Allocations may happen if the capacity of `self` is not large enough.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure, or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit of `self` prevents
+    /// reaching the needed capacity. Use
+    /// [clone_from_with](ArenaCloneFromWith::clone_from_with) if these need to
+    /// be handled.
+    ///
+    /// # Unwind Safety
+    ///
+    /// A panicking `T::clone` or `T::drop` leaves `self` with the same
+    /// guarantees as
+    /// [clone_from_with](ArenaCloneFromWith::clone_from_with).
+    #[track_caller]
     fn clone_from(&mut self, source: &Self) {
         self.clone_from_with(source, |_, t| t.clone())
             .expect("failed when cloning arena");
@@ -562,7 +633,7 @@ where
     fn set_max_capacity(&mut self, max_capacity: usize) -> Result<(), MaxCapacityReductionError> {
         // If reducing below the logical `self.capacity()`, we may need to pop off free
         // slots off the end to achieve the ideal, instead of special casing it do this
-        // and always call `canonicalize_free_list` for determinism idealness,
+        // and always call `canonicalize_freelist` for determinism idealness,
         // the reduction below capacity case is specifically special anyways by
         // the documentation of `set_max_capacity`
 
@@ -571,7 +642,7 @@ where
             .is_some_and(|old_max| max_capacity < old_max)
             && max_capacity < self.capacity()
         {
-            self.canonicalize_free_list();
+            self.canonicalize_freelist();
         }
         self.m.set_max_capacity(max_capacity)
     }
