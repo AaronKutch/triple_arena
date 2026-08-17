@@ -92,16 +92,19 @@ pub fn gen_invalid<P: Ptr, A: CompactArenaTrait<P, Cd<()>>>(rng: &mut StarRng, a
 }
 
 /// All `CompactArenaTrait` fuzz steps that can be factored out of most of the
-/// arenas, takes up indexes 0..200
-pub fn common_compact_fuzz_step200<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
+/// arenas, takes up indexes 0..250. Some mutable functions like `invalidate`
+/// are possible generically because the `B` mirrors should have interlinks and
+/// orderings based on value and not on `Ptr` keying.
+pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
     rng: &mut StarRng,
     a: &mut A,
     test_limit: usize,
     op_inx: usize,
     b: &mut B,
     b_capacity: &mut usize,
+    g: &mut TestGen<P>,
     mut set_max_capacity: Option<fn(&mut A, usize) -> Result<(), MaxCapacityReductionError>>,
-    get_rand: fn(&mut B, rng: &mut StarRng) -> Option<(Ck<()>, P)>,
+    get_mut_rand: for<'a> fn(&'a mut B, rng: &mut StarRng) -> Option<(Ck<()>, &'a mut P)>,
 ) -> Result<(), StackedError> {
     let len: usize = a.len();
     match op_inx {
@@ -194,7 +197,8 @@ pub fn common_compact_fuzz_step200<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
         }
         100..125 => {
             // contains, get, get_mut, get_inx, get_inx_mut
-            if let Some((k, p)) = get_rand(b, rng) {
+            if let Some((k, p)) = get_mut_rand(b, rng) {
+                let p = *p;
                 ensure!(a.contains(p));
                 ensure_eq!(a.get(p).map(|t| t.key()), Some(k));
                 ensure_eq!(a.get_mut(p).map(|t| t.key()), Some(k));
@@ -390,7 +394,40 @@ pub fn common_compact_fuzz_step200<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
             }
             ensure_eq!(i, len);
         }
-        200.. => unreachable!(),
+        200..220 => {
+            // invalidate
+            if let Some((_, p)) = get_mut_rand(b, rng) {
+                match a.invalidate(*p) {
+                    InvalidationResult::Success(p1) => {
+                        *p = p1;
+                        ensure!(!g.invalidate());
+                    }
+                    InvalidationResult::GenerationOverflow(p1) => {
+                        *p = p1;
+                        ensure!(g.invalidate());
+                    }
+                    InvalidationResult::InvalidPtr => {
+                        bail!("")
+                    }
+                }
+            } else {
+                let invalid = gen_invalid(rng, a);
+                ensure!(matches!(
+                    a.invalidate(invalid),
+                    InvalidationResult::InvalidPtr
+                ))
+            }
+        }
+        // extra room here
+        220..250 => {
+            // invalidate invalid
+            let invalid = gen_invalid(rng, a);
+            ensure!(matches!(
+                a.invalidate(invalid),
+                InvalidationResult::InvalidPtr
+            ))
+        }
+        250.. => unreachable!(),
     }
     Ok(())
 }
@@ -453,19 +490,20 @@ pub fn fuzz<
         meta.op_inx = rng.index(1000).unwrap();
         // note: pushes and pops are balanced except for clears which we make rare
         match meta.op_inx {
-            0..200 => common_compact_fuzz_step200(
+            0..250 => common_compact_fuzz_step250(
                 rng,
                 a,
                 stats.test_limit,
                 meta.op_inx,
                 &mut b,
                 &mut b_capacity,
+                &mut g,
                 set_max_capacity,
-                |b, rng| b.get_rand(rng).map(|(k, p)| (k, *p)),
+                |b, rng| b.get_mut_rand(rng),
             )
             .stack()?,
-            // FIXME entry versions in this same 200..400 range
-            200..300 => {
+            // FIXME entry versions in this same 250..500 range
+            250..300 => {
                 // insert_within_capacity
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
@@ -516,7 +554,7 @@ pub fn fuzz<
                     b_capacity = a.capacity();
                 }
             }
-            350..400 => {
+            350..500 => {
                 // insert
 
                 let max_reached = a
@@ -540,7 +578,7 @@ pub fn fuzz<
                     b_capacity = a.capacity();
                 }
             }
-            400..500 => {
+            500..600 => {
                 // remove
                 if let Some((k, p)) = b.remove_rand(rng) {
                     match a.remove(p) {
@@ -561,7 +599,7 @@ pub fn fuzz<
                     ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr))
                 }
             }
-            500..600 => {
+            600..750 => {
                 // remove_inx
                 if let Some((k, p)) = b.remove_rand(rng) {
                     match a.remove_inx(p.inx()) {
@@ -589,8 +627,8 @@ pub fn fuzz<
                     }
                 }
             }
-            // we do these to test against when there are elements in the arena
-            600..620 => {
+            // FIXME insert invalids here
+            750..770 => {
                 // remove, remove_inx all invalid
                 let invalid = gen_invalid(rng, a);
                 ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr));
@@ -601,39 +639,7 @@ pub fn fuzz<
                     ));
                 }
             }
-            620..640 => {
-                // invalidate
-                if let Some((_, p)) = b.get_mut_rand(rng) {
-                    match a.invalidate(*p) {
-                        InvalidationResult::Success(p1) => {
-                            *p = p1;
-                            ensure!(!g.invalidate());
-                        }
-                        InvalidationResult::GenerationOverflow(p1) => {
-                            *p = p1;
-                            ensure!(g.invalidate());
-                        }
-                        InvalidationResult::InvalidPtr => {
-                            bail!("")
-                        }
-                    }
-                } else {
-                    let invalid = gen_invalid(rng, a);
-                    ensure!(matches!(
-                        a.invalidate(invalid),
-                        InvalidationResult::InvalidPtr
-                    ))
-                }
-            }
-            640..660 => {
-                // invalidate invalid
-                let invalid = gen_invalid(rng, a);
-                ensure!(matches!(
-                    a.invalidate(invalid),
-                    InvalidationResult::InvalidPtr
-                ))
-            }
-            660..700 => {
+            770..800 => {
                 // advancer
                 let mut i = 0;
                 let mut rand_remove_i = if len == 0 { 0 } else { rng.index(len).unwrap() };
@@ -668,7 +674,7 @@ pub fn fuzz<
                 b_capacity = a.capacity();
             }
             // extra room
-            700..991 => {
+            800..991 => {
                 if let Some((_, p)) = b.get_rand(rng) {
                     let p = *p;
                     ensure!(a.contains(p));
