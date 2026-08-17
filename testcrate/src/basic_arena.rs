@@ -17,7 +17,7 @@ use triple_arena::{
 
 use crate::{
     TestGen,
-    cdgen::{Cd, CdGen, CkMap, TryInternalDrop},
+    cdgen::{Cd, CdGen, Ck, CkMap, TryInternalDrop},
     misc::{D1, Meta},
 };
 
@@ -91,6 +91,310 @@ pub fn gen_invalid<P: Ptr, A: CompactArenaTrait<P, Cd<()>>>(rng: &mut StarRng, a
     P::invalid()
 }
 
+/// All `CompactArenaTrait` fuzz steps that can be factored out of most of the
+/// arenas, takes up indexes 0..200
+pub fn common_compact_fuzz_step200<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
+    rng: &mut StarRng,
+    a: &mut A,
+    test_limit: usize,
+    op_inx: usize,
+    b: &mut B,
+    b_capacity: &mut usize,
+    mut set_max_capacity: Option<fn(&mut A, usize) -> Result<(), MaxCapacityReductionError>>,
+    get_rand: fn(&mut B, rng: &mut StarRng) -> Option<(Ck<()>, P)>,
+) -> Result<(), StackedError> {
+    let len: usize = a.len();
+    match op_inx {
+        0..15 => {
+            // set_max_capacity
+
+            // except for changes, the invariants are checked at the beginning of the loop
+            if let Some(set_max_capacity) = &mut set_max_capacity {
+                let before = a.capacity();
+                let max_before = a.max_capacity().stack()?;
+                if rng.next_bool() {
+                    ensure!((*set_max_capacity)(a, usize::MAX).is_ok());
+                    // capacity can expand within the internal capacity
+                    ensure!(a.capacity() >= before);
+                    *b_capacity = a.capacity();
+                } else {
+                    let next = rng.index_inclusive(test_limit);
+
+                    if next > before {
+                        // capacity can expand within the internal capacity
+                        ensure!(a.capacity() >= before);
+                        *b_capacity = a.capacity();
+                    } else if next >= a.capacity() {
+                        ensure_eq!((*set_max_capacity)(a, next), Ok(()));
+                        // b_capacity left unchanged to check that capacity
+                        // does not change
+                    } else {
+                        // follows a tight bound to the last element
+                        let succeeds = if let Some(last) = a.find_last_inx_ptr() {
+                            P::Inx::try_into_usize(last.inx()).unwrap().get() <= next
+                        } else {
+                            true
+                        };
+                        if succeeds {
+                            // the only type currently that implements `set_max_capacity`
+                            // currently follows the tight `next
+                            // >= a.next()` bound
+                            ensure_eq!((*set_max_capacity)(a, next), Ok(()));
+                            ensure!(a.capacity() < before);
+                            *b_capacity = a.capacity();
+                        } else {
+                            ensure_eq!(
+                                (*set_max_capacity)(a, next),
+                                Err(MaxCapacityReductionError)
+                            );
+                            ensure_eq!(before, a.capacity());
+                            ensure_eq!(max_before, a.max_capacity().stack()?);
+                        }
+                    }
+                }
+                ensure!(a.capacity() <= a.max_capacity().stack()?);
+            }
+        }
+        15..75 => {
+            // reallocate_min_capacity success
+            if let Some(max_capacity) = a.max_capacity()
+                && max_capacity < usize::MAX
+            {
+                let new_cap = rng.index_inclusive(min(max_capacity, test_limit));
+                a.reallocate_min_capacity(new_cap).stack()?;
+                ensure!(a.capacity() >= new_cap)
+            } else {
+                let new_cap = rng.index_inclusive(test_limit);
+                a.reallocate_min_capacity(new_cap).stack()?;
+                ensure!(a.capacity() >= new_cap)
+            }
+            *b_capacity = a.capacity();
+        }
+        75..100 => {
+            // reallocate_min_capacity failure
+            let cap = a.capacity();
+            if let Some(max_capacity) = a.max_capacity()
+                && max_capacity < usize::MAX
+            {
+                ensure_eq!(
+                    a.reallocate_min_capacity(max_capacity + 1),
+                    Err(ReallocationError::BeyondMaxCapacity)
+                );
+                // can be both because of the max index limit, which should take priority even
+                // if a `BeyondMaxCapacity` could also fire
+                ensure!(a.reallocate_min_capacity(usize::MAX).is_err());
+            } else {
+                // could succeed for ZSTs
+                ensure_eq!(
+                    a.reallocate_min_capacity(usize::MAX),
+                    Err(ReallocationError::AllocError)
+                );
+            }
+            ensure_eq!(cap, a.capacity());
+        }
+        100..125 => {
+            // contains, get, get_mut, get_inx, get_inx_mut
+            if let Some((k, p)) = get_rand(b, rng) {
+                ensure!(a.contains(p));
+                ensure_eq!(a.get(p).map(|t| t.key()), Some(k));
+                ensure_eq!(a.get_mut(p).map(|t| t.key()), Some(k));
+                ensure_eq!(
+                    a.get_inx(p.inx())
+                        .map(|(generation, t)| (generation, t.key())),
+                    Some((p.generation(), k))
+                );
+                ensure_eq!(
+                    a.get_inx_mut(p.inx())
+                        .map(|(generation, t)| (generation, t.key())),
+                    Some((p.generation(), k))
+                );
+            } else {
+                let p = gen_invalid(rng, a);
+                ensure!(!a.contains(p));
+                ensure!(a.get(p).is_none());
+                ensure!(a.get_mut(p).is_none());
+                ensure!(a.get_inx(p.inx()).is_none());
+                ensure!(a.get_inx_mut(p.inx()).is_none());
+            }
+        }
+        125..150 => {
+            // contains, get, get_mut all invalid
+            let p = gen_invalid(rng, a);
+            ensure!(!a.contains(p));
+            ensure!(a.get(p).is_none());
+            ensure!(a.get_mut(p).is_none());
+
+            if let Some((generation, _)) = a.get_inx(p.inx()) {
+                ensure!(a.contains(P::_from_raw(p.inx(), generation)));
+            }
+            if let Some((generation, _)) = a.get_inx_mut(p.inx()) {
+                ensure!(a.contains(P::_from_raw(p.inx(), generation)));
+            }
+        }
+        150..175 => {
+            // get_disjoint_mut, get_disjoint_inx_mut and failures
+
+            let [] = a.get_disjoint_mut([]).stack()?;
+            let [] = a.get_disjoint_inx_mut([]).stack()?;
+
+            let i = P::Inx::try_from_usize(NonZeroUsize::new(a.capacity() + 1).unwrap()).unwrap();
+            ensure!(
+                a.get_disjoint_inx_mut([i])
+                    .is_err_and(|e| e == GetDisjointMutError::IndexOutOfBounds)
+            );
+            ensure!(
+                a.get_disjoint_mut([P::_from_raw(i, a.singular_generation().unwrap())])
+                    .is_err_and(|e| e == GetDisjointMutError::IndexOutOfBounds)
+            );
+
+            'outer: {
+                let mut set = [P::invalid().inx(); 3];
+                let mut set1 = [P::invalid(); 3];
+                if len >= set.len() {
+                    for i in &mut set {
+                        *i = P::Inx::try_from_usize(
+                            NonZeroUsize::new(rng.index(len).unwrap() + 1).unwrap(),
+                        )
+                        .unwrap();
+                    }
+                    for i in &set {
+                        if a.get_inx(*i).is_none() {
+                            ensure!(a.get_disjoint_inx_mut(set).is_err());
+                            ensure!(a.get_disjoint_mut(set1).is_err());
+                            break 'outer;
+                        }
+                    }
+                    for (set_i0, i) in set.iter().enumerate() {
+                        for (set_i1, j) in set.iter().enumerate() {
+                            if set_i0 != set_i1 && *i == *j {
+                                ensure!(
+                                    a.get_disjoint_inx_mut(set).is_err_and(
+                                        |e| e == GetDisjointMutError::OverlappingIndices
+                                    )
+                                );
+                                ensure!(a.get_disjoint_mut(set1).is_err());
+                                break 'outer;
+                            }
+                        }
+                    }
+
+                    let res = a
+                        .get_disjoint_inx_mut(set)
+                        .stack()?
+                        .map(|(generation, t)| (generation, t.key()));
+                    for ((generation, k), p) in res.iter().zip(set.iter()) {
+                        let tmp = a.get_inx(*p).stack()?;
+                        ensure_eq!(tmp.0, *generation);
+                        ensure_eq!(tmp.1.key(), *k);
+                    }
+                    for i in 0..set.len() {
+                        set1[i] = P::_from_raw(set[i], res[i].0);
+                    }
+
+                    match a.get_disjoint_mut(set1) {
+                        Ok(res) => {
+                            let res = res.map(|t| t.key());
+                            for (k, p) in res.iter().zip(set1.iter()) {
+                                ensure_eq!(a.get(*p).stack()?.key(), *k);
+                            }
+                        }
+                        Err(GetDisjointMutError::IndexOutOfBounds) => bail!(""),
+                        _ => bail!(""),
+                    }
+                }
+            }
+        }
+        175..190 => {
+            // ptrs, advancer_inx, find_last_inx_ptr, find_first_inx_ptr
+            let ptrs: Vec<P> = a.ptrs().collect();
+            ensure_eq!(len, ptrs.len());
+            if len > 0 {
+                ensure_eq!(a.find_first_inx_ptr().stack()?, *ptrs.first().stack()?);
+                ensure_eq!(a.find_last_inx_ptr().stack()?, *ptrs.last().stack()?);
+            } else {
+                ensure!(a.find_first_inx_ptr().is_none());
+                ensure!(a.find_last_inx_ptr().is_none());
+            }
+            if let Some(mut i) = rng.index(ptrs.len()) {
+                let rev = rng.next_bool();
+                let mut adv = a.advancer_inx(ptrs[i].inx(), rev);
+                loop {
+                    let p = adv.advance(a).stack()?;
+                    ensure_eq!(ptrs[i], p);
+                    if rev {
+                        if i == 0 {
+                            ensure!(adv.advance(a).is_none());
+                            break;
+                        }
+                        i -= 1;
+                    } else {
+                        i += 1;
+                        if i == len {
+                            ensure!(adv.advance(a).is_none());
+                            break;
+                        }
+                    }
+                }
+            } else {
+                let inx1 = P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap();
+                let mut adv = a.advancer_inx(inx1, false);
+                ensure!(adv.advance(a).is_none());
+                let mut adv = a.advancer_inx(inx1, true);
+                ensure!(adv.advance(a).is_none());
+                if a.capacity() > 0 {
+                    let inx_last =
+                        P::Inx::try_from_usize(NonZeroUsize::new(a.capacity()).unwrap()).unwrap();
+                    let mut adv = a.advancer_inx(inx_last, false);
+                    ensure!(adv.advance(a).is_none());
+                    let mut adv = a.advancer_inx(inx_last, true);
+                    ensure!(adv.advance(a).is_none());
+                }
+            }
+        }
+        190..200 => {
+            // ptrs, vals, vals_mut, iter, iter_mut
+            let ptrs: Vec<P> = a.ptrs().collect();
+            ensure_eq!(len, ptrs.len());
+            let mut x = vec![];
+            for p in ptrs {
+                x.push((p, a.get(p).stack()?.key()));
+            }
+
+            let mut i = 0;
+            for t in a.vals() {
+                ensure_eq!(t.key(), x[i].1);
+                i += 1;
+            }
+            ensure_eq!(i, len);
+
+            let mut i = 0;
+            for t in a.vals_mut() {
+                ensure_eq!(t.key(), x[i].1);
+                i += 1;
+            }
+            ensure_eq!(i, len);
+
+            let mut i = 0;
+            for (p, t) in a.iter() {
+                ensure_eq!(p, x[i].0);
+                ensure_eq!(t.key(), x[i].1);
+                i += 1;
+            }
+            ensure_eq!(i, len);
+
+            let mut i = 0;
+            for (p, t) in a.iter_mut() {
+                ensure_eq!(p, x[i].0);
+                ensure_eq!(t.key(), x[i].1);
+                i += 1;
+            }
+            ensure_eq!(i, len);
+        }
+        200.. => unreachable!(),
+    }
+    Ok(())
+}
+
 pub fn fuzz<
     P: Ptr,
     A: ArenaCloneFromWith<P, Cd<()>> + CompactArenaTrait<P, Cd<()>> + ArenaInsertTrait<P, Cd<()>>,
@@ -99,7 +403,7 @@ pub fn fuzz<
     a: &mut A,
     mut check_invariants: impl FnMut(&mut A) -> Result<(), StackedError>,
     // set iff `SetMaxCapacity` is implemented
-    mut set_max_capacity: Option<fn(&mut A, usize) -> Result<(), MaxCapacityReductionError>>,
+    set_max_capacity: Option<fn(&mut A, usize) -> Result<(), MaxCapacityReductionError>>,
     // set iff `transfer_reallocating` is available
     mut transfer_reallocating: Option<
         fn(
@@ -147,96 +451,21 @@ pub fn fuzz<
 
         meta.i = i;
         meta.op_inx = rng.index(1000).unwrap();
-        // note: pushes and pops are balanced except for clears
+        // note: pushes and pops are balanced except for clears which we make rare
         match meta.op_inx {
-            0..15 => {
-                // set_max_capacity
-
-                // except for changes, the invariants are checked at the beginning of the loop
-                if let Some(set_max_capacity) = &mut set_max_capacity {
-                    let before = a.capacity();
-                    let max_before = a.max_capacity().stack()?;
-                    if rng.next_bool() {
-                        ensure!((*set_max_capacity)(a, usize::MAX).is_ok());
-                        // capacity can expand within the internal capacity
-                        ensure!(a.capacity() >= before);
-                        b_capacity = a.capacity();
-                    } else {
-                        let next = rng.index_inclusive(stats.test_limit);
-
-                        if next > before {
-                            // capacity can expand within the internal capacity
-                            ensure!(a.capacity() >= before);
-                            b_capacity = a.capacity();
-                        } else if next >= a.capacity() {
-                            ensure_eq!((*set_max_capacity)(a, next), Ok(()));
-                            // b_capacity left unchanged to check that capacity
-                            // does not change
-                        } else {
-                            // follows a tight bound to the last element
-                            let succeeds = if let Some(last) = a.find_last_inx_ptr() {
-                                P::Inx::try_into_usize(last.inx()).unwrap().get() <= next
-                            } else {
-                                true
-                            };
-                            if succeeds {
-                                // the only type currently that implements `set_max_capacity`
-                                // currently follows the tight `next
-                                // >= a.next()` bound
-                                ensure_eq!((*set_max_capacity)(a, next), Ok(()));
-                                ensure!(a.capacity() < before);
-                                b_capacity = a.capacity();
-                            } else {
-                                ensure_eq!(
-                                    (*set_max_capacity)(a, next),
-                                    Err(MaxCapacityReductionError)
-                                );
-                                ensure_eq!(before, a.capacity());
-                                ensure_eq!(max_before, a.max_capacity().stack()?);
-                            }
-                        }
-                    }
-                    ensure!(a.capacity() <= a.max_capacity().stack()?);
-                }
-            }
-            15..75 => {
-                // reallocate_min_capacity success
-                if let Some(max_capacity) = a.max_capacity()
-                    && max_capacity < usize::MAX
-                {
-                    let new_cap = rng.index_inclusive(min(max_capacity, stats.test_limit));
-                    a.reallocate_min_capacity(new_cap).stack()?;
-                    ensure!(a.capacity() >= new_cap)
-                } else {
-                    let new_cap = rng.index_inclusive(stats.test_limit);
-                    a.reallocate_min_capacity(new_cap).stack()?;
-                    ensure!(a.capacity() >= new_cap)
-                }
-                b_capacity = a.capacity();
-            }
-            75..100 => {
-                // reallocate_min_capacity failure
-                let cap = a.capacity();
-                if let Some(max_capacity) = a.max_capacity()
-                    && max_capacity < usize::MAX
-                {
-                    ensure_eq!(
-                        a.reallocate_min_capacity(max_capacity + 1),
-                        Err(ReallocationError::BeyondMaxCapacity)
-                    );
-                    // can be both because of the max index limit, which should take priority even
-                    // if a `BeyondMaxCapacity` could also fire
-                    ensure!(a.reallocate_min_capacity(usize::MAX).is_err());
-                } else {
-                    // could succeed for ZSTs
-                    ensure_eq!(
-                        a.reallocate_min_capacity(usize::MAX),
-                        Err(ReallocationError::AllocError)
-                    );
-                }
-                ensure_eq!(cap, a.capacity());
-            }
-            100..200 => {
+            0..200 => common_compact_fuzz_step200(
+                rng,
+                a,
+                stats.test_limit,
+                meta.op_inx,
+                &mut b,
+                &mut b_capacity,
+                set_max_capacity,
+                |b, rng| b.get_rand(rng).map(|(k, p)| (k, *p)),
+            )
+            .stack()?,
+            // FIXME entry versions in this same 200..400 range
+            200..300 => {
                 // insert_within_capacity
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
@@ -252,7 +481,7 @@ pub fn fuzz<
                     );
                 }
             }
-            200..250 => {
+            300..350 => {
                 // insert_reallocating
 
                 let max_reached = a
@@ -287,8 +516,7 @@ pub fn fuzz<
                     b_capacity = a.capacity();
                 }
             }
-            // FIXME entry versions
-            250..300 => {
+            350..400 => {
                 // insert
 
                 let max_reached = a
@@ -312,7 +540,7 @@ pub fn fuzz<
                     b_capacity = a.capacity();
                 }
             }
-            300..400 => {
+            400..500 => {
                 // remove
                 if let Some((k, p)) = b.remove_rand(rng) {
                     match a.remove(p) {
@@ -333,7 +561,7 @@ pub fn fuzz<
                     ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr))
                 }
             }
-            400..500 => {
+            500..600 => {
                 // remove_inx
                 if let Some((k, p)) = b.remove_rand(rng) {
                     match a.remove_inx(p.inx()) {
@@ -362,7 +590,7 @@ pub fn fuzz<
                 }
             }
             // we do these to test against when there are elements in the arena
-            500..520 => {
+            600..620 => {
                 // remove, remove_inx all invalid
                 let invalid = gen_invalid(rng, a);
                 ensure!(matches!(a.remove(invalid), InvalidationResult::InvalidPtr));
@@ -373,7 +601,7 @@ pub fn fuzz<
                     ));
                 }
             }
-            520..600 => {
+            620..640 => {
                 // invalidate
                 if let Some((_, p)) = b.get_mut_rand(rng) {
                     match a.invalidate(*p) {
@@ -397,7 +625,7 @@ pub fn fuzz<
                     ))
                 }
             }
-            600..620 => {
+            640..660 => {
                 // invalidate invalid
                 let invalid = gen_invalid(rng, a);
                 ensure!(matches!(
@@ -405,119 +633,7 @@ pub fn fuzz<
                     InvalidationResult::InvalidPtr
                 ))
             }
-            620..800 => {
-                // contains, get, get_mut, get_inx, get_inx_mut
-                if let Some((k, p)) = b.get_rand(rng) {
-                    let p = *p;
-                    ensure!(a.contains(p));
-                    ensure_eq!(a.get(p).map(|t| t.key()), Some(k));
-                    ensure_eq!(a.get_mut(p).map(|t| t.key()), Some(k));
-                    ensure_eq!(
-                        a.get_inx(p.inx())
-                            .map(|(generation, t)| (generation, t.key())),
-                        Some((p.generation(), k))
-                    );
-                    ensure_eq!(
-                        a.get_inx_mut(p.inx())
-                            .map(|(generation, t)| (generation, t.key())),
-                        Some((p.generation(), k))
-                    );
-                } else {
-                    let p = gen_invalid(rng, a);
-                    ensure!(!a.contains(p));
-                    ensure!(a.get(p).is_none());
-                    ensure!(a.get_mut(p).is_none());
-                    ensure!(a.get_inx(p.inx()).is_none());
-                    ensure!(a.get_inx_mut(p.inx()).is_none());
-                }
-            }
-            800..820 => {
-                // contains, get, get_mut all invalid
-                let p = gen_invalid(rng, a);
-                ensure!(!a.contains(p));
-                ensure!(a.get(p).is_none());
-                ensure!(a.get_mut(p).is_none());
-
-                if let Some((generation, _)) = a.get_inx(p.inx()) {
-                    ensure!(a.contains(P::_from_raw(p.inx(), generation)));
-                }
-                if let Some((generation, _)) = a.get_inx_mut(p.inx()) {
-                    ensure!(a.contains(P::_from_raw(p.inx(), generation)));
-                }
-            }
-            820..900 => {
-                // get_disjoint_mut, get_disjoint_inx_mut and failures
-
-                let [] = a.get_disjoint_mut([]).stack()?;
-                let [] = a.get_disjoint_inx_mut([]).stack()?;
-
-                let i =
-                    P::Inx::try_from_usize(NonZeroUsize::new(a.capacity() + 1).unwrap()).unwrap();
-                ensure!(
-                    a.get_disjoint_inx_mut([i])
-                        .is_err_and(|e| e == GetDisjointMutError::IndexOutOfBounds)
-                );
-                ensure!(
-                    a.get_disjoint_mut([P::_from_raw(i, a.singular_generation().unwrap())])
-                        .is_err_and(|e| e == GetDisjointMutError::IndexOutOfBounds)
-                );
-
-                'outer: {
-                    let mut set = [P::invalid().inx(); 3];
-                    let mut set1 = [P::invalid(); 3];
-                    if len >= set.len() {
-                        for i in &mut set {
-                            *i = P::Inx::try_from_usize(
-                                NonZeroUsize::new(rng.index(len).unwrap() + 1).unwrap(),
-                            )
-                            .unwrap();
-                        }
-                        for i in &set {
-                            if a.get_inx(*i).is_none() {
-                                ensure!(a.get_disjoint_inx_mut(set).is_err());
-                                ensure!(a.get_disjoint_mut(set1).is_err());
-                                break 'outer;
-                            }
-                        }
-                        for (set_i0, i) in set.iter().enumerate() {
-                            for (set_i1, j) in set.iter().enumerate() {
-                                if set_i0 != set_i1 && *i == *j {
-                                    ensure!(a.get_disjoint_inx_mut(set).is_err_and(
-                                        |e| e == GetDisjointMutError::OverlappingIndices
-                                    ));
-                                    ensure!(a.get_disjoint_mut(set1).is_err());
-                                    break 'outer;
-                                }
-                            }
-                        }
-
-                        let res = a
-                            .get_disjoint_inx_mut(set)
-                            .stack()?
-                            .map(|(generation, t)| (generation, t.key()));
-                        for ((generation, k), p) in res.iter().zip(set.iter()) {
-                            let tmp = a.get_inx(*p).stack()?;
-                            ensure_eq!(tmp.0, *generation);
-                            ensure_eq!(tmp.1.key(), *k);
-                        }
-                        for i in 0..set.len() {
-                            set1[i] = P::_from_raw(set[i], res[i].0);
-                        }
-
-                        match a.get_disjoint_mut(set1) {
-                            Ok(res) => {
-                                let res = res.map(|t| t.key());
-                                for (k, p) in res.iter().zip(set1.iter()) {
-                                    ensure_eq!(a.get(*p).stack()?.key(), *k);
-                                }
-                            }
-                            Err(GetDisjointMutError::IndexOutOfBounds) => bail!(""),
-                            _ => bail!(""),
-                        }
-                    }
-                }
-            }
-            900..910 => {
+            660..700 => {
                 // advancer
                 let mut i = 0;
                 let mut rand_remove_i = if len == 0 { 0 } else { rng.index(len).unwrap() };
@@ -551,95 +667,8 @@ pub fn fuzz<
                 assert!((i == len.saturating_sub(1)) || (i == len) || (i == (len + 1)));
                 b_capacity = a.capacity();
             }
-            910..920 => {
-                // ptrs, advancer_inx, find_last_inx_ptr, find_first_inx_ptr
-                let ptrs: Vec<P> = a.ptrs().collect();
-                ensure_eq!(len, ptrs.len());
-                if len > 0 {
-                    ensure_eq!(a.find_first_inx_ptr().stack()?, *ptrs.first().stack()?);
-                    ensure_eq!(a.find_last_inx_ptr().stack()?, *ptrs.last().stack()?);
-                } else {
-                    ensure!(a.find_first_inx_ptr().is_none());
-                    ensure!(a.find_last_inx_ptr().is_none());
-                }
-                if let Some(mut i) = rng.index(ptrs.len()) {
-                    let rev = rng.next_bool();
-                    let mut adv = a.advancer_inx(ptrs[i].inx(), rev);
-                    loop {
-                        let p = adv.advance(a).stack()?;
-                        ensure_eq!(ptrs[i], p);
-                        if rev {
-                            if i == 0 {
-                                ensure!(adv.advance(a).is_none());
-                                break;
-                            }
-                            i -= 1;
-                        } else {
-                            i += 1;
-                            if i == len {
-                                ensure!(adv.advance(a).is_none());
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    let inx1 = P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap();
-                    let mut adv = a.advancer_inx(inx1, false);
-                    ensure!(adv.advance(a).is_none());
-                    let mut adv = a.advancer_inx(inx1, true);
-                    ensure!(adv.advance(a).is_none());
-                    if a.capacity() > 0 {
-                        let inx_last =
-                            P::Inx::try_from_usize(NonZeroUsize::new(a.capacity()).unwrap())
-                                .unwrap();
-                        let mut adv = a.advancer_inx(inx_last, false);
-                        ensure!(adv.advance(a).is_none());
-                        let mut adv = a.advancer_inx(inx_last, true);
-                        ensure!(adv.advance(a).is_none());
-                    }
-                }
-            }
-            920..930 => {
-                // ptrs, vals, vals_mut, iter, iter_mut
-                let ptrs: Vec<P> = a.ptrs().collect();
-                ensure_eq!(len, ptrs.len());
-                let mut x = vec![];
-                for p in ptrs {
-                    x.push((p, a.get(p).stack()?.key()));
-                }
-
-                let mut i = 0;
-                for t in a.vals() {
-                    ensure_eq!(t.key(), x[i].1);
-                    i += 1;
-                }
-                ensure_eq!(i, len);
-
-                let mut i = 0;
-                for t in a.vals_mut() {
-                    ensure_eq!(t.key(), x[i].1);
-                    i += 1;
-                }
-                ensure_eq!(i, len);
-
-                let mut i = 0;
-                for (p, t) in a.iter() {
-                    ensure_eq!(p, x[i].0);
-                    ensure_eq!(t.key(), x[i].1);
-                    i += 1;
-                }
-                ensure_eq!(i, len);
-
-                let mut i = 0;
-                for (p, t) in a.iter_mut() {
-                    ensure_eq!(p, x[i].0);
-                    ensure_eq!(t.key(), x[i].1);
-                    i += 1;
-                }
-                ensure_eq!(i, len);
-            }
-            // future
-            930..991 => {
+            // extra room
+            700..991 => {
                 if let Some((_, p)) = b.get_rand(rng) {
                     let p = *p;
                     ensure!(a.contains(p));

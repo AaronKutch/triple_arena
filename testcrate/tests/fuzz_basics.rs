@@ -153,11 +153,11 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
             None
         } else if cfg!(debug_assertions) {
             Some(expect![[r#"
-                1036
+                1015
             "#]])
         } else {
             Some(expect![[r#"
-                9983
+                9876
             "#]])
         };
         meta.test(
