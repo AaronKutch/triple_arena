@@ -42,11 +42,11 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
             None
         } else if cfg!(debug_assertions) {
             Some(expect![[r#"
-                1006
+                947
             "#]])
         } else {
             Some(expect![[r#"
-                9867
+                9905
             "#]])
         };
         meta.test(
@@ -153,11 +153,11 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
             None
         } else if cfg!(debug_assertions) {
             Some(expect![[r#"
-                1038
+                1039
             "#]])
         } else {
             Some(expect![[r#"
-                10024
+                10035
             "#]])
         };
         meta.test(
@@ -277,11 +277,11 @@ fn fuzz_multi_arena() -> Result<(), StackedError> {
         "#]]
     } else if cfg!(debug_assertions) {
         expect![[r#"
-            40
+            32
         "#]]
     } else {
         expect![[r#"
-            43
+            46
         "#]]
     };
 

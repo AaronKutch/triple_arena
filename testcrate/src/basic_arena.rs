@@ -52,7 +52,7 @@ impl TryInternalDrop for Stats {
 /// wrong generation (incremented or gen 1), or index 1 in a free slot, and in
 /// the space between `self.m.len()` and `self.m.capacity()`
 pub fn gen_invalid<P: Ptr, A: CompactArenaTrait<P, Cd<()>>>(rng: &mut StarRng, arena: &A) -> P {
-    match rng.index(16).unwrap() {
+    match rng.index_inclusive(15) {
         0 => return P::invalid(),
         1..4 => {
             if let Some(p) = arena.find_first_inx_ptr() {
@@ -487,7 +487,7 @@ pub fn fuzz<
         check_invariants(a).stack()?;
 
         meta.i = i;
-        meta.op_inx = rng.index(1000).unwrap();
+        meta.op_inx = rng.index_inclusive(1023);
         // note: pushes and pops are balanced except for clears which we make rare
         match meta.op_inx {
             0..250 => common_compact_fuzz_step250(
@@ -674,7 +674,7 @@ pub fn fuzz<
                 b_capacity = a.capacity();
             }
             // extra room
-            800..991 => {
+            800..1015 => {
                 if let Some((_, p)) = b.get_rand(rng) {
                     let p = *p;
                     ensure!(a.contains(p));
@@ -683,7 +683,7 @@ pub fn fuzz<
                     ensure!(!a.contains(p));
                 }
             }
-            991 => {
+            1015 => {
                 // compress
                 let reset = rng.next_bool();
                 let o = a.compress(reset).is_overflow();
@@ -708,7 +708,7 @@ pub fn fuzz<
                     );
                 }
             }
-            992 => {
+            1016 => {
                 // compress_with
                 let mut new_map = vec![];
                 let reset = rng.next_bool();
@@ -744,7 +744,7 @@ pub fn fuzz<
             }
             // these are mainly tested in `multi_arena`, but we want them here to test if
             // `self.m.len()` and `self.m.capacity()` detachments cause issues
-            993 => {
+            1017 => {
                 // clone_from_with part 0
 
                 // `a1` and the like are set here, `a` will diverge again
@@ -762,7 +762,7 @@ pub fn fuzz<
                     ensure!(a1.contains(p));
                 }
             }
-            994 => {
+            1018 => {
                 // clone_from_with part 1
 
                 // `a1` was unlimited, `a` can be limited and grow capacity and run into
@@ -811,7 +811,7 @@ pub fn fuzz<
                     b_capacity = a.capacity();
                 }
             }
-            995 => {
+            1019 => {
                 // transfer_reallocating part 0
 
                 let mut i = 0;
@@ -834,7 +834,7 @@ pub fn fuzz<
                     ensure_eq!(a1.get(p).unwrap().key(), k);
                 }
             }
-            996 => {
+            1020 => {
                 // transfer_reallocating part 1
 
                 if let Some(transfer_reallocating) = &mut transfer_reallocating {
@@ -883,7 +883,7 @@ pub fn fuzz<
                     }
                 }
             }
-            997 => {
+            1021 => {
                 // drain
                 for tmp in a.drain() {
                     ensure_eq!(tmp.is_overflow(), g.invalidate());
@@ -893,7 +893,7 @@ pub fn fuzz<
                 ensure!(a.is_empty());
                 b.clear();
             }
-            998 => {
+            1022 => {
                 // clear
                 b.clear();
                 if a.is_empty() {
@@ -902,7 +902,7 @@ pub fn fuzz<
                     ensure_eq!(a.clear().is_overflow(), g.invalidate());
                 }
             }
-            999 => {
+            1023 => {
                 // with_min_capacity and the `Drop` impl
                 b.clear();
                 // note that we bypass max capacity limits since they are set to begin with in
@@ -924,7 +924,7 @@ pub fn fuzz<
                 b_capacity = a.capacity();
                 iters999 += 1;
             }
-            1000.. => unreachable!(),
+            1024.. => unreachable!(),
         }
     }
     if let Some(x) = &stats.iters999 {
@@ -948,14 +948,14 @@ pub fn fuzz_multi_arena_step<D: Copy + Default, P: Ptr>(
     if !cfg!(miri) {
         Arena::_check_invariants(a).unwrap();
     }
-    match rng.next_u32() % 100 {
-        0..50 => {
+    match rng.index_inclusive(127) {
+        0..64 => {
             // insert
             let (k, t) = cd_gen.new_cd();
             let p = a.insert(t);
             b.insert(k, p);
         }
-        50..99 => {
+        64..127 => {
             // remove
             if len != 0 {
                 let (k, p) = b.remove_rand(rng).unwrap();
@@ -963,7 +963,7 @@ pub fn fuzz_multi_arena_step<D: Copy + Default, P: Ptr>(
                 g.invalidate();
             }
         }
-        99 => {
+        127 => {
             // clear and shrink
             if !a.is_empty() {
                 ensure_eq!(a.clear().strict().is_err(), g.invalidate());
@@ -971,7 +971,7 @@ pub fn fuzz_multi_arena_step<D: Copy + Default, P: Ptr>(
             a.reallocate_min_capacity(0).unwrap();
             b.clear();
         }
-        100.. => unreachable!(),
+        128.. => unreachable!(),
     }
     Ok(())
 }
@@ -1004,7 +1004,7 @@ pub fn fuzz_multi_arena<P: Ptr>(
         fuzz_multi_arena_step(rng, &mut a0, &mut g0, &mut b0, cd_gen0).stack()?;
         fuzz_multi_arena_step(rng, &mut a1, &mut g1, &mut b1, cd_gen1).stack()?;
         max_len = max(max_len, a0.len());
-        match rng.index(1000).unwrap() {
+        match rng.index_inclusive(1023) {
             // do no major operations most of the time, rack up some random insertions and removals
             // in `inner`
             0..800 => (),
@@ -1074,7 +1074,7 @@ pub fn fuzz_multi_arena<P: Ptr>(
                 }
                 g0.0 = a1.singular_generation().unwrap();
             }
-            950..1000 => {
+            950..1024 => {
                 b1.clear();
                 a1.clone_from_with(&a0, |p, u| {
                     assert_eq!(a0.get(p).unwrap().key(), u.key());
@@ -1088,7 +1088,7 @@ pub fn fuzz_multi_arena<P: Ptr>(
                 }
                 g1.0 = a0.singular_generation().unwrap();
             }
-            1000.. => unreachable!(),
+            1024.. => unreachable!(),
         }
     }
     if let Some(max) = stats.max_len {

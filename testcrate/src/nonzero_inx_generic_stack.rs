@@ -72,7 +72,7 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
         }
 
         meta.i = i;
-        meta.op_inx = rng.index(1000).unwrap();
+        meta.op_inx = rng.index_inclusive(1023);
         // note: pushes and pops are balanced except for clears
         match meta.op_inx {
             0..15 => {
@@ -345,7 +345,7 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                 ensure!(a.get(i).is_none());
                 ensure!(a.get_mut(i).is_none());
             }
-            950..998 => {
+            950..1022 => {
                 // get_disjoint_unchecked_mut, get_disjoint_mut
 
                 let [] = a.get_disjoint_mut([]).stack()?;
@@ -385,12 +385,12 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                     }
                 }
             }
-            998 => {
+            1022 => {
                 // clear
                 a.clear();
                 b.clear();
             }
-            999 => {
+            1023 => {
                 // with_min_capacity and the `Drop` impl
                 b.clear();
                 // note that we bypass max capacity limits since they are set to begin with in
@@ -411,7 +411,7 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                 b_capacity = a.capacity();
                 iters999 += 1;
             }
-            1000.. => unreachable!(),
+            1024.. => unreachable!(),
         }
     }
     if let Some(x) = &stats.iters999 {

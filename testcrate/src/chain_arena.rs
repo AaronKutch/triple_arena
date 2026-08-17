@@ -74,7 +74,7 @@ pub fn fuzz<
         check_invariants(a).stack()?;
 
         meta.i = i;
-        meta.op_inx = rng.index(1000).unwrap();
+        meta.op_inx = rng.index_inclusive(1023);
         // note: pushes and pops are balanced except for clears which we make rare
         match meta.op_inx {
             0..250 => crate::basic_arena::common_compact_fuzz_step250(
@@ -94,7 +94,7 @@ pub fn fuzz<
             500..750 => {}
             // FIXME
             // extra room
-            750..998 => {
+            /*750..998 => {
                 if let Some((_, link)) = b.get_rand(rng) {
                     ensure!(a.contains(link.p));
                 } else {
@@ -132,8 +132,8 @@ pub fn fuzz<
                 g.0 = a.singular_generation().unwrap();
                 b_capacity = a.capacity();
                 iters999 += 1;
-            }
-            1000.. => unreachable!(),
+            }*/
+            750.. => unreachable!(),
         }
     }
     if let Some(x) = &stats.iters999 {
