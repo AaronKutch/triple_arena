@@ -48,6 +48,49 @@ impl TryInternalDrop for Stats {
     }
 }
 
+/// generate invalid `Ptr`s via `P::invalid()`, an existing allocation but with
+/// wrong generation (incremented or gen 1), or index 1 in a free slot, and in
+/// the space between `self.m.len()` and `self.m.capacity()`
+pub fn gen_invalid<P: Ptr, A: CompactArenaTrait<P, Cd<()>>>(rng: &mut StarRng, arena: &A) -> P {
+    match rng.index(16).unwrap() {
+        0 => return P::invalid(),
+        1..4 => {
+            if let Some(p) = arena.find_first_inx_ptr() {
+                return P::_from_raw(p.inx(), P::Gen::generational_inc(p.generation()).0);
+            }
+        }
+        4..8 => {
+            if let Some(p) = arena.find_first_inx_ptr() {
+                return P::_from_raw(p.inx(), P::Gen::one());
+            }
+        }
+        8..12 => {
+            let inx1 = P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap();
+            if let Some((generation, _)) = arena.get_inx(inx1) {
+                return P::_from_raw(inx1, P::Gen::generational_inc(generation).0);
+            } else {
+                // the primary intention
+                return P::_from_raw(inx1, arena.singular_generation().unwrap());
+            }
+        }
+        12..16 => {
+            if arena.capacity() > 0 {
+                let last_inx =
+                    P::Inx::try_from_usize(NonZeroUsize::new(arena.capacity()).unwrap()).unwrap();
+                if let Some((generation, _)) = arena.get_inx(last_inx) {
+                    return P::_from_raw(last_inx, P::Gen::generational_inc(generation).0);
+                } else {
+                    // the primary intention
+                    return P::_from_raw(last_inx, arena.singular_generation().unwrap());
+                }
+            }
+        }
+        _ => unreachable!(),
+    }
+    // backup
+    P::invalid()
+}
+
 pub fn fuzz<
     P: Ptr,
     A: ArenaCloneFromWith<P, Cd<()>> + CompactArenaTrait<P, Cd<()>> + ArenaInsertTrait<P, Cd<()>>,
@@ -83,50 +126,6 @@ pub fn fuzz<
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut iters999 = 0;
-
-    // generate invalid `Ptr`s via `P::invalid()`, an existing allocation but with
-    // wrong generation (incremented or gen 1), or index 1 in a free slot, and in
-    // the space between `self.m.len()` and `self.m.capacity()`
-    let gen_invalid = |rng: &mut StarRng, arena: &A| {
-        match rng.index(16).unwrap() {
-            0 => return P::invalid(),
-            1..4 => {
-                if let Some(p) = arena.find_first_inx_ptr() {
-                    return P::_from_raw(p.inx(), P::Gen::generational_inc(p.generation()).0);
-                }
-            }
-            4..8 => {
-                if let Some(p) = arena.find_first_inx_ptr() {
-                    return P::_from_raw(p.inx(), P::Gen::one());
-                }
-            }
-            8..12 => {
-                let inx1 = P::Inx::try_from_usize(NonZeroUsize::new(1).unwrap()).unwrap();
-                if let Some((generation, _)) = arena.get_inx(inx1) {
-                    return P::_from_raw(inx1, P::Gen::generational_inc(generation).0);
-                } else {
-                    // the primary intention
-                    return P::_from_raw(inx1, arena.singular_generation().unwrap());
-                }
-            }
-            12..16 => {
-                if arena.capacity() > 0 {
-                    let last_inx =
-                        P::Inx::try_from_usize(NonZeroUsize::new(arena.capacity()).unwrap())
-                            .unwrap();
-                    if let Some((generation, _)) = arena.get_inx(last_inx) {
-                        return P::_from_raw(last_inx, P::Gen::generational_inc(generation).0);
-                    } else {
-                        // the primary intention
-                        return P::_from_raw(last_inx, arena.singular_generation().unwrap());
-                    }
-                }
-            }
-            _ => unreachable!(),
-        }
-        // backup
-        P::invalid()
-    };
 
     for i in 0..stats.n {
         let len = b.len();
