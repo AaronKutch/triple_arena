@@ -1,10 +1,9 @@
-use triple_arena::{Arena, traits::*};
-
 #[cfg(feature = "alloc")]
 #[test]
 fn test_inst_framework() {
     use rand_xoshiro::{Xoshiro128StarStar, rand_core::SeedableRng};
     use testcrate::{A, CKey, CVal, P1, fuzz_fill_inst};
+    use triple_arena::{Arena, traits::*};
     let mut rng = Xoshiro128StarStar::seed_from_u64(0);
 
     let mut a = Arena::<P1, (CKey, CVal)>::new();

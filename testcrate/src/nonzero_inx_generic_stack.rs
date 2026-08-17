@@ -4,7 +4,7 @@ use expect_test::Expect;
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
 use triple_arena::{
     errors::{AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError},
-    utils::traits::NonZeroInxGenericStack,
+    utils::traits::{NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait},
 };
 
 use crate::{
@@ -155,15 +155,29 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                 ensure_eq!(cap, a.capacity());
             }
             100..200 => {
-                // push_within_capacity
+                // push_within_capacity, entry_push_within_capacity
+                let use_entry = rng.next_bool();
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
                     b.push(k);
                     let inx = NonZeroUsize::new(b.len()).unwrap();
-                    let Ok((inx1, t1)) = a.push_within_capacity(t) else {
-                        bail!("")
-                    };
-                    ensure_eq!((inx1, t1.key()), (inx, k));
+                    if use_entry {
+                        let Ok(entry) = a.entry_push_within_capacity() else {
+                            bail!()
+                        };
+                        ensure_eq!(entry.inx(), inx);
+                        entry.push(t);
+                        ensure_eq!(a.get(inx).stack()?.key(), k);
+                    } else {
+                        let Ok((inx1, t1)) = a.push_within_capacity(t) else {
+                            bail!()
+                        };
+                        ensure_eq!((inx1, t1.key()), (inx, k));
+                    }
+                } else if use_entry {
+                    if a.entry_push_within_capacity().is_ok() {
+                        bail!("expected `NotWithinCapacityError`")
+                    }
                 } else {
                     let (_, t) = cd_gen.new_cd();
                     ensure_eq!(
@@ -173,8 +187,9 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                 }
             }
             200..250 => {
-                // push_reallocating
+                // push_reallocating, entry_push_reallocating
 
+                let use_entry = rng.next_bool();
                 let max_reached = a
                     .max_capacity()
                     .is_some_and(|max_capacity| max_capacity == len)
@@ -184,16 +199,32 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                     let (k, t) = cd_gen.new_cd();
                     b.push(k);
                     let inx = NonZeroUsize::new(b.len()).unwrap();
-                    let Ok((inx1, t1)) = a.push_reallocating(t) else {
-                        bail!("")
-                    };
-                    ensure_eq!((inx1, t1.key()), (inx, k));
+                    if use_entry {
+                        let Ok(entry) = a.entry_push_reallocating() else {
+                            bail!()
+                        };
+                        ensure_eq!(entry.inx(), inx);
+                        entry.push(t);
+                        ensure_eq!(a.get(inx).stack()?.key(), k);
+                    } else {
+                        let Ok((inx1, t1)) = a.push_reallocating(t) else {
+                            bail!()
+                        };
+                        ensure_eq!((inx1, t1.key()), (inx, k));
+                    }
                 } else if max_reached {
-                    let (_, t) = cd_gen.new_cd();
-                    ensure_eq!(
-                        a.push_reallocating(t).map(|_| ()),
-                        Err(ReallocationError::BeyondMaxCapacity)
-                    );
+                    if use_entry {
+                        match a.entry_push_reallocating() {
+                            Ok(_) => bail!("expected `BeyondMaxCapacity`"),
+                            Err(e) => ensure_eq!(e, ReallocationError::BeyondMaxCapacity),
+                        }
+                    } else {
+                        let (_, t) = cd_gen.new_cd();
+                        ensure_eq!(
+                            a.push_reallocating(t).map(|_| ()),
+                            Err(ReallocationError::BeyondMaxCapacity)
+                        );
+                    }
                 } else if len >= stats.test_limit {
                     // do nothing
                 } else {
@@ -202,18 +233,28 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                     b.push(k);
                     let inx = NonZeroUsize::new(b.len()).unwrap();
                     let cap = a.capacity();
-                    let Ok((inx1, t1)) = a.push_reallocating(t) else {
-                        bail!("")
-                    };
-                    ensure_eq!((inx1, t1.key()), (inx, k));
+                    if use_entry {
+                        let Ok(entry) = a.entry_push_reallocating() else {
+                            bail!()
+                        };
+                        ensure_eq!(entry.inx(), inx);
+                        entry.push(t);
+                        ensure_eq!(a.get(inx).stack()?.key(), k);
+                    } else {
+                        let Ok((inx1, t1)) = a.push_reallocating(t) else {
+                            bail!()
+                        };
+                        ensure_eq!((inx1, t1.key()), (inx, k));
+                    }
                     // check that capacity increased
                     ensure!(a.capacity() > cap);
                     b_capacity = a.capacity();
                 }
             }
             250..300 => {
-                // push
+                // push, entry_push
 
+                let use_entry = rng.next_bool();
                 let max_reached = a
                     .max_capacity()
                     .is_some_and(|max_capacity| max_capacity == len)
@@ -223,8 +264,15 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                     let (k, t) = cd_gen.new_cd();
                     b.push(k);
                     let inx = NonZeroUsize::new(b.len()).unwrap();
-                    let (inx1, t1) = a.push(t);
-                    ensure_eq!((inx1, t1.key()), (inx, k));
+                    if use_entry {
+                        let entry = a.entry_push();
+                        ensure_eq!(entry.inx(), inx);
+                        entry.push(t);
+                        ensure_eq!(a.get(inx).stack()?.key(), k);
+                    } else {
+                        let (inx1, t1) = a.push(t);
+                        ensure_eq!((inx1, t1.key()), (inx, k));
+                    }
                 } else if max_reached || len >= stats.test_limit {
                     // do nothing
                 } else {
@@ -232,19 +280,59 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
                     b.push(k);
                     let inx = NonZeroUsize::new(b.len()).unwrap();
                     let cap = a.capacity();
-                    let (inx1, t1) = a.push(t);
-                    ensure_eq!((inx1, t1.key()), (inx, k));
+                    if use_entry {
+                        let entry = a.entry_push();
+                        ensure_eq!(entry.inx(), inx);
+                        entry.push(t);
+                        ensure_eq!(a.get(inx).stack()?.key(), k);
+                    } else {
+                        let (inx1, t1) = a.push(t);
+                        ensure_eq!((inx1, t1.key()), (inx, k));
+                    }
                     // check that capacity increased
                     ensure!(a.capacity() > cap);
                     b_capacity = a.capacity();
                 }
             }
-            // FIXME entry versions
             300..500 => {
                 // pop
                 ensure_eq!(a.pop().map(|t| t.key()), b.pop());
             }
-            500..950 => {
+            500..520 => {
+                // entry_push with cancellation
+
+                let inx = NonZeroUsize::new(len.wrapping_add(1)).unwrap();
+                let cap = a.capacity();
+                if len < cap {
+                    let Ok(entry) = a.entry_push_within_capacity() else {
+                        bail!("expected capacity to be available")
+                    };
+                    ensure_eq!(entry.inx(), inx);
+                    drop(entry);
+                    // the capacity is not affected either
+                    ensure_eq!(a.capacity(), cap);
+                } else if len < stats.test_limit {
+                    // `len == cap` here, so an entry can only be produced by growing.
+                    // The max capacity can be used up, in which case there is no entry
+                    // and no growth.
+                    let grew = if let Ok(entry) = a.entry_push_reallocating() {
+                        ensure_eq!(entry.inx(), inx);
+                        drop(entry);
+                        true
+                    } else {
+                        false
+                    };
+                    if grew {
+                        // the reallocation still occurred
+                        ensure!(a.capacity() > cap);
+                    }
+                    b_capacity = a.capacity();
+                }
+                ensure_eq!(a.len(), len);
+                ensure_eq!(cd_gen.len(), len);
+                ensure!(a.get(inx).is_none());
+            }
+            520..950 => {
                 // get, get_unchecked, get_unchecked_mut, get_mut
                 if let Some(i) = rng.index(len) {
                     let i = NonZeroUsize::new(i + 1).unwrap();

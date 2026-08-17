@@ -184,9 +184,10 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         let was_empty = self.is_empty();
         // always do these steps to make sure the freelist is clear (make it canonical,
         // may be logically empty but still have a messed up freelist)
-        self.m.clear();
+        // REF(zero_before_drop)
         self.len = 0;
         self.freelist_root = None;
+        self.m.clear();
         if was_empty {
             InvalidationOption::Success(())
         } else {
@@ -268,10 +269,11 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for Arena<P, T, B> {
             // no entries
 
             // same as `clear` but the generation is copied over
-            self.m.clear();
+            // REF(zero_before_drop)
             self.len = 0;
             self.freelist_root = None;
             self.generation = source.singular_generation().unwrap_or(P::Gen::two());
+            self.m.clear();
             return Ok(());
         };
         // REF(careful_index_checking) Be aware that `source` may not be linear and the
@@ -287,9 +289,11 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for Arena<P, T, B> {
             self.reallocate_min_capacity(raw_last.get())?;
         }
         // start modifying after the fallible points that we can reasonably deal with
-        self.m.clear();
+        // REF(zero_before_drop)
         self.len = 0;
+        self.freelist_root = None;
         self.generation = source.singular_generation().unwrap_or(P::Gen::two());
+        self.m.clear();
         // maintain invariants even with bad behavior, increment `len` at the right
         // moment and always call `canonicalize_free_list` after this point
         let mut adv = source.advancer();

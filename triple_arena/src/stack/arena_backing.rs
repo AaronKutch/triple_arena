@@ -8,8 +8,9 @@ use crate::utils::{NonZeroInxBoxedSlice, NonZeroInxLimitedVec, NonZeroInxVec};
 ///
 /// In addition to what [NonZeroInxGenericStack] requires, the `Stack` type must
 /// not have certain kinds of internal mutability that would make functions like
-/// [crate::Arena::backing] unsound.
+/// [Arena::backing](crate::Arena::backing) unsound.
 pub unsafe trait ArenaBacking {
+    /// The stack type that arenas with this backing store their slots in
     type Stack<U>: NonZeroInxGenericStack<U>;
 }
 

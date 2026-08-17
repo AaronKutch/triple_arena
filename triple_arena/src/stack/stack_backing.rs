@@ -2,6 +2,7 @@ use core::{
     array,
     mem::{self, MaybeUninit},
     num::NonZeroUsize,
+    ptr,
 };
 
 use crate::{
@@ -13,6 +14,10 @@ use crate::{
 // like `get_disjoint_unchecked`, also "LIMIT" is more immediately apparent for
 // something that has a capacity
 
+/// The stack-based fixed capacity implementation (based on `[MaybeUninit<...>;
+/// LIMIT]`) of [NonZeroInxGenericStack]. Both
+/// [capacity](NonZeroInxGenericStack::capacity) and
+/// [max_capacity](NonZeroInxGenericStack::max_capacity) are always `LIMIT`.
 pub struct NonZeroInxArray<T, const LIMIT: usize> {
     // in actual layout with this potentially long array it is preferred for this to come first
     len: usize,
@@ -25,6 +30,9 @@ impl<T, const LIMIT: usize> Drop for NonZeroInxArray<T, LIMIT> {
     }
 }
 
+/// The [NonZeroInxArray] implementation of
+/// [NonZeroInxGenericStackPushEntryTrait]
+#[must_use]
 pub struct NonZeroInxArrayPushEntry<'a, T, const LIMIT: usize> {
     this: &'a mut NonZeroInxArray<T, LIMIT>,
 }
@@ -96,13 +104,9 @@ unsafe impl<T, const LIMIT: usize> NonZeroInxGenericStack<T> for NonZeroInxArray
     fn entry_push_within_capacity(
         &mut self,
     ) -> Result<Self::PushEntry<'_>, NotWithinCapacityError> {
-        // need to account for `T` being a ZST, can't rely on isize::MAX limits
-        if let Some(next_len) = self.len.checked_add(1) {
-            if next_len <= LIMIT {
-                Ok(NonZeroInxArrayPushEntry { this: self })
-            } else {
-                Err(NotWithinCapacityError)
-            }
+        // this accounts for ZSTs
+        if self.len < LIMIT {
+            Ok(NonZeroInxArrayPushEntry { this: self })
         } else {
             Err(NotWithinCapacityError)
         }
@@ -152,14 +156,19 @@ unsafe impl<T, const LIMIT: usize> NonZeroInxGenericStack<T> for NonZeroInxArray
     }
 
     fn clear(&mut self) {
-        // run drop code
-        // Safety: everything up to `self.len` was initialized, we are dropping
-        // everything once and setting `len` to zero
+        // REF(zero_before_drop) N.B. the length must be set to zero before any drop
+        // code is run. Unwinding `T::drop` can be recovered and elements could be
+        // double dropped. In higher levels with their own length fields, they should
+        // follow by setting length and other revelant fields to the clear state before
+        // calling this.
+        let len = mem::replace(&mut self.len, 0);
+        // Safety: everything up to `len` was initialized, and is dropped exactly once.
+        // `drop_in_place` on a slice keeps dropping the remaining elements if
+        // one of the drops panics, so they are not leaked either.
         unsafe {
-            for t in self.array.get_unchecked_mut(..self.len) {
-                t.assume_init_drop();
-            }
-            self.len = 0;
+            let to_drop: *mut [T] =
+                self.array.get_unchecked_mut(..len) as *mut [MaybeUninit<T>] as *mut [T];
+            ptr::drop_in_place(to_drop);
         }
     }
 }

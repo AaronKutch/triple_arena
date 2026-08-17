@@ -1,5 +1,3 @@
-//! This is a safer implementation of the heap backing for reference
-
 use alloc::vec::Vec;
 use core::num::NonZeroUsize;
 
@@ -21,6 +19,9 @@ pub struct NonZeroInxVec<T> {
     v: Vec<T>,
 }
 
+/// The [NonZeroInxVec] implementation of
+/// [NonZeroInxGenericStackPushEntryTrait]
+#[must_use]
 pub struct NonZeroInxVecPushEntry<'a, T> {
     this: &'a mut NonZeroInxVec<T>,
 }
@@ -73,14 +74,16 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxVec<T> {
     fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), ReallocationError> {
         if min_capacity > self.capacity() {
             self.v
-                .try_reserve(min_capacity - self.len())
+                .try_reserve(min_capacity.wrapping_sub(self.len()))
                 .map_err(|_| ReallocationError::AllocError)?;
         } else if min_capacity < self.capacity() {
             // TODO change when `try_shrink_to` is stabilized
 
             // the only stable way to do it
             let mut v = Vec::new();
-            v.try_reserve(min_capacity)
+            // N.B. we must raise the capacity to at least `self.v.len()`, otherwise the
+            // `append` will try to reallocate internally
+            v.try_reserve(min_capacity.max(self.v.len()))
                 .map_err(|_| ReallocationError::AllocError)?;
             v.append(&mut self.v);
             self.v = v;

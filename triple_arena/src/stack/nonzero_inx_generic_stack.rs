@@ -34,10 +34,15 @@ Regarding entry methods (this is talking generally, the index logic becomes more
 /// Dropping the struct cancels the insertion
 #[must_use]
 pub trait NonZeroInxGenericStackPushEntryTrait<'a, T> {
-    /// The index at which the element will be, if inserted. This is always
-    /// `NonZeroUsize::new_unchecked(self.len())` based on `self.len()` right
-    /// before the call.
+    /// The index at which the element will be, if inserted. Because of the
+    /// one-indexing this is always `NonZeroUsize::new_unchecked(self.len() +
+    /// 1)` based on the `self.len()` of the stack right before the entry was
+    /// created, equivalently it is the `self.len()` immediately after a
+    /// successful [push](NonZeroInxGenericStackPushEntryTrait::push).
     fn inx(&self) -> NonZeroUsize;
+
+    /// Pushes `t` onto the stack at [inx](
+    /// NonZeroInxGenericStackPushEntryTrait::inx)
     fn push(self, t: T);
 }
 
@@ -80,6 +85,7 @@ pub trait NonZeroInxGenericStackPushEntryTrait<'a, T> {
 /// than the actual capacity with respect to allocation details). Types that
 /// cannot guarantee this should instead return `None` from `self.max_capacity`.
 pub unsafe trait NonZeroInxGenericStack<T>: Sized {
+    /// The type returned by the `entry_push_*` functions
     type PushEntry<'a>: NonZeroInxGenericStackPushEntryTrait<'a, T>
     where
         Self: 'a;
@@ -93,8 +99,8 @@ pub unsafe trait NonZeroInxGenericStack<T>: Sized {
     /// least the capacity of the returned stack. Returns an error upon
     /// allocation failure.
     ///
-    /// In most cases [NonZeroInxGenericStack::new] followed by
-    /// [NonZeroInxGenericStack::reallocate_min_capacity] would be sufficient,
+    /// In most cases [new](NonZeroInxGenericStack::new) followed by
+    /// [reallocate_min_capacity](NonZeroInxGenericStack::reallocate_min_capacity) would be sufficient,
     /// but this function needs to exist for certain fixed capacity structures
     /// that can only have their capacity set once at construction time.
     fn with_min_capacity(min_capacity: usize) -> Result<Self, AllocError>;
@@ -109,7 +115,7 @@ pub unsafe trait NonZeroInxGenericStack<T>: Sized {
     /// elements they could ever hold (and should hold `self.capacity` to that
     /// constant). Dynamically allocated types can also return a maximum, if
     /// they internally limit themselves in order to bound memory (and their
-    /// [NonZeroInxGenericStack::reallocate_min_capacity] behaves strictly to
+    /// [reallocate_min_capacity](NonZeroInxGenericStack::reallocate_min_capacity) behaves strictly to
     /// avoid `self.capacity()` exceeding this limit). But most dynamically
     /// allocated types would return `None` to indicate that they will try
     /// to increase in length until memory allocation failure. If set,
@@ -145,7 +151,11 @@ pub unsafe trait NonZeroInxGenericStack<T>: Sized {
     /// Pushes an element to the end such that its index is
     /// `NonZeroUsize::new_unchecked(self.len())` immediately _after_ this call.
     /// Returns the index to the element and a mutable reference to it on
-    /// success, else returns the element if there was no remaining capacity.
+    /// success. If there was no remaining capacity, `t` is dropped and an error
+    /// is returned (use
+    /// [entry_push_within_capacity](
+    /// NonZeroInxGenericStack::entry_push_within_capacity) instead if `t` needs
+    /// to be recovered).
     fn push_within_capacity(
         &mut self,
         t: T,
@@ -158,11 +168,51 @@ pub unsafe trait NonZeroInxGenericStack<T>: Sized {
         unsafe { Ok((inx, self.get_unchecked_mut(inx))) }
     }
 
-    /// The same as [NonZeroInxGenericStack::push_within_capacity], except that
-    /// it will automatically reallocate to try and extend the capacity upon
-    /// running out, and returns the element upon an allocation error or using
-    /// up [NonZeroInxGenericStack::max_capacity].
+    /// The same as
+    /// [push_within_capacity](NonZeroInxGenericStack::push_within_capacity),
+    /// except that it will automatically reallocate to try and extend the
+    /// capacity upon running out. `t` is dropped upon an allocation
+    /// error or using up
+    /// [max_capacity](NonZeroInxGenericStack::max_capacity).
     fn push_reallocating(&mut self, t: T) -> Result<(NonZeroUsize, &mut T), ReallocationError> {
+        let entry = self.entry_push_reallocating()?;
+        let inx = entry.inx();
+        entry.push(t);
+        // Safety: this is accessing the element just after it was inserted, and using
+        // the correct index
+        unsafe { Ok((inx, self.get_unchecked_mut(inx))) }
+    }
+
+    /// The same as
+    /// [push_reallocating](NonZeroInxGenericStack::push_reallocating), except
+    /// that this panics upon an allocation error or using up
+    /// [max_capacity](NonZeroInxGenericStack::max_capacity).
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure when needing to extend
+    /// capacity, or if `self.len()` is at the maximum capacity.
+    #[track_caller]
+    fn push(&mut self, t: T) -> (NonZeroUsize, &mut T) {
+        // TODO it would be nice if Rust had a way to mark functions such that
+        // downstream uses would warn if downstream assertions (something like
+        // `clippy::cast_possible_wrap` but not just lexical and something more general
+        // that guards against other fallible things in the language)
+        self.push_reallocating(t)
+            .expect("`NonZeroInxGenericStack::push_reallocating` failed")
+    }
+
+    /// If capacity is available, a push entry for pushing an element onto the
+    /// stack is returned. Returns an error if there was no available capacity.
+    fn entry_push_within_capacity(&mut self)
+    -> Result<Self::PushEntry<'_>, NotWithinCapacityError>;
+
+    /// Returns a push entry, reallocating if necessary and returning an
+    /// error if reallocation failed or if
+    /// [max_capacity](NonZeroInxGenericStack::max_capacity) is used up. Be
+    /// aware that any reallocation happens upon calling this method, and the
+    /// effects remain even if pushing onto the stack is cancelled.
+    fn entry_push_reallocating(&mut self) -> Result<Self::PushEntry<'_>, ReallocationError> {
         if self.len() == self.capacity() {
             // TODO REF(better_reallocation) may want something more sophisticated, see https://github.com/rust-lang/rust/issues/29931
 
@@ -184,64 +234,12 @@ pub unsafe trait NonZeroInxGenericStack<T>: Sized {
         }
         // an error shouldn't happen, but if it does it is logically the allocator's
         // fault
-        self.push_within_capacity(t)
-            .map_err(|NotWithinCapacityError| ReallocationError::AllocError)
-    }
-
-    /// The same as [NonZeroInxGenericStack::push_reallocating], except that
-    /// this panics upon an allocation error or using up
-    /// [NonZeroInxGenericStack::max_capacity].
-    ///
-    /// # Panics
-    ///
-    /// This function can panic on allocation failure when needing to extend
-    /// capacity
-    #[track_caller]
-    fn push(&mut self, t: T) -> (NonZeroUsize, &mut T) {
-        // TODO it would be nice if Rust had a way to mark functions such that
-        // downstream uses would warn if downstream assertions (something like
-        // `clippy::cast_possible_wrap` but not just lexical and something more general
-        // that guards against other fallible things in the language)
-        self.push_reallocating(t)
-            .expect("`NonZeroInxGenericStack::push_reallocating` failed")
-    }
-
-    /// If capacity is available, a push entry for pushing `t` onto the
-    /// stack is returned. Returns an error if there was no available capacity.
-    fn entry_push_within_capacity(&mut self)
-    -> Result<Self::PushEntry<'_>, NotWithinCapacityError>;
-
-    /// Returns a push entry, reallocating if necessary and returning an
-    /// error if reallocation failed or if
-    /// [NonZeroInxGenericStack::max_capacity] is used up. Be aware that any
-    /// reallocation happens upon calling this method, and the affects
-    /// remain even if pushing onto the stack is cancelled.
-    fn entry_push_reallocating(&mut self) -> Result<Self::PushEntry<'_>, ReallocationError> {
-        if self.len() == self.capacity() {
-            // REF(better_reallocation)
-
-            // follow `RawVec`
-            let mut next = if self.capacity() == 0 {
-                if size_of::<T>() <= 1024 { 4 } else { 1 }
-            } else {
-                self.capacity().saturating_mul(2)
-            };
-            // but be able to saturate max capacity before causing an error
-            if let Some(max_capacity) = self.max_capacity() {
-                next = next.min(max_capacity);
-            }
-            if next <= self.capacity() {
-                // the max capacity is limiting us
-                return Err(ReallocationError::BeyondMaxCapacity);
-            }
-            self.reallocate_min_capacity(next)?;
-        }
         self.entry_push_within_capacity()
             .map_err(|NotWithinCapacityError| ReallocationError::AllocError)
     }
 
     /// Returns an insertion entry, panicking if an allocation error occurs or
-    /// if [NonZeroInxGenericStack::max_capacity] is used up.
+    /// if [max_capacity](NonZeroInxGenericStack::max_capacity) is used up.
     ///
     /// # Panics
     ///
@@ -338,8 +336,9 @@ pub unsafe trait NonZeroInxGenericStack<T>: Sized {
 }
 
 /// A trait for types that have a settable maximum capacity, complementing
-/// traits like [crate::utils::traits::NonZeroInxGenericStack] and
-/// [crate::traits::ArenaTrait] that have a `max_capacity` function.
+/// traits like
+/// [NonZeroInxGenericStack](crate::utils::traits::NonZeroInxGenericStack) and
+/// [ArenaTrait](crate::traits::ArenaTrait) that have a `max_capacity` function.
 pub trait SetMaxCapacity {
     /// Changes the maximum allowed capacity to `max_capacity` and modifies
     /// `self.capacity()` in some cases. Always allows increasing the maximum

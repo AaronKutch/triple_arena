@@ -2,6 +2,7 @@ use alloc::{boxed::Box, vec::Vec};
 use core::{
     mem::{self, MaybeUninit},
     num::NonZeroUsize,
+    ptr,
 };
 
 use crate::{
@@ -16,9 +17,10 @@ use crate::{
 
 /// The standard heap-based fixed capacity implementation (based on
 /// `Box<[MaybeUninit<...>]>`) of [NonZeroInxGenericStack]. Note that
-/// [NonZeroInxGenericStack::new] for this type will create an unchangeable zero
-/// capacity struct, [NonZeroInxGenericStack::with_min_capacity] should be used
-/// instead
+/// [new](NonZeroInxGenericStack::new) for this type will create an unchangeable
+/// zero capacity struct,
+/// [with_min_capacity](NonZeroInxGenericStack::with_min_capacity) should be
+/// used instead
 pub struct NonZeroInxBoxedSlice<T> {
     v: Box<[MaybeUninit<T>]>,
     len: usize,
@@ -30,6 +32,9 @@ impl<T> Drop for NonZeroInxBoxedSlice<T> {
     }
 }
 
+/// The [NonZeroInxBoxedSlice] implementation of
+/// [NonZeroInxGenericStackPushEntryTrait]
+#[must_use]
 pub struct NonZeroInxBoxedSlicePushEntry<'a, T> {
     this: &'a mut NonZeroInxBoxedSlice<T>,
 }
@@ -74,8 +79,18 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxBoxedSlice<T> {
         // the only stable way to do it
         let mut v = Vec::new();
         v.try_reserve(min_capacity).map_err(|_| AllocError)?;
-        for _ in 0..v.capacity() {
-            v.push(MaybeUninit::uninit());
+        let capacity = if size_of::<T>() == 0 {
+            // `Vec` always has a capacity of `usize::MAX` when `T` is a ZST, I would
+            // normally say follow it, however I think the best approach in this specific
+            // context with a fixed capacity boxed slice is to follow what was asked for
+            min_capacity
+        } else {
+            v.capacity()
+        };
+        // Safety: `capacity <= v.capacity()`, and every `MaybeUninit<T>` is initialized
+        // in the sense that any bit pattern is a valid value of the type
+        unsafe {
+            v.set_len(capacity);
         }
         Ok(Self {
             v: Box::from(v),
@@ -106,13 +121,9 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxBoxedSlice<T> {
     fn entry_push_within_capacity(
         &mut self,
     ) -> Result<Self::PushEntry<'_>, NotWithinCapacityError> {
-        // need to account for `T` being a ZST, can't rely on isize::MAX limits
-        if let Some(next_len) = self.len.checked_add(1) {
-            if next_len <= self.v.len() {
-                Ok(NonZeroInxBoxedSlicePushEntry { this: self })
-            } else {
-                Err(NotWithinCapacityError)
-            }
+        // this accounts for ZSTs
+        if self.len < self.v.len() {
+            Ok(NonZeroInxBoxedSlicePushEntry { this: self })
         } else {
             Err(NotWithinCapacityError)
         }
@@ -159,14 +170,15 @@ unsafe impl<T> NonZeroInxGenericStack<T> for NonZeroInxBoxedSlice<T> {
     }
 
     fn clear(&mut self) {
-        // run drop code
-        // Safety: everything up to `self.len` was initialized, we are dropping
-        // everything once and setting `len` to zero
+        // REF(zero_before_drop)
+        let len = mem::replace(&mut self.len, 0);
+        // Safety: everything up to `len` was initialized, and is dropped exactly once.
+        // `drop_in_place` on a slice keeps dropping the remaining elements if one of
+        // the drops panics, so they are not leaked either.
         unsafe {
-            for t in self.v.get_unchecked_mut(..self.len) {
-                t.assume_init_drop();
-            }
-            self.len = 0;
+            let to_drop: *mut [T] =
+                self.v.get_unchecked_mut(..len) as *mut [MaybeUninit<T>] as *mut [T];
+            ptr::drop_in_place(to_drop);
         }
     }
 }

@@ -169,8 +169,9 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for DirectArena<P, T, B> {
     }
 
     fn clear(&mut self) -> InvalidationOption<()> {
-        self.m.clear();
+        // REF(zero_before_drop)
         self.len = 0;
+        self.m.clear();
         InvalidationOption::Success(())
     }
 
@@ -229,8 +230,9 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for DirectArena<P, T, 
             // no entries
 
             // same as `clear` but the generation is copied over
-            self.m.clear();
+            // REF(zero_before_drop)
             self.len = 0;
+            self.m.clear();
             return Ok(());
         };
         // REF(careful_index_checking)
@@ -242,8 +244,9 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for DirectArena<P, T, 
             self.reallocate_min_capacity(raw_last.get())?;
         }
         // start modifying after the fallible points that we can reasonably deal with
-        self.m.clear();
+        // REF(zero_before_drop)
         self.len = 0;
+        self.m.clear();
         // maintain invariants even with bad behavior, increment `len` at the right
         // moment and always call `canonicalize_free_slots` after this point
         let mut adv = source.advancer();

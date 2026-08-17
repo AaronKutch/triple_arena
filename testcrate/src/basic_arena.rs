@@ -302,8 +302,8 @@ pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
                                 ensure_eq!(a.get(*p).stack()?.key(), *k);
                             }
                         }
-                        Err(GetDisjointMutError::IndexOutOfBounds) => bail!(""),
-                        _ => bail!(""),
+                        Err(GetDisjointMutError::IndexOutOfBounds) => bail!(),
+                        _ => bail!(),
                     }
                 }
             }
@@ -407,7 +407,7 @@ pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
                         ensure!(g.invalidate());
                     }
                     InvalidationResult::InvalidPtr => {
-                        bail!("")
+                        bail!()
                     }
                 }
             } else {
@@ -508,7 +508,7 @@ pub fn fuzz<
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
                     let Ok(p) = a.insert_within_capacity(t) else {
-                        bail!("")
+                        bail!()
                     };
                     b.insert(k, p);
                 } else {
@@ -530,7 +530,7 @@ pub fn fuzz<
                 if len < a.capacity() {
                     let (k, t) = cd_gen.new_cd();
                     let Ok(p) = a.insert_reallocating(t) else {
-                        bail!("")
+                        bail!()
                     };
                     b.insert(k, p);
                 } else if max_reached {
@@ -546,7 +546,7 @@ pub fn fuzz<
                     let (k, t) = cd_gen.new_cd();
                     let cap = a.capacity();
                     let Ok(p) = a.insert_reallocating(t) else {
-                        bail!("")
+                        bail!()
                     };
                     // check that capacity increased
                     ensure!(a.capacity() > cap);
@@ -591,7 +591,7 @@ pub fn fuzz<
                             ensure!(g.invalidate());
                         }
                         InvalidationResult::InvalidPtr => {
-                            bail!("")
+                            bail!()
                         }
                     }
                 } else {
@@ -614,7 +614,7 @@ pub fn fuzz<
                             ensure!(g.invalidate());
                         }
                         InvalidationResult::InvalidPtr => {
-                            bail!("")
+                            bail!()
                         }
                     }
                 } else {

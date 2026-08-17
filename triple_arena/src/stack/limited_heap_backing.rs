@@ -1,5 +1,3 @@
-//! This is a safer implementation of the heap backing for reference
-
 use core::{cmp::min, num::NonZeroUsize};
 
 use crate::{
@@ -39,6 +37,9 @@ impl<T> SetMaxCapacity for NonZeroInxLimitedVec<T> {
     }
 }
 
+/// The [NonZeroInxLimitedVec] implementation of
+/// [NonZeroInxGenericStackPushEntryTrait]
+#[must_use]
 pub struct NonZeroInxLimitedVecPushEntry<'a, T> {
     this: NonZeroInxVecPushEntry<'a, T>,
 }
