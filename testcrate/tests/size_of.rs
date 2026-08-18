@@ -6,7 +6,7 @@ use std::{
 use triple_arena::{
     Link, ptr_struct,
     traits::*,
-    utils::{ArenaSlot, PtrNoGen, SimpleOrdArenaNode},
+    utils::{ArenaSlot, DirectSlot, PtrNoGen, SimpleOrdArenaNode},
 };
 
 ptr_struct!(P0);
@@ -46,6 +46,19 @@ fn size_of_node() {
     assert_eq!(size_of::<ArenaSlot<P1, ()>>(), 8);
     assert_eq!(
         size_of::<ArenaSlot<P1, Link<P1, SimpleOrdArenaNode<P1, ()>>>>(),
+        56
+    );
+
+    // only needs the generation niche
+    assert_eq!(size_of::<DirectSlot<P0, ()>>(), 8);
+    assert_eq!(
+        size_of::<DirectSlot<P0, Link<P0, SimpleOrdArenaNode<P0, ()>>>>(),
+        72
+    );
+    // only a single byte
+    assert_eq!(size_of::<DirectSlot<P1, ()>>(), 1);
+    assert_eq!(
+        size_of::<DirectSlot<P1, Link<P1, SimpleOrdArenaNode<P1, ()>>>>(),
         56
     );
 }

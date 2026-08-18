@@ -1,4 +1,4 @@
-//! Iterators for `Arena`
+//! Iterators for `DirectArena`
 
 use core::num::NonZeroUsize;
 
@@ -97,7 +97,8 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterMut<'a, P, T, B> {
     }
 }
 
-/// A draining iterator over `(P, T)` in a `DirectArena`
+/// A draining iterator over `(P, T)` in a `DirectArena`. The arena is cleared
+/// when this iterator is dropped.
 pub struct Drain<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a mut DirectArena<P, T, B>,
     adv: PtrAdvancer<P>,
@@ -114,15 +115,11 @@ impl<P: Ptr, T, B: ArenaBacking> Iterator for Drain<'_, P, T, B> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let p = self.adv.advance(self.arena)?;
-        // should always return `Success`
-        self.arena
-            .remove(p)
-            .allow()
-            .map(|t| InvalidationOption::Success((p, t)))
+        Some(self.arena.remove(p).map(|t| (p, t)).unwrap())
     }
 }
 
-/// A capacity draining iterator over `(P, T)` in an `DirectArena`
+/// A capacity draining iterator over `(P, T)` in a `DirectArena`
 pub struct CapacityDrain<P: Ptr, T, B: ArenaBacking> {
     arena: DirectArena<P, T, B>,
     adv: PtrAdvancer<P>,
@@ -139,6 +136,7 @@ impl<P: Ptr, T, B: ArenaBacking> Iterator for CapacityDrain<P, T, B> {
     }
 }
 
+// TODO we could remove these in the future with associated `impl` types
 impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
     pub(crate) fn internal_advancer_inx(&self, inx: P::Inx, rev: bool) -> PtrAdvancer<P> {
         PtrAdvancer {

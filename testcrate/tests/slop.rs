@@ -16,15 +16,15 @@ use std::{
 };
 
 use triple_arena::{
-    Arena, InvalidationOption, InvalidationResult, StackBacking,
+    Arena, DirectArena, InvalidationOption, InvalidationResult, StackBacking,
     errors::{AllocError, NotWithinCapacityError, ReallocationError},
     ptr_struct,
     traits::{
-        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
-        CompactArenaTrait, Ptr, Recast,
+        Advancer, ArenaCloneFromWith, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait,
+        ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, CompactArenaTrait, Ptr, Recast,
     },
     utils::{
-        ArenaSlot, NonZeroInxArray, PtrNoGen, nzusize_iter,
+        ArenaSlot, DirectSlot, NonZeroInxArray, PtrNoGen, nzusize_iter,
         traits::{NonZeroInxGenericStack, NonZeroInxGenericStackPushEntryTrait, PtrGen, PtrInx},
     },
 };
@@ -566,6 +566,11 @@ fn q0_inx(i: usize) -> <Q0 as Ptr>::Inx {
     PtrInx::try_from_usize(nz(i)).unwrap()
 }
 
+/// A `Q0` at raw index `i` with the first valid generation
+fn q0(i: usize) -> Q0 {
+    Ptr::_from_raw(q0_inx(i), PtrGen::two())
+}
+
 #[test]
 fn arena_default_and_indexing() {
     let a = A8::default();
@@ -976,6 +981,53 @@ fn faulty_arena_advance_unknown_ptr() {
     let _ = clone_from_faulty(&FaultyArena::new(1, &[1], true));
 }
 
+/// Clones from `source` into a fresh direct insertion arena with a capacity of
+/// exactly 4. `clone_from_with` has its own implementation there, so it needs
+/// its own set of these.
+fn direct_clone_from_faulty(source: &FaultyArena) -> Result<(), ReallocationError> {
+    let mut a = DirectArena::<QLarge, u8, StackBacking<4>>::new();
+    assert_eq!(a.capacity(), 4);
+    a.clone_from_with(source, |_, u| *u)
+}
+
+#[test]
+fn faulty_direct_arena_last_inx_too_big() {
+    assert_eq!(
+        direct_clone_from_faulty(&FaultyArena::new(1 << 64, &[], false)),
+        Err(ReallocationError::AllocError)
+    );
+}
+
+#[test]
+#[should_panic]
+fn faulty_direct_arena_advance_inx_too_big() {
+    let _ = direct_clone_from_faulty(&FaultyArena::new(1, &[1 << 64], false));
+}
+
+#[test]
+#[should_panic]
+fn faulty_direct_arena_advance_out_of_order() {
+    let _ = direct_clone_from_faulty(&FaultyArena::new(2, &[2, 1], false));
+}
+
+#[test]
+#[should_panic]
+fn faulty_direct_arena_gap_beyond_capacity() {
+    let _ = direct_clone_from_faulty(&FaultyArena::new(1, &[6], false));
+}
+
+#[test]
+#[should_panic]
+fn faulty_direct_arena_entry_beyond_capacity() {
+    let _ = direct_clone_from_faulty(&FaultyArena::new(1, &[5], false));
+}
+
+#[test]
+#[should_panic]
+fn faulty_direct_arena_advance_unknown_ptr() {
+    let _ = direct_clone_from_faulty(&FaultyArena::new(1, &[1], true));
+}
+
 /// Returns an arena whose freelist root points at an allocated slot, which is
 /// exactly what the `# Safety` section of
 /// [set_freelist_root](Arena::set_freelist_root) forbids
@@ -1056,4 +1108,385 @@ fn arena_check_invariants_detects_corruption() {
     assert_eq!(Arena::_check_invariants(&a), Ok(()));
     unsafe { a.set_freelist_root(Some(NonZeroU128::new(1 << 64).unwrap())) };
     assert_eq!(Arena::_check_invariants(&a), Err("try_into_usize failed"));
+}
+
+// ============================== `crate::arena` direct insertion ==============
+
+type D8 = DirectArena<Q0, u8, StackBacking<8>>;
+
+/// Returns a direct insertion arena of capacity 8 with slots
+/// `[Allocated, Free, Allocated]`, which is the same layout that
+/// [arena_with_hole] has
+fn direct_arena_with_hole() -> D8 {
+    let mut a = D8::new();
+    for i in 1..=3 {
+        a.direct_insert_within_capacity(q0(i))
+            .unwrap()
+            .insert((i - 1) as u8);
+    }
+    a.remove(q0(2)).allow().unwrap();
+    a
+}
+
+#[test]
+fn direct_arena_default_and_indexing() {
+    let a = D8::default();
+    assert!(a.is_empty());
+    assert_eq!(a.backing().len(), 0);
+    // there is never a singular generation
+    assert_eq!(a.singular_generation(), None);
+
+    let mut a = direct_arena_with_hole();
+    assert_eq!(a.len(), 2);
+    // unlike the base arena there is no freelist, and the free slot in the middle
+    // is simply skipped over
+    assert_eq!(a.backing().len(), 3);
+
+    let p = a.find_first_inx_ptr().unwrap();
+    assert_eq!(a[p], 0);
+    // `Index` is also implemented for anything that borrows a `Ptr`
+    assert_eq!(a[&p], 0);
+    a[p] = 3;
+    a[&p] = 4;
+    assert_eq!(a[p], 4);
+
+    // the hidden index based accessors used by the higher layers
+    assert_eq!(*a.get_inx_unwrap(q0_inx(1)), 4);
+    *a.get_inx_mut_unwrap(q0_inx(1)) = 5;
+    assert_eq!(a[p], 5);
+
+    // `invalidate` can only report whether the `Ptr` is valid
+    assert_eq!(a.invalidate(p), InvalidationResult::Success(p));
+    assert!(a.invalidate(q0(2)).is_invalid());
+    assert!(a.invalidate(Q0::invalid()).is_invalid());
+}
+
+#[test]
+#[should_panic = "indexed `DirectArena` with invalidated `Ptr`"]
+fn direct_arena_index_panic() {
+    let a = direct_arena_with_hole();
+    let _ = a[Q0::invalid()];
+}
+
+#[test]
+#[should_panic = "indexed `DirectArena` with invalidated `Ptr`"]
+fn direct_arena_index_mut_panic() {
+    let mut a = direct_arena_with_hole();
+    a[Q0::invalid()] = 0;
+}
+
+#[test]
+#[should_panic]
+fn direct_arena_get_inx_unwrap_panic() {
+    let a = direct_arena_with_hole();
+    let _ = a.get_inx_unwrap(q0_inx(2));
+}
+
+#[test]
+#[should_panic]
+fn direct_arena_get_inx_mut_unwrap_panic() {
+    let mut a = direct_arena_with_hole();
+    let _ = a.get_inx_mut_unwrap(q0_inx(2));
+}
+
+#[test]
+#[should_panic]
+fn direct_arena_get_inx_unwrap_untranslatable_panic() {
+    // an index that no slot could exist at also has no `T` to unwrap
+    let mut a = DirectArena::<QLarge, u8, StackBacking<4>>::new();
+    let p: QLarge = Ptr::_from_raw(NonZeroU128::new(1).unwrap(), PtrGen::two());
+    a.direct_insert_within_capacity(p).unwrap().insert(0);
+    let _ = a.get_inx_unwrap(NonZeroU128::new(1 << 64).unwrap());
+}
+
+#[test]
+fn direct_arena_into_iterators() {
+    let a = direct_arena_with_hole();
+    let ptrs: Vec<Q0> = a.ptrs().collect();
+
+    // `&DirectArena`
+    let by_ref: Vec<(Q0, u8)> = (&a).into_iter().map(|(p, t)| (p, *t)).collect();
+    assert_eq!(by_ref, vec![(ptrs[0], 0), (ptrs[1], 2)]);
+
+    // `&mut DirectArena`
+    let mut a = a;
+    for (_, t) in &mut a {
+        *t = t.wrapping_add(10);
+    }
+    let by_ref: Vec<(Q0, u8)> = (&a).into_iter().map(|(p, t)| (p, *t)).collect();
+    assert_eq!(by_ref, vec![(ptrs[0], 10), (ptrs[1], 12)]);
+
+    // `DirectArena`, which drains the arena along with its capacity
+    let owned: Vec<(Q0, u8)> = a.into_iter().collect();
+    assert_eq!(owned, vec![(ptrs[0], 10), (ptrs[1], 12)]);
+}
+
+#[test]
+fn direct_arena_recast_values() {
+    // `Recast for DirectArena` maps over the values, and propagates the item that
+    // the recaster does not recognize
+    let q1 = |i: usize| -> Q1 { Ptr::_from_raw(PtrInx::try_from_usize(nz(i)).unwrap(), ()) };
+    let mut recaster = DirectArena::<Q1, Q1, StackBacking<4>>::new();
+    let old = q1(1);
+    let new = q1(2);
+    for p in [old, new] {
+        recaster
+            .direct_insert_within_capacity(p)
+            .unwrap()
+            .insert(Q1::invalid());
+    }
+    *recaster.get_mut(old).unwrap() = new;
+
+    let mut a = DirectArena::<Q0, Q1, StackBacking<4>>::new();
+    a.direct_insert_within_capacity(q0(1)).unwrap().insert(old);
+    assert_eq!(a.recast(&recaster), Ok(()));
+    assert_eq!(*a.vals().next().unwrap(), new);
+
+    let mut a = DirectArena::<Q0, Q1, StackBacking<4>>::new();
+    a.direct_insert_within_capacity(q0(1))
+        .unwrap()
+        .insert(Q1::invalid());
+    assert_eq!(a.recast(&recaster), Err(Q1::invalid()));
+}
+
+#[test]
+fn direct_arena_clone() {
+    let a = direct_arena_with_hole();
+    // the `Ptr` validities are cloned along with the entries
+    let b = a.clone();
+    for (p, t) in a.iter() {
+        assert_eq!(b.get(p), Some(t));
+    }
+    assert_eq!(b.len(), a.len());
+    assert_eq!(format!("{a:?}"), format!("{b:?}"));
+
+    // `clone_from` reuses the capacity of the destination
+    let mut c = D8::new();
+    c.direct_insert_within_capacity(q0(4)).unwrap().insert(42);
+    c.clone_from(&a);
+    for (p, t) in a.iter() {
+        assert_eq!(c.get(p), Some(t));
+    }
+    assert_eq!(c.len(), a.len());
+    // the entry that only the destination had is gone
+    assert!(!c.contains(q0(4)));
+
+    // cloning from an empty arena just clears
+    c.clone_from(&D8::new());
+    assert!(c.is_empty());
+    assert_eq!(c.backing().len(), 0);
+}
+
+#[test]
+fn direct_arena_compress_with_panicking_map() {
+    // an unwinding closure loses the entry it was called with, but the arena must
+    // be left usable and internally consistent
+
+    // panicking on the first call, where the entry is compressed in place and so
+    // never leaves its slot
+    let mut a = direct_arena_with_hole();
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let _ = a.compress_with(false, |_, _, _| panic!("map"));
+    }));
+    assert!(res.is_err());
+    assert_eq!(a.len(), 2);
+    assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
+
+    // panicking on the second call, which is the one that has to move an entry from
+    // a later slot into the hole and therefore has it in flight
+    let mut a = direct_arena_with_hole();
+    let mut n = 0;
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let _ = a.compress_with(false, |_, _, _| {
+            n += 1;
+            assert_ne!(n, 2, "map");
+        });
+    }));
+    assert!(res.is_err());
+    // only the entry that was in flight was lost, and `len` accounts for it
+    assert_eq!(a.len(), 1);
+    assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
+    // the free slots that the unwind left on the end are valid state and are
+    // deliberately kept, see `pop_free_end_slots`
+    assert_eq!(a.backing().len(), 3);
+    // and direct insertion into a vacated slot still works, reusing one of them
+    // instead of pushing again
+    let p = q0(2);
+    a.direct_insert_within_capacity(p).unwrap().insert(5);
+    assert_eq!(a[p], 5);
+    assert_eq!(a.backing().len(), 3);
+    assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
+}
+
+#[test]
+fn direct_arena_compress_preserves_generations() {
+    // unlike the base arena, the compress functions carry each generation along
+    // with its entry and `reset_generation` does nothing
+    let mut a = D8::new();
+    let p1: Q0 = Ptr::_from_raw(q0_inx(1), PtrGen::two());
+    let p3: Q0 = Ptr::_from_raw(q0_inx(3), PtrGen::generational_inc(PtrGen::two()).0);
+    a.direct_insert_within_capacity(p1).unwrap().insert(0);
+    a.direct_insert_within_capacity(p3).unwrap().insert(2);
+
+    let mut map = vec![];
+    assert_eq!(
+        a.compress_with(true, |p_old, _, p_new| map.push((p_old, p_new))),
+        InvalidationOption::Success(())
+    );
+    assert_eq!(map, vec![
+        (p1, p1),
+        (p3, Ptr::_from_raw(q0_inx(2), p3.generation()))
+    ]);
+    assert_eq!(a.backing().len(), 2);
+    assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
+}
+
+#[test]
+fn direct_arena_clone_from_with_panicking_map() {
+    let source = direct_arena_with_hole();
+
+    // panicking on the first call
+    let mut a = D8::new();
+    a.direct_insert_within_capacity(q0(1)).unwrap().insert(42);
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let _ = a.clone_from_with(&source, |_, _| -> u8 { panic!("map") });
+    }));
+    assert!(res.is_err());
+    // the preexisting entry was dropped and nothing was cloned in
+    assert!(a.is_empty());
+    assert_eq!(a.backing().len(), 0);
+    assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
+
+    // panicking on the second call, which is after the free slots filling the gap
+    // were already pushed
+    let mut a = D8::new();
+    let mut n = 0;
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let _ = a.clone_from_with(&source, |_, t| {
+            n += 1;
+            assert_ne!(n, 2, "map");
+            *t
+        });
+    }));
+    assert!(res.is_err());
+    assert_eq!(a.len(), 1);
+    // the free slot that was pushed to fill the gap is left in place
+    assert_eq!(a.backing().len(), 2);
+    assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
+    let p = q0(2);
+    a.direct_insert_within_capacity(p).unwrap().insert(5);
+    assert_eq!(a[p], 5);
+    assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
+}
+
+#[test]
+fn direct_arena_pop_free_end_slots() {
+    let mut a = direct_arena_with_hole();
+    // `[Allocated, Free, Allocated]`, so there is nothing free on the end yet
+    assert_eq!(a.backing().len(), 3);
+    assert_eq!(a.pop_free_end_slots(usize::MAX), 0);
+    assert_eq!(a.backing().len(), 3);
+
+    // removing does not pop, unlike the base arena which has to keep its freelist
+    // reachable
+    a.remove(q0(3)).allow().unwrap();
+    assert_eq!(a.backing().len(), 3);
+
+    // only as many as asked for, and the count is reported back
+    assert_eq!(a.pop_free_end_slots(1), 1);
+    assert_eq!(a.backing().len(), 2);
+    assert_eq!(a.pop_free_end_slots(0), 0);
+    assert_eq!(a.backing().len(), 2);
+
+    // it stops at the allocated slot rather than at the requested count, and an
+    // empty backing stops it too
+    assert_eq!(a.pop_free_end_slots(usize::MAX), 1);
+    assert_eq!(a.backing().len(), 1);
+    assert_eq!(a.pop_free_end_slots(usize::MAX), 0);
+    a.remove(q0(1)).allow().unwrap();
+    assert_eq!(a.pop_free_end_slots(usize::MAX), 1);
+    assert!(a.is_empty());
+    assert_eq!(a.backing().len(), 0);
+    assert_eq!(a.pop_free_end_slots(usize::MAX), 0);
+    assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn direct_arena_shrinking_pops_only_what_it_needs() {
+    // the free end slots are what stands in the way of a reduction, so exactly
+    // those are popped and no more
+    let mut a = DirectArena::<Q0, u8, HeapBacking>::new();
+    a.reallocate_min_capacity(8).unwrap();
+    for i in 1..=6 {
+        a.direct_insert_within_capacity(q0(i))
+            .unwrap()
+            .insert(i as u8);
+    }
+    for i in 2..=6 {
+        a.remove(q0(i)).allow().unwrap();
+    }
+    assert_eq!(a.len(), 1);
+    assert_eq!(a.backing().len(), 6);
+
+    // asking for 4 only needs the two slots past index 4 gone
+    a.reallocate_min_capacity(4).unwrap();
+    assert_eq!(a.backing().len(), 4);
+    assert!(a.capacity() >= 4);
+
+    // and the one allocated slot is the floor on how far this can go
+    a.reallocate_min_capacity(0).unwrap();
+    assert_eq!(a.backing().len(), 1);
+    assert!(a.contains(q0(1)));
+    assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
+}
+
+#[test]
+fn direct_arena_transfer_reallocating_panicking_map() {
+    let mut source = arena_with_hole();
+    let mut a = D8::new();
+    let mut n = 0;
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let _ = a.transfer_reallocating(PtrGen::two(), &mut source, |_, o, _| {
+            n += 1;
+            assert_ne!(n, 2, "map");
+            o.allow()
+        });
+    }));
+    assert!(res.is_err());
+    // the entry that `map` was called with is lost, and the rest is split between
+    // the entries that were already transferred and the ones that were not
+    assert_eq!(a.len(), 1);
+    assert_eq!(source.len(), 0);
+    assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
+    assert_eq!(Arena::_check_invariants(&source), Ok(()));
+}
+
+#[test]
+fn direct_arena_check_invariants_detects_corruption() {
+    let mut a = direct_arena_with_hole();
+    assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
+
+    // `len` counts allocated entries and cannot exceed the capacity
+    unsafe { a.set_len(usize::MAX) };
+    assert_eq!(DirectArena::_check_invariants(&a), Err("len > capacity"));
+    unsafe { a.set_len(1) };
+    assert_eq!(
+        DirectArena::_check_invariants(&a),
+        Err("len != n_allocated")
+    );
+    unsafe { a.set_len(2) };
+    assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
+
+    // filling in the hole through the backing needs the matching `set_len`
+    unsafe {
+        *a.backing_mut().get_mut(nz(2)).unwrap() = DirectSlot::Allocated(PtrGen::two(), 7);
+    }
+    assert_eq!(
+        DirectArena::_check_invariants(&a),
+        Err("len != n_allocated")
+    );
+    unsafe { a.set_len(3) };
+    assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
+    assert_eq!(a[q0(2)], 7);
 }

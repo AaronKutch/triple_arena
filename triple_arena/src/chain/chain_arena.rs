@@ -127,6 +127,17 @@ use crate::{
 /// // `exchange_next`).
 /// assert_eq!(a.remove(p_d).allow().unwrap(), "D".to_owned());
 /// assert!(a.are_neighbors(p_c, p_x));
+/// let expected = [
+///     (p_a, "A"),
+///     (p_b, "B"),
+///     (p_c, "C"),
+///     (p_x, "X"),
+///     (p_y, "Y"),
+///     (p_z, "Z"),
+/// ];
+/// for (i, (p_link, link)) in a.iter_chain(p_a).unwrap().enumerate() {
+///     assert_eq!(expected[i], (p_link, link.t.as_str()));
+/// }
 ///
 /// // Remove a single connected chain efficiently
 /// let _ = a.drain_chain(p_x).unwrap();
@@ -249,6 +260,9 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         }
     }
 
+    // FIXME add an example for this function of a canonical recaster for chain
+    // arenas, the recasting function should create a second chain arena and then
+    // replace the first through its &mut.
     pub fn transfer_canonical_reallocating<
         Q: Ptr,
         U,

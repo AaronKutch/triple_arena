@@ -51,6 +51,18 @@ impl TryInternalDrop for Stats {
     }
 }
 
+/// The generation to use when constructing a `Ptr` that is meant to be invalid
+/// only because of the index and not because of the generation
+pub fn plausible_gen<P: Ptr, T, A: CompactArenaTrait<P, T>>(arena: &A) -> P::Gen {
+    if let Some(generation) = arena.singular_generation() {
+        generation
+    } else if let Some(p) = arena.find_first_inx_ptr() {
+        p.generation()
+    } else {
+        PtrGen::two()
+    }
+}
+
 /// generate invalid `Ptr`s via `P::invalid()`, an existing allocation but with
 /// wrong generation (incremented or gen 1), or index 1 in a free slot, and in
 /// the space between `self.m.len()` and `self.m.capacity()`
@@ -73,7 +85,7 @@ pub fn gen_invalid<P: Ptr, A: CompactArenaTrait<P, Cd<()>>>(rng: &mut StarRng, a
                 return P::_from_raw(inx1, P::Gen::generational_inc(generation).0);
             } else {
                 // the primary intention
-                return P::_from_raw(inx1, arena.singular_generation().unwrap());
+                return P::_from_raw(inx1, plausible_gen(arena));
             }
         }
         12..16 => {
@@ -84,7 +96,7 @@ pub fn gen_invalid<P: Ptr, A: CompactArenaTrait<P, Cd<()>>>(rng: &mut StarRng, a
                     return P::_from_raw(last_inx, P::Gen::generational_inc(generation).0);
                 } else {
                     // the primary intention
-                    return P::_from_raw(last_inx, arena.singular_generation().unwrap());
+                    return P::_from_raw(last_inx, plausible_gen(arena));
                 }
             }
         }
@@ -105,7 +117,8 @@ pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
     op_inx: usize,
     b: &mut B,
     b_capacity: &mut usize,
-    g: &mut TestGen<P>,
+    // set iff the arena has a singular generation that `invalidate` advances
+    g: Option<&mut TestGen<P>>,
     mut set_max_capacity: Option<fn(&mut A, usize) -> Result<(), MaxCapacityReductionError>>,
     get_mut_rand: for<'a> fn(&'a mut B, rng: &mut StarRng) -> Option<(Ck<()>, &'a mut P)>,
 ) -> Result<(), StackedError> {
@@ -250,7 +263,7 @@ pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
                     .is_err_and(|e| e == GetDisjointMutError::IndexOutOfBounds)
             );
             ensure!(
-                a.get_disjoint_mut([P::_from_raw(i, a.singular_generation().unwrap())])
+                a.get_disjoint_mut([P::_from_raw(i, plausible_gen(a))])
                     .is_err_and(|e| e == GetDisjointMutError::IndexOutOfBounds)
             );
 
@@ -402,12 +415,16 @@ pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
             if let Some((_, p)) = get_mut_rand(b, rng) {
                 match a.invalidate(*p) {
                     InvalidationResult::Success(p1) => {
-                        *p = p1;
-                        ensure!(!g.invalidate());
+                        if let Some(g) = g {
+                            *p = p1;
+                            ensure!(!g.invalidate());
+                        } else {
+                            ensure_eq!(p1, *p);
+                        }
                     }
                     InvalidationResult::GenerationOverflow(p1) => {
                         *p = p1;
-                        ensure!(g.invalidate());
+                        ensure!(g.stack()?.invalidate());
                     }
                     InvalidationResult::InvalidPtr => {
                         bail!()
@@ -500,7 +517,7 @@ pub fn fuzz<
                 meta.op_inx,
                 &mut b,
                 &mut b_capacity,
-                &mut g,
+                Some(&mut g),
                 set_max_capacity,
                 |b, rng| b.get_mut_rand(rng),
             )

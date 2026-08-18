@@ -43,8 +43,11 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for DirectArena<P, T, B> {
     }
 
     fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), ReallocationError> {
-        // so that capacity on the end is not used up by unallocated slots
-        self.canonicalize_free_slots();
+        // so that capacity on the end is not used up by unallocated slots, but only
+        // pop off exactly what is needed, so that direct insertion doesn't have to add
+        // back in free slots
+        let excess = self.m.len().saturating_sub(min_capacity);
+        self.pop_free_end_slots(excess);
         // using `max_index` because we are dealing with a plain `usize` and testing for
         // linearity, this equivalently does the check that `P::Inx::try_from_usize`
         // would succeed.
@@ -163,7 +166,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for DirectArena<P, T, B> {
 
     fn remove_inx(&mut self, p: P::Inx) -> InvalidationResult<(P::Gen, T)> {
         match self.remove_internal(p, None) {
-            Some(x) => InvalidationResult::Success(x),
+            Some((generation, t)) => InvalidationResult::Success((generation, t)),
             None => InvalidationResult::InvalidPtr,
         }
     }
@@ -203,17 +206,23 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for DirectArena<P, T, B> {
                 Free,
             );
             if let Allocated(old_gen, mut t) = entry {
+                // decrement first for unwind safety
+                self.len = self.len.wrapping_sub(1);
                 map(
                     Ptr::_from_raw(from_checked_raw::<P>(j), old_gen),
                     &mut t,
                     Ptr::_from_raw(from_checked_raw::<P>(i), old_gen),
                 );
                 let _ = mem::replace(self.m.get_mut(i).unwrap(), Allocated(old_gen, t));
+                self.len = self.len.wrapping_add(1);
                 i = i.checked_add(1).unwrap();
             }
         }
-        // remove free slots off the end
-        self.canonicalize_free_slots();
+        // In this case we do actually want to pop off free end slots, because the
+        // compression should also occur with direct insertion indexes reducing in size
+        // (or at least compression should be rare), and we want to reduce the number of
+        // slots that advancers need to traverse
+        self.pop_free_end_slots(usize::MAX);
         InvalidationOption::Success(())
     }
 }
@@ -229,7 +238,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for DirectArena<P, T, 
         let Some(last) = source.find_last_inx_ptr() else {
             // no entries
 
-            // same as `clear` but the generation is copied over
+            // same as `clear`
             // REF(zero_before_drop)
             self.len = 0;
             self.m.clear();
@@ -247,8 +256,10 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for DirectArena<P, T, 
         // REF(zero_before_drop)
         self.len = 0;
         self.m.clear();
-        // maintain invariants even with bad behavior, increment `len` at the right
-        // moment and always call `canonicalize_free_slots` after this point
+        // maintain invariants even with bad behavior, and increment `len` at the right
+        // moment. The last thing pushed is always an allocated slot, so nothing has to
+        // be popped off the end afterwards, and a `map` that unwinds can only leave
+        // behind free slots that are valid to keep.
         let mut adv = source.advancer();
         while let Some(p) = adv.advance(source) {
             let Some(raw) = P::Inx::try_into_usize(p.inx()) else {
@@ -277,7 +288,6 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for DirectArena<P, T, 
             }
             self.len = self.len.wrapping_add(1);
         }
-        self.canonicalize_free_slots();
         Ok(())
     }
 }
@@ -285,6 +295,8 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for DirectArena<P, T, 
 // REF(insertion_idempotency) We rely on cancelling and retrying an insertion
 // without doing any mutable things to be idempotent
 
+/// The [ArenaDirectInsertTrait::DirectInsertionEntry] of [DirectArena].
+/// Dropping this cancels the insertion.
 pub struct ArenaDirectInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
     this: &'a mut DirectArena<P, T, B>,
     // this either points to a free slot or to free capacity
@@ -298,10 +310,14 @@ impl<'a, P: Ptr, T, B: ArenaBacking> ArenaDirectInsertEntryTrait<'a, P, T>
     fn insert(self, t: T) {
         let this = self.this;
         let raw = self.raw;
+        // push up through the allocation that must have been prepared for us
         while this.m.len() < raw.get() {
-            this.m.push(Free);
+            this.m.push_within_capacity(Free).ok().unwrap();
         }
+        // `Free` has no drop code
         *this.m.get_mut(raw).unwrap() = Allocated(self.generation, t);
+        // safe by `isize::MAX` limits, the slots can never be ZSTs
+        this.len = this.len.wrapping_add(1);
     }
 }
 

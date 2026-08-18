@@ -74,8 +74,7 @@ pub enum OrdInsertKind<P: Ptr, K: Ord> {
 
 /// Insertion is cancelled when this is dropped, but note the processing time
 /// needed by some operations to find the entry has already happened, and any
-/// reallocations that would have been needed has happened. The `T` has to be
-/// passed to thi
+/// reallocations that would have been needed has happened.
 pub struct SimpleOrdArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
     // REF(insertion_idempotency) we drop the entry when constructing this and are relying on
     // idempotency

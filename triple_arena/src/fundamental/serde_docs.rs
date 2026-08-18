@@ -11,7 +11,13 @@
 //!
 //! - Whether compression and recasting should be used (highly preferred, note
 //!   that `reset_generation` options should be set when possible, see the
-//!   example on [compress_with](crate::traits::ArenaTrait::compress_with))
+//!   example on [compress_with](crate::traits::ArenaTrait::compress_with)).
+//!   Note for the more complex arenas, however, that the in-place compress
+//!   functions without maps (needed to build a recaster) cannot fully
+//!   canonicalize the arena (which is favorable for better cache locality). The
+//!   _canonical_ transfer functions like
+//!   [transfer_canonical_reallocating](crate::ChainArena::transfer_canonical_reallocating)
+//!   (see the example there) should be used instead.
 //! - If [ArenaDirectInsertTrait](crate::traits::ArenaDirectInsertTrait)-based
 //!   arenas should be used
 //! - If generation counters should be omitted

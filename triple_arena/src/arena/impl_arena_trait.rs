@@ -369,6 +369,8 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaCloneFromWith<P, T> for Arena<P, T, B> {
 // REF(insertion_idempotency) We rely on cancelling and retrying an insertion
 // without doing any mutable things to be idempotent
 
+/// The [ArenaInsertTrait::InsertionEntry] of [Arena]. Dropping this cancels the
+/// insertion.
 pub struct ArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
     this: &'a mut Arena<P, T, B>,
     // this either points to a free slot or to one past `this.m.len()` where an allocation can be

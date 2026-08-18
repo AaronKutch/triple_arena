@@ -1,8 +1,11 @@
 use std::num::{NonZeroU8, NonZeroU128};
 
 use triple_arena::{
-    Arena, HeapBacking, LimitedHeapBacking, StackBacking, errors::ReallocationError, ptr_struct,
-    traits::*, utils::traits::PtrGen,
+    Arena, DirectArena, HeapBacking, LimitedHeapBacking, StackBacking,
+    errors::{DirectInsertionError, ReallocationError},
+    ptr_struct,
+    traits::*,
+    utils::traits::PtrGen,
 };
 
 ptr_struct!(P0[NonZeroU8]);
@@ -34,6 +37,42 @@ fn ptr_inx_no_truncate() {
     assert!(a.invalidate(p).is_invalid());
     assert!(a.remove(p).is_invalid());
     assert!(a.remove_inx(inx).is_invalid());
+    // an advancer starting from such an index is empty in both directions instead
+    // of wrapping around to a valid one
+    let mut adv = a.advancer_inx(inx, false);
+    assert!(adv.advance(&a).is_none());
+    let mut adv = a.advancer_inx(inx, true);
+    assert!(adv.advance(&a).is_none());
+    // and none of that touched the real entry
+    assert_eq!(a.len(), 1);
+    assert!(a.contains(p0));
+}
+
+// the direct insertion arena has its own copies of all of the index checks
+#[test]
+fn direct_ptr_inx_no_truncate() {
+    let mut a = DirectArena::<PLargeInx, (), StackBacking<128>>::new();
+    let p0: PLargeInx = Ptr::_from_raw(NonZeroU128::new(1).unwrap(), ());
+    a.direct_insert_within_capacity(p0).unwrap().insert(());
+    // check for rejection, if truncated then it would find index 1
+    let inx = NonZeroU128::new((7 << 64) + 1).unwrap();
+    let p: PLargeInx = Ptr::_from_raw(inx, ());
+    assert!(a.get(p).is_none());
+    assert!(a.get_mut(p).is_none());
+    assert!(a.get_inx(inx).is_none());
+    assert!(a.get_inx_mut(inx).is_none());
+    assert!(!a.contains(p));
+    assert!(a.get_disjoint_inx_mut([inx]).is_err());
+    assert!(a.get_disjoint_inx_mut([p0.inx(), inx]).is_err());
+    assert!(a.get_disjoint_mut([p]).is_err());
+    assert!(a.invalidate(p).is_invalid());
+    assert!(a.remove(p).is_invalid());
+    assert!(a.remove_inx(inx).is_invalid());
+    // case for direct insertion only
+    assert_eq!(
+        a.direct_insert_within_capacity(p).map(|_| ()),
+        Err(DirectInsertionError::NotWithinCapacity)
+    );
     // an advancer starting from such an index is empty in both directions instead
     // of wrapping around to a valid one
     let mut adv = a.advancer_inx(inx, false);
@@ -189,6 +228,108 @@ fn iter_mut_cap() {
     for _ in 0..255 {
         v.push(a.insert(()));
     }
+    // the last slot is at the max index while the backing still has capacity left
+    assert_eq!(a.capacity(), 255);
+    let mut i = 0;
+    for (p, _) in a.iter_mut() {
+        assert_eq!(p, v[i]);
+        i += 1;
+    }
+    assert_eq!(i, 255);
+}
+
+/// Directly inserts at `1..=255` with generationless `P2` `Ptr`s
+fn full_direct_arena() -> (DirectArena<P2, (), StackBacking<512>>, Vec<P2>) {
+    let mut a = DirectArena::<P2, (), StackBacking<512>>::new();
+    let mut v = vec![];
+    for i in 1..=255u8 {
+        let p: P2 = Ptr::_from_raw(NonZeroU8::new(i).unwrap(), ());
+        a.direct_insert_within_capacity(p).unwrap().insert(());
+        v.push(p);
+    }
+    (a, v)
+}
+
+#[test]
+fn direct_overflow_inx_stack() {
+    let mut a = DirectArena::<P0, (), StackBacking<512>>::new();
+    // it caps to the index limit and not the stack cap
+    a.reallocate_min_capacity(255).unwrap();
+    assert!(a.reallocate_min_capacity(256).is_err());
+    assert_eq!(a.capacity(), 255);
+    assert_eq!(a.max_capacity(), Some(512));
+    // the highest index that `P::Inx` can represent is exactly the last one that
+    // fits, and reaching it fills the backing with free slots along the way
+    let p: P0 = Ptr::_from_raw(NonZeroU8::new(255).unwrap(), PtrGen::two());
+    a.direct_insert_within_capacity(p).unwrap().insert(());
+    assert!(a.contains(p));
+    assert_eq!(a.len(), 1);
+    assert_eq!(a.capacity(), 255);
+}
+
+// `transfer_reallocating` has to reject a source with more entries than the
+// destination's `P::Inx` can index, before it clears the destination or drains
+// the source
+#[test]
+fn direct_overflow_inx_transfer() {
+    let mut source = Arena::<P1, (), StackBacking<512>>::new();
+    for _ in 0..256 {
+        source.insert(());
+    }
+    let mut a = DirectArena::<P0, (), StackBacking<512>>::new();
+    let p: P0 = Ptr::_from_raw(NonZeroU8::new(1).unwrap(), PtrGen::two());
+    a.direct_insert_within_capacity(p).unwrap().insert(());
+    assert_eq!(
+        a.transfer_reallocating(PtrGen::two(), &mut source, |_, o, _| o.allow()),
+        Err(ReallocationError::AllocError)
+    );
+    // neither side was touched
+    assert_eq!(source.len(), 256);
+    assert_eq!(a.len(), 1);
+    assert!(a.contains(p));
+
+    // fits exactly
+    source
+        .remove(source.find_last_inx_ptr().unwrap())
+        .allow()
+        .unwrap();
+    assert_eq!(
+        a.transfer_reallocating(PtrGen::two(), &mut source, |_, o, _| o.allow()),
+        Ok(())
+    );
+    assert!(source.is_empty());
+    assert_eq!(a.len(), 255);
+    assert_eq!(a.capacity(), 255);
+}
+
+#[test]
+fn direct_advance_cap() {
+    let (mut a, v) = full_direct_arena();
+    let mut i = 0;
+    let mut adv = a.advancer();
+    while let Some(p) = adv.advance(&a) {
+        assert_eq!(p, v[i]);
+        i += 1;
+    }
+    assert_eq!(i, 255);
+    a.remove(v[0]).allow().unwrap();
+    a.remove(v[254]).allow().unwrap();
+
+    // check that it skips the ends
+    let mut i = 1;
+    let mut adv = a.advancer();
+    while let Some(p) = adv.advance(&a) {
+        assert_eq!(p, v[i]);
+        i += 1;
+    }
+    assert_eq!(i, 254);
+}
+
+// REF(mutable_iterator_soundness), the mutable iterator has its own index
+// handling here as well
+#[test]
+fn direct_iter_mut_cap() {
+    let (mut a, v) = full_direct_arena();
     // the last slot is at the max index while the backing still has capacity left
     assert_eq!(a.capacity(), 255);
     let mut i = 0;

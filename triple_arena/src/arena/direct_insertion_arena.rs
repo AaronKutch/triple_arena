@@ -1,6 +1,5 @@
 use core::{
     borrow::Borrow,
-    cmp::min,
     fmt, mem,
     num::NonZeroUsize,
     ops::{Index, IndexMut},
@@ -22,7 +21,9 @@ use crate::{
 // See REF(arena_terminology)
 
 /// Internal slot for a freelist-less direct insertion arena. Note the `P::Gen`
-/// is a ZST in logically generationless cases.
+/// is a ZST in logically generationless cases, and should have a niche
+/// otherwise. Unlike [ArenaSlot](crate::utils::ArenaSlot), the free variant
+/// does not need a freelist index.
 #[derive(Clone)]
 pub enum DirectSlot<P: Ptr, T> {
     /// A free slot with no `T`
@@ -35,12 +36,55 @@ use DirectSlot::*;
 
 /// A freelist-less direct insertion arena implementing
 /// [ArenaDirectInsertTrait]. The main purpose of this type is to follow the
-/// state of another arena.
+/// state of another arena, or to be used as a low level building block in a
+/// custom compound arena.
+///
+/// [ArenaInsertTrait](crate::traits::ArenaInsertTrait) is not implemented,
+/// because without a freelist there is no efficient way of finding the next
+/// unallocated slot. Instead,
+/// [direct_insert_within_capacity](
+/// ArenaDirectInsertTrait::direct_insert_within_capacity) inserts at a `Ptr`
+/// chosen by the caller.
 ///
 /// There is no global generation and [ArenaTrait::singular_generation] will
-/// always return `None`. Note that [ArenaTrait::invalidate] and the compress
-/// functions leave generations unchanged. No generation overflow can occur from
-/// any operations on this arena.
+/// always return `None`. Instead, each slot keeps whatever generation it was
+/// directly inserted with. This means that [ArenaTrait::invalidate] can only
+/// check that its `Ptr` is valid and return it unchanged, and the compress
+/// functions ignore their `reset_generation` argument and move generations
+/// along with their entries. Because nothing can increment a generation
+/// counter, no generation overflow can occur from any operation on this arena,
+/// but it is up to the user to avoid ABA problems.
+///
+/// ```
+/// use triple_arena::{Arena, DirectArena, ptr_struct, traits::*};
+///
+/// ptr_struct!(P0);
+///
+/// let mut a = Arena::<P0, u64>::new();
+/// let p0 = a.insert(42);
+/// let p1 = a.insert(1337);
+/// a.remove(p0).allow().unwrap();
+///
+/// // mirror the state of `a`, mapping the entries to something else
+/// let mut mirror = DirectArena::<P0, String>::new();
+/// mirror.clone_from_with(&a, |_, t| t.to_string()).unwrap();
+/// assert_eq!(&format!("{mirror:?}"), "{P0[2](2): \"1337\"}");
+///
+/// // the `Ptr`s of `a` are directly usable on the mirror
+/// assert_eq!(mirror[p1], "1337");
+/// assert!(mirror.get(p0).is_none());
+///
+/// // mirror a new insertion in `a`, reusing the internal slot that `p0` had
+/// let p2 = a.insert(7);
+/// mirror
+///     .direct_insert_within_capacity(p2)
+///     .unwrap()
+///     .insert("7".to_owned());
+/// assert_eq!(
+///     &format!("{mirror:?}"),
+///     "{P0[1](3): \"7\", P0[2](2): \"1337\"}"
+/// );
+/// ```
 pub struct DirectArena<
     P: Ptr,
     T,
@@ -65,13 +109,11 @@ impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
     /// Used by tests. Note that some errors are only for "soft" invariants.
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
-        if this.capacity()
-            != min(
-                this.m.capacity(),
-                P::Inx::max_index().map(|i| i.get()).unwrap_or(usize::MAX),
-            )
-        {
-            return Err("virtual capacity != expected");
+        // assume the backing is sane
+
+        // clamped by both backing limits and the max `P::Inx`
+        if (this.len() > this.capacity()) || (this.m.len() > this.capacity()) {
+            return Err("len > capacity");
         }
         let mut n_allocated = 0usize;
         for i in this.nziter() {
@@ -85,19 +127,8 @@ impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
         Ok(())
     }
 
-    /// Pops off free slots on the end
-    pub(crate) fn canonicalize_free_slots(&mut self) {
-        // remove free slots off the end
-        for inx in self.nziter().into_iter().rev() {
-            if let Free = self.m.get(inx).unwrap() {
-                self.m.pop();
-            } else {
-                break;
-            }
-        }
-    }
-
-    #[must_use]
+    /// `remove` but with an optional generation check. `None` is returned upon
+    /// an invalid `Ptr`.
     pub(crate) fn remove_internal(
         &mut self,
         inx: P::Inx,
@@ -106,6 +137,7 @@ impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
         let raw_inx = P::Inx::try_into_usize(inx)?;
         let allocation = self.m.get_mut(raw_inx)?;
         match allocation {
+            // invalid by being already free
             Free => None,
             Allocated(generation1, _) => {
                 if let Some(generation) = generation
@@ -118,12 +150,40 @@ impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
                 let Allocated(generation, t) = mem::replace(allocation, Free) else {
                     unreachable!()
                 };
+                self.len = self.len.wrapping_sub(1);
 
                 Some((generation, t))
             }
         }
     }
 
+    /// The most general way to translate between domains. Given any `source`
+    /// implementing [CompactArenaTrait] with any `Q: Ptr` and `U` entry type,
+    /// this will transfer all of the entries by reallocating `self` if
+    /// necessary, clearing `self`, and removing every entry from `source` and
+    /// inserting a mapped `T` into `self`. Every entry is given by value to
+    /// `map` with the original source `Q: Ptr`, an [InvalidationOption]`<U>`
+    /// for being able to determine if the removal caused a generation overflow
+    /// in `source`, the destination `P: Ptr`, and then `map` must return
+    /// the `T` that will be inserted into `self`. The new entries are all
+    /// given `new_generation`. The entries are guaranteed to be canonically
+    /// compressed in `self`, such that their `P::Inx`s are
+    /// `1..=source.len()` in advancer order.
+    ///
+    /// Reallocation only occurs if `source.len() > self.capacity()`. All of the
+    /// fallible points happen before anything is modified, such that `self` and
+    /// `source` are logically unchanged if an error is returned. An error is
+    /// returned if the reallocation fails, if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit prevents the
+    /// reallocation, or if `source.len()` is more than what `P::Inx` can
+    /// represent.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If `map` panics, the entry it was called with is lost to whatever `map`
+    /// does, and `self` and `source` are left with the entries that were
+    /// already transferred and the entries that have yet to be transferred
+    /// respectively.
     pub fn transfer_reallocating<
         Q: Ptr,
         U,
@@ -165,6 +225,10 @@ impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
 
     /// Like [ArenaTrait::get], except generation counters are ignored and the
     /// result is unwrapped internally
+    ///
+    /// # Panics
+    ///
+    /// If `p` does not point to an allocated entry
     #[doc(hidden)]
     //#[track_caller]
     pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
@@ -178,6 +242,10 @@ impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
 
     /// Like [ArenaTrait::get_mut], except generation counters are ignored and
     /// the result is unwrapped internally
+    ///
+    /// # Panics
+    ///
+    /// If `p` does not point to an allocated entry
     #[doc(hidden)]
     //#[track_caller]
     pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
@@ -185,6 +253,33 @@ impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
             Some(Allocated(_, t)) => t,
             _ => unreachable!(), /* panic!("get_inx_mut_unwrap of unallocated entry"), */
         }
+    }
+
+    /// Pops up to `num` free slots off of the end of the internal backing,
+    /// stopping early upon reaching an allocated slot or popping off all slots.
+    /// Returns the number of slots that were actually popped.
+    ///
+    /// Internal free slots on the end of a direct insertion arena are logically
+    /// indistinguishable from unused capacity, and for random direct insertions
+    /// these slots should be kept (because if there is not an internal slot at
+    /// the needed index, it will have to push free slots up to that index).
+    /// Advancing, however, has to iterate over all slots, so this function
+    /// may be wanted in certain contexts.
+    pub fn pop_free_end_slots(&mut self, num: usize) -> usize {
+        let mut popped = 0usize;
+        while popped < num {
+            let Some(inx) = NonZeroUsize::new(self.m.len()) else {
+                break;
+            };
+            if let Free = self.m.get(inx).unwrap() {
+                self.m.pop();
+                // bounded by the starting length
+                popped = popped.wrapping_add(1);
+            } else {
+                break;
+            }
+        }
+        popped
     }
 
     /// Directly returns a reference to the internal backing, for the purposes
@@ -207,9 +302,13 @@ impl<P: Ptr, T, B: ArenaBacking> DirectArena<P, T, B> {
         &mut self.m
     }
 
+    /// Directly sets the number of allocated entries
+    ///
     /// # Safety
     ///
-    /// Must follow internal invariants
+    /// `len` must be kept equal to the number of allocated slots, or else other
+    /// methods can panic or misbehave. See also
+    /// [backing_mut](DirectArena::backing_mut).
     pub unsafe fn set_len(&mut self, len: usize) {
         self.len = len;
     }
@@ -224,6 +323,13 @@ impl<P: Ptr, T, B: ArenaBacking> Default for DirectArena<P, T, B> {
 impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> Index<Q> for DirectArena<P, T, B> {
     type Output = T;
 
+    /// Returns a reference to the `T` pointed to by `inx`. Use
+    /// [get](ArenaTrait::get) if invalid `Ptr`s need to be handled.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
     fn index(&self, inx: Q) -> &T {
         let p: P = *inx.borrow();
         self.get(p)
@@ -232,6 +338,13 @@ impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> Index<Q> for DirectArena<P, T, B>
 }
 
 impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for DirectArena<P, T, B> {
+    /// Returns a mutable reference to the `T` pointed to by `inx`. Use
+    /// [get_mut](ArenaTrait::get_mut) if invalid `Ptr`s need to be handled.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
     fn index_mut(&mut self, inx: Q) -> &mut T {
         let p: P = *inx.borrow();
         self.get_mut(p)
@@ -251,6 +364,19 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for DirectArena<P, T, B> {
     /// initially be valid to the corresponding `T` in the cloned arena.
     /// Invalidations will continue independently, so the meaning of the `Ptr`
     /// with respect to the different arenas can diverge.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure, or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit of the fresh `Self::new`
+    /// arena prevents reaching the needed capacity. Use
+    /// [clone_from_with](ArenaCloneFromWith::clone_from_with) if these need to
+    /// be handled.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If a `T::clone` panics, the partially cloned arena is dropped.
+    #[track_caller]
     fn clone(&self) -> Self {
         let mut res = Self::new();
         res.clone_from_with(self, |_, t| t.clone())
@@ -262,6 +388,21 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for DirectArena<P, T, B> {
     /// generation counter) with a clone of `source`. Has the validity cloning
     /// property of arena cloning, but now the capacity of `self` is reused.
     /// Allocations may happen if the capacity of `self` is not large enough.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure, or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit of `self` prevents
+    /// reaching the needed capacity. Use
+    /// [clone_from_with](ArenaCloneFromWith::clone_from_with) if these need to
+    /// be handled.
+    ///
+    /// # Unwind Safety
+    ///
+    /// A panicking `T::clone` or `T::drop` leaves `self` with the same
+    /// guarantees as
+    /// [clone_from_with](ArenaCloneFromWith::clone_from_with).
+    #[track_caller]
     fn clone_from(&mut self, source: &Self) {
         self.clone_from_with(source, |_, t| t.clone())
             .expect("failed when cloning arena");
@@ -273,19 +414,9 @@ where
     <B as ArenaBacking>::Stack<DirectSlot<P, T>>: SetMaxCapacity,
 {
     fn set_max_capacity(&mut self, max_capacity: usize) -> Result<(), MaxCapacityReductionError> {
-        // If reducing below the logical `self.capacity()`, we may need to pop off free
-        // slots off the end to achieve the ideal, instead of special casing it do this
-        // and always call `canonicalize_free_slots` for determinism idealness,
-        // the reduction below capacity case is specifically special anyways by
-        // the documentation of `set_max_capacity`
-
-        if self
-            .max_capacity()
-            .is_some_and(|old_max| max_capacity < old_max)
-            && max_capacity < self.capacity()
-        {
-            self.canonicalize_free_slots();
-        }
+        // follow `reallocate_min_capacity`
+        let excess = self.m.len().saturating_sub(max_capacity);
+        self.pop_free_end_slots(excess);
         self.m.set_max_capacity(max_capacity)
     }
 }

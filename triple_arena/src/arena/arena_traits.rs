@@ -98,6 +98,13 @@ I considered a `clone_general` that combined `compress_with` and `clone_from_wit
 /// backing type is limited or you must handle allocation failures, then
 /// [insert_reallocating](ArenaInsertTrait::insert_reallocating) and similar
 /// should be used.
+///
+/// # Other notes
+///
+/// Certain arenas like the [DirectArena](crate::DirectArena) do not manage
+/// their own generations at all, and [invalidate](ArenaTrait::invalidate) will
+/// only check for generation validity and will return the same `Ptr`
+/// unmodified.
 pub trait ArenaTrait<P: Ptr, T>: Sized {
     /// An advancer over the valid `Ptr`s of this arena
     type PtrAdvancer: Advancer<Self, Item = P>;
@@ -714,9 +721,8 @@ pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// Returns an entry for direct insertion at `p.inx()`, if the index points
     /// to an internal slot that fits within existing capacity, and there is not
     /// already another element allocated at that index. The given
-    /// `p.generation()` is always accepted and, if insertion occurs,
-    /// `p.generation()` used as the valid generation for use with this
-    /// entry.
+    /// `p.generation()` is always accepted and, if insertion occurs, it is used
+    /// as the valid generation for the new entry.
     fn direct_insert_within_capacity(
         &mut self,
         p: P,
