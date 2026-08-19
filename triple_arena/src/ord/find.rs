@@ -416,15 +416,17 @@ impl<P: Ptr, T: SimpleOrdItem + Clone + alloc::fmt::Debug, B: ArenaBacking>
 
         let mut res: crate::Arena<P, (u8, T, Option<P>, Option<P>, Option<P>), B> =
             crate::Arena::new();
-        self.a.clone_to_arena(&mut res, |_, link| {
-            (
-                link.t.rank,
-                link.t.t.clone(),
-                link.t.p_tree0.map(|inx| Ptr::_from_raw(inx, PtrGen::one())),
-                link.t.p_back.map(|inx| Ptr::_from_raw(inx, PtrGen::one())),
-                link.t.p_tree1.map(|inx| Ptr::_from_raw(inx, PtrGen::one())),
-            )
-        });
+        self.a
+            .clone_to_arena(&mut res, |_, link| {
+                (
+                    link.t.rank,
+                    link.t.t.clone(),
+                    link.t.p_tree0.map(|inx| Ptr::_from_raw(inx, PtrGen::one())),
+                    link.t.p_back.map(|inx| Ptr::_from_raw(inx, PtrGen::one())),
+                    link.t.p_tree1.map(|inx| Ptr::_from_raw(inx, PtrGen::one())),
+                )
+            })
+            .unwrap();
         // fix the generations
         let mut adv = res.advancer();
         while let Some(p) = adv.advance(&res) {

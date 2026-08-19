@@ -709,7 +709,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             return InvalidationResult::InvalidPtr;
         };
         let v = self.vals.remove(key.p_val).allow().unwrap().v;
-        self.keys.remove_cyclic_chain_internal(p.inx(), false);
+        self.keys.remove_cyclic_chain_internal(p.inx());
         match self.inc_generation() {
             InvalidationOption::Success(()) => InvalidationResult::Success(v),
             InvalidationOption::GenerationOverflow(()) => InvalidationResult::GenerationOverflow(v),
@@ -937,23 +937,23 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         source: &SurjectArena<P, K1, V1, B>,
         mut map_key: F0,
         mut map_val: F1,
-    ) {
+    ) -> Result<(), ReallocationError> {
+        // FIXME try to reallocate vals and fail ahead of time
         self.keys.clone_from_with(&source.keys, |p, link| {
             let k = map_key(p, &link.t.k);
             Key {
                 k,
                 p_val: Ptr::_from_raw(p.inx(), ()),
             }
-        });
-        self.vals
-            .clone_from_with(&source.vals, |_, val| {
-                let v = map_val(val.key_count, &val.v);
-                Val {
-                    v,
-                    key_count: val.key_count,
-                }
-            })
-            .unwrap();
+        })?;
+        self.vals.clone_from_with(&source.vals, |_, val| {
+            let v = map_val(val.key_count, &val.v);
+            Val {
+                v,
+                key_count: val.key_count,
+            }
+        })?;
+        Ok(())
     }
 
     /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
@@ -963,7 +963,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         &self,
         chain_arena: &mut ChainArena<P, T, B>,
         mut map: F,
-    ) {
+    ) -> Result<(), ReallocationError> {
         chain_arena.clone_from_with(&self.keys, |p, link| map(p, &link.t.k))
     }
 
@@ -974,7 +974,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         &self,
         arena: &mut Arena<P, T, B>,
         mut map: F,
-    ) {
+    ) -> Result<(), ReallocationError> {
         self.keys.clone_to_arena(arena, |p, link| map(p, &link.t.k))
     }
 }

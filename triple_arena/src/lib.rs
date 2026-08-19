@@ -53,6 +53,7 @@ pub mod utils {
     };
     pub use crate::{
         arena::{ArenaDirectInsertEntry, ArenaInsertEntry, ArenaSlot, DirectSlot},
+        chain::ChainArenaInsertEntry,
         fundamental::{IntoNonZeroUsizeIterator, NonZeroUsizeIterator, PtrNoGen, nzusize_iter},
         ord::{SimpleOrdArenaInsertEntry, SimpleOrdArenaNode},
         stack::{NonZeroInxArray, NonZeroInxArrayPushEntry},

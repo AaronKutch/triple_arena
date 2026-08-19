@@ -15,4 +15,5 @@ pub use base_arena::{Arena, ArenaSlot};
 pub(crate) use base_arena::{from_checked_ptr, from_checked_raw};
 pub use direct_insertion_arena::{DirectArena, DirectSlot};
 pub use impl_arena_trait::ArenaInsertEntry;
+pub(crate) use impl_arena_trait::Canonicalize;
 pub use impl_direct_arena_trait::ArenaDirectInsertEntry;

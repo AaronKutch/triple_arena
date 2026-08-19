@@ -557,8 +557,8 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         &self,
         chain_arena: &mut ChainArena<P, U, B>,
         mut map: F,
-    ) {
-        chain_arena.clone_from_with(&self.a, |p, link| map(p, &link.t.t));
+    ) -> Result<(), ReallocationError> {
+        chain_arena.clone_from_with(&self.a, |p, link| map(p, &link.t.t))
     }
 
     /// Overwrites `arena` (dropping all preexisting `T`, overwriting the

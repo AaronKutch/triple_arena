@@ -111,7 +111,11 @@ impl<P: Ptr, T: PartialOrd> PartialOrd for LinkNoGen<P, T> {
 
 impl<P: Ptr, T: Ord> Ord for LinkNoGen<P, T> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
+        match self.prev_next.cmp(&other.prev_next) {
+            core::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+        self.t.cmp(&other.t)
     }
 }
 
@@ -219,6 +223,10 @@ impl<P: Ptr, T: PartialOrd> PartialOrd for Link<P, T> {
 
 impl<P: Ptr, T: Ord> Ord for Link<P, T> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
+        match self.prev_next.cmp(&other.prev_next) {
+            core::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+        self.t.cmp(&other.t)
     }
 }
