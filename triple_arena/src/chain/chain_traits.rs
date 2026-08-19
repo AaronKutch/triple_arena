@@ -29,7 +29,7 @@ pub enum LinkInsertKind<P: Ptr> {
     /// new start of the chain
     ChainStart(P),
     ChainStartInx(P::Inx),
-    /// Insert a link as the next link from the existing link  at`P`, which
+    /// Insert a link as the next link from the existing link at `P`, which
     /// could be anywhere on any chain, maintaining continuity of the chain
     NextTo(P),
     NextToInx(P::Inx),
@@ -105,6 +105,8 @@ pub(crate) enum LinkInsertInxKind<P: Ptr> {
 pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// An advancer over the valid `Ptr`s of a chain
     type ChainPtrAdvancer: Advancer<Self, Item = P>;
+    /// The entry type returned by the `entry_insert*` functions, dropping it
+    /// cancels the insertion
     type InsertionEntry<'a>: ArenaInsertEntryTrait<'a, P, T>
     where
         Self: 'a;
@@ -139,7 +141,8 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     }
 
     /// Inserts `t` into the arena and returns a `Ptr` to it. Panics if an
-    /// allocation error occurs or if [ArenaTrait::max_capacity] is used up.
+    /// allocation error occurs, if [ArenaTrait::max_capacity] is used up, or if
+    /// the requirements of `kind` are not met.
     ///
     /// # Panics
     ///
@@ -149,7 +152,7 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     #[track_caller]
     fn insert(&mut self, kind: LinkInsertKind<P>, t: T) -> P {
         self.insert_reallocating(kind, t)
-            .expect("`ArenaInsertTrait::insert_reallocating` failed")
+            .expect("`ChainArenaTrait::insert_reallocating` failed")
     }
 
     /// If capacity is available and the requirements for the `kind` are met, an
@@ -163,18 +166,30 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
 
     /// The same as [ChainArenaTrait::entry_insert_within_capacity] but
     /// automatically reallocating if necessary with the same semantics as other
-    /// `*_reallocating` functions.
+    /// `*_reallocating` functions. Note that
+    /// [FailedLinkRequirement](ChainInsertionError::FailedLinkRequirement)
+    /// takes priority over the capacity related errors, so that which error is
+    /// returned does not depend on how full the arena happens to be.
     fn entry_insert_reallocating(
         &mut self,
         kind: LinkInsertKind<P>,
     ) -> Result<Self::InsertionEntry<'_>, ChainInsertionError> {
-        match handle_reallocation(self) {
-            Ok(()) => self.entry_insert_within_capacity(kind),
-            Err(ReallocationError::AllocError) => Err(ChainInsertionError::AllocError),
-            Err(ReallocationError::BeyondMaxCapacity) => {
-                Err(ChainInsertionError::BeyondMaxCapacity)
+        if self.len() == self.capacity() {
+            // REF(insertion_idempotency) check the link requirement before growing
+            // anything, dropping the entry if there turned out to be capacity anyways
+            match self.entry_insert_within_capacity(kind) {
+                Ok(_) | Err(ChainInsertionError::NotWithinCapacity) => (),
+                Err(e) => return Err(e),
+            }
+            match handle_reallocation(self) {
+                Ok(()) => (),
+                Err(ReallocationError::AllocError) => return Err(ChainInsertionError::AllocError),
+                Err(ReallocationError::BeyondMaxCapacity) => {
+                    return Err(ChainInsertionError::BeyondMaxCapacity);
+                }
             }
         }
+        self.entry_insert_within_capacity(kind)
     }
 
     /// The same as [ChainArenaTrait::entry_insert_reallocating], but panics
@@ -236,13 +251,12 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// function returns true for the single link cyclic chain case with
     /// `p0 == p1`. Additionally returns `false` if `p_prev` or `p_next` are
     /// invalid `Ptr`s.
-    ///
-    /// Incurs only one internal lookup because of invariants.
     fn are_neighbors(&self, p_prev: P, p_next: P) -> bool {
         if let Some(link) = self.get_link_no_gen(p_prev) {
             if let Some(p) = link.next() {
-                //  if equal,`p_next` must implicitly exist because of invariants
-                p == p_next.inx()
+                // if equal, the link at `p_next.inx()` must implicitly exist because of
+                // invariants, but `p_next` can still have an invalid generation
+                (p == p_next.inx()) && self.contains(p_next)
             } else {
                 false
             }
@@ -358,8 +372,15 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     ) -> InvalidationResult<(P::Gen, LinkNoGen<P, T>)>;
 
     /// Efficiently removes the entire chain that `p` is connected to (which
-    /// might only include itself). If the iterator is dropped, the rest of the
-    /// chain is removed. Returns `None` if `p` is not valid.
+    /// might only include itself), yielding the links in the same order that
+    /// [advancer_chain](ChainArenaTrait::advancer_chain) would advance over
+    /// them. If the iterator is dropped, the rest of the chain is removed.
+    /// Returns `None` if `p` is not valid.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If a `T::drop` panics while the iterator is being dropped, the links
+    /// that have yet to be removed are left in the arena as a valid chain.
     fn drain_chain(
         &mut self,
         p: P,
@@ -367,9 +388,13 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
 
     /// This is a more advanced version of [ArenaTrait::compress] that lays out
     /// links within the same chain to be continuous with one another, improving
-    /// cache locality.
+    /// cache locality. Each chain occupies one contiguous run of indexes in
+    /// [Link::next](crate::Link::next) order. Acyclic chains begin at their
+    /// start link, and cyclic chains begin at their lowest index link.
     ///
     /// Because an element can be internally swapped multiple times to achieve
-    /// this in-place in the allocation, this cannot have a map.
-    fn compress_and_canonicalize(&mut self, reset_generation: bool) -> InvalidationOption<()>;
+    /// this in-place in the allocation, this cannot have a map. Use
+    /// [transfer_canonical_reallocating](crate::ChainArena::transfer_canonical_reallocating)
+    /// if you need a recaster.
+    fn compress_canonical(&mut self, reset_generation: bool) -> InvalidationOption<()>;
 }

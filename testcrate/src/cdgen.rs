@@ -221,6 +221,15 @@ impl<D: Copy, T> CkMap<D, T> {
         self.map.get(&k)
     }
 
+    pub fn get_mut(&mut self, k: Ck<D>) -> Option<&mut T> {
+        self.map.get_mut(&k)
+    }
+
+    /// Iterates in insertion order except for what `remove*` swaps around
+    pub fn iter(&self) -> impl Iterator<Item = (Ck<D>, &T)> {
+        self.list.iter().map(|k| (*k, self.map.get(k).unwrap()))
+    }
+
     pub fn get_rand(&self, rng: &mut StarRng) -> Option<(Ck<D>, &T)> {
         let i = rng.index(self.list.len())?;
         let k = self.list.get(i).unwrap();
@@ -231,6 +240,14 @@ impl<D: Copy, T> CkMap<D, T> {
         let i = rng.index(self.list.len())?;
         let k = self.list.get(i).unwrap();
         Some((*k, self.map.get_mut(k).unwrap()))
+    }
+
+    /// Removes a specific key, which is `O(n)` in the number of keys
+    pub fn remove_key(&mut self, k: Ck<D>) -> Option<T> {
+        let t = self.map.remove(&k)?;
+        let i = self.list.iter().position(|x| *x == k).unwrap();
+        self.list.swap_remove(i);
+        Some(t)
     }
 
     pub fn remove(&mut self, i: usize) -> Option<(Ck<D>, T)> {

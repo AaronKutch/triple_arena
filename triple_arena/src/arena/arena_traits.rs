@@ -58,9 +58,14 @@ I considered a `clone_general` that combined `compress_with` and `clone_from_wit
 
 `transfer_canonical_reallocating` could have had `reset_generation` semantics but I thought the ability to have different `Ptr` types was more important
 
+Unwind safety and the "# Unwind Safety" sections shouldn't matter to sane programs, but I decided to leave them in anyways as a signal that we were extremely careful about handling all edge cases that we reasonably could.
+
 `ArenaTrait` will likely need to be broken up in the future if we want to support !Move, !Forget etc types
 
 */
+
+// FIXME put `get_disjoint_*`, `vals_mut`, `iter_mut` on a
+// `DisjointableArenaTrait``
 
 /// The base trait for `triple_arena` style Arenas. See [Arena](crate::Arena)
 /// for the standard implementor.
@@ -513,9 +518,10 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     ///
     /// # Unwind Safety
     ///
-    /// If `map` panics, the entry it was called with is lost if it was in the
-    /// middle of being moved, and the arena is left partially compressed, but
-    /// it is otherwise left in a valid state.
+    /// If `map` panics, the arena is left partially compressed with all
+    /// successful maps having taken place, and the generation modification has
+    /// taken place, but every entry is kept and the arena is otherwise left
+    /// in a valid state.
     fn compress_with<F: FnMut(P, &mut T, P)>(
         &mut self,
         reset_generation: bool,

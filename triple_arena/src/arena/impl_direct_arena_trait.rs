@@ -188,35 +188,26 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for DirectArena<P, T, B> {
         // we are moving from `j` to `i`
         let mut i = NonZeroUsize::new(1).unwrap();
         for j in self.nziter() {
-            if i == j {
-                // optimize for the front part being compressed already
-                if let Allocated(old_gen, t) = self.m.get_mut(j).unwrap() {
-                    map(
-                        Ptr::_from_raw(from_checked_raw::<P>(j), *old_gen),
-                        t,
-                        Ptr::_from_raw(from_checked_raw::<P>(i), *old_gen),
-                    );
-                    i = i.checked_add(1).unwrap();
-                }
+            let Allocated(generation, t) = self.m.get_mut(j).unwrap() else {
                 continue;
-            }
-            let entry = mem::replace(
-                self.m.get_mut(j).unwrap(),
-                // this will be overwritten or dropped
-                Free,
+            };
+            let generation = *generation;
+            // REF(map_before_moving)
+            map(
+                Ptr::_from_raw(from_checked_raw::<P>(j), generation),
+                t,
+                Ptr::_from_raw(from_checked_raw::<P>(i), generation),
             );
-            if let Allocated(old_gen, mut t) = entry {
-                // decrement first for unwind safety
-                self.len = self.len.wrapping_sub(1);
-                map(
-                    Ptr::_from_raw(from_checked_raw::<P>(j), old_gen),
-                    &mut t,
-                    Ptr::_from_raw(from_checked_raw::<P>(i), old_gen),
+            if i != j {
+                let entry = mem::replace(
+                    self.m.get_mut(j).unwrap(),
+                    // this will be overwritten or dropped
+                    Free,
                 );
-                let _ = mem::replace(self.m.get_mut(i).unwrap(), Allocated(old_gen, t));
-                self.len = self.len.wrapping_add(1);
-                i = i.checked_add(1).unwrap();
+                // the slot at `i` is always free at this point
+                let _ = mem::replace(self.m.get_mut(i).unwrap(), entry);
             }
+            i = i.checked_add(1).unwrap();
         }
         // In this case we do actually want to pop off free end slots, because the
         // compression should also occur with direct insertion indexes reducing in size

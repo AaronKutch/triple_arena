@@ -1,4 +1,5 @@
-// for ease of copying to the doc example
+//! for ease of copying to the doc examples
+
 #[test]
 fn compress_with_example() {
     use triple_arena::{Arena, DirectArena, HeapBacking, ptr_struct, traits::*};
@@ -112,6 +113,89 @@ fn compress_with_example() {
         &format!("{a:?}"),
         "{P0[1](2): (42, None), P0[2](2): (1337, Some(P0[1](2)))}"
     );
+}
+
+#[test]
+fn chain_transfer_canonical_example() {
+    use triple_arena::{
+        ChainArena, DirectArena, HeapBacking, LinkInsertKind, ptr_struct,
+        traits::*,
+        utils::traits::{PtrGen, PtrInx},
+    };
+
+    // (This would be a standard function, except there are far too many choices to
+    // make on the backing of the recaster arena and how fallibility should be
+    // handled)
+    fn compress_canonical_recaster<P: Ptr, T>(
+        a: &mut ChainArena<P, T, HeapBacking>,
+        reset_generation: bool,
+    ) -> DirectArena<P, P, HeapBacking> {
+        // This arena will be a recaster in which we create a mapping from the old
+        // `Ptr` domain to the new one. We use a `DirectArena` for this since it will
+        // only be used for this purpose and then discarded.
+        let mut recaster = DirectArena::<P, P, HeapBacking>::new();
+        let mut res = ChainArena::<P, T, HeapBacking>::new();
+        let new_generation = if reset_generation {
+            // reset for compactness, only safe if logically old domain `Ptr`s can be
+            // eliminated
+            P::Gen::two()
+        } else {
+            // use incremented generation so that all `Ptr`s of the old domain are
+            // invalidated
+            P::Gen::generational_inc(a.generation()).0
+        };
+        res.transfer_canonical_reallocating(new_generation, a, |_, o, _| o.allow(), &mut recaster)
+            .unwrap();
+        *a = res;
+        recaster
+    }
+
+    ptr_struct!(P0);
+
+    let mut a: ChainArena<P0, &str> = ChainArena::new();
+    let p_x = a.insert(LinkInsertKind::Disconnected, "X");
+    let p_a = a.insert(LinkInsertKind::Disconnected, "A");
+    a.insert(LinkInsertKind::ChainEnd(p_x), "Y");
+    let p_b = a.insert(LinkInsertKind::ChainEnd(p_a), "B");
+    // make an internal slot unallocated, and scatter the chains further
+    a.remove(p_x).allow().unwrap();
+    a.insert(LinkInsertKind::ChainEnd(p_b), "C");
+
+    // the "A" -> "B" -> "C" chain is spread over the indexes 2, 4, 1
+    assert_eq!(
+        &format!("{a:#?}"),
+        r#"{
+    P0[1](3): {4, (end)} "C",
+    P0[2](2): {(start), 4} "A",
+    P0[3](2): {(start), (end)} "Y",
+    P0[4](2): {2, 1} "B",
+}"#
+    );
+
+    let recaster = compress_canonical_recaster(&mut a, false);
+
+    // now each chain is one contiguous run of indexes in `Link::next` order
+    let layout: Vec<(usize, &str)> = a
+        .iter()
+        .map(|(p, t)| (PtrInx::try_into_usize(p.inx()).unwrap().get(), *t))
+        .collect();
+    assert_eq!(layout, vec![(1, "A"), (2, "B"), (3, "C"), (4, "Y")]);
+    // and the recaster is a complete description of where the links went
+    println!("{recaster:#?}");
+    assert_eq!(
+        &format!("{recaster:#?}"),
+        r#"{
+    P0[1](3): P0[3](4),
+    P0[2](2): P0[1](4),
+    P0[3](2): P0[4](4),
+    P0[4](2): P0[2](4),
+}"#
+    );
+
+    // external `Ptr`s are fixed up with it
+    let mut external = p_a;
+    external.recast(&recaster).unwrap();
+    assert_eq!(a[external], "A");
 }
 
 #[test]

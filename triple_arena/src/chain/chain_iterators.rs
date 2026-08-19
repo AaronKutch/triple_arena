@@ -2,10 +2,10 @@
 
 use recasting::{Recast, Recaster};
 
-pub use crate::arena_iterators::{CapacityDrain, Drain, Iter};
+pub use crate::arena_iterators::{CapacityDrain, Iter};
 use crate::{
-    Arena, ChainArena, InvalidationOption, InvalidationResult, LinkNoGen, arena_iterators,
-    traits::{Advancer, ArenaTrait, Ptr},
+    Arena, ChainArena, InvalidationOption, LinkNoGen, arena_iterators,
+    traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 
@@ -109,9 +109,13 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer<ChainArena<P, T, B>> for ChainPtrAdvan
 /// this iterator is dropped.
 pub struct ChainDrain<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a mut ChainArena<P, T, B>,
-    next_init: Option<P::Inx>,
+    // the `prev` interlink that the chain was started at, which is where we resume from
+    // after running out of links in the `next` direction, and which also tells us when a
+    // cyclic chain has come all the way back around
+    prev_init: Option<P::Inx>,
     target: Option<P::Inx>,
-    go_next: bool,
+    // switch to going in the previous direction
+    go_prev: bool,
 }
 
 impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for ChainDrain<'a, P, T, B> {
@@ -121,35 +125,25 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for ChainDrain<'a, P, T, B> {
         let p = self.target?;
         // TODO when we get the ability to enforce !Forget, optimize so that we don't
         // need to deal with interlinks
+        let ((generation, link), o) = self.arena.remove_inx_link_no_gen(p).unwrap().overflowing();
 
-        /*let ((generation, link), o) = match self.arena.a.remove_inx(p).unwrap().overflowing() {
-            InvalidationResult::Success(x) => (x, false),
-            InvalidationResult::GenerationOverflow(x) => (x, true),
-            InvalidationResult::InvalidPtr => unreachable!(),
-        };*/
-        let prev_next = self.arena.a.get_inx_unwrap(p).prev_next();
-        let ((generation, t), o) = match self.arena.remove_inx(p) {
-            InvalidationResult::Success(x) => (x, false),
-            InvalidationResult::GenerationOverflow(x) => (x, true),
-            InvalidationResult::InvalidPtr => unreachable!(),
-        };
-        let link = LinkNoGen::new(prev_next, t);
-
-        // locate next target first
-        self.target = if self.go_next {
-            link.next()
-        } else if Some(p) == self.next_init {
+        // REF(chain_drain_ordering) locate the next target first. This mirrors
+        // `ChainPtrAdvancer` exactly so that the two produce the same ordering, which
+        // `transfer_canonical_reallocating` relies on.
+        self.target = if self.go_prev {
+            link.prev()
+        } else if Some(p) == self.prev_init {
             // cyclic
             None
         } else {
-            let prev = link.prev();
-            if prev.is_none() {
+            let next = link.next();
+            if next.is_none() {
                 // switch directions
-                self.go_next = true;
-                // automatically `None` if started at end
-                self.next_init
+                self.go_prev = true;
+                // automatically `None` if started at the start
+                self.prev_init
             } else {
-                prev
+                next
             }
         };
 
@@ -186,8 +180,11 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for IterMut<'a, P, T, B> {
     }
 }
 
-/// All the iterators here can return values in arbitrary order, except for
-/// [ChainArena::advancer_chain].
+// TODO we could remove these in the future with associated `impl` types
+
+// note that everything here except for `internal_advancer_chain` and
+// `internal_drain_chain` goes in increasing internal index order and is
+// unrelated to the chain ordering
 impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     pub(crate) fn internal_advancer_inx(&self, inx: P::Inx, rev: bool) -> PtrAdvancer<P> {
         PtrAdvancer {
@@ -205,13 +202,12 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
             return None;
         }
         let p_init = p.inx();
-        // first we go in the `prev` direction and then resume at `next_init`
-        let next_init = self.a.get_inx_unwrap(p_init).next();
+        let prev_init = self.a.get_inx_unwrap(p_init).prev();
         Some(ChainDrain {
             arena: self,
-            next_init,
+            prev_init,
             target: Some(p_init),
-            go_next: false,
+            go_prev: false,
         })
     }
 
@@ -269,8 +265,10 @@ impl<P: Ptr, T, B: ArenaBacking> IntoIterator for ChainArena<P, T, B> {
 
 impl<P: Ptr, I, T: Recast<I>, B: ArenaBacking> Recast<I> for ChainArena<P, T, B> {
     fn recast<R: Recaster<Item = I>>(&mut self, recaster: &R) -> Result<(), <R as Recaster>::Item> {
-        for (_, t) in self.iter_mut() {
-            t.recast(recaster)?;
+        // note that the interlinks are not recast, they are internal to this arena and
+        // are always maintained by it
+        for val in self.vals_mut() {
+            val.recast(recaster)?;
         }
         Ok(())
     }

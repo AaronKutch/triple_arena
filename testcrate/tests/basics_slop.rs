@@ -716,8 +716,8 @@ fn arena_clone() {
 
 #[test]
 fn arena_compress_with_panicking_map() {
-    // an unwinding closure loses the entry it was called with, but the arena must
-    // be left usable and internally consistent
+    // REF(map_before_moving) an unwinding closure keeps every entry, and the arena
+    // must be left usable and internally consistent
 
     // panicking on the first call, where the entry is compressed in place and so
     // never leaves its slot
@@ -729,8 +729,8 @@ fn arena_compress_with_panicking_map() {
     assert_eq!(a.len(), 2);
     assert_eq!(Arena::_check_invariants(&a), Ok(()));
 
-    // panicking on the second call, which is the one that has to move an entry from
-    // a later slot into the hole and therefore has it in flight
+    // panicking on the second call, which is the one that would have moved an entry
+    // from a later slot into the hole
     let mut a = arena_with_hole();
     let mut n = 0;
     let res = catch_unwind(AssertUnwindSafe(|| {
@@ -740,12 +740,13 @@ fn arena_compress_with_panicking_map() {
         });
     }));
     assert!(res.is_err());
-    // only the entry that was in flight was lost
-    assert_eq!(a.len(), 1);
+    // `map` runs before any moving, so nothing is lost
+    assert_eq!(a.len(), 2);
     assert_eq!(Arena::_check_invariants(&a), Ok(()));
     // and insertion still works instead of following a half rewritten freelist
     let p = a.insert(5);
     assert_eq!(a[p], 5);
+    assert_eq!(a.len(), 3);
     assert_eq!(Arena::_check_invariants(&a), Ok(()));
 }
 
@@ -1279,8 +1280,8 @@ fn direct_arena_clone() {
 
 #[test]
 fn direct_arena_compress_with_panicking_map() {
-    // an unwinding closure loses the entry it was called with, but the arena must
-    // be left usable and internally consistent
+    // REF(map_before_moving) an unwinding closure keeps every entry, and the arena
+    // must be left usable and internally consistent
 
     // panicking on the first call, where the entry is compressed in place and so
     // never leaves its slot
@@ -1292,8 +1293,8 @@ fn direct_arena_compress_with_panicking_map() {
     assert_eq!(a.len(), 2);
     assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
 
-    // panicking on the second call, which is the one that has to move an entry from
-    // a later slot into the hole and therefore has it in flight
+    // panicking on the second call, which is the one that would have moved an entry
+    // from a later slot into the hole
     let mut a = direct_arena_with_hole();
     let mut n = 0;
     let res = catch_unwind(AssertUnwindSafe(|| {
@@ -1303,14 +1304,13 @@ fn direct_arena_compress_with_panicking_map() {
         });
     }));
     assert!(res.is_err());
-    // only the entry that was in flight was lost, and `len` accounts for it
-    assert_eq!(a.len(), 1);
+    // `map` runs before any moving, so nothing is lost
+    assert_eq!(a.len(), 2);
     assert_eq!(DirectArena::_check_invariants(&a), Ok(()));
-    // the free slots that the unwind left on the end are valid state and are
-    // deliberately kept, see `pop_free_end_slots`
+    // the unwind happened before the end slots could be popped
     assert_eq!(a.backing().len(), 3);
-    // and direct insertion into a vacated slot still works, reusing one of them
-    // instead of pushing again
+    // and direct insertion into the vacated slot still works, reusing it instead of
+    // pushing again
     let p = q0(2);
     a.direct_insert_within_capacity(p).unwrap().insert(5);
     assert_eq!(a[p], 5);

@@ -26,7 +26,7 @@ use crate::{
 // REF(canonicalize_guard) This guard runs `canonicalize_freelist` upon being
 // dropped so that a valid arena is left upon unwind. `canonicalize_freelist`
 // only pops `Free` slots that have no drop code.
-struct Canonicalize<'a, P: Ptr, T, B: ArenaBacking>(&'a mut Arena<P, T, B>);
+pub(crate) struct Canonicalize<'a, P: Ptr, T, B: ArenaBacking>(pub(crate) &'a mut Arena<P, T, B>);
 
 impl<'a, P: Ptr, T, B: ArenaBacking> Canonicalize<'a, P, T, B> {
     /// Cancels running `canonicalize_freelist`
@@ -244,36 +244,29 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for Arena<P, T, B> {
         // we are moving from `j` to `i`
         let mut i = NonZeroUsize::new(1).unwrap();
         for j in this.0.nziter() {
-            if i == j {
-                // optimize for the front part being compressed already
-                if let Allocated(old_gen, t) = this.0.m.get_mut(j).unwrap() {
-                    map(
-                        Ptr::_from_raw(from_checked_raw::<P>(j), *old_gen),
-                        t,
-                        Ptr::_from_raw(from_checked_raw::<P>(i), new_gen),
-                    );
-                    *old_gen = new_gen;
-                    i = i.checked_add(1).unwrap();
-                }
+            let Allocated(generation, t) = this.0.m.get_mut(j).unwrap() else {
                 continue;
-            }
-            let entry = mem::replace(
-                this.0.m.get_mut(j).unwrap(),
-                // this will be overwritten or dropped
-                Free(P::invalid().inx()),
+            };
+            // REF(map_before_moving) For unwind safety, `map` is run while the entry is
+            // still in its old slot, and the generation update and movement only occur
+            // after `map` successfully completes.
+            let old_gen = *generation;
+            map(
+                Ptr::_from_raw(from_checked_raw::<P>(j), old_gen),
+                t,
+                Ptr::_from_raw(from_checked_raw::<P>(i), new_gen),
             );
-            if let Allocated(old_gen, mut t) = entry {
-                // decrement first for unwind safety
-                this.0.len = this.0.len.wrapping_sub(1);
-                map(
-                    Ptr::_from_raw(from_checked_raw::<P>(j), old_gen),
-                    &mut t,
-                    Ptr::_from_raw(from_checked_raw::<P>(i), new_gen),
+            *generation = new_gen;
+            if i != j {
+                let entry = mem::replace(
+                    this.0.m.get_mut(j).unwrap(),
+                    // this will be overwritten or dropped
+                    Free(P::invalid().inx()),
                 );
-                let _ = mem::replace(this.0.m.get_mut(i).unwrap(), Allocated(new_gen, t));
-                this.0.len = this.0.len.wrapping_add(1);
-                i = i.checked_add(1).unwrap();
+                // the slot at `i` is always free at this point
+                let _ = mem::replace(this.0.m.get_mut(i).unwrap(), entry);
             }
+            i = i.checked_add(1).unwrap();
         }
         // avoid extra `O(n)` search in canonicalization since there are no free slots
         // in the middle

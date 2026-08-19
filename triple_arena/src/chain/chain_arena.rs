@@ -7,16 +7,19 @@ use core::{
 
 use crate::{
     Arena, InvalidationOption, LinkNoGen,
-    errors::ReallocationError,
+    errors::{MaxCapacityReductionError, ReallocationError},
     traits::{
         Advancer, ArenaCloneFromWith, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait,
-        ArenaInsertTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait, Ptr,
+        ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait,
+        Ptr, SetMaxCapacity,
     },
     utils::{
-        ArenaSlot, from_checked_raw,
+        ArenaSlot,
         traits::{ArenaBacking, PtrInx},
     },
 };
+
+// note: SLCC = Single Link Cyclic Chain
 
 /// A doubly-linked-list based on an arena for handling usecases involving
 /// `O(1)` insertion, deletion, and other functions on linear lists of elements
@@ -34,7 +37,7 @@ use crate::{
 /// let p_a = a.insert(LinkInsertKind::Disconnected, "A".to_owned());
 /// let p_b = a.insert(LinkInsertKind::Disconnected, "B".to_owned());
 ///
-/// // initially, all entries from inserting with`LinkInsertKind::Disconnected`
+/// // initially, all entries from inserting with `LinkInsertKind::Disconnected`
 /// // have `None` interlinks and are each in their own single link chains, and
 /// // are completely unassociated like in a normal `Arena`.
 ///
@@ -152,6 +155,24 @@ pub struct ChainArena<
     pub(crate) a: Arena<P, LinkNoGen<P, T>, B>,
 }
 
+/// Walks backwards to find the start of the chain that `p` is part of, and
+/// whether the chain is cyclic. Cyclic chains have no start, in which case `p`
+/// itself is returned.
+fn find_chain_start<P: Ptr, U, A: ChainArenaTrait<P, U>>(source: &A, p: P) -> (P, bool) {
+    let mut target_inx = p.inx();
+    loop {
+        let (generation, link) = source.get_inx_link_no_gen(target_inx).unwrap();
+        let target = P::_from_raw(target_inx, generation);
+        let Some(prev) = link.prev() else {
+            return (target, false);
+        };
+        if prev == p.inx() {
+            return (p, true);
+        }
+        target_inx = prev;
+    }
+}
+
 impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// Used by tests
     #[doc(hidden)]
@@ -167,9 +188,9 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     pub fn _check_interlinks(this: &Self) -> Result<(), &'static str> {
         let err = Err("interlink transitivity does not hold");
         for (p, link) in &this.a {
-            // note: we must check both cases of equality when checking for single link
-            // cyclic chains, because we _must_ not rely on any kind of induction (any set
-            // of interlinks could be bad or misplaced at the same time).
+            // Note: both directions have to be checked on every link even though that
+            // duplicates work, because we _must_ not rely on any kind of induction (any
+            // set of interlinks could be bad or misplaced at the same time).
             if let Some(prev) = link.prev() {
                 if let Some((_, prev)) = this.a.get_inx(prev) {
                     if let Some(next) = prev.next() {
@@ -182,15 +203,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
                 } else {
                     return err;
                 }
-                if p.inx() == prev {
-                    // should be a single link cyclic chain
-                    if link.next() != Some(p.inx()) {
-                        return err;
-                    }
-                }
             }
-            // there are going to be duplicate checks but this must be done for invariant
-            // breaking cases
             if let Some(next) = link.next() {
                 if let Some((_, next)) = this.a.get_inx(next) {
                     if let Some(prev) = next.prev() {
@@ -202,12 +215,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
                     }
                 } else {
                     return err;
-                }
-                if p.inx() == next {
-                    // should be a single link cyclic chain
-                    if link.prev() != Some(p.inx()) {
-                        return err;
-                    }
                 }
             }
         }
@@ -235,8 +242,8 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     }
 
     // this is tested by the `SurjectArena` fuzz test
-    /// Like `remove_chain` but assumes the chain is cyclic and `p` is valid
-    pub(crate) fn remove_cyclic_chain_internal(&mut self, p: P::Inx, inc_gen: bool) {
+    /// Like `drain_chain` but assumes the chain is cyclic and `p` is valid.
+    pub(crate) fn remove_cyclic_chain_internal(&mut self, p: P::Inx) {
         let mut tmp = self
             .a
             .remove_internal(p, None, false)
@@ -255,14 +262,136 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
                 .next()
                 .unwrap();
         }
-        if inc_gen {
-            self.a.inc_generation().allow();
-        }
     }
 
-    // FIXME add an example for this function of a canonical recaster for chain
-    // arenas, the recasting function should create a second chain arena and then
-    // replace the first through its &mut.
+    /// The chain arena counterpart of
+    /// [transfer_reallocating](Arena::transfer_reallocating). Given any
+    /// `source` implementing both [ChainArenaTrait] and [CompactArenaTrait]
+    /// with any `Q: Ptr` and `U` entry type, this transfers all of the links by
+    /// reallocating `self` if necessary, clearing `self`, and removing every
+    /// link from `source` and inserting a mapped `T` into `self`, preserving
+    /// the interlink structure. Every link is given by value to `map` with the
+    /// original source `Q: Ptr`, an [InvalidationOption]`<U>` for being able to
+    /// determine if the removal caused a generation overflow in `source`, the
+    /// destination `P: Ptr`, and then `map` must return the `T` that will be
+    /// inserted into `self`. The new links are all given `new_generation`.
+    ///
+    /// `recaster` is overwritten with the complete mapping of the old `Q`
+    /// domain to the new `P` domain, which is what external `Q`s should be
+    /// recast with. Its keys are the raw `Q::Inx`s, so it needs to be able to
+    /// reach the largest index in `source` and not just `source.len()`.
+    ///
+    /// The normal [transfer_reallocating](Arena::transfer_reallocating) keeps
+    /// the entries in order while compressing them, but this function will
+    /// reorder entries to bring links of the same chain together. The links
+    /// are canonically laid out in `self`, such that their `P::Inx`s
+    /// are `1..=source.len()` and each chain occupies one contiguous run of
+    /// indexes in [Link::next](crate::Link::next) order. Acyclic chains begin
+    /// at their start link, while cyclic chains begin at the link that the
+    /// source advancer reaches first.
+    ///
+    /// Reallocation only occurs if `source.len() > self.capacity()` or if
+    /// `recaster` cannot already reach the largest index in `source`. All of
+    /// the fallible points happen before anything is modified, such that
+    /// `self`, `source`, and `recaster` are logically unchanged if an error is
+    /// returned. An error is returned if a reallocation fails, if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit prevents a reallocation,
+    /// or if `source.len()` or the largest index in `source` is more than what
+    /// `P::Inx` or `Q::Inx` can represent.
+    ///
+    /// This is the chain arena counterpart of the recaster example on
+    /// [compress_with](ArenaTrait::compress_with). Links have to travel between
+    /// two domains in order to be laid out in chain order, so instead of
+    /// compressing in place we transfer into a fresh arena and replace the old
+    /// one through the `&mut`:
+    /// ```
+    /// use triple_arena::{
+    ///     ChainArena, DirectArena, HeapBacking, LinkInsertKind, ptr_struct,
+    ///     traits::*,
+    ///     utils::traits::{PtrGen, PtrInx},
+    /// };
+    ///
+    /// // (This would be a standard function, except there are far too many choices to
+    /// // make on the backing of the recaster arena and how fallibility should be
+    /// // handled)
+    /// fn compress_canonical_recaster<P: Ptr, T>(
+    ///     a: &mut ChainArena<P, T, HeapBacking>,
+    ///     reset_generation: bool,
+    /// ) -> DirectArena<P, P, HeapBacking> {
+    ///     // This arena will be a recaster in which we create a mapping from the old
+    ///     // `Ptr` domain to the new one. We use a `DirectArena` for this since it will
+    ///     // only be used for this purpose and then discarded.
+    ///     let mut recaster = DirectArena::<P, P, HeapBacking>::new();
+    ///     let mut res = ChainArena::<P, T, HeapBacking>::new();
+    ///     let new_generation = if reset_generation {
+    ///         // reset for compactness, only safe if logically old domain `Ptr`s can be
+    ///         // eliminated
+    ///         P::Gen::two()
+    ///     } else {
+    ///         // use incremented generation so that all `Ptr`s of the old domain are
+    ///         // invalidated
+    ///         P::Gen::generational_inc(a.generation()).0
+    ///     };
+    ///     res.transfer_canonical_reallocating(new_generation, a, |_, o, _| o.allow(), &mut recaster)
+    ///         .unwrap();
+    ///     *a = res;
+    ///     recaster
+    /// }
+    ///
+    /// ptr_struct!(P0);
+    ///
+    /// let mut a: ChainArena<P0, &str> = ChainArena::new();
+    /// let p_x = a.insert(LinkInsertKind::Disconnected, "X");
+    /// let p_a = a.insert(LinkInsertKind::Disconnected, "A");
+    /// a.insert(LinkInsertKind::ChainEnd(p_x), "Y");
+    /// let p_b = a.insert(LinkInsertKind::ChainEnd(p_a), "B");
+    /// // make an internal slot unallocated, and scatter the chains further
+    /// a.remove(p_x).allow().unwrap();
+    /// a.insert(LinkInsertKind::ChainEnd(p_b), "C");
+    ///
+    /// // the "A" -> "B" -> "C" chain is spread over the indexes 2, 4, 1
+    /// assert_eq!(
+    ///     &format!("{a:#?}"),
+    ///     r#"{
+    ///     P0[1](3): {4, (end)} "C",
+    ///     P0[2](2): {(start), 4} "A",
+    ///     P0[3](2): {(start), (end)} "Y",
+    ///     P0[4](2): {2, 1} "B",
+    /// }"#
+    /// );
+    ///
+    /// let recaster = compress_canonical_recaster(&mut a, false);
+    ///
+    /// // now each chain is one contiguous run of indexes in `Link::next` order
+    /// let layout: Vec<(usize, &str)> = a
+    ///     .iter()
+    ///     .map(|(p, t)| (PtrInx::try_into_usize(p.inx()).unwrap().get(), *t))
+    ///     .collect();
+    /// assert_eq!(layout, vec![(1, "A"), (2, "B"), (3, "C"), (4, "Y")]);
+    /// // and the recaster is a complete description of where the links went
+    /// println!("{recaster:#?}");
+    /// assert_eq!(
+    ///     &format!("{recaster:#?}"),
+    ///     r#"{
+    ///     P0[1](3): P0[3](4),
+    ///     P0[2](2): P0[1](4),
+    ///     P0[3](2): P0[4](4),
+    ///     P0[4](2): P0[2](4),
+    /// }"#
+    /// );
+    ///
+    /// // external `Ptr`s are fixed up with it
+    /// let mut external = p_a;
+    /// external.recast(&recaster).unwrap();
+    /// assert_eq!(a[external], "A");
+    /// ```
+    ///
+    /// # Unwind Safety
+    ///
+    /// If `map` panics, the link it was called with is lost to whatever `map`
+    /// does, the rest of the chain that was being drained is dropped, and
+    /// `source` and `self` are left with the chains that have yet to be
+    /// transferred and the links that were already transferred respectively.
     pub fn transfer_canonical_reallocating<
         Q: Ptr,
         U,
@@ -307,60 +436,49 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         self.clear().allow();
         self.set_generation(new_generation);
 
-        let mut p_raw = NonZeroUsize::new(1).unwrap();
+        // using a normal advancer and inner canonically ordered drain_chain loop
+        // automatically gives us what we want
         let mut adv_outer = source.advancer();
         while let Some(q_start) = adv_outer.advance(source) {
-            if recaster.contains(q_start) {
-                // part of a chain that has already been mapped, critical to prevent `O(n^2)`
-                // because in the acyclic case `advancer_chain` will find the beginning of the
-                // chain
-                continue;
-            }
-            let mut adv_chain = source.advancer_chain(q_start).unwrap();
-            while let Some(q) = adv_chain.advance(source) {
-                // cannot panic for `Ptr`s following soft invariants since we checked the
-                // highest index
-                let p_inx = from_checked_raw::<P>(p_raw);
-                let p = P::_from_raw(p_inx, new_generation);
-                match recaster.direct_insert_within_capacity(q) {
-                    Ok(entry) => {
-                        entry.insert(p);
-                    }
-                    _ => unreachable!(),
-                }
-
-                // increment here as we find the pointers in the order that they will actually
-                // be drained, the repeat of the outer advancer and chain_drain will encounter
-                // in the same order
-                p_raw = p_raw.checked_add(1).unwrap();
-            }
-        }
-
-        let mut adv_outer = source.advancer();
-        while let Some(q_start) = adv_outer.advance(source) {
-            for o in source.drain_chain(q_start).unwrap() {
+            let (start, cyclic) = find_chain_start(source, q_start);
+            // key links of this chain that have been inserted into `self` so far
+            let mut chain_first: Option<P::Inx> = None;
+            let mut chain_prev: Option<P::Inx> = None;
+            for o in source.drain_chain(start).unwrap() {
                 let ((q, q_link), o) = o.overflowing();
-                let p = *recaster.get(q).unwrap();
-                let prev_next = (
-                    q_link
-                        .prev()
-                        .map(|q_inx| recaster.get_inx(q_inx).unwrap().1.inx()),
-                    q_link
-                        .next()
-                        .map(|q_inx| recaster.get_inx(q_inx).unwrap().1.inx()),
-                );
+                let Ok(entry) = self.a.entry_insert_within_capacity() else {
+                    unreachable!()
+                };
+                let p = entry.ptr();
                 let arg = if o {
                     InvalidationOption::GenerationOverflow(q_link.t)
                 } else {
                     InvalidationOption::Success(q_link.t)
                 };
                 let t = map(q, arg, p);
-                let p_link = LinkNoGen::<P, T>::new(prev_next, t);
-
-                // relying on standard behavior with slots and generation
-                if self.a.insert_within_capacity(p_link).is_err() {
-                    unreachable!()
+                // keep chain invariants at every `map` call
+                entry.insert(LinkNoGen::new((chain_prev, None), t));
+                if let Some(prev) = chain_prev {
+                    self.a.get_inx_mut_unwrap(prev).prev_next.1 = Some(p.inx());
                 }
+                if chain_first.is_none() {
+                    chain_first = Some(p.inx());
+                }
+                chain_prev = Some(p.inx());
+                match recaster.direct_insert_within_capacity(q) {
+                    Ok(entry) => {
+                        entry.insert(p);
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            if cyclic
+                && let Some(first) = chain_first
+                && let Some(last) = chain_prev
+            {
+                // close the loop, also handles SLCCs
+                self.a.get_inx_mut_unwrap(last).prev_next.1 = Some(first);
+                self.a.get_inx_mut_unwrap(first).prev_next.0 = Some(last);
             }
         }
         Ok(())
@@ -375,33 +493,40 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         Ok(res)
     }
 
-    /// Has the same properties of [Arena::clone_from_with], preserving
+    /// Has the same properties as
+    /// [clone_from_with](ArenaCloneFromWith::clone_from_with), preserving
     /// interlinks as well.
-    pub fn clone_from_with<U, F: FnMut(P, &LinkNoGen<P, U>) -> T>(
+    ///
+    /// # Unwind Safety
+    ///
+    /// If `map` panics, it can break the interlink invariants (which can cause
+    /// panics with some functions) and `self` must be cleared.
+    pub fn clone_from_with<B1: ArenaBacking, U, F: FnMut(P, &LinkNoGen<P, U>) -> T>(
         &mut self,
-        source: &ChainArena<P, U, B>,
+        source: &ChainArena<P, U, B1>,
         mut map: F,
-    ) {
-        self.a
-            .clone_from_with(&source.a, |p, link| {
-                let t = map(p, link);
-                LinkNoGen::new(link.prev_next(), t)
-            })
-            .unwrap()
+    ) -> Result<(), ReallocationError> {
+        self.a.clone_from_with(&source.a, |p, link| {
+            let t = map(p, link);
+            LinkNoGen::new(link.prev_next(), t)
+        })
     }
 
-    /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
-    /// generation counter, and reusing capacity) with the `Ptr` mapping of
-    /// `self`, except that the interlink structure has been dropped.
-    pub fn clone_to_arena<U, F: FnMut(P, &LinkNoGen<P, T>) -> U>(
+    /// Calls [clone_from_with](ArenaCloneFromWith::clone_from_with) on `arena`,
+    /// giving all the [LinkNoGen]s of `self` to the `Ptr` preserving mapping.
+    pub fn clone_to_arena<U, A: ArenaCloneFromWith<P, U>, F: FnMut(P, &LinkNoGen<P, T>) -> U>(
         &self,
-        arena: &mut Arena<P, U, B>,
+        arena: &mut A,
         map: F,
-    ) {
-        arena.clone_from_with(&self.a, map).unwrap();
+    ) -> Result<(), ReallocationError> {
+        arena.clone_from_with(&self.a, map)
     }
 
     /// Calls [Arena::get_inx_unwrap]
+    ///
+    /// # Panics
+    ///
+    /// If `p` does not point to an allocated entry
     #[doc(hidden)]
     //#[track_caller]
     pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
@@ -409,6 +534,10 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     }
 
     /// Calls [Arena::get_inx_mut_unwrap]
+    ///
+    /// # Panics
+    ///
+    /// If `p` does not point to an allocated entry
     #[doc(hidden)]
     //#[track_caller]
     pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
@@ -438,16 +567,34 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
 impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> Index<Q> for ChainArena<P, T, B> {
     type Output = T;
 
-    fn index(&self, index: Q) -> &Self::Output {
-        self.get(*index.borrow())
+    /// Returns a reference to the `T` pointed to by `inx`. Use
+    /// [get](ArenaTrait::get) if invalid `Ptr`s need to be handled, or
+    /// [get_link_no_gen](ChainArenaTrait::get_link_no_gen) if the interlinks
+    /// are also needed.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
+    fn index(&self, inx: Q) -> &T {
+        let p: P = *inx.borrow();
+        self.get(p)
             .expect("indexed `ChainArena` with invalidated `Ptr`")
     }
 }
 
 impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for ChainArena<P, T, B> {
-    fn index_mut(&mut self, index: Q) -> &mut Self::Output {
+    /// Returns a mutable reference to the `T` pointed to by `inx`. Use
+    /// [get_mut](ArenaTrait::get_mut) if invalid `Ptr`s need to be handled.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
+    fn index_mut(&mut self, inx: Q) -> &mut T {
+        let p: P = *inx.borrow();
         self.a
-            .get_mut(*index.borrow())
+            .get_mut(p)
             .map(|link| &mut link.t)
             .expect("indexed `ChainArena` with invalidated `Ptr`")
     }
@@ -463,12 +610,41 @@ impl<P: Ptr, T: Debug, B: ArenaBacking> Debug for ChainArena<P, T, B> {
 
 /// Implemented if `T: Clone`.
 impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for ChainArena<P, T, B> {
-    /// Has the `Ptr` preserving properties of [Arena::clone]
+    /// Has the `Ptr` preserving properties of [Arena::clone], and the
+    /// interlinks are preserved as well.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure, or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit of the fresh `Self::new`
+    /// arena prevents reaching the needed capacity. Use
+    /// [clone_from_with](ChainArena::clone_from_with) if these need to be
+    /// handled.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If a `T::clone` panics, the partially cloned arena is dropped.
+    #[track_caller]
     fn clone(&self) -> Self {
         Self { a: self.a.clone() }
     }
 
-    /// Has the `Ptr` and capacity preserving properties of [Arena::clone_from]
+    /// Has the `Ptr` and capacity preserving properties of [Arena::clone_from],
+    /// and the interlinks are preserved as well.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure, or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit of `self` prevents
+    /// reaching the needed capacity. Use
+    /// [clone_from_with](ChainArena::clone_from_with) if these need to be
+    /// handled.
+    ///
+    /// # Unwind Safety
+    ///
+    /// A panicking `T::clone` or `T::drop` leaves `self` with the same
+    /// guarantees as [clone_from_with](ChainArena::clone_from_with).
+    #[track_caller]
     fn clone_from(&mut self, source: &Self) {
         self.a.clone_from(&source.a)
     }
@@ -477,5 +653,14 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for ChainArena<P, T, B> {
 impl<P: Ptr, T, B: ArenaBacking> Default for ChainArena<P, T, B> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<P: Ptr, T, B: ArenaBacking> SetMaxCapacity for ChainArena<P, T, B>
+where
+    <B as ArenaBacking>::Stack<ArenaSlot<P, LinkNoGen<P, T>>>: SetMaxCapacity,
+{
+    fn set_max_capacity(&mut self, max_capacity: usize) -> Result<(), MaxCapacityReductionError> {
+        self.a.set_max_capacity(max_capacity)
     }
 }

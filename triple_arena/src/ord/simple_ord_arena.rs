@@ -236,8 +236,9 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     }
 
     /// Returns the generation associated with `p` and a `LinkNoGen<P, &T>`.
-    /// Using [prev](crate::Link::prev) on the result gives the `Ptr` to the
-    /// next lesser key, and using [next](crate::Link::next) gives the `Ptr`
+    /// Using [LinkNoGen::prev](crate::LinkNoGen::prev) on the result gives the
+    /// `Ptr` to the next lesser key, and using
+    /// [LinkNoGen::next](crate::LinkNoGen::next) gives the `Ptr`
     /// to the next greater key.
     pub fn get_inx_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &T>)> {
         self.a
@@ -492,9 +493,9 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     ///
     /// Because an element can be internally swapped multiple times to achieve
     /// this in-place in the allocation, this cannot have a map.
-    pub fn compress_and_canonicalize(&mut self, reset_generation: bool) -> InvalidationOption<()> {
+    pub fn compress_canonical(&mut self, reset_generation: bool) -> InvalidationOption<()> {
         // TODO single chain optimized internal version of this
-        let res = self.a.compress_and_canonicalize(reset_generation);
+        let res = self.a.compress_canonical(reset_generation);
         if !self.is_empty() {
             // we can fortunately rely on the canonicalization
             self.first = from_checked_raw::<P>(NonZeroUsize::new(1).unwrap());
@@ -552,7 +553,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
     /// `self`, with the ordering preserved in a single chain
-    /// ([next](crate::Link::next) points to the next greater entry)
+    /// ([Link::next](crate::Link::next) points to the next greater entry)
     pub fn clone_to_chain_arena<U, F: FnMut(P, &T) -> U>(
         &self,
         chain_arena: &mut ChainArena<P, U, B>,

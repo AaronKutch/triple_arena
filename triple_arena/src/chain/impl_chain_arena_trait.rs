@@ -2,7 +2,9 @@ use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
     Arena, ChainArena, InvalidationOption, InvalidationResult, LinkInsertInxKind, LinkInsertKind,
-    LinkNoGen, chain_iterators,
+    LinkNoGen,
+    arena::Canonicalize,
+    chain_iterators,
     errors::{AllocError, ChainInsertionError, NotWithinCapacityError, ReallocationError},
     traits::{
         ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait,
@@ -113,77 +115,64 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainArena<P, T, B> {
             self.a.set_generation(P::Gen::two());
             InvalidationOption::Success(())
         } else {
-            self.inc_generation()
+            // follow what `clear` does, and let the rest of the function canonicalize
+            if self.is_empty() {
+                InvalidationOption::Success(())
+            } else {
+                self.inc_generation()
+            }
         };
         let new_gen = self.a.generation();
+        // REF(canonicalize_guard)
+        let this = Canonicalize(&mut self.a);
         // we are moving from `j` to `i`
         let mut i = NonZeroUsize::new(1).unwrap();
-        for j in self.a.nziter() {
-            if i == j {
-                // optimize for the front part being compressed already
-                if let Allocated(old_gen, link) = self.a.m.get_mut(j).unwrap() {
-                    map(
-                        Ptr::_from_raw(from_checked_raw::<P>(j), *old_gen),
-                        &mut link.t,
-                        Ptr::_from_raw(from_checked_raw::<P>(i), new_gen),
-                    );
-                    *old_gen = new_gen;
-                    i = i.checked_add(1).unwrap();
-                }
-                continue;
-            }
+        for j in this.0.nziter() {
             let p_inx_old = from_checked_raw::<P>(j);
             let p_inx_new = from_checked_raw::<P>(i);
-            let entry = mem::replace(
-                self.a.m.get_mut(j).unwrap(),
-                // this will be overwritten or dropped
-                Free(P::invalid().inx()),
+            let Allocated(generation, link) = this.0.m.get_mut(j).unwrap() else {
+                continue;
+            };
+            // REF(map_before_moving)
+            let old_gen = *generation;
+            map(
+                Ptr::_from_raw(p_inx_old, old_gen),
+                &mut link.t,
+                Ptr::_from_raw(p_inx_new, new_gen),
             );
-            if let Allocated(old_gen, mut link) = entry {
-                let prev_next = link.prev_next();
-                // handle SLCC case
-                let slcc = prev_next.0 == Some(p_inx_old);
-                if slcc {
-                    link.prev_next = (Some(p_inx_new), Some(p_inx_new));
-                }
-                map(
-                    Ptr::_from_raw(p_inx_old, old_gen),
-                    &mut link.t,
-                    Ptr::_from_raw(p_inx_new, new_gen),
-                );
-
-                let _ = mem::replace(self.a.m.get_mut(i).unwrap(), Allocated(new_gen, link));
-                i = i.checked_add(1).unwrap();
-
+            *generation = new_gen;
+            let prev_next = link.prev_next();
+            // handle the SLCC case, the interlinks travel with it
+            let slcc = prev_next.0 == Some(p_inx_old);
+            if slcc {
+                link.prev_next = (Some(p_inx_new), Some(p_inx_new));
+            }
+            if i != j {
                 if !slcc {
-                    // update interlinks pointing to us
+                    // Update the interlinks pointing at us. The slot at `i` is always
+                    // free here, so a neighbor can never be what the move overwrites.
                     if let Some(p) = prev_next.0 {
-                        let Allocated(_, link) =
-                            self.a.m.get_mut(from_checked_ptr::<P>(p)).unwrap()
-                        else {
-                            unreachable!()
-                        };
-                        link.prev_next.1 = Some(p_inx_new);
+                        this.0.get_inx_mut_unwrap(p).prev_next.1 = Some(p_inx_new);
                     }
                     if let Some(p) = prev_next.1 {
-                        let Allocated(_, link) =
-                            self.a.m.get_mut(from_checked_ptr::<P>(p)).unwrap()
-                        else {
-                            unreachable!()
-                        };
-                        link.prev_next.0 = Some(p_inx_new);
+                        this.0.get_inx_mut_unwrap(p).prev_next.0 = Some(p_inx_new);
                     }
                 }
+                // the entry already has the new generation and interlinks in it
+                let entry = mem::replace(
+                    this.0.m.get_mut(j).unwrap(),
+                    // this will be overwritten or dropped
+                    Free(P::invalid().inx()),
+                );
+                let _ = mem::replace(this.0.m.get_mut(i).unwrap(), entry);
             }
+            i = i.checked_add(1).unwrap();
         }
-        // remove free slots off the end
-        for inx in self.a.nziter().into_iter().rev() {
-            if let Free(_) = self.a.m.get(inx).unwrap() {
-                self.a.m.pop();
-            } else {
-                break;
-            }
-        }
+        // avoid extra `O(n)` search in canonicalization since there are no free slots
+        // in the middle
+        this.cancel();
+        self.a.remove_free_end_slots();
+        // we were relying on the drop to fix this
         self.a.freelist_root = None;
         res
     }
@@ -211,9 +200,13 @@ impl<'a, P: Ptr, T, B: ArenaBacking> ArenaInsertEntryTrait<'a, P, T>
     fn insert(self, t: T) {
         let a = &mut self.a.a;
         let p = self.p;
-        // double check idempotency
-        let entry = a.entry_insert_within_capacity().unwrap();
-        assert_eq!(entry.ptr(), p);
+        // REF(insertion_idempotency)
+        let Ok(entry) = a.entry_insert_within_capacity() else {
+            unreachable!()
+        };
+        if entry.ptr() != p {
+            unreachable!()
+        }
         match self.kind {
             LinkInsertInxKind::Disconnected => entry.insert(LinkNoGen::new((None, None), t)),
             LinkInsertInxKind::SingleLinkCyclic => {
@@ -422,10 +415,8 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
         &mut self,
         p: P::Inx,
     ) -> InvalidationResult<(P::Gen, LinkNoGen<P, T>)> {
-        let ((generation, link), o) = match self.a.remove_inx(p) {
-            InvalidationResult::Success(x) => (x, false),
-            InvalidationResult::GenerationOverflow(x) => (x, true),
-            InvalidationResult::InvalidPtr => return InvalidationResult::InvalidPtr,
+        let (Some((generation, link)), o) = self.a.remove_inx(p).overflowing() else {
+            return InvalidationResult::InvalidPtr;
         };
         match link.prev_next() {
             (None, None) => (),
@@ -456,12 +447,17 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
         self.internal_drain_chain(p)
     }
 
-    fn compress_and_canonicalize(&mut self, reset_generation: bool) -> InvalidationOption<()> {
+    fn compress_canonical(&mut self, reset_generation: bool) -> InvalidationOption<()> {
         let res = if reset_generation {
             self.a.set_generation(<P::Gen as PtrGen>::two());
             InvalidationOption::Success(())
         } else {
-            self.inc_generation()
+            // follow what `clear` does
+            if self.is_empty() {
+                InvalidationOption::Success(())
+            } else {
+                self.inc_generation()
+            }
         };
         let new_gen = self.a.generation();
 
@@ -480,7 +476,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
             if init_j.get() > self.a.m.len() {
                 break;
             }
-            if let Allocated(_, init_link) = self.a.m.get_mut(init_j).unwrap() {
+            if let Allocated(_, init_link) = self.a.m.get(init_j).unwrap() {
                 // found lowest index link of a chain, time to find the start of the chain or
                 // discover cyclicity
                 let p_init = from_checked_raw::<P>(init_j);
@@ -496,19 +492,23 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
                 }
 
                 // start compressing the chain starting from `target` moving in the `Link::next`
-                // direction, swapping to get other nodes out of the way when necessary
+                // direction, swapping to get other nodes out of the way when necessary.
+                let i_first = from_checked_raw::<P>(i);
                 loop {
                     if i == from_checked_ptr::<P>(target) {
                         // optimize and avoid edge case
-                        if let Allocated(old_gen, _link) = self.a.m.get_mut(i).unwrap() {
-                            *old_gen = new_gen;
-                            i = i.checked_add(1).unwrap();
-                        }
-                        let Some(next) = self.a.get_inx_mut_unwrap(target).next() else {
+                        let Allocated(old_gen, _link) = self.a.m.get_mut(i).unwrap() else {
+                            unreachable!()
+                        };
+                        *old_gen = new_gen;
+                        i = i.checked_add(1).unwrap();
+                        let Some(next) = self.a.get_inx_unwrap(target).next() else {
                             break;
                         };
                         target = next;
-                        if target == p_init {
+                        // the sentinel for a cyclic chain having come all the way around has to be
+                        // where the first link of the chain is moved to and not where it started
+                        if target == i_first {
                             break;
                         }
                     }
@@ -560,7 +560,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
                     i = i.checked_add(1).unwrap();
                     let Some(next) = next else { break };
                     target = next;
-                    if target == p_init {
+                    if target == i_first {
                         break;
                     }
                 }
@@ -570,14 +570,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
                 j = init_j.checked_add(1);
             }
         }
-        // remove free slots off the end
-        for inx in self.a.nziter().into_iter().rev() {
-            if let Free(_) = self.a.m.get(inx).unwrap() {
-                self.a.m.pop();
-            } else {
-                break;
-            }
-        }
+        self.a.remove_free_end_slots();
         self.a.freelist_root = None;
         res
     }
