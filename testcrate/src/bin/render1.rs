@@ -1,7 +1,5 @@
 //! basic fuzzing
 
-#![allow(clippy::manual_is_multiple_of)]
-
 use rand_xoshiro::{
     Xoshiro128StarStar,
     rand_core::{Rng, SeedableRng},

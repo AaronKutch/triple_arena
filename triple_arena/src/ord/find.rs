@@ -407,7 +407,6 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 /// ```
 #[doc(hidden)]
 #[cfg(feature = "alloc")]
-#[allow(clippy::type_complexity)]
 impl<P: Ptr, T: SimpleOrdItem + Clone + alloc::fmt::Debug, B: ArenaBacking>
     SimpleOrdArena<P, T, B>
 {

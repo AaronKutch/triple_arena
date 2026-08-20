@@ -1,5 +1,3 @@
-#![allow(clippy::type_complexity)]
-
 use std::cmp::max;
 
 use triple_arena::traits::Ptr;

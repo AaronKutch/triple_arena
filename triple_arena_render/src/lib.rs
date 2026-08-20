@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 mod grid_process;
 mod render_grid;
 mod render_node;
