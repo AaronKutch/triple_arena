@@ -1,5 +1,6 @@
 //! for ease of copying to the doc examples
 
+// SYNC(arena/arena_traits.rs, compress_with)
 #[test]
 fn compress_with_example() {
     use triple_arena::{Arena, DirectArena, HeapBacking, ptr_struct, traits::*};
@@ -115,6 +116,7 @@ fn compress_with_example() {
     );
 }
 
+// SYNC(chain/chain_arena.rs, transfer_canonical_reallocating)
 #[test]
 fn chain_transfer_canonical_example() {
     use triple_arena::{
@@ -198,6 +200,7 @@ fn chain_transfer_canonical_example() {
     assert_eq!(a[external], "A");
 }
 
+// SYNC(ord/simple_ord_arena.rs, SimpleOrdArena)
 #[test]
 fn simple_ord_arena_example() {
     use core::cmp::Ordering;
@@ -247,6 +250,7 @@ fn simple_ord_arena_example() {
     }
 }
 
+// SYNC(ord/simple_ord_arena.rs, transfer_canonical_reallocating)
 #[test]
 fn simple_ord_arena_transfer_canonical_example() {
     use triple_arena::{
@@ -300,7 +304,8 @@ fn simple_ord_arena_transfer_canonical_example() {
     a.remove(p_d).allow().unwrap();
     let _ = a.insert(OrdPair::new("E", ()));
 
-    // the keys are in order, but they are scattered over the indexes
+    // with respect to `*_ordered` iteration, the keys are in order, but at
+    // the index level they are scattered
     assert_eq!(layout(&a), vec![(2, "A"), (4, "B"), (1, "C"), (3, "E")]);
 
     let recaster = compress_canonical_recaster(&mut a, false);
@@ -325,6 +330,7 @@ fn simple_ord_arena_transfer_canonical_example() {
     assert_eq!(*a[external].k(), "A");
 }
 
+// SYNC(arena/base_arena.rs, Arena)
 #[test]
 fn arena_example() {
     use triple_arena::{Arena, ptr_struct, traits::*};
@@ -349,6 +355,11 @@ fn arena_example() {
     // the generic `P: Ptr` from a instantiated `P0`. If the number of arenas
     // exceeds a small number or the types will be public, you should use more
     // descriptive names like `PNode`, `PComponent`, `PNameOfEntryKind`, etc.
+
+    // Note: if the crate was compiled with the "alloc" flag, the third
+    // `B: ArenaBacking` generic argument is defaulted to `crate::HeapBacking`.
+    // Otherwise, this would need to be something like
+    // `Arena<P0, String, StackBacking<...>>`.
 
     let mut arena: Arena<P0, String> = Arena::new();
 
@@ -412,6 +423,7 @@ fn arena_example() {
     assert_eq!(arena3.iter().next().unwrap().1, "hello");
 }
 
+// SYNC(arena/direct_insertion_arena.rs, DirectArena)
 #[test]
 fn direct_arena_example() {
     use triple_arena::{Arena, DirectArena, ptr_struct, traits::*};
@@ -444,6 +456,7 @@ fn direct_arena_example() {
     );
 }
 
+// SYNC(chain/chain_arena.rs, ChainArena)
 #[test]
 fn chain_arena_example() {
     use triple_arena::{
@@ -566,6 +579,7 @@ fn chain_arena_example() {
     assert!(a.is_empty());
 }
 
+// SYNC(surject/surject_arena.rs, SurjectArena)
 #[test]
 fn surject_arena_example() {
     use triple_arena::{SurjectArena, errors::ChainInsertionError, ptr_struct};
@@ -668,6 +682,7 @@ fn surject_arena_example() {
     );
 }
 
+// SYNC(ord/find.rs, _debug_arena)
 /// This one is only for development debugging, and it writes a `tmp.svg` in the
 /// working directory if it ever does fail
 #[test]
@@ -714,7 +729,7 @@ fn simple_ord_arena_debug_example() {
                     }
                 })
                 .unwrap();
-            render_to_svg_file(&debug_arena2, false, PathBuf::from("tmp.svg".to_owned())).unwrap();
+            render_to_svg_file(&debug_arena2, false, PathBuf::from("tmp.svg")).unwrap();
             panic!(
                 "{i}: debug: {}\nfailed with: {}",
                 SimpleOrdArena::_debug(&a),

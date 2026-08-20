@@ -193,17 +193,17 @@ pub struct SimpleOrdArena<
 // Note that we are careful to only require `T: SimpleOrdItem` when necessary
 
 impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
-    /// Follows [Arena::generation]
+    /// Follows [Arena::generation](crate::Arena::generation)
     pub fn generation(&self) -> P::Gen {
         self.a.generation()
     }
 
-    /// Follows [Arena::set_generation]
+    /// Follows [Arena::set_generation](crate::Arena::set_generation)
     pub fn set_generation(&mut self, new_gen: P::Gen) {
         self.a.set_generation(new_gen)
     }
 
-    /// Follows [Arena::inc_generation]
+    /// Follows [Arena::inc_generation](crate::Arena::inc_generation)
     pub fn inc_generation(&mut self) -> InvalidationOption<()> {
         self.a.inc_generation()
     }
@@ -586,7 +586,8 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// a.remove(p_d).allow().unwrap();
     /// let _ = a.insert(OrdPair::new("E", ()));
     ///
-    /// // the keys are in order as would be seen by the `*_ordered` iterators, but at the index level they are scattered
+    /// // with respect to `*_ordered` iteration, the keys are in order, but at
+    /// // the index level they are scattered
     /// assert_eq!(layout(&a), vec![(2, "A"), (4, "B"), (1, "C"), (3, "E")]);
     ///
     /// let recaster = compress_canonical_recaster(&mut a, false);
@@ -721,7 +722,8 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 
 /// Implemented if `T: Clone`.
 impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for SimpleOrdArena<P, T, B> {
-    /// Has the `Ptr` preserving properties of [Arena::clone], and the ordering
+    /// Has the `Ptr` preserving properties of
+    /// [Arena::clone](crate::Arena::clone), and the ordering
     /// and internal tree are preserved as well.
     ///
     /// # Panics
@@ -744,7 +746,8 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for SimpleOrdArena<P, T, B> {
     }
 
     /// Has the `Ptr` and capacity preserving properties of
-    /// [Arena::clone_from], and the ordering and internal tree are preserved as
+    /// [Arena::clone_from](crate::Arena::clone_from), and the ordering and
+    /// internal tree are preserved as
     /// well.
     ///
     /// # Panics

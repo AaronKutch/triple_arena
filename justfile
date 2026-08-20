@@ -29,13 +29,22 @@ check:
 test *ARGS:
   {{cargo}} nextest run --all-features {{ARGS}}
 
+# Runs `expect-test` updates
 test_update *ARGS:
   UPDATE_EXPECT=1 {{cargo}} nextest run --all-features {{ARGS}}
   UPDATE_EXPECT=1 {{cargo}} nextest run --release --all-features {{ARGS}}
 
+# Copies the examples of `testcrate/tests/examples.rs` into their doc tests
+sync_examples:
+  {{cargo}} r -q --bin sync_examples
+  {{cargo}} fmt
+  {{cargo}} r -q --bin sync_examples -- --check
+  {{cargo}} t --doc --all-features
+
 test_all:
   {{cargo}} sort -cw
   {{cargo}} doc --no-deps --all-features
+  {{cargo}} r --bin sync_examples -- --check
   {{cargo}} nextest run --no-default-features
   {{cargo}} nextest run --no-default-features --features=alloc
   {{cargo}} nextest run --no-default-features --features=serde_support
@@ -45,7 +54,6 @@ test_all:
   {{cargo}} r --bin render1 --features=alloc
   {{cargo}} r --example equation --features=alloc
   {{cargo}} machete
-  # needs the pinned toolchain
   {{cargo}} b --target=riscv32i-unknown-none-elf -p no_std_test
   (cd ./no_alloc_test && {{cargo}} b --target=riscv32i-unknown-none-elf -p no_alloc_test)
 
