@@ -585,9 +585,11 @@ pub fn fuzz<
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut iters999 = 0;
+    let mut max_len = 0usize;
 
     for i in 0..stats.n {
         let len = b.len();
+        max_len = max(max_len, len);
         ensure_eq!(cd_gen.len(), len);
         ensure_eq!(a.len(), len);
         ensure_eq!(a.is_empty(), b.is_empty());
@@ -620,6 +622,7 @@ pub fn fuzz<
                 Some(&mut g),
                 set_max_capacity,
                 |b, rng| b.get_mut_rand(rng).map(|(k, t)| (k, &mut t.p)),
+                Cd::key,
             )
             .stack()?,
             250..500 => {
@@ -1267,6 +1270,9 @@ pub fn fuzz<
     }
     if let Some(x) = &stats.iters999 {
         x.assert_debug_eq(&iters999);
+    }
+    if let Some(x) = &stats.max_len {
+        x.assert_debug_eq(&max_len);
     }
     a.clear().allow();
     a1.clear().allow();

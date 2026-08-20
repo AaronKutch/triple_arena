@@ -1,4 +1,4 @@
-//! Iterators for `OrdArena`
+//! Iterators for [SimpleOrdArena]
 
 use recasting::{Recast, Recaster};
 
@@ -65,7 +65,7 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer<SimpleOrdArena<P, T, B>> for OrderedPt
     }
 }
 
-/// An ordered iterator over `(P, &T)` in an `SimpleOrdArena`
+/// An ordered iterator over `(P, &T)` in a `SimpleOrdArena`
 pub struct Iter<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a SimpleOrdArena<P, T, B>,
     adv: OrderedPtrAdvancer<P>,
@@ -81,7 +81,8 @@ impl<'a, P: Ptr, T, B: ArenaBacking> Iterator for Iter<'a, P, T, B> {
     }
 }
 
-/// A draining iterator over `(P, T)` in an `OrdArena`
+/// An ordered draining iterator over `(P, T)` in a `SimpleOrdArena`, produced
+/// by [drain_ordered](SimpleOrdArena::drain_ordered)
 pub struct OrderedDrain<'a, P: Ptr, T, B: ArenaBacking> {
     arena: &'a mut SimpleOrdArena<P, T, B>,
     adv: OrderedPtrAdvancer<P>,
@@ -106,7 +107,10 @@ impl<P: Ptr, T, B: ArenaBacking> Iterator for OrderedDrain<'_, P, T, B> {
     }
 }
 
-/// A capacity draining iterator over `(P, T)` in an `Arena`, this is `O(n)`
+/// An ordered capacity draining iterator over `(P, T)` in a `SimpleOrdArena`,
+/// produced by the owning [IntoIterator] impl. Note that until Rust supports
+/// !Forget types, this operation is `O(n log n)` because it has to individually
+/// remove every element.
 pub struct CapacityDrain<P: Ptr, T, B: ArenaBacking> {
     arena: SimpleOrdArena<P, T, B>,
     adv: chain_iterators::ChainPtrAdvancer<P>,

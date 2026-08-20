@@ -110,6 +110,7 @@ use ArenaSlot::*;
 ///
 /// let p2_ptr: Q2 = arena2.insert((hello_ptr, Ptr::invalid()));
 /// let another: Q2 = arena2.insert((hello_ptr, p2_ptr));
+/// assert_eq!(arena2[another].1, p2_ptr);
 ///
 /// // With many arena crates, no compile time or runtime checks would prevent
 /// // you from using the wrong pointers. Here, the compiler protects us.

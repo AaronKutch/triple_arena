@@ -33,6 +33,9 @@ pub struct Stats {
     pub fixed_cap: Option<usize>,
     pub n: usize,
     pub iters999: Option<Expect>,
+    /// The maximum `len` that the arena reached over the whole fuzz, to check
+    /// that the test is actually stressing the lengths that it should be
+    pub max_len: Option<Expect>,
     pub cd_gen: CdGen<()>,
     pub cd_gen1: CdGen<D1>,
 }
@@ -66,7 +69,7 @@ pub fn plausible_gen<P: Ptr, T, A: CompactArenaTrait<P, T>>(arena: &A) -> P::Gen
 /// generate invalid `Ptr`s via `P::invalid()`, an existing allocation but with
 /// wrong generation (incremented or gen 1), or index 1 in a free slot, and in
 /// the space between `self.m.len()` and `self.m.capacity()`
-pub fn gen_invalid<P: Ptr, A: CompactArenaTrait<P, Cd<()>>>(rng: &mut StarRng, arena: &A) -> P {
+pub fn gen_invalid<P: Ptr, T, A: CompactArenaTrait<P, T>>(rng: &mut StarRng, arena: &A) -> P {
     match rng.index_inclusive(15) {
         0 => return P::invalid(),
         1..4 => {
@@ -110,7 +113,7 @@ pub fn gen_invalid<P: Ptr, A: CompactArenaTrait<P, Cd<()>>>(rng: &mut StarRng, a
 /// arenas, takes up indexes 0..250. Some mutable functions like `invalidate`
 /// are possible generically because the `B` mirrors should have interlinks and
 /// orderings based on value and not on `Ptr` keying.
-pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
+pub fn common_compact_fuzz_step250<P: Ptr, T, A: CompactArenaTrait<P, T>, B>(
     rng: &mut StarRng,
     a: &mut A,
     test_limit: usize,
@@ -121,6 +124,9 @@ pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
     g: Option<&mut TestGen<P>>,
     mut set_max_capacity: Option<fn(&mut A, usize) -> Result<(), MaxCapacityReductionError>>,
     get_mut_rand: for<'a> fn(&'a mut B, rng: &mut StarRng) -> Option<(Ck<()>, &'a mut P)>,
+    // the `Ck` that uniquely identifies an entry, which is not always the entry
+    // itself
+    key_of: fn(&T) -> Ck<()>,
 ) -> Result<(), StackedError> {
     let len: usize = a.len();
     match op_inx {
@@ -216,16 +222,16 @@ pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
             if let Some((k, p)) = get_mut_rand(b, rng) {
                 let p = *p;
                 ensure!(a.contains(p));
-                ensure_eq!(a.get(p).map(|t| t.key()), Some(k));
-                ensure_eq!(a.get_mut(p).map(|t| t.key()), Some(k));
+                ensure_eq!(a.get(p).map(key_of), Some(k));
+                ensure_eq!(a.get_mut(p).map(|t| key_of(&*t)), Some(k));
                 ensure_eq!(
                     a.get_inx(p.inx())
-                        .map(|(generation, t)| (generation, t.key())),
+                        .map(|(generation, t)| (generation, key_of(t))),
                     Some((p.generation(), k))
                 );
                 ensure_eq!(
                     a.get_inx_mut(p.inx())
-                        .map(|(generation, t)| (generation, t.key())),
+                        .map(|(generation, t)| (generation, key_of(t))),
                     Some((p.generation(), k))
                 );
             } else {
@@ -301,11 +307,11 @@ pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
                     let res = a
                         .get_disjoint_inx_mut(set)
                         .stack()?
-                        .map(|(generation, t)| (generation, t.key()));
+                        .map(|(generation, t)| (generation, key_of(t)));
                     for ((generation, k), p) in res.iter().zip(set.iter()) {
                         let tmp = a.get_inx(*p).stack()?;
                         ensure_eq!(tmp.0, *generation);
-                        ensure_eq!(tmp.1.key(), *k);
+                        ensure_eq!(key_of(tmp.1), *k);
                     }
                     for i in 0..set.len() {
                         set1[i] = P::_from_raw(set[i], res[i].0);
@@ -313,9 +319,9 @@ pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
 
                     match a.get_disjoint_mut(set1) {
                         Ok(res) => {
-                            let res = res.map(|t| t.key());
+                            let res = res.map(|t| key_of(t));
                             for (k, p) in res.iter().zip(set1.iter()) {
-                                ensure_eq!(a.get(*p).stack()?.key(), *k);
+                                ensure_eq!(key_of(a.get(*p).stack()?), *k);
                             }
                         }
                         Err(GetDisjointMutError::IndexOutOfBounds) => bail!(),
@@ -377,19 +383,19 @@ pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
             ensure_eq!(len, ptrs.len());
             let mut x = vec![];
             for p in ptrs {
-                x.push((p, a.get(p).stack()?.key()));
+                x.push((p, key_of(a.get(p).stack()?)));
             }
 
             let mut i = 0;
             for t in a.vals() {
-                ensure_eq!(t.key(), x[i].1);
+                ensure_eq!(key_of(t), x[i].1);
                 i += 1;
             }
             ensure_eq!(i, len);
 
             let mut i = 0;
             for t in a.vals_mut() {
-                ensure_eq!(t.key(), x[i].1);
+                ensure_eq!(key_of(t), x[i].1);
                 i += 1;
             }
             ensure_eq!(i, len);
@@ -397,7 +403,7 @@ pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
             let mut i = 0;
             for (p, t) in a.iter() {
                 ensure_eq!(p, x[i].0);
-                ensure_eq!(t.key(), x[i].1);
+                ensure_eq!(key_of(t), x[i].1);
                 i += 1;
             }
             ensure_eq!(i, len);
@@ -405,7 +411,7 @@ pub fn common_compact_fuzz_step250<P: Ptr, A: CompactArenaTrait<P, Cd<()>>, B>(
             let mut i = 0;
             for (p, t) in a.iter_mut() {
                 ensure_eq!(p, x[i].0);
-                ensure_eq!(t.key(), x[i].1);
+                ensure_eq!(key_of(t), x[i].1);
                 i += 1;
             }
             ensure_eq!(i, len);
@@ -487,9 +493,11 @@ pub fn fuzz<
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut iters999 = 0;
+    let mut max_len = 0usize;
 
     for i in 0..stats.n {
         let len = b.len();
+        max_len = max(max_len, len);
         ensure_eq!(cd_gen.len(), len);
         ensure_eq!(a.len(), len);
         ensure_eq!(a.is_empty(), b.is_empty());
@@ -520,6 +528,7 @@ pub fn fuzz<
                 Some(&mut g),
                 set_max_capacity,
                 |b, rng| b.get_mut_rand(rng),
+                Cd::key,
             )
             .stack()?,
             250..300 => {
@@ -1048,6 +1057,9 @@ pub fn fuzz<
     }
     if let Some(x) = &stats.iters999 {
         x.assert_debug_eq(&iters999);
+    }
+    if let Some(x) = &stats.max_len {
+        x.assert_debug_eq(&max_len);
     }
     a.clear().allow();
     Ok(())

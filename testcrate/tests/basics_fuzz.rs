@@ -50,12 +50,24 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
                 9905
             "#]])
         };
+        let max_len = if cfg!(miri) {
+            None
+        } else if cfg!(debug_assertions) {
+            Some(expect![[r#"
+                7
+            "#]])
+        } else {
+            Some(expect![[r#"
+                7
+            "#]])
+        };
         meta.test(
             nonzero_inx_generic_stack::Stats {
                 test_limit: LIMIT,
                 fixed_cap: Some(LIMIT),
                 n: N,
                 iters999,
+                max_len,
                 cd_gen: CdGen::new(),
             },
             |meta| {
@@ -78,6 +90,7 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
                     fixed_cap: None,
                     n: N,
                     iters999: None,
+                    max_len: None,
                     cd_gen: CdGen::new(),
                 },
                 |meta| {
@@ -96,6 +109,7 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
                     fixed_cap: None,
                     n: N,
                     iters999: None,
+                    max_len: None,
                     cd_gen: CdGen::new(),
                 },
                 |meta| nonzero_inx_generic_stack::fuzz(meta, &mut NonZeroInxVec::new(), None),
@@ -108,6 +122,7 @@ fn fuzz_nonzero_inx_generic_stack() -> Result<(), StackedError> {
                 fixed_cap: Some(a.capacity()),
                 n: N,
                 iters999: None,
+                max_len: None,
                 cd_gen: CdGen::new(),
             };
             meta.test(stats, |meta| {
@@ -161,12 +176,24 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
                 9894
             "#]])
         };
+        let max_len = if cfg!(miri) {
+            None
+        } else if cfg!(debug_assertions) {
+            Some(expect![[r#"
+                7
+            "#]])
+        } else {
+            Some(expect![[r#"
+                7
+            "#]])
+        };
         meta.test(
             basic_arena::Stats {
                 test_limit: LIMIT,
                 fixed_cap: Some(LIMIT),
                 n: N,
                 iters999,
+                max_len,
                 cd_gen: CdGen::new(),
                 cd_gen1: CdGen::new(),
             },
@@ -192,6 +219,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
                     fixed_cap: None,
                     n: N,
                     iters999: None,
+                    max_len: None,
                     cd_gen: CdGen::new(),
                     cd_gen1: CdGen::new(),
                 },
@@ -213,6 +241,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
                     fixed_cap: None,
                     n: N,
                     iters999: None,
+                    max_len: None,
                     cd_gen: CdGen::new(),
                     cd_gen1: CdGen::new(),
                 },
@@ -234,6 +263,7 @@ fn fuzz_basic_arena() -> Result<(), StackedError> {
                 fixed_cap: Some(a.capacity()),
                 n: N,
                 iters999: None,
+                max_len: None,
                 cd_gen: CdGen::new(),
                 cd_gen1: CdGen::new(),
             };
@@ -294,12 +324,24 @@ fn fuzz_direct_arena() -> Result<(), StackedError> {
                 9852
             "#]])
         };
+        let max_len = if cfg!(miri) {
+            None
+        } else if cfg!(debug_assertions) {
+            Some(expect![[r#"
+                7
+            "#]])
+        } else {
+            Some(expect![[r#"
+                7
+            "#]])
+        };
         meta.test(
             direct_arena::Stats {
                 test_limit: LIMIT,
                 fixed_cap: Some(LIMIT),
                 n: N,
                 iters999,
+                max_len,
                 cd_gen: CdGen::new(),
                 cd_gen1: CdGen::new(),
             },
@@ -325,6 +367,7 @@ fn fuzz_direct_arena() -> Result<(), StackedError> {
                     fixed_cap: None,
                     n: N,
                     iters999: None,
+                    max_len: None,
                     cd_gen: CdGen::new(),
                     cd_gen1: CdGen::new(),
                 },
@@ -346,6 +389,7 @@ fn fuzz_direct_arena() -> Result<(), StackedError> {
                     fixed_cap: None,
                     n: N,
                     iters999: None,
+                    max_len: None,
                     cd_gen: CdGen::new(),
                     cd_gen1: CdGen::new(),
                 },
@@ -368,6 +412,7 @@ fn fuzz_direct_arena() -> Result<(), StackedError> {
                 fixed_cap: Some(a.capacity()),
                 n: N,
                 iters999: None,
+                max_len: None,
                 cd_gen: CdGen::new(),
                 cd_gen1: CdGen::new(),
             };

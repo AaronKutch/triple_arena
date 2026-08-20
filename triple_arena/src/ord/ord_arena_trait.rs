@@ -70,26 +70,33 @@ impl<K, V> OrdPair<K, V> {
         Self { k, v }
     }
 
+    /// Returns a reference to the key
     pub fn k(&self) -> &K {
         &self.k
     }
 
+    /// Returns a reference to the value
     pub fn v(&self) -> &V {
         &self.v
     }
 
+    /// Returns a mutable reference to the value. Note that there is
+    /// deliberately no `k_mut` counterpart.
     pub fn v_mut(&mut self) -> &mut V {
         &mut self.v
     }
 
+    /// Returns references to both the key and the value
     pub fn k_v(&self) -> (&K, &V) {
         (&self.k, &self.v)
     }
 
+    /// Returns a reference to the key and a mutable reference to the value
     pub fn k_v_mut(&mut self) -> (&K, &mut V) {
         (&self.k, &mut self.v)
     }
 
+    /// Consumes `self` and returns the key and value
     pub fn into_k_v(self) -> (K, V) {
         (self.k, self.v)
     }

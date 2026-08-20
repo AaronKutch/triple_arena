@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, slice::GetDisjointMutError};
+use std::{cmp::max, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use expect_test::Expect;
 use stacked_errors::{StackableErr, StackedError, bail, ensure, ensure_eq};
@@ -26,6 +26,9 @@ pub struct Stats {
     pub fixed_cap: Option<usize>,
     pub n: usize,
     pub iters999: Option<Expect>,
+    /// The maximum `len` that the stack reached over the whole fuzz, to check
+    /// that the test is actually stressing the lengths that it should be
+    pub max_len: Option<Expect>,
     pub cd_gen: CdGen<()>,
 }
 
@@ -56,9 +59,11 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
     // makes sure there is not some problem with the test harness itself or
     // determinism
     let mut iters999 = 0;
+    let mut max_len = 0usize;
 
     for i in 0..stats.n {
         let len = b.len();
+        max_len = max(max_len, len);
         ensure_eq!(cd_gen.len(), len);
         ensure_eq!(a.len(), len);
         ensure_eq!(a.is_empty(), b.is_empty());
@@ -416,6 +421,9 @@ pub fn fuzz<S: NonZeroInxGenericStack<Cd<()>>>(
     }
     if let Some(x) = &stats.iters999 {
         x.assert_debug_eq(&iters999);
+    }
+    if let Some(x) = &stats.max_len {
+        x.assert_debug_eq(&max_len);
     }
     a.clear();
     Ok(())
