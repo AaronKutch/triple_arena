@@ -107,34 +107,40 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
         self.a.clear()
     }
 
+    /// Note that this also completely rebalances the tree, which is `O(n)` and
+    /// therefore does not change the complexity of the compression itself.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If `map` panics, this follows
+    /// [compress_with](ArenaTrait::compress_with) on the base arena, and
+    /// additionally the tree is rebalanced over the partially compressed
+    /// entries so that `self` is left in a valid state.
     fn compress_with<F: FnMut(P, &mut T, P)>(
         &mut self,
         reset_generation: bool,
         mut map: F,
     ) -> InvalidationOption<()> {
-        // make sure this optimizes
-        let first = self.first;
-        let last = self.last;
-        let mut change_first = first;
-        let mut change_last = last;
-        let res = self.a.compress_with(reset_generation, |p, node, q| {
-            // critical precondition for rebalance
-            node.p_back = None;
-            node.p_tree0 = None;
-            node.p_tree1 = None;
-            if p.inx() == first {
-                change_first = q.inx();
+        // REF(ord_rebalance_guard)
+        struct Rebalance<'a, P: Ptr, T, B: ArenaBacking>(&'a mut SimpleOrdArena<P, T, B>);
+        impl<P: Ptr, T, B: ArenaBacking> Drop for Rebalance<'_, P, T, B> {
+            fn drop(&mut self) {
+                // this is the precondition for the rebalance, and doing it here rather
+                // than in the `map` closure also covers the entries that `map` did not
+                // reach
+                for node in self.0.a.vals_mut() {
+                    node.p_back = None;
+                    node.p_tree0 = None;
+                    node.p_tree1 = None;
+                }
+                self.0.raw_rebalance_assuming_prepared();
             }
-            if p.inx() == last {
-                change_last = q.inx();
-            }
+        }
 
-            map(p, &mut node.t, q)
-        });
-        self.first = change_first;
-        self.last = change_last;
-        self.raw_rebalance_assuming_prepared();
-        res
+        let this = Rebalance(self);
+        this.0
+            .a
+            .compress_with(reset_generation, |p, node, q| map(p, &mut node.t, q))
     }
 }
 

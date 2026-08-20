@@ -2,19 +2,18 @@ use core::{
     borrow::Borrow,
     cmp::Ordering,
     fmt::{self, Debug},
+    mem::ManuallyDrop,
     num::NonZeroUsize,
     ops::{Index, IndexMut},
 };
 
 use crate::{
-    Arena, ChainArena, InvalidationOption, LinkNoGen,
-    arena::{from_checked_ptr, from_checked_raw},
-    errors::ReallocationError,
+    ChainArena, InvalidationOption, LinkNoGen,
+    arena::{ArenaSlot, from_checked_ptr, from_checked_raw},
+    errors::{MaxCapacityReductionError, ReallocationError},
     stack::{NonZeroInxArray, NonZeroInxGenericStack},
-    traits::{
-        Advancer, ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaTrait, ChainArenaTrait, Ptr,
-    },
-    utils::traits::ArenaBacking,
+    traits::{ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaTrait, ChainArenaTrait, Ptr},
+    utils::traits::{ArenaBacking, SetMaxCapacity},
 };
 
 // This is based on the "Rank-balanced trees" paper by Haeupler, Bernhard;
@@ -66,9 +65,6 @@ pub struct OrdArena<
 }
 */
 
-// FIXME have a test that makes sure only bounds that are absolutely required
-// are used
-
 /// Internal node for a [SimpleOrdArena]
 #[derive(Clone)]
 pub struct SimpleOrdArenaNode<P: Ptr, T> {
@@ -110,9 +106,10 @@ pub struct SimpleOrdArenaNode<P: Ptr, T> {
 /// log_2(arena.len())` if only insertions and no removals are used, otherwise
 /// the worst case is `2 * log_2(arena.len())`.
 ///
-/// Note that multiple equal keys are allowed through the `insert_nonhereditary`
-/// function, and this violates the hereditary property and `find_*` uniqueness
-/// only for those keys.
+/// Note that multiple equal keys are allowed through the
+/// [Nonhereditary](crate::OrdInsertKind::Nonhereditary) insertion kinds, and
+/// this violates the hereditary property and `find_*` uniqueness only for those
+/// keys.
 ///
 /// Note: it is a logic error for a key's ordering to change relative to other
 /// keys (by using internal mutability or directly modifying the relevant part
@@ -193,6 +190,8 @@ pub struct SimpleOrdArena<
     pub(crate) a: ChainArena<P, SimpleOrdArenaNode<P, T>, B>,
 }
 
+// Note that we are careful to only require `T: SimpleOrdItem` when necessary
+
 impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Follows [Arena::generation]
     pub fn generation(&self) -> P::Gen {
@@ -255,10 +254,13 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     }
 
     /// Assumes all `p_back`s, `p_tree0`s, and `p_tree1`s are preset to `None`.
-    /// `root` and the `rank`s can be anything. However, all
-    /// other invariants must be kept such as the keys being in order in a
-    /// single acyclic chain, and the `first` and `last` `Ptr`s being set if
-    /// nonempty.
+    /// `root`, `first`, `last`, and the `rank`s can be anything and are all
+    /// set by this. The chain-level entries must be in a single acyclic chain
+    /// of the intended order, but the base arena-level entries can be in any
+    /// order in the backing.
+    ///
+    /// REF(ord_rebalance_guard) As long as the preconditions on this function
+    /// holds, this cannot panic
     pub(crate) fn raw_rebalance_assuming_prepared(&mut self) {
         /*
         If trying to make an `O(n)` pass to rebalance the tree, it seems that it is only possible to do so by starting, at least virtually, from the top down. Every set of entries has to be recursively cut about in half (there is some more extensive bound but if we are doing this, we may as well make it as even as possible). If not done so, it is inevitable with enough entries that a subtree is not only unbalanced but cannot even form a valid subtree because the ranks cannot be bridged.
@@ -269,6 +271,12 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         if self.is_empty() {
             return;
         }
+        // find `first`
+        let mut first = self.a.find_first_inx_ptr().unwrap().inx();
+        while let Some(prev) = self.a.get_inx_link_no_gen(first).unwrap().1.prev() {
+            first = prev;
+        }
+        self.first = first;
         #[allow(clippy::cast_possible_truncation)]
         let root_rank = (self
             .a
@@ -349,6 +357,11 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         let mut i_target = NonZeroUsize::new(1).unwrap();
         loop {
             let p_next = self.a.get_inx_link_no_gen(p_target).unwrap().1.next();
+            if p_next.is_none() {
+                // the end of the chain, note that the `return` below has to happen on
+                // this same iteration or else `p_next` will be unwrapped
+                self.last = p_target;
+            }
             let i_next = i_target.checked_add(1).unwrap();
 
             let stack_len = stack.len();
@@ -445,7 +458,9 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                             p_midpoint: None,
                         });
                     } else {
-                        panic!()
+                        // `subtree_len >= 3` here, so this is
+                        // `ceil(subtree_len / 2) - 1 >= 1`
+                        unreachable!()
                     }
                 }
 
@@ -490,26 +505,119 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// advancing over the entries in order.
     ///
     /// Because an element can be internally swapped multiple times to achieve
-    /// this in-place in the allocation, this cannot have a map.
+    /// this in-place in the allocation, this cannot have a map. Use
+    /// [transfer_canonical_reallocating](
+    /// SimpleOrdArena::transfer_canonical_reallocating) if a recaster is
+    /// needed.
     pub fn compress_canonical(&mut self, reset_generation: bool) -> InvalidationOption<()> {
         // TODO single chain optimized internal version of this
         let res = self.a.compress_canonical(reset_generation);
-        if !self.is_empty() {
-            // we can fortunately rely on the canonicalization
-            self.first = from_checked_raw::<P>(NonZeroUsize::new(1).unwrap());
-            self.last = from_checked_raw::<P>(NonZeroUsize::new(self.a.a.m.len()).unwrap());
-            for node in self.a.vals_mut() {
-                node.p_back = None;
-                node.p_tree0 = None;
-                node.p_tree1 = None;
-            }
-            self.raw_rebalance_assuming_prepared();
+        // chain arena canonicalization puts the arena and chain arena level entries
+        // exactly where we want them, now we just need to rebuild the ord arena level.
+        for node in self.a.vals_mut() {
+            node.p_back = None;
+            node.p_tree0 = None;
+            node.p_tree1 = None;
         }
+        self.raw_rebalance_assuming_prepared();
         res
     }
 
     // TODO use a `OrdArenaTrait` for `source`
 
+    /// The ordered arena counterpart of
+    /// [ChainArena::transfer_canonical_reallocating], transferring every entry
+    /// out of `source` and into `self`. Follows all of the same properties,
+    /// with the additional guarantee that the resulting `P::Inx`s are
+    /// `1..=source.len()` in key order, and that the tree is deterministically
+    /// rebalanced to be perfectly canonical as in
+    /// [compress_canonical](SimpleOrdArena::compress_canonical).
+    ///
+    /// Corresponding recaster example:
+    /// ```
+    /// use triple_arena::{
+    ///     DirectArena, HeapBacking, OrdPair, SimpleOrdArena, ptr_struct,
+    ///     traits::*,
+    ///     utils::traits::{PtrGen, PtrInx},
+    /// };
+    ///
+    /// // (This would be a standard function, except there are far too many choices to
+    /// // make on the backing of the recaster arena and how fallibility should be
+    /// // handled)
+    /// fn compress_canonical_recaster<P: Ptr, T>(
+    ///     a: &mut SimpleOrdArena<P, T, HeapBacking>,
+    ///     reset_generation: bool,
+    /// ) -> DirectArena<P, P, HeapBacking> {
+    ///     // This arena will be a recaster in which we create a mapping from the old
+    ///     // `Ptr` domain to the new one. We use a `DirectArena` for this since it will
+    ///     // only be used for this purpose and then discarded.
+    ///     let mut recaster = DirectArena::<P, P, HeapBacking>::new();
+    ///     let mut res = SimpleOrdArena::<P, T, HeapBacking>::new();
+    ///     let new_generation = if reset_generation {
+    ///         // reset for compactness, only safe if logically old domain `Ptr`s can be
+    ///         // eliminated
+    ///         P::Gen::two()
+    ///     } else {
+    ///         // use incremented generation so that all `Ptr`s of the old domain are
+    ///         // invalidated
+    ///         P::Gen::generational_inc(a.generation()).0
+    ///     };
+    ///     res.transfer_canonical_reallocating(new_generation, a, |_, o, _| o.allow(), &mut recaster)
+    ///         .unwrap();
+    ///     *a = res;
+    ///     recaster
+    /// }
+    ///
+    /// ptr_struct!(P0);
+    ///
+    /// type A = SimpleOrdArena<P0, OrdPair<&'static str, ()>, HeapBacking>;
+    /// fn layout(a: &A) -> Vec<(usize, &'static str)> {
+    ///     a.iter_ordered()
+    ///         .map(|(p, pair)| (PtrInx::try_into_usize(p.inx()).unwrap().get(), *pair.k()))
+    ///         .collect()
+    /// }
+    ///
+    /// let mut a = A::new();
+    /// let _ = a.insert(OrdPair::new("C", ()));
+    /// let p_a = a.insert(OrdPair::new("A", ())).0;
+    /// let p_d = a.insert(OrdPair::new("D", ())).0;
+    /// let _ = a.insert(OrdPair::new("B", ()));
+    /// // make an internal slot unallocated, and scatter the keys further
+    /// a.remove(p_d).allow().unwrap();
+    /// let _ = a.insert(OrdPair::new("E", ()));
+    ///
+    /// // the keys are in order as would be seen by the `*_ordered` iterators, but at the index level they are scattered
+    /// assert_eq!(layout(&a), vec![(2, "A"), (4, "B"), (1, "C"), (3, "E")]);
+    ///
+    /// let recaster = compress_canonical_recaster(&mut a, false);
+    ///
+    /// // now the keys are in index order as well, and the internal tree is
+    /// // deterministically rebalanced to be perfectly canonical
+    /// assert_eq!(layout(&a), vec![(1, "A"), (2, "B"), (3, "C"), (4, "E")]);
+    /// // and the recaster is a complete description of where the entries went
+    /// assert_eq!(
+    ///     &format!("{recaster:#?}"),
+    ///     r#"{
+    ///     P0[1](2): P0[3](4),
+    ///     P0[2](2): P0[1](4),
+    ///     P0[3](3): P0[4](4),
+    ///     P0[4](2): P0[2](4),
+    /// }"#
+    /// );
+    ///
+    /// // external `Ptr`s are fixed up with it
+    /// let mut external = p_a;
+    /// external.recast(&recaster).unwrap();
+    /// assert_eq!(*a[external].k(), "A");
+    /// ```
+    ///
+    /// # Unwind Safety
+    ///
+    /// If `map` panics, this follows
+    /// [ChainArena::transfer_canonical_reallocating], and additionally the tree
+    /// of `self` is rebalanced over the entries that did arrive so that `self`
+    /// is left in a valid state, and `source` is left as a valid ordered
+    /// arena of the entries that were not transferred.
     pub fn transfer_canonical_reallocating<
         Q: Ptr,
         U,
@@ -523,8 +631,23 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         mut map: F,
         recaster: &mut D,
     ) -> Result<(), ReallocationError> {
+        // REF(ord_rebalance_guard)
+        struct Rebalance<'a, P: Ptr, T, B: ArenaBacking>(&'a mut SimpleOrdArena<P, T, B>);
+        impl<P: Ptr, T, B: ArenaBacking> Drop for Rebalance<'_, P, T, B> {
+            fn drop(&mut self) {
+                self.0.raw_rebalance_assuming_prepared();
+            }
+        }
+        impl<P: Ptr, T, B: ArenaBacking> Rebalance<'_, P, T, B> {
+            /// Cancels running `raw_rebalance_assuming_prepared`
+            fn cancel(self) {
+                let _ = ManuallyDrop::new(self);
+            }
+        }
+
+        let this = Rebalance(self);
         // by chain arena canonicalization this also sets it up how we want it
-        let res = self.a.transfer_canonical_reallocating(
+        let res = this.0.a.transfer_canonical_reallocating(
             new_generation,
             &mut source.a,
             |q, o, p| SimpleOrdArenaNode {
@@ -536,43 +659,81 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             },
             recaster,
         );
-        if self.is_empty() || res.is_err() {
-            return res;
+        if res.is_err() {
+            // all of the fallible points happen before anything is modified, so the
+            // preexisting tree is still intact and must not be rebalanced over
+            this.cancel();
         }
-        // the `recaster` has been set now
-        self.first = recaster.get_inx(source.first).unwrap().1.inx();
-        self.last = recaster.get_inx(source.last).unwrap().1.inx();
-        self.raw_rebalance_assuming_prepared();
         res
     }
 
     // TODO probably have some from_ordered_chain function
 
-    /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
-    /// generation counter, and reusing capacity) with the `Ptr` mapping of
-    /// `self`, with the ordering preserved in a single chain
+    /// Calls [clone_from_with](ChainArena::clone_from_with) on `chain_arena`.
+    /// The ordering is preserved in a single acyclic chain
     /// ([Link::next](crate::Link::next) points to the next greater entry)
-    pub fn clone_to_chain_arena<U, F: FnMut(P, &T) -> U>(
+    pub fn clone_to_chain_arena<U, B1: ArenaBacking, F: FnMut(P, &T) -> U>(
         &self,
-        chain_arena: &mut ChainArena<P, U, B>,
+        chain_arena: &mut ChainArena<P, U, B1>,
         mut map: F,
     ) -> Result<(), ReallocationError> {
         chain_arena.clone_from_with(&self.a, |p, link| map(p, &link.t.t))
     }
 
-    /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
-    /// generation counter, and reusing capacity) with the `Ptr` mapping of
-    /// `self`
-    pub fn clone_to_arena<U, F: FnMut(P, &T) -> U>(&self, arena: &mut Arena<P, U, B>, mut map: F) {
-        arena
-            .clone_from_with(&self.a.a, |p, link| map(p, &link.t.t))
-            .unwrap();
+    /// Calls [clone_from_with](ArenaCloneFromWith::clone_from_with) on `arena`,
+    /// giving all the combined chain arena and ord arena nodes of `self` to the
+    /// `Ptr` preserving mapping.
+    pub fn clone_to_arena<
+        U,
+        A: ArenaCloneFromWith<P, U>,
+        F: FnMut(P, &LinkNoGen<P, SimpleOrdArenaNode<P, T>>) -> U,
+    >(
+        &self,
+        arena: &mut A,
+        map: F,
+    ) -> Result<(), ReallocationError> {
+        arena.clone_from_with(&self.a.a, map)
+    }
+
+    /// Directly returns a reference to the internal backing, for the purposes
+    /// of accessing `ArenaBacking`-specific functions
+    pub fn backing(&self) -> &B::Stack<ArenaSlot<P, LinkNoGen<P, SimpleOrdArenaNode<P, T>>>> {
+        self.a.backing()
+    }
+
+    /// Directly returns a mutable reference to the internal backing, for the
+    /// purposes of accessing `ArenaBacking`-specific functions
+    ///
+    /// # Safety
+    ///
+    /// The `ArenaSlot` allocation state must not be modified, or else the
+    /// freelist or entry length could be broken. The `LinkNoGen` interlinks
+    /// must also not be modified, or else chain invariants could be broken, and
+    /// the `SimpleOrdArenaNode` tree pointers and ranks must not be modified or
+    /// else the tree invariants could be broken.
+    pub unsafe fn backing_mut(
+        &mut self,
+    ) -> &mut B::Stack<ArenaSlot<P, LinkNoGen<P, SimpleOrdArenaNode<P, T>>>> {
+        // Safety: called in `unsafe` function with same invariants and added invariants
+        unsafe { self.a.backing_mut() }
     }
 }
 
 /// Implemented if `T: Clone`.
 impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for SimpleOrdArena<P, T, B> {
-    /// Has the `Ptr` preserving properties of [Arena::clone]
+    /// Has the `Ptr` preserving properties of [Arena::clone], and the ordering
+    /// and internal tree are preserved as well.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure, or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit of the fresh `Self::new`
+    /// arena prevents reaching the needed capacity.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If a `T::clone` panics, the partially cloned arena is dropped.
+    #[track_caller]
     fn clone(&self) -> Self {
         Self {
             root: self.root,
@@ -582,7 +743,23 @@ impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for SimpleOrdArena<P, T, B> {
         }
     }
 
-    /// Has the `Ptr` and capacity preserving properties of [Arena::clone_from]
+    /// Has the `Ptr` and capacity preserving properties of
+    /// [Arena::clone_from], and the ordering and internal tree are preserved as
+    /// well.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure, or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit of `self` prevents
+    /// reaching the needed capacity.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If a `T::clone` or `T::clone_from` panics, `self` is left with a mix of
+    /// its old entries and the newly cloned ones, and the ordering and internal
+    /// tree can be broken. See
+    /// [ChainArena::clone_from](ChainArena::clone_from).
+    #[track_caller]
     fn clone_from(&mut self, source: &Self) {
         self.root = source.root;
         self.first = source.first;
@@ -600,6 +777,15 @@ impl<P: Ptr, T, B: ArenaBacking> Default for SimpleOrdArena<P, T, B> {
 impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> Index<Q> for SimpleOrdArena<P, T, B> {
     type Output = T;
 
+    /// Returns a reference to the `T` pointed to by `inx`. Use
+    /// [get](ArenaTrait::get) if invalid `Ptr`s need to be handled, or
+    /// [get_inx_link_no_gen](SimpleOrdArena::get_inx_link_no_gen) if the
+    /// neighboring keys are also needed.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
     fn index(&self, inx: Q) -> &T {
         let p: P = *inx.borrow();
         self.get(p)
@@ -608,6 +794,14 @@ impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> Index<Q> for SimpleOrdArena<P, T,
 }
 
 impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for SimpleOrdArena<P, T, B> {
+    /// Returns a mutable reference to the `T` pointed to by `inx`. Use
+    /// [get_mut](ArenaTrait::get_mut) if invalid `Ptr`s need to be handled.
+    /// Note that it is a logic error to change the key ordering of the `T`.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
     fn index_mut(&mut self, inx: Q) -> &mut T {
         let p: P = *inx.borrow();
         self.get_mut(p)
@@ -616,9 +810,11 @@ impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for SimpleOrdArena<P,
 }
 
 impl<P: Ptr, T: Debug, B: ArenaBacking> Debug for SimpleOrdArena<P, T, B> {
+    /// Unlike the unordered arenas, this is in key order and not in internal
+    /// slot order
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO here and in other triple `Debug`s we need a flat triple
-        f.debug_map().entries(self.iter()).finish()
+        f.debug_map().entries(self.iter_ordered()).finish()
     }
 }
 
@@ -628,20 +824,17 @@ impl<P: Ptr, T: PartialEq, B0: ArenaBacking> SimpleOrdArena<P, T, B0> {
     /// compare pointers, generations, arena capacities, or internal tree
     /// configuration, or `self.generation()`.
     pub fn canonical_eq<Q: Ptr, B1: ArenaBacking>(&self, other: &SimpleOrdArena<Q, T, B1>) -> bool {
-        let mut adv0 = self.advancer();
-        let mut adv1 = other.advancer();
-        while let Some(p0) = adv0.advance(self) {
-            if let Some(p1) = adv1.advance(other) {
-                let node0 = self.a.get_inx_unwrap(p0.inx());
-                let node1 = other.a.get_inx_unwrap(p1.inx());
-                if node0.t != node1.t {
+        let mut iter1 = other.iter_ordered();
+        for (_, t0) in self.iter_ordered() {
+            if let Some((_, t1)) = iter1.next() {
+                if t0 != t1 {
                     return false;
                 }
             } else {
                 return false;
             }
         }
-        adv1.advance(other).is_none()
+        iter1.next().is_none()
     }
 }
 
@@ -655,13 +848,10 @@ impl<P: Ptr, T: PartialOrd, B0: ArenaBacking> SimpleOrdArena<P, T, B0> {
         &self,
         other: &SimpleOrdArena<Q, T, B1>,
     ) -> Option<Ordering> {
-        let mut adv0 = self.advancer();
-        let mut adv1 = other.advancer();
-        while let Some(p0) = adv0.advance(self) {
-            if let Some(p1) = adv1.advance(other) {
-                let node0 = self.a.get_inx_unwrap(p0.inx());
-                let node1 = other.a.get_inx_unwrap(p1.inx());
-                match node0.t.partial_cmp(&node1.t) {
+        let mut iter1 = other.iter_ordered();
+        for (_, t0) in self.iter_ordered() {
+            if let Some((_, t1)) = iter1.next() {
+                match t0.partial_cmp(t1) {
                     Some(Ordering::Equal) => (),
                     ord => return ord,
                 }
@@ -669,7 +859,7 @@ impl<P: Ptr, T: PartialOrd, B0: ArenaBacking> SimpleOrdArena<P, T, B0> {
                 return Some(Ordering::Greater);
             }
         }
-        if adv1.advance(other).is_none() {
+        if iter1.next().is_none() {
             Some(Ordering::Equal)
         } else {
             Some(Ordering::Less)
@@ -687,13 +877,10 @@ impl<P: Ptr, T: Ord, B0: ArenaBacking> SimpleOrdArena<P, T, B0> {
         &self,
         other: &SimpleOrdArena<Q, T, B1>,
     ) -> Ordering {
-        let mut adv0 = self.advancer();
-        let mut adv1 = other.advancer();
-        while let Some(p0) = adv0.advance(self) {
-            if let Some(p1) = adv1.advance(other) {
-                let node0 = self.a.get_inx_unwrap(p0.inx());
-                let node1 = other.a.get_inx_unwrap(p1.inx());
-                match node0.t.cmp(&node1.t) {
+        let mut iter1 = other.iter_ordered();
+        for (_, t0) in self.iter_ordered() {
+            if let Some((_, t1)) = iter1.next() {
+                match t0.cmp(t1) {
                     Ordering::Equal => (),
                     ord => return ord,
                 }
@@ -701,10 +888,20 @@ impl<P: Ptr, T: Ord, B0: ArenaBacking> SimpleOrdArena<P, T, B0> {
                 return Ordering::Greater;
             }
         }
-        if adv1.advance(other).is_none() {
+        if iter1.next().is_none() {
             Ordering::Equal
         } else {
             Ordering::Less
         }
+    }
+}
+
+impl<P: Ptr, T, B: ArenaBacking> SetMaxCapacity for SimpleOrdArena<P, T, B>
+where
+    <B as ArenaBacking>::Stack<ArenaSlot<P, LinkNoGen<P, SimpleOrdArenaNode<P, T>>>>:
+        SetMaxCapacity,
+{
+    fn set_max_capacity(&mut self, max_capacity: usize) -> Result<(), MaxCapacityReductionError> {
+        self.a.set_max_capacity(max_capacity)
     }
 }

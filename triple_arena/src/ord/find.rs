@@ -16,22 +16,18 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             return Ok(());
         }
         // check the root
-        if let Some((_, root)) = this.a.get_inx(this.root) {
-            if root.p_back.is_some() {
-                return Err("root node has a back pointer");
-            }
-        } else {
+        let Some((_, root)) = this.a.get_inx(this.root) else {
             return Err("this.root is broken");
         };
+        if root.p_back.is_some() {
+            return Err("root node has a back pointer");
+        }
         // first check the chain and ordering
         let mut count = 0usize;
         let mut prev: Option<P> = None;
-        if let Some((_, link)) = this.a.get_inx_link_no_gen(this.first) {
-            if link.prev().is_some() {
-                return Err("this.first is broken");
-            }
-        } else {
-            return Err("this.first is broken");
+        match this.a.get_inx_link_no_gen(this.first) {
+            Some((_, link)) if link.prev().is_none() => (),
+            _ => return Err("this.first is broken"),
         }
 
         let generation = this.a.get_inx(this.first).unwrap().0;
@@ -39,9 +35,6 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         let mut adv = this.a.advancer_chain(first).unwrap();
         while let Some(p) = adv.advance(&this.a) {
             count = count.checked_add(1).unwrap();
-            if !this.a.contains(p) {
-                return Err("invalid Ptr");
-            }
             if let Some(prev) = prev
                 && Ord::cmp(
                     &this.a.get_inx(prev.inx()).unwrap().1.t.key(),
@@ -60,7 +53,7 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         if count != this.a.len() {
             return Err("multiple chains");
         }
-        // after the linear checks, check the tree
+        // after the linear checks, check the tree structure and the ranks
         let mut adv = this.a.advancer();
         while let Some(p) = adv.advance(&this.a) {
             let node = &this.a.get(p).unwrap();
@@ -106,12 +99,7 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                     return Err("broken tree");
                 }
             }
-        }
-        // check the ranks
-        let mut adv = this.a.advancer();
-        while let Some(p) = adv.advance(&this.a) {
-            let node = &this.a.get(p).unwrap();
-
+            // the ranks, which the child lookups above have already validated
             let rank0 = if let Some(p_tree0) = node.p_tree0 {
                 this.a.get_inx_unwrap(p_tree0).rank
             } else {
@@ -135,7 +123,48 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 return Err("leaf node is not rank 1");
             }
         }
-        Ok(())
+        // Check that the in-order traversal of the tree is exactly the chain order.
+        // The checks above only see that the tree is consistently linked with valid
+        // ranks, and not that the nodes are in the positions that make the `find_*`
+        // functions work. Note that the rank checks above guarantee that ranks
+        // strictly decrease from parent to child, so this cannot loop forever no
+        // matter how the tree is corrupted.
+
+        // descend to the first node
+        let mut p_tree = this.root;
+        while let Some(p_tree0) = this.a.get_inx_unwrap(p_tree).p_tree0 {
+            p_tree = p_tree0;
+        }
+        let mut p_chain = Some(this.first);
+        loop {
+            if Some(p_tree) != p_chain {
+                return Err("in-order tree traversal does not match the chain order");
+            }
+            p_chain = this.a.get_inx_link_no_gen(p_tree).unwrap().1.next();
+            if let Some(p_tree1) = this.a.get_inx_unwrap(p_tree).p_tree1 {
+                // the in-order successor is the leftmost node of subtree 1
+                p_tree = p_tree1;
+                while let Some(p_tree0) = this.a.get_inx_unwrap(p_tree).p_tree0 {
+                    p_tree = p_tree0;
+                }
+            } else {
+                // ascend for as long as we are a subtree 1 child
+                loop {
+                    let Some(p_back) = this.a.get_inx_unwrap(p_tree).p_back else {
+                        // The whole traversal is finished. Note that `p_chain` must be
+                        // `None` here: the checks above imply that every entry is
+                        // reachable from the root, so the traversal visits exactly
+                        // `count` nodes and it matched the chain at every one of them.
+                        return Ok(());
+                    };
+                    let ascended0 = this.a.get_inx_unwrap(p_back).p_tree0 == Some(p_tree);
+                    p_tree = p_back;
+                    if ascended0 {
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     /// Finds a `Ptr` with an associated key that is equal to `k`. Returns
@@ -242,8 +271,15 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         }
     }
 
+    // keep the full doc comment
+
     /// Combines the behaviors of [SimpleOrdArena::find_similar_key] and
-    /// [SimpleOrdArena::find_key_linear]
+    /// [SimpleOrdArena::find_key_linear]. Note that unlike `find_key_linear`,
+    /// `p_init` is a raw index and the generation is not checked, which matches
+    /// [crate::OrdInsertKind::Linear]. Unlike `find_key_linear`, once the
+    /// linear comparisons have narrowed the key down to being between two
+    /// neighboring entries, this returns immediately instead of falling back to
+    /// a normal search.
     #[must_use]
     pub fn find_similar_key_linear<'a>(
         &self,
@@ -294,11 +330,11 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 /// Does not require `T: SimpleOrdItem`
 impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Finds a `Ptr` through binary search with a user-provided function `f`.
-    /// `f` is provided a `P, &K, &V` triple of the node the binary search is
+    /// `f` is provided the `P` and `&T` of the node the binary search is
     /// currently at. Will go in a `Ordering::Less` direction if `f` returns
     /// that, or an `Ordering::Greater` direction if `f` returns that. Stops and
     /// returns the `P` when `Ordering::Equal` is returned. Returns
-    /// `None` if `self.is_empty` or an `Ordering::Equal` case is not
+    /// `None` if `self.is_empty()` or an `Ordering::Equal` case is not
     /// encountered by the end of the binary search.
     pub fn find_with<F: FnMut(P, &T) -> Ordering>(&self, mut f: F) -> Option<P> {
         if self.a.is_empty() {
@@ -415,6 +451,7 @@ impl<P: Ptr, T: SimpleOrdItem + Clone + alloc::fmt::Debug, B: ArenaBacking>
 
         let mut res: crate::Arena<P, (u8, T, Option<P>, Option<P>, Option<P>), B> =
             crate::Arena::new();
+        #[allow(clippy::unwrap_used)]
         self.a
             .clone_to_arena(&mut res, |_, link| {
                 (
@@ -460,6 +497,10 @@ impl<P: Ptr, T: SimpleOrdItem + Clone + alloc::fmt::Debug, B: ArenaBacking>
     pub fn _debug(&self) -> alloc::string::String {
         use core::fmt::Write;
         let mut s = alloc::string::String::new();
+        if self.is_empty() {
+            writeln!(s, "empty").unwrap();
+            return s;
+        }
         writeln!(s, "root: {:?}", self.root).unwrap();
         writeln!(s, "first: {:?}", self.first).unwrap();
         writeln!(s, "last: {:?}", self.last).unwrap();

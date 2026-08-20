@@ -34,6 +34,7 @@ impl<P: Ptr> OrdEntryKind<P> {
     }
 }
 
+/// Indicates how the insertion point of an entry is determined
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrdInsertKind<P: Ptr, K: Ord> {
     /// Inserts an item into an empty arena. Fails if the arena is not empty.
@@ -57,12 +58,12 @@ pub enum OrdInsertKind<P: Ptr, K: Ord> {
     NonhereditaryLinear { p_init: P::Inx, num: usize, k: K },
     /// Manual insertion. Does not enforce key orderings, and instead accepts
     /// whatever `direction` says. If `direction` is `Ordering::Equal`, the
-    /// item at `p_target` is replaced and returned. If `direction` is
-    /// `Ordering::Less`, the pair is inserted as a new entry before
-    /// `p_target`. If `direction` is `Ordering::Greater`, the pair is
-    /// inserted after `p_target`. Returns the replaced pair if there was one.
-    /// Causes an entry insertion error if `p_target` was invalid (which
-    /// necessarily includes the empty arena case) instead of panicking, unlike
+    /// item at `p_target` is replaced and returned, and no capacity is used.
+    /// If `direction` is `Ordering::Less`, the item is inserted as a new entry
+    /// before `p_target`. If `direction` is `Ordering::Greater`, it is
+    /// inserted after `p_target`. Causes an entry insertion error if
+    /// `p_target` was invalid (which necessarily includes the empty arena case)
+    /// instead of panicking, unlike
     /// [SimpleOrdArena::insert_inx_manual_unwrap].
     Manual {
         p_target: P::Inx,
@@ -70,9 +71,9 @@ pub enum OrdInsertKind<P: Ptr, K: Ord> {
     },
 }
 
-/// Insertion is cancelled when this is dropped, but note the processing time
-/// needed by some operations to find the entry has already happened, and any
-/// reallocations that would have been needed has happened.
+/// Insertion is cancelled when this is dropped, but note that the processing
+/// time needed by some operations to find the entry has already happened, and
+/// any reallocations that would have been needed have happened.
 pub struct SimpleOrdArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
     // REF(insertion_idempotency) we drop the entry when constructing this and are relying on
     // idempotency
@@ -106,28 +107,26 @@ impl<'a, P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArenaInsertEntry<'a
         let a = &mut self.a;
         let c = &mut a.a;
         if c.is_empty() {
-            assert_eq!(
-                c.insert_within_capacity(LinkInsertKind::Disconnected, SimpleOrdArenaNode {
+            let p = c
+                .insert_within_capacity(LinkInsertKind::Disconnected, SimpleOrdArenaNode {
                     t,
                     p_back: None,
                     p_tree0: None,
                     p_tree1: None,
                     rank: 1,
                 })
-                .unwrap(),
-                self.p
-            );
+                .unwrap();
+            // REF(insertion_idempotency)
+            if p != self.p {
+                unreachable!()
+            }
             let p = self.p.inx();
             a.first = p;
             a.last = p;
             a.root = p;
             None
         } else {
-            if a.get_inx(self.p_target).is_none() {
-                Some(t)
-            } else {
-                a.insert_inx_manual_unwrap(self.p_target, self.direction, t)
-            }
+            a.insert_inx_manual_unwrap(self.p_target, self.direction, t)
         }
     }
 }
@@ -221,12 +220,16 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 p_target,
                 direction,
             } => {
-                if self.get_inx(p_target).is_none() {
+                let Some((generation, _)) = self.get_inx(p_target) else {
                     return InternalPrepared::Fail;
-                }
-                InternalPrepared::New {
-                    p_target,
-                    direction,
+                };
+                if direction.is_eq() {
+                    InternalPrepared::Replace(Ptr::_from_raw(p_target, generation))
+                } else {
+                    InternalPrepared::New {
+                        p_target,
+                        direction,
+                    }
                 }
             }
         }
@@ -234,7 +237,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 
     /// Following the style of
     /// [crate::traits::ArenaInsertTrait::insert_within_capacity]. Uses
-    /// [OrdInsertKind::Normal].
+    /// [OrdInsertKind::Normal], so the returned `Option<T>` is the replaced
+    /// item if there was already an entry with an equal key.
     pub fn insert_within_capacity(&mut self, t: T) -> Result<(P, Option<T>), OrdInsertionError> {
         let entry = self.entry_insert_within_capacity(OrdInsertKind::Normal(t.key()))?;
         let p = entry.ptr().any();
@@ -243,7 +247,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 
     /// Following the style of
     /// [crate::traits::ArenaInsertTrait::insert_reallocating]. Uses
-    /// [OrdInsertKind::Normal].
+    /// [OrdInsertKind::Normal], so the returned `Option<T>` is the replaced
+    /// item if there was already an entry with an equal key.
     pub fn insert_reallocating(&mut self, t: T) -> Result<(P, Option<T>), OrdInsertionError> {
         let entry = self.entry_insert_reallocating(OrdInsertKind::Normal(t.key()))?;
         let p = entry.ptr().any();
@@ -354,17 +359,20 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 
 /// Does not require `T: SimpleOrdItem`
 impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
-    /// Inserts key `k` with associated value `v` at `p`. Does not enforce key
-    /// orderings, and instead accepts whatever `direction` says. If
-    /// `direction` is `Ordering::Equal`, the value at `p` is replaced and
-    /// returned with `k`. If `direction` is `Ordering::Less`, the pair is
-    /// inserted as a new entry before `p`. If `direction` is
-    /// `Ordering::Greater`, the pair is inserted after `p`. Returns the
-    /// `Ptr` to the pair, and the replaced pair if there was one.
+    /// Inserts `t` at `p`. Does not enforce key orderings, and instead accepts
+    /// whatever `direction` says. If `direction` is `Ordering::Equal`, the item
+    /// at `p` is replaced and returned. If `direction` is `Ordering::Less`, `t`
+    /// is inserted as a new entry before `p`. If `direction` is
+    /// `Ordering::Greater`, it is inserted after `p`. Use
+    /// [OrdInsertKind::Manual] with the `entry_insert_*` functions if the
+    /// failure cases need to be handled.
     ///
     /// # Panics
     ///
-    /// If `p` is invalid.
+    /// If `p` is invalid. If `direction` is not `Ordering::Equal`, this can
+    /// also panic if there was a reallocation error or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit was reached.
+    #[track_caller]
     pub fn insert_inx_manual_unwrap(&mut self, p: P::Inx, direction: Ordering, t: T) -> Option<T> {
         let (p, direction) = match direction {
             Ordering::Less => {
@@ -400,19 +408,16 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 p_tree1: None,
                 rank: 1,
             };
-            if let Ok(p_new) = self
+            let p_new = self
                 .a
                 .insert_reallocating(LinkInsertKind::NextToInx(p), new_node)
-            {
-                self.a.get_inx_mut_unwrap(p).p_tree1 = Some(p_new.inx());
-                if self.last == p {
-                    self.last = p_new.inx()
-                }
-                self.rebalance_inserted(p_new.inx());
-                None
-            } else {
-                unreachable!()
+                .expect("`SimpleOrdArena::insert_inx_manual_unwrap` failed to insert");
+            self.a.get_inx_mut_unwrap(p).p_tree1 = Some(p_new.inx());
+            if self.last == p {
+                self.last = p_new.inx()
             }
+            self.rebalance_inserted(p_new.inx());
+            None
         } else {
             let new_node = SimpleOrdArenaNode {
                 t,
@@ -421,24 +426,22 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
                 p_tree1: None,
                 rank: 1,
             };
-            if let Ok(p_new) = self
+            let p_new = self
                 .a
                 .insert_reallocating(LinkInsertKind::PrevToInx(p), new_node)
-            {
-                // fix tree pointer in leaf direction
-                self.a.get_inx_mut_unwrap(p).p_tree0 = Some(p_new.inx());
-                if self.first == p {
-                    self.first = p_new.inx()
-                }
-                self.rebalance_inserted(p_new.inx());
-                None
-            } else {
-                unreachable!()
+                .expect("`SimpleOrdArena::insert_inx_manual_unwrap` failed to insert");
+            // fix tree pointer in leaf direction
+            self.a.get_inx_mut_unwrap(p).p_tree0 = Some(p_new.inx());
+            if self.first == p {
+                self.first = p_new.inx()
             }
+            self.rebalance_inserted(p_new.inx());
+            None
         }
     }
 
-    /// Rebalances starting from newly inserted node `p`
+    /// Rebalances starting from newly inserted node `p`. Do do not call this in
+    /// the empty insertion case when inserting the first node.
     fn rebalance_inserted(&mut self, p: P::Inx) {
         // We keep record of the last three nodes for trinode restructuring.
         // We also keep the direction of the two edges between the nodes in
@@ -504,7 +507,10 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             // correct
 
             // n0 (1)
-            return;
+
+            // for coverage purposes
+            //return
+            unreachable!()
         };
         let mut d01 = n1.p_tree1 == Some(p0);
         let (n2, mut p2) = if let Some(p2) = n1.p_back {

@@ -71,6 +71,11 @@ use ArenaSlot::*;
 /// // exceeds a small number or the types will be public, you should use more
 /// // descriptive names like `PNode`, `PComponent`, `PNameOfEntryKind`, etc.
 ///
+/// // Note: if the crate was compiled with the "alloc" flag, the third
+/// // `B: ArenaBacking` generic argument is defaulted to `crate::HeapBacking`.
+/// // Otherwise, this would need to be something like
+/// // `Arena<P0, String, StackBacking<...>>`.
+///
 /// let mut arena: Arena<P0, String> = Arena::new();
 ///
 /// let test_ptr: P0 = arena.insert("test".to_string());
@@ -397,7 +402,8 @@ impl<P: Ptr, T, B: ArenaBacking> Arena<P, T, B> {
     /// the `T` that will be inserted into `self`. The new entries are all
     /// given `new_generation`. The entries are guaranteed to be canonically
     /// compressed in `self`, such that their `P::Inx`s are
-    /// `1..=source.len()` in advancer order.
+    /// `1..=source.len()` in advancer order. Their ordering in terms of
+    /// increasing indexes is preserved.
     ///
     /// Reallocation only occurs if `source.len() > self.capacity()`. All of the
     /// fallible points happen before anything is modified, such that `self` and

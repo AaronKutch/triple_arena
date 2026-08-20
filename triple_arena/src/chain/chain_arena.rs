@@ -264,13 +264,17 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         }
     }
 
+    // FIXME I forgot to remove the recaster
+
     /// The chain arena counterpart of
-    /// [transfer_reallocating](Arena::transfer_reallocating). Given any
-    /// `source` implementing both [ChainArenaTrait] and [CompactArenaTrait]
-    /// with any `Q: Ptr` and `U` entry type, this transfers all of the links by
-    /// reallocating `self` if necessary, clearing `self`, and removing every
-    /// link from `source` and inserting a mapped `T` into `self`, preserving
-    /// the interlink structure. Every link is given by value to `map` with the
+    /// [transfer_reallocating](Arena::transfer_reallocating), transferring
+    /// every entry out of `source` and into `self`, but also in a
+    /// canonicalizing way. Given any `source` implementing both
+    /// [ChainArenaTrait] and [CompactArenaTrait] with any `Q: Ptr` and `U`
+    /// entry type, this transfers all of the links by reallocating `self`
+    /// if necessary, clearing `self`, and removing every link from `source`
+    /// and inserting a mapped `T` into `self`, preserving the interlink
+    /// structure. Every link is given by value to `map` with the
     /// original source `Q: Ptr`, an [InvalidationOption]`<U>` for being able to
     /// determine if the removal caused a generation overflow in `source`, the
     /// destination `P: Ptr`, and then `map` must return the `T` that will be
@@ -282,12 +286,13 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// reach the largest index in `source` and not just `source.len()`.
     ///
     /// The normal [transfer_reallocating](Arena::transfer_reallocating) keeps
-    /// the entries in order while compressing them, but this function will
-    /// reorder entries to bring links of the same chain together. The links
-    /// are canonically laid out in `self`, such that their `P::Inx`s
-    /// are `1..=source.len()` and each chain occupies one contiguous run of
-    /// indexes in [Link::next](crate::Link::next) order. Acyclic chains begin
-    /// at their start link, while cyclic chains begin at the link that the
+    /// the entries in the same order of increasing index before and after the
+    /// transfer, but this function will reorder entries to bring links of
+    /// the same chain together. The links are canonically laid out in
+    /// `self`, such that their `P::Inx`s are `1..=source.len()` and each
+    /// chain occupies one contiguous run of indexes in
+    /// [Link::next](crate::Link::next) order. Acyclic chains begin at their
+    /// start link, while cyclic chains begin at the link that the
     /// source advancer reaches first.
     ///
     /// Reallocation only occurs if `source.len() > self.capacity()` or if

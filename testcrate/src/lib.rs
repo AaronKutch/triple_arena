@@ -11,6 +11,7 @@ pub mod nonzero_inx_generic_stack;
 // FIXME remove what is unused
 pub mod old_helpers;
 mod ptrs;
+pub mod simple_ord_arena;
 
 pub use old_helpers::*;
 pub use ptrs::*;

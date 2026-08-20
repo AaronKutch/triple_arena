@@ -6,9 +6,10 @@ use testcrate::{
     cdgen::{Cd, CdGen},
     chain_arena,
     misc::Meta,
+    simple_ord_arena::{self, TItem},
 };
 use triple_arena::{
-    ChainArena, StackBacking,
+    ChainArena, SimpleOrdArena, StackBacking,
     traits::{ArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
@@ -223,4 +224,151 @@ fn fuzz_multi_chain_arena() -> Result<(), StackedError> {
     )
     .stack()?;
     Ok(())
+}
+
+#[test]
+fn fuzz_simple_ord_arena() -> Result<(), StackedError> {
+    let mut meta = Meta::new(23);
+
+    // at higher layers debug becomes a lot more expensive but much less important
+    const N: usize = if cfg!(miri) {
+        100
+    } else if cfg!(debug_assertions) {
+        50_000
+    } else {
+        10_000_000
+    };
+    // the WAVL tree needs longer lengths than the other layers to reach all of
+    // its rebalancing cases
+    pub const LIMIT: usize = simple_ord_arena::LIMIT;
+
+    fn check_arena<P: Ptr, B: ArenaBacking>(
+        this: &SimpleOrdArena<P, TItem<()>, B>,
+    ) -> Result<(), StackedError> {
+        if !cfg!(miri) {
+            SimpleOrdArena::_check_invariants(this).stack()
+        } else {
+            Ok(())
+        }
+    }
+
+    fn inner(meta: &mut Meta<simple_ord_arena::Stats>) -> Result<(), StackedError> {
+        let iters999 = if cfg!(miri) {
+            None
+        } else if cfg!(debug_assertions) {
+            Some(expect![[r#"
+                4
+            "#]])
+        } else {
+            Some(expect![[r#"
+                1622
+            "#]])
+        };
+        let max_len = if cfg!(miri) {
+            None
+        } else if cfg!(debug_assertions) {
+            Some(expect![[r#"
+                80
+            "#]])
+        } else {
+            Some(expect![[r#"
+                80
+            "#]])
+        };
+        meta.test(
+            simple_ord_arena::Stats {
+                test_limit: LIMIT,
+                fixed_cap: Some(LIMIT),
+                n: N,
+                iters999,
+                max_len,
+                cd_gen: CdGen::new(),
+                cd_gen1: CdGen::new(),
+            },
+            |meta| {
+                simple_ord_arena::fuzz(
+                    meta,
+                    &mut SimpleOrdArena::<P2, TItem<()>, StackBacking<LIMIT>>::new(),
+                    check_arena,
+                    None,
+                )
+            },
+        )
+        .stack()?;
+
+        #[cfg(feature = "alloc")]
+        {
+            let mut a = SimpleOrdArena::<P2, TItem<()>, LimitedHeapBacking>::new();
+            a.set_max_capacity(LIMIT).stack()?;
+            meta.test(
+                simple_ord_arena::Stats {
+                    test_limit: LIMIT,
+                    fixed_cap: None,
+                    n: N,
+                    iters999: None,
+                    max_len: None,
+                    cd_gen: CdGen::new(),
+                    cd_gen1: CdGen::new(),
+                },
+                |meta| {
+                    simple_ord_arena::fuzz(
+                        meta,
+                        &mut a,
+                        check_arena,
+                        Some(
+                            |a: &mut SimpleOrdArena<_, _, LimitedHeapBacking>, max_capacity| {
+                                a.set_max_capacity(max_capacity)
+                            },
+                        ),
+                    )
+                },
+            )
+            .stack()?;
+
+            meta.test(
+                simple_ord_arena::Stats {
+                    test_limit: LIMIT,
+                    fixed_cap: None,
+                    n: N,
+                    iters999: None,
+                    max_len: None,
+                    cd_gen: CdGen::new(),
+                    cd_gen1: CdGen::new(),
+                },
+                |meta| {
+                    simple_ord_arena::fuzz(
+                        meta,
+                        &mut SimpleOrdArena::<P2, TItem<()>, HeapBacking>::new(),
+                        check_arena,
+                        None,
+                    )
+                },
+            )
+            .stack()?;
+
+            let mut a = SimpleOrdArena::<P2, TItem<()>, FixedHeapBacking>::with_min_capacity(LIMIT)
+                .stack()?;
+            let stats = simple_ord_arena::Stats {
+                test_limit: LIMIT,
+                fixed_cap: Some(a.capacity()),
+                n: N,
+                iters999: None,
+                max_len: None,
+                cd_gen: CdGen::new(),
+                cd_gen1: CdGen::new(),
+            };
+            meta.test(stats, |meta| {
+                simple_ord_arena::fuzz(meta, &mut a, check_arena, None)
+            })
+            .stack()?;
+        }
+
+        Ok(())
+    }
+
+    if let Err(e) = inner(&mut meta).stack_err(format!("{meta:#?}")) {
+        Err(e)
+    } else {
+        Ok(())
+    }
 }

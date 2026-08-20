@@ -63,26 +63,25 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
             // checked to determine whether or not `self.first`, etc are valid.
             return res;
         }
-        let mut use_next = false;
         let mut p1 = d_back;
         loop {
             if d_tree0.is_some() || d_tree1.is_some() {
                 // pointer to replacement node
-                let p_r = if use_next {
-                    d_next.unwrap()
-                } else if let Some(p_r) = d_prev {
+                let p_r = if let Some(p_r) = d_prev {
                     if (d_rank == 2) && (d_tree0.is_none()) {
-                        // if we are on a displaced rank 2 node that has a `None` `p_tree0`,
-                        // look at `p_tree1` to avoid going up the tree
-                        use_next = true;
+                        // If we are on a displaced rank 2 node that has a `None`
+                        // `p_tree0`, look at `p_tree1` to avoid going up the tree.
+                        // Note that rank invariant 1 forces such a `p_tree1` to be a
+                        // rank 1 leaf, so this is always the last round of the loop.
                         d_next.unwrap()
                     } else {
                         p_r
                     }
                 } else {
-                    // if on the first `Link::prev` acquire we get a `None` (because we are on
-                    // the start), go only `Link::next`
-                    use_next = true;
+                    // If on the first `Link::prev` acquire we get a `None` (because we
+                    // are on the start), go only `Link::next`. The start has a `None`
+                    // `p_tree0`, so by the same rank argument this is also always the
+                    // last round.
                     d_next.unwrap()
                 };
                 let r = self.a.a.get_inx_mut_unwrap(p_r);

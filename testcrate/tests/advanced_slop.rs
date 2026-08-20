@@ -18,16 +18,17 @@ use std::{
 
 use triple_arena::{
     Arena, ChainArena, DirectArena, InvalidationOption, InvalidationResult, Link, LinkInsertKind,
-    LinkNoGen, StackBacking,
+    LinkNoGen, OrdEntryKind, OrdInsertKind, OrdPair, SimpleOrdArena, StackBacking,
     chain_iterators::ChainPtrAdvancer,
-    errors::{AllocError, ChainInsertionError, ReallocationError},
+    errors::{AllocError, ChainInsertionError, OrdInsertionError, ReallocationError},
     ptr_struct,
     traits::{
-        Advancer, ArenaInsertTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait, Ptr, Recast,
+        Advancer, ArenaCloneFromWith, ArenaInsertTrait, ArenaTrait, ChainArenaTrait,
+        CompactArenaTrait, Ptr, Recast,
     },
     utils::{
-        ArenaSlot, ChainArenaInsertEntry,
-        traits::{NonZeroInxGenericStack, PtrGen, PtrInx},
+        ArenaSlot, ChainArenaInsertEntry, SimpleOrdArenaNode,
+        traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen, PtrInx, SimpleOrdItem},
     },
 };
 #[cfg(feature = "alloc")]
@@ -927,4 +928,920 @@ fn faulty_chain_arena_unknown_ptr() {
             .count(),
         0
     );
+}
+
+// ---------------------------------------------------------------------------
+// `SimpleOrdArena`
+// ---------------------------------------------------------------------------
+
+/// A key of a small domain so that equal keys are easy to arrange
+type O8 = SimpleOrdArena<Q0, OrdPair<u8, u8>, StackBacking<8>>;
+
+type ONode = SimpleOrdArenaNode<Q0, OrdPair<u8, u8>>;
+
+/// Builds an ordered arena from `(key, value)` pairs in insertion order
+fn ord_of(pairs: &[(u8, u8)]) -> (O8, Vec<Q0>) {
+    let mut a = O8::new();
+    let mut ptrs = vec![];
+    for (k, v) in pairs {
+        ptrs.push(a.insert(OrdPair::new(*k, *v)).0);
+    }
+    (a, ptrs)
+}
+
+/// The `(key, value)` pairs in key order
+fn ord_pairs<P: Ptr, B: ArenaBacking>(a: &SimpleOrdArena<P, OrdPair<u8, u8>, B>) -> Vec<(u8, u8)> {
+    a.iter_ordered().map(|(_, t)| (*t.k(), *t.v())).collect()
+}
+
+/// Overwrites the internal node at the raw index `i`
+fn set_node(a: &mut O8, i: usize, f: impl FnOnce(&mut ONode)) {
+    // Safety: this is exactly what the doc warns against, the point is that
+    // `_check_invariants` notices
+    unsafe {
+        let slot = a.backing_mut().get_mut(nz(i)).unwrap();
+        let ArenaSlot::Allocated(_, link) = slot else {
+            panic!()
+        };
+        f(&mut link.t);
+    }
+}
+
+/// Overwrites the interlinks of the internal node at the raw index `i`
+fn set_links(a: &mut O8, i: usize, prev_next: (Option<usize>, Option<usize>)) {
+    let prev_next = (prev_next.0.map(q0_inx), prev_next.1.map(q0_inx));
+    // Safety: as above
+    unsafe {
+        let slot = a.backing_mut().get_mut(nz(i)).unwrap();
+        let ArenaSlot::Allocated(_, link) = slot else {
+            panic!()
+        };
+        *link = LinkNoGen::new(
+            prev_next,
+            core::mem::replace(&mut link.t, ONode {
+                t: OrdPair::new(0, 0),
+                p_back: None,
+                p_tree0: None,
+                p_tree1: None,
+                rank: 0,
+            }),
+        );
+    }
+}
+
+#[test]
+fn ord_check_invariants_detects_corruption() {
+    // the chain arena invariants are checked first
+    let mut a = O8::new();
+    let _ = a.insert(OrdPair::new(0, 0));
+    a.set_generation(PtrGen::one());
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Err("bad generation"));
+
+    // an empty arena has invalid `root`, `first`, and `last`, which is allowed
+    let a = O8::new();
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Ok(()));
+
+    // Three entries at the indexes 1, 2, 3 with the keys 1, 0, 2, which puts the
+    // root at index 1 with the leaves 2 and 3 as its subtree 0 and 1, and the
+    // chain in the order 2, 1, 3. Note that most of the corruptions below have to
+    // be at an index that the arena advancer reaches before it reaches an index
+    // that a different check would fire on.
+    let build = || ord_of(&[(1, 0), (0, 0), (2, 0)]).0;
+    let a = build();
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Ok(()));
+    let node = |a: &O8, i: usize| {
+        let n = &a.get_inx_node(q0_inx(i)).unwrap().1.t;
+        (n.p_back, n.p_tree0, n.p_tree1, n.rank)
+    };
+    assert_eq!(node(&a, 1), (None, Some(q0_inx(2)), Some(q0_inx(3)), 2));
+    assert_eq!(node(&a, 2), (Some(q0_inx(1)), None, None, 1));
+    assert_eq!(node(&a, 3), (Some(q0_inx(1)), None, None, 1));
+    assert_eq!(a.first().unwrap().inx(), q0_inx(2));
+    assert_eq!(a.last().unwrap().inx(), q0_inx(3));
+
+    // the same three keys inserted in ascending order instead, which rotates the
+    // root onto index 2 so that a leaf is reached first
+    let build_rotated = || ord_of(&[(0, 0), (1, 0), (2, 0)]).0;
+    let a = build_rotated();
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Ok(()));
+    assert_eq!(node(&a, 2), (None, Some(q0_inx(1)), Some(q0_inx(3)), 2));
+
+    // the root cannot have a back pointer
+    let mut a = build();
+    set_node(&mut a, 1, |n| n.p_back = Some(q0_inx(2)));
+    assert_eq!(
+        SimpleOrdArena::_check_invariants(&a),
+        Err("root node has a back pointer")
+    );
+
+    // `first` has to be the start of the chain. Note that the interlinks have to
+    // stay transitive or else the chain arena check would be the one to fire, so
+    // the chain is closed into a cycle instead.
+    let mut a = build();
+    set_links(&mut a, 2, (Some(3), Some(1)));
+    set_links(&mut a, 3, (Some(1), Some(2)));
+    assert_eq!(
+        SimpleOrdArena::_check_invariants(&a),
+        Err("this.first is broken")
+    );
+
+    // the keys have to be in order along the chain, which
+    // `insert_inx_manual_unwrap` does not enforce
+    let (mut a, ptrs) = ord_of(&[(1, 0), (0, 0)]);
+    assert!(
+        a.insert_inx_manual_unwrap(ptrs[1].inx(), Ordering::Less, OrdPair::new(9, 0))
+            .is_none()
+    );
+    assert_eq!(
+        SimpleOrdArena::_check_invariants(&a),
+        Err("incorrect ordering")
+    );
+
+    // `last` has to be the end of the chain that `first` starts
+    let mut a = build();
+    set_links(&mut a, 1, (Some(2), None));
+    set_links(&mut a, 3, (None, None));
+    assert_eq!(
+        SimpleOrdArena::_check_invariants(&a),
+        Err("this.last is not correct")
+    );
+
+    // every entry has to be on the one chain. The second chain is put in the
+    // middle of the key order so that `first` and `last` stay correct.
+    let (mut a, _) = ord_of(&[(0, 0), (1, 0), (2, 0), (3, 0)]);
+    set_links(&mut a, 1, (None, Some(4)));
+    set_links(&mut a, 4, (Some(1), None));
+    set_links(&mut a, 2, (None, Some(3)));
+    set_links(&mut a, 3, (Some(2), None));
+    assert_eq!(
+        SimpleOrdArena::_check_invariants(&a),
+        Err("multiple chains")
+    );
+
+    // a back pointer has to point at an allocated slot that claims us as a child
+    let mut a = build_rotated();
+    set_node(&mut a, 1, |n| n.p_back = Some(q0_inx(7)));
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Err("broken tree"));
+    let mut a = build_rotated();
+    set_node(&mut a, 1, |n| n.p_back = Some(q0_inx(3)));
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Err("broken tree"));
+    // and a child pointer has to point at a node that points back
+    let mut a = build();
+    set_node(&mut a, 2, |n| n.p_back = Some(q0_inx(3)));
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Err("broken tree"));
+    let mut a = build_rotated();
+    set_node(&mut a, 3, |n| n.p_back = Some(q0_inx(1)));
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Err("broken tree"));
+    // and only the root can have no back pointer
+    let mut a = build_rotated();
+    set_node(&mut a, 1, |n| n.p_back = None);
+    assert_eq!(
+        SimpleOrdArena::_check_invariants(&a),
+        Err("more than one root node")
+    );
+
+    // the two children of a node have to be different
+    let mut a = build();
+    set_node(&mut a, 1, |n| n.p_tree1 = Some(q0_inx(2)));
+    assert_eq!(
+        SimpleOrdArena::_check_invariants(&a),
+        Err("`p_tree0` and `p_tree1` are the same")
+    );
+    // a child pointer has to point at an allocated slot ...
+    let mut a = build();
+    set_node(&mut a, 1, |n| n.p_tree0 = Some(q0_inx(7)));
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Err("broken tree"));
+    let mut a = build();
+    set_node(&mut a, 1, |n| n.p_tree1 = Some(q0_inx(7)));
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Err("broken tree"));
+    // ... and is not the node itself. This has to be a nonroot node, or else
+    // the root back pointer check would be the one to fire.
+    let mut a = build_rotated();
+    set_node(&mut a, 1, |n| {
+        n.p_tree0 = Some(q0_inx(1));
+        n.p_back = Some(q0_inx(1));
+    });
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Err("cycle"));
+    let mut a = build_rotated();
+    set_node(&mut a, 1, |n| {
+        n.p_tree1 = Some(q0_inx(1));
+        n.p_back = Some(q0_inx(1));
+    });
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Err("cycle"));
+
+    // ranks have to strictly decrease from parent to child ...
+    let mut a = build();
+    set_node(&mut a, 2, |n| n.rank = 2);
+    assert_eq!(
+        SimpleOrdArena::_check_invariants(&a),
+        Err("rank difference is zero or negative")
+    );
+    let mut a = build();
+    set_node(&mut a, 3, |n| n.rank = 2);
+    assert_eq!(
+        SimpleOrdArena::_check_invariants(&a),
+        Err("rank difference is zero or negative")
+    );
+    // ... by at most 2 ...
+    let mut a = build();
+    set_node(&mut a, 1, |n| n.rank = 4);
+    assert_eq!(
+        SimpleOrdArena::_check_invariants(&a),
+        Err("rank difference is greater than 2")
+    );
+    // ... and a leaf can only be rank 1
+    let mut a = build_rotated();
+    set_node(&mut a, 1, |n| n.rank = 2);
+    assert_eq!(
+        SimpleOrdArena::_check_invariants(&a),
+        Err("leaf node is not rank 1")
+    );
+
+    // the in-order traversal of the tree has to be the chain order, which none of
+    // the checks above can see
+    let mut a = build();
+    set_node(&mut a, 1, |n| {
+        n.p_tree0 = Some(q0_inx(3));
+        n.p_tree1 = Some(q0_inx(2));
+    });
+    assert_eq!(
+        SimpleOrdArena::_check_invariants(&a),
+        Err("in-order tree traversal does not match the chain order")
+    );
+}
+
+#[test]
+fn ord_pair_and_item() {
+    let mut pair = OrdPair::new(7u8, 8u16);
+    assert_eq!(*pair.k(), 7);
+    assert_eq!(*pair.v(), 8);
+    *pair.v_mut() = 9;
+    assert_eq!(pair.k_v(), (&7, &9));
+    let (k, v) = pair.k_v_mut();
+    assert_eq!(*k, 7);
+    *v = 10;
+    assert_eq!(format!("{pair:?}"), "(7, 10)");
+    let pair2 = pair;
+    assert!(pair == pair2);
+    assert_eq!(hash_of(&pair), hash_of(&pair2));
+    assert_eq!(pair.cmp(&OrdPair::new(8u8, 0u16)), Ordering::Less);
+    assert_eq!(
+        pair.partial_cmp(&OrdPair::new(7u8, 11u16)),
+        Some(Ordering::Less)
+    );
+    assert_eq!(pair.into_k_v(), (7, 10));
+
+    // only the value is recast
+    let (mut a, ptrs) = ord_of(&[(0, 0)]);
+    let mut pair = OrdPair::new(0u8, ptrs[0]);
+    let mut recaster = DirectArena::<Q0, Q0, StackBacking<8>>::new();
+    recaster.clone_from_with(&a, |p, _| p).unwrap();
+    pair.recast(&recaster).unwrap();
+    assert_eq!(*pair.v(), ptrs[0]);
+    a.clear().allow();
+}
+
+/// A user type that projects part of itself as the key, which `OrdPair` cannot
+/// do. Note that only `SimpleOrdItem` is required and nothing else.
+#[derive(Debug)]
+struct Projected {
+    name: [u8; 2],
+    count: usize,
+}
+
+impl SimpleOrdItem for Projected {
+    type Key<'a>
+        = &'a [u8; 2]
+    where
+        Self: 'a;
+
+    fn key(&self) -> Self::Key<'_> {
+        &self.name
+    }
+
+    fn shorten_key<'long: 'short, 'short>(k: Self::Key<'long>) -> Self::Key<'short>
+    where
+        Self: 'long,
+    {
+        k
+    }
+}
+
+#[test]
+fn ord_custom_simple_ord_item() {
+    let mut a = SimpleOrdArena::<Q0, Projected, StackBacking<8>>::new();
+    for name in [*b"cc", *b"aa", *b"bb"] {
+        let _ = a.insert(Projected { name, count: 0 });
+    }
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Ok(()));
+    let names: Vec<[u8; 2]> = a.iter_ordered().map(|(_, t)| t.name).collect();
+    assert_eq!(names, vec![*b"aa", *b"bb", *b"cc"]);
+    let p = a.find_key(b"bb").unwrap();
+    a.get_mut(p).unwrap().count = 5;
+    assert_eq!(a[p].count, 5);
+    assert_eq!(a.find_key(b"zz"), None);
+    // the projected key is what the replacement compares against
+    let old = a.insert(Projected {
+        name: *b"bb",
+        count: 9,
+    });
+    assert_eq!(old.1.unwrap().count, 5);
+    assert_eq!(a.len(), 3);
+}
+
+#[test]
+fn ord_canonical_comparisons() {
+    let (a, _) = ord_of(&[(0, 0), (1, 1), (2, 2)]);
+    // a different `Ptr` type and a different backing, and built in a different
+    // insertion order so that the internal layouts differ
+    let mut b = SimpleOrdArena::<Q1, OrdPair<u8, u8>, StackBacking<16>>::new();
+    for (k, v) in [(2, 2), (0, 0), (1, 1)] {
+        let _ = b.insert(OrdPair::new(k, v));
+    }
+    assert!(a.canonical_eq(&b));
+    assert_eq!(a.canonical_partial_cmp(&b), Some(Ordering::Equal));
+    assert_eq!(a.canonical_cmp(&b), Ordering::Equal);
+
+    // a difference in the prefix returns early
+    let mut c = b.clone();
+    *c.get_mut(c.find_key(&1).unwrap()).unwrap().v_mut() = 7;
+    assert!(!a.canonical_eq(&c));
+    assert_eq!(a.canonical_partial_cmp(&c), Some(Ordering::Less));
+    assert_eq!(a.canonical_cmp(&c), Ordering::Less);
+    assert_eq!(c.canonical_cmp(&a), Ordering::Greater);
+    assert_eq!(c.canonical_partial_cmp(&a), Some(Ordering::Greater));
+
+    // and otherwise the longer one is greater
+    let mut d = b.clone();
+    let _ = d.insert(OrdPair::new(3, 3));
+    assert!(!a.canonical_eq(&d));
+    assert!(!d.canonical_eq(&a));
+    assert_eq!(a.canonical_cmp(&d), Ordering::Less);
+    assert_eq!(d.canonical_cmp(&a), Ordering::Greater);
+    assert_eq!(a.canonical_partial_cmp(&d), Some(Ordering::Less));
+    assert_eq!(d.canonical_partial_cmp(&a), Some(Ordering::Greater));
+
+    // this is sensitive to nonhereditary ordering, and it goes by the key order
+    // and not the internal layout. A nonhereditary insertion goes before the
+    // equal key it finds, and a manual `Greater` one goes after, so these two
+    // reach the same ordering from opposite directions.
+    let mut e = O8::new();
+    let _ = e.insert(OrdPair::new(0, 0));
+    e.entry_insert(OrdInsertKind::Nonhereditary(&0))
+        .insert(OrdPair::new(0, 1));
+    let mut f = O8::new();
+    let p = f.insert(OrdPair::new(0, 1)).0;
+    f.entry_insert(OrdInsertKind::Manual {
+        p_target: p.inx(),
+        direction: Ordering::Greater,
+    })
+    .insert(OrdPair::new(0, 0));
+    assert_eq!(ord_pairs(&e), vec![(0, 1), (0, 0)]);
+    assert_eq!(ord_pairs(&f), vec![(0, 1), (0, 0)]);
+    assert!(e.canonical_eq(&f));
+    // while the reverse ordering of the same keys is not equal
+    let mut g = O8::new();
+    let _ = g.insert(OrdPair::new(0, 1));
+    g.entry_insert(OrdInsertKind::Nonhereditary(&0))
+        .insert(OrdPair::new(0, 0));
+    assert_eq!(ord_pairs(&g), vec![(0, 0), (0, 1)]);
+    assert!(!e.canonical_eq(&g));
+}
+
+#[test]
+fn ord_clone_and_default() {
+    let (a, ptrs) = ord_of(&[(2, 2), (0, 0), (1, 1)]);
+    // the `Ptr`s, ordering, and tree are all preserved
+    let b = a.clone();
+    assert_eq!(SimpleOrdArena::_check_invariants(&b), Ok(()));
+    assert_eq!(ord_pairs(&b), vec![(0, 0), (1, 1), (2, 2)]);
+    for p in &ptrs {
+        assert_eq!(a.get(*p).unwrap().v(), b.get(*p).unwrap().v());
+    }
+    assert_eq!(b.generation(), a.generation());
+
+    // `clone_from` reuses the capacity
+    let mut c = O8::new();
+    let _ = c.insert(OrdPair::new(9, 9));
+    c.clone_from(&a);
+    assert_eq!(SimpleOrdArena::_check_invariants(&c), Ok(()));
+    assert_eq!(ord_pairs(&c), vec![(0, 0), (1, 1), (2, 2)]);
+    assert_eq!(c.first(), a.first());
+    assert_eq!(c.last(), a.last());
+
+    // the internal backing is directly reachable for advanced use
+    assert_eq!(a.backing().len(), 3);
+    assert_eq!(a.backing().capacity(), 8);
+
+    let d: O8 = Default::default();
+    assert!(d.is_empty());
+    assert_eq!(SimpleOrdArena::_check_invariants(&d), Ok(()));
+    // the `Debug` impl is in key order, unlike the unordered arena ones
+    assert_eq!(format!("{d:?}"), "{}");
+    assert_eq!(
+        format!("{a:?}"),
+        "{Q0[2](2): (0, 0), Q0[3](2): (1, 1), Q0[1](2): (2, 2)}"
+    );
+}
+
+#[test]
+fn ord_into_iterators() {
+    let (a, ptrs) = ord_of(&[(2, 2), (0, 0), (1, 1)]);
+    // by reference
+    let by_ref: Vec<(Q0, u8)> = (&a).into_iter().map(|(p, t)| (p, *t.k())).collect();
+    assert_eq!(by_ref, vec![(ptrs[1], 0), (ptrs[2], 1), (ptrs[0], 2)]);
+    // by value, which is a capacity drain in key order
+    let owned: Vec<(Q0, (u8, u8))> = a.into_iter().map(|(p, t)| (p, t.into_k_v())).collect();
+    assert_eq!(owned, vec![
+        (ptrs[1], (0, 0)),
+        (ptrs[2], (1, 1)),
+        (ptrs[0], (2, 2))
+    ]);
+
+    // partially consuming the owned drain drops the rest
+    let (a, _) = ord_of(&[(2, 2), (0, 0), (1, 1)]);
+    let mut iter = a.into_iter();
+    assert_eq!(*iter.next().unwrap().1.k(), 0);
+    drop(iter);
+
+    // and `drain_ordered` clears whatever is left on drop
+    let (mut a, _) = ord_of(&[(2, 2), (0, 0), (1, 1)]);
+    {
+        let mut drain = a.drain_ordered();
+        assert_eq!(*drain.next().unwrap().1.k(), 0);
+    }
+    assert!(a.is_empty());
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Ok(()));
+
+    // an empty arena
+    let a = O8::new();
+    assert!(a.iter_ordered().next().is_none());
+    let mut a = O8::new();
+    assert!(a.drain_ordered().next().is_none());
+    let a = O8::new();
+    assert!(a.into_iter().next().is_none());
+}
+
+#[test]
+fn ord_advancer_ordered_invalidation() {
+    let (mut a, ptrs) = ord_of(&[(0, 0), (1, 1), (2, 2)]);
+    assert!(a.advancer_ordered(Q0::invalid(), false).is_none());
+    // the advancer holds an index, so removing the entry it is pointing at ends
+    // the advancing instead of continuing
+    let mut adv = a.advancer_ordered(ptrs[0], false).unwrap();
+    assert_eq!(adv.advance(&a), Some(ptrs[0]));
+    a.remove(ptrs[1]).allow().unwrap();
+    assert!(adv.advance(&a).is_none());
+    // and an empty advancer never advances
+    let mut adv = <triple_arena::ord_iterators::OrderedPtrAdvancer<Q0> as Advancer<O8>>::empty();
+    assert!(adv.advance(&a).is_none());
+    let _ = ptrs[2];
+}
+
+#[test]
+fn ord_recast_values() {
+    let mut a = SimpleOrdArena::<Q0, OrdPair<u8, Option<Q0>>, StackBacking<8>>::new();
+    let p0 = a.insert(OrdPair::new(0, None)).0;
+    let p1 = a.insert(OrdPair::new(1, Some(p0))).0;
+    let mut recaster = DirectArena::<Q0, Q0, StackBacking<8>>::new();
+    recaster.clone_from_with(&a, |_, _| Q0::invalid()).unwrap();
+    *recaster.get_mut(p0).unwrap() = p1;
+    *recaster.get_mut(p1).unwrap() = p0;
+    a.recast(&recaster).unwrap();
+    assert_eq!(*a.get(p1).unwrap().v(), Some(p1));
+    // an unknown `Ptr` is reported
+    let mut b = SimpleOrdArena::<Q0, OrdPair<u8, Option<Q0>>, StackBacking<8>>::new();
+    let _ = b.insert(OrdPair::new(0, Some(Q0::invalid())));
+    assert_eq!(b.recast(&recaster), Err(Q0::invalid()));
+}
+
+#[test]
+fn ord_empty_and_insert_kind_failures() {
+    let mut a = O8::new();
+    assert!(a.first().is_none());
+    assert!(a.last().is_none());
+    assert!(a.find_key(&0).is_none());
+    assert!(a.find_similar_key(&0).is_none());
+    assert!(a.find_key_linear(Q0::invalid(), 4, &0).is_none());
+    assert!(a.find_similar_key_linear(q0_inx(1), 4, &0).is_none());
+    assert!(a.find_with(|_, _| Ordering::Equal).is_none());
+    assert!(a.find_similar_with(|_, _| Ordering::Equal).is_none());
+    assert!(a.get_inx_link_no_gen(q0_inx(1)).is_none());
+    assert!(a.get_inx_node(q0_inx(1)).is_none());
+
+    // `Manual` always fails on an empty arena, even with `Ordering::Equal`
+    for direction in [Ordering::Less, Ordering::Equal, Ordering::Greater] {
+        assert_eq!(
+            a.entry_insert_within_capacity(OrdInsertKind::Manual {
+                p_target: q0_inx(1),
+                direction,
+            })
+            .map(|_| ()),
+            Err(OrdInsertionError::FailedOrdRequirement)
+        );
+    }
+    // `Empty` succeeds only on an empty arena
+    let entry = a.entry_insert(OrdInsertKind::Empty);
+    assert!(matches!(entry.ptr(), OrdEntryKind::New(_)));
+    assert!(entry.insert(OrdPair::new(5, 5)).is_none());
+    assert_eq!(
+        a.entry_insert_within_capacity(OrdInsertKind::Empty)
+            .map(|_| ()),
+        Err(OrdInsertionError::FailedOrdRequirement)
+    );
+    assert_eq!(
+        a.entry_insert_reallocating(OrdInsertKind::Empty)
+            .map(|_| ()),
+        Err(OrdInsertionError::FailedOrdRequirement)
+    );
+    // an invalid index still fails
+    assert_eq!(
+        a.entry_insert_reallocating(OrdInsertKind::Manual {
+            p_target: q0_inx(8),
+            direction: Ordering::Less,
+        })
+        .map(|_| ()),
+        Err(OrdInsertionError::FailedOrdRequirement)
+    );
+
+    // a replacement needs no capacity, even when the arena is completely full
+    let mut a = O8::new();
+    for k in 0..8u8 {
+        let _ = a.insert(OrdPair::new(k, k));
+    }
+    assert_eq!(a.len(), a.capacity());
+    assert_eq!(
+        a.insert_within_capacity(OrdPair::new(8, 8)).map(|_| ()),
+        Err(OrdInsertionError::NotWithinCapacity)
+    );
+    let (p, old) = a.insert_within_capacity(OrdPair::new(3, 30)).unwrap();
+    assert_eq!(*old.unwrap().v(), 3);
+    assert_eq!(*a.get(p).unwrap().v(), 30);
+    // and the elaborated `Ptr` says which entry is being replaced
+    let entry = a
+        .entry_insert_within_capacity(OrdInsertKind::Manual {
+            p_target: p.inx(),
+            direction: Ordering::Equal,
+        })
+        .unwrap();
+    assert_eq!(entry.ptr(), OrdEntryKind::Replacing(p));
+    assert_eq!(*entry.insert(OrdPair::new(3, 31)).unwrap().v(), 30);
+    assert_eq!(a.len(), 8);
+}
+
+#[test]
+fn ord_find_linear_edges() {
+    let (a, ptrs) = ord_of(&[(0, 0), (2, 2), (4, 4), (6, 6), (8, 8)]);
+    // zero comparisons falls straight through to the normal search
+    assert_eq!(a.find_key_linear(ptrs[0], 0, &8), Some(ptrs[4]));
+    assert_eq!(
+        a.find_similar_key_linear(ptrs[0].inx(), 0, &8),
+        Some((ptrs[4], Ordering::Equal))
+    );
+    // an invalid start also falls through
+    assert_eq!(a.find_key_linear(Q0::invalid(), 4, &4), Some(ptrs[2]));
+    assert_eq!(
+        a.find_similar_key_linear(q0_inx(8), 4, &4),
+        Some((ptrs[2], Ordering::Equal))
+    );
+    // walking backwards and forwards to a hit
+    assert_eq!(a.find_key_linear(ptrs[4], 4, &2), Some(ptrs[1]));
+    assert_eq!(a.find_key_linear(ptrs[0], 4, &6), Some(ptrs[3]));
+    // reversing direction means the key is bracketed and not present
+    assert_eq!(a.find_key_linear(ptrs[0], 4, &5), None);
+    assert_eq!(
+        a.find_similar_key_linear(ptrs[0].inx(), 4, &5),
+        Some((ptrs[3], Ordering::Less))
+    );
+    assert_eq!(
+        a.find_similar_key_linear(ptrs[4].inx(), 4, &5),
+        Some((ptrs[2], Ordering::Greater))
+    );
+    // running off the ends
+    assert_eq!(a.find_key_linear(ptrs[0], 4, &200), None);
+    assert_eq!(
+        a.find_similar_key_linear(ptrs[4].inx(), 4, &200),
+        Some((ptrs[4], Ordering::Greater))
+    );
+    assert_eq!(
+        a.find_similar_key_linear(ptrs[0].inx(), 4, &0u8.wrapping_sub(0)),
+        Some((ptrs[0], Ordering::Equal))
+    );
+    let (b, ptrs) = ord_of(&[(1, 0)]);
+    assert_eq!(
+        b.find_similar_key_linear(ptrs[0].inx(), 4, &0),
+        Some((ptrs[0], Ordering::Less))
+    );
+}
+
+#[test]
+fn ord_indexing_and_panics() {
+    let (mut a, ptrs) = ord_of(&[(0, 0)]);
+    assert_eq!(*a[ptrs[0]].k(), 0);
+    assert_eq!(*a[&ptrs[0]].k(), 0);
+    *a[ptrs[0]].v_mut() = 7;
+    assert_eq!(*a[ptrs[0]].v(), 7);
+
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let _ = &a[Q0::invalid()];
+    }));
+    assert!(res.is_err());
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let _ = &mut a[Q0::invalid()];
+    }));
+    assert!(res.is_err());
+
+    // `insert_inx_manual_unwrap` panics on an invalid index
+    let mut a = O8::new();
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        a.insert_inx_manual_unwrap(q0_inx(1), Ordering::Less, OrdPair::new(0, 0))
+    }));
+    assert!(res.is_err());
+
+    // and on a full fixed capacity arena, which is the only other documented
+    // panic
+    let mut a = O8::new();
+    for k in 0..8u8 {
+        let _ = a.insert(OrdPair::new(k, k));
+    }
+    let p = a.first().unwrap();
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        a.insert_inx_manual_unwrap(p.inx(), Ordering::Less, OrdPair::new(0, 0))
+    }));
+    assert!(res.is_err());
+    let p = a.last().unwrap();
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        a.insert_inx_manual_unwrap(p.inx(), Ordering::Greater, OrdPair::new(9, 9))
+    }));
+    assert!(res.is_err());
+    // `insert` and `entry_insert` panic for the same reason
+    let res = catch_unwind(AssertUnwindSafe(|| a.insert(OrdPair::new(9, 9))));
+    assert!(res.is_err());
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let _ = a.entry_insert(OrdInsertKind::Nonhereditary(&0)).ptr();
+    }));
+    assert!(res.is_err());
+}
+
+#[test]
+fn ord_alloc_error() {
+    // the index type runs out before the backing does, which is an allocation
+    // error rather than a max capacity one
+    let mut a = SimpleOrdArena::<QSmall, OrdPair<usize, ()>, StackBacking<512>>::new();
+    for k in 0..255 {
+        let _ = a.insert(OrdPair::new(k, ()));
+    }
+    assert_eq!(a.capacity(), 255);
+    assert_eq!(
+        a.insert_within_capacity(OrdPair::new(255, ())).map(|_| ()),
+        Err(OrdInsertionError::NotWithinCapacity)
+    );
+    assert_eq!(
+        a.insert_reallocating(OrdPair::new(255, ())).map(|_| ()),
+        Err(OrdInsertionError::AllocError)
+    );
+    assert_eq!(
+        a.entry_insert_reallocating(OrdInsertKind::Normal(&255))
+            .map(|_| ()),
+        Err(OrdInsertionError::AllocError)
+    );
+    // and the ordering requirement still takes priority
+    assert_eq!(
+        a.entry_insert_reallocating(OrdInsertKind::Empty)
+            .map(|_| ()),
+        Err(OrdInsertionError::FailedOrdRequirement)
+    );
+    // while a replacement still succeeds
+    assert!(
+        a.insert_reallocating(OrdPair::new(0, ()))
+            .unwrap()
+            .1
+            .is_some()
+    );
+}
+
+#[test]
+fn ord_debug_helpers() {
+    // these are development debugging helpers, they just have to not panic
+    let a = O8::new();
+    assert_eq!(SimpleOrdArena::_debug(&a), "empty\n");
+    let (a, _) = ord_of(&[(2, 2), (0, 0), (1, 1)]);
+    let s = SimpleOrdArena::_debug(&a);
+    assert_eq!(s.lines().count(), 6);
+    assert!(s.starts_with("root: "));
+    let debug_arena = a._debug_arena();
+    assert_eq!(debug_arena.len(), 3);
+    // the rank and the tree `Ptr`s of the root
+    let root = debug_arena.get(a.find_key(&1).unwrap()).unwrap();
+    assert_eq!(root.0, 2);
+    assert_eq!(root.2, a.first());
+    assert_eq!(root.3, None);
+    assert_eq!(root.4, a.last());
+}
+
+#[test]
+fn ord_compress_with_panicking_map() {
+    // REF(ord_rebalance_guard) an unwinding `map` still leaves a valid arena
+    let (mut a, ptrs) = ord_of(&[(0, 0), (1, 1), (2, 2), (3, 3)]);
+    a.remove(ptrs[1]).allow().unwrap();
+    let mut n = 0usize;
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        a.compress_with(false, |_, _, _| {
+            n += 1;
+            if n == 2 {
+                panic!("test panic")
+            }
+        })
+        .allow()
+    }));
+    assert!(res.is_err());
+    assert_eq!(a.len(), 3);
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Ok(()));
+    assert_eq!(ord_pairs(&a), vec![(0, 0), (2, 2), (3, 3)]);
+    // and the tree is still usable
+    let p = a.find_key(&2).unwrap();
+    assert_eq!(*a.get(p).unwrap().v(), 2);
+}
+
+#[test]
+fn ord_transfer_canonical() {
+    let (mut a, _) = ord_of(&[(3, 3), (0, 0), (1, 1), (2, 2)]);
+    let mut b = SimpleOrdArena::<Q0, OrdPair<u8, u8>, StackBacking<16>>::new();
+    let mut recaster = DirectArena::<Q0, Q0, StackBacking<16>>::new();
+    let new_gen = PtrGen::two();
+    b.transfer_canonical_reallocating(new_gen, &mut a, |_, o, _| o.allow(), &mut recaster)
+        .unwrap();
+    assert!(a.is_empty());
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Ok(()));
+    assert_eq!(SimpleOrdArena::_check_invariants(&b), Ok(()));
+    assert_eq!(ord_pairs(&b), vec![(0, 0), (1, 1), (2, 2), (3, 3)]);
+    // the indexes are `1..=len` in key order
+    let raw: Vec<(usize, (u8, u8))> = b
+        .iter_ordered()
+        .map(|(p, t)| {
+            (
+                PtrInx::try_into_usize(p.inx()).unwrap().get(),
+                (*t.k(), *t.v()),
+            )
+        })
+        .collect();
+    assert_eq!(raw, vec![
+        (1, (0, 0)),
+        (2, (1, 1)),
+        (3, (2, 2)),
+        (4, (3, 3))
+    ]);
+    assert_eq!(b.generation(), new_gen);
+
+    // an empty source clears the destination and sets the generation
+    let mut empty = O8::new();
+    let new_gen = PtrGen::generational_inc(new_gen).0;
+    b.transfer_canonical_reallocating(new_gen, &mut empty, |_, o, _| o.allow(), &mut recaster)
+        .unwrap();
+    assert!(b.is_empty());
+    assert_eq!(b.generation(), new_gen);
+    assert_eq!(SimpleOrdArena::_check_invariants(&b), Ok(()));
+
+    // a panicking `map` leaves both sides valid, REF(ord_rebalance_guard)
+    let (mut a, _) = ord_of(&[(3, 3), (0, 0), (1, 1), (2, 2)]);
+    let mut n = 0usize;
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        b.transfer_canonical_reallocating(
+            new_gen,
+            &mut a,
+            |_, o, _| {
+                n += 1;
+                if n == 3 {
+                    panic!("test panic")
+                }
+                o.allow()
+            },
+            &mut recaster,
+        )
+        .unwrap()
+    }));
+    assert!(res.is_err());
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Ok(()));
+    assert_eq!(SimpleOrdArena::_check_invariants(&b), Ok(()));
+    // the third entry was lost to the panic, and the rest of the chain that was
+    // being drained was dropped, so only what already arrived is left
+    assert_eq!(ord_pairs(&b), vec![(0, 0), (1, 1)]);
+    assert!(a.is_empty());
+    assert_eq!(b.find_key(&1), b.last());
+}
+
+#[test]
+fn ord_transfer_error_leaves_the_tree_alone() {
+    // all the fallible points happen before anything is modified, so a failed
+    // transfer must not run the rebalance over the preexisting tree
+    let (mut a, _) = ord_of(&[(0, 0), (1, 1), (2, 2)]);
+    let mut b = SimpleOrdArena::<Q0, OrdPair<u8, u8>, StackBacking<2>>::new();
+    let _ = b.insert(OrdPair::new(9, 9));
+    let mut recaster = DirectArena::<Q0, Q0, StackBacking<16>>::new();
+    assert_eq!(
+        b.transfer_canonical_reallocating(
+            PtrGen::two(),
+            &mut a,
+            |_, o, _| o.allow(),
+            &mut recaster
+        ),
+        Err(ReallocationError::BeyondMaxCapacity)
+    );
+    assert_eq!(SimpleOrdArena::_check_invariants(&a), Ok(()));
+    assert_eq!(SimpleOrdArena::_check_invariants(&b), Ok(()));
+    assert_eq!(ord_pairs(&a), vec![(0, 0), (1, 1), (2, 2)]);
+    assert_eq!(ord_pairs(&b), vec![(9, 9)]);
+}
+
+#[test]
+fn ord_clone_to_other_arenas() {
+    let (a, ptrs) = ord_of(&[(2, 2), (0, 0), (1, 1)]);
+    // the ordering becomes a single chain
+    let mut chain = ChainArena::<Q0, u8, StackBacking<8>>::new();
+    a.clone_to_chain_arena(&mut chain, |_, t| *t.v()).unwrap();
+    assert_eq!(ChainArena::_check_invariants(&chain), Ok(()));
+    assert_eq!(chain_of(&chain, ptrs[1]), vec![0, 1, 2]);
+    // and the `Ptr`s are preserved
+    for (i, p) in ptrs.iter().enumerate() {
+        assert_eq!(chain[*p], [2u8, 0, 1][i]);
+    }
+    let mut arena = Arena::<Q0, u8, StackBacking<8>>::new();
+    a.clone_to_arena(&mut arena, |_, link| *link.t.t.v())
+        .unwrap();
+    for (i, p) in ptrs.iter().enumerate() {
+        assert_eq!(arena[*p], [2u8, 0, 1][i]);
+    }
+    // and the fallibility is reported instead of panicked on
+    let mut small = ChainArena::<Q0, u8, StackBacking<2>>::new();
+    assert_eq!(
+        a.clone_to_chain_arena(&mut small, |_, t| *t.v()),
+        Err(ReallocationError::BeyondMaxCapacity)
+    );
+    let mut small = Arena::<Q0, u8, StackBacking<2>>::new();
+    assert_eq!(
+        a.clone_to_arena(&mut small, |_, link| *link.t.t.v()),
+        Err(ReallocationError::BeyondMaxCapacity)
+    );
+}
+
+#[test]
+#[cfg(feature = "alloc")]
+fn ord_set_max_capacity() {
+    let mut a = SimpleOrdArena::<Q0, OrdPair<u8, u8>, LimitedHeapBacking>::new();
+    assert_eq!(a.max_capacity(), Some(0));
+    a.set_max_capacity(4).unwrap();
+    assert_eq!(a.max_capacity(), Some(4));
+    for k in 0..4u8 {
+        let _ = a.insert(OrdPair::new(k, k));
+    }
+    assert_eq!(
+        a.insert_reallocating(OrdPair::new(4, 4)).map(|_| ()),
+        Err(OrdInsertionError::BeyondMaxCapacity)
+    );
+    assert_eq!(a.set_max_capacity(2), Err(MaxCapacityReductionError));
+    a.clear().allow();
+    a.set_max_capacity(0).unwrap();
+    assert_eq!(a.capacity(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// chain arena gaps that the fuzz does not reach
+// ---------------------------------------------------------------------------
+
+/// A link of a chain arena, flattened for comparison
+type FlatLink = (Q0, (Option<usize>, Option<usize>), u8);
+
+fn flat_link(p: Q0, link: LinkNoGen<Q0, u8>) -> FlatLink {
+    let raw = |i| PtrInx::try_into_usize(i).unwrap().get();
+    (p, (link.prev().map(raw), link.next().map(raw)), link.t)
+}
+
+#[test]
+fn chain_arena_into_iterators() {
+    let (mut a, ..) = mixed_chains();
+    // by reference, which gives the interlinks as well
+    let by_ref: Vec<FlatLink> = (&a)
+        .into_iter()
+        .map(|(p, link)| flat_link(p, *link))
+        .collect();
+    assert_eq!(by_ref.len(), a.len());
+    assert_eq!(by_ref[0].2, a[by_ref[0].0]);
+
+    // mutably, which also gives the interlinks
+    let mut n = 0usize;
+    for (p, link) in &mut a {
+        assert_eq!(p.inx(), p.inx());
+        *link.t = link.t.wrapping_add(1);
+        n = n.wrapping_add(1);
+    }
+    assert_eq!(n, a.len());
+    assert_eq!(a[by_ref[0].0], by_ref[0].2.wrapping_add(1));
+    for (_, link) in &mut a {
+        *link.t = link.t.wrapping_sub(1);
+    }
+    assert_eq!(a[by_ref[0].0], by_ref[0].2);
+
+    // and by value, which is a capacity drain that keeps the interlinks
+    let owned: Vec<FlatLink> = a.into_iter().map(|(p, link)| flat_link(p, link)).collect();
+    assert_eq!(owned, by_ref);
 }
