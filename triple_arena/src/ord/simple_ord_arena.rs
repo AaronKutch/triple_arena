@@ -12,7 +12,10 @@ use crate::{
     arena::{ArenaSlot, from_checked_ptr, from_checked_raw},
     errors::{MaxCapacityReductionError, ReallocationError},
     stack::{NonZeroInxArray, NonZeroInxGenericStack},
-    traits::{ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaTrait, ChainArenaTrait, Ptr},
+    traits::{
+        ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaTrait, ChainArenaTrait,
+        DisjointableArenaTrait, Ptr,
+    },
     utils::traits::{ArenaBacking, SetMaxCapacity},
 };
 

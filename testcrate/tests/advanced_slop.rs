@@ -8,7 +8,6 @@ use core::{
     fmt::{self, Write},
     hash::{Hash, Hasher},
     num::{NonZeroU8, NonZeroU128, NonZeroUsize},
-    slice::GetDisjointMutError,
 };
 use std::{
     cmp::Ordering,
@@ -780,18 +779,11 @@ impl ArenaTrait<QLargeInx, u8> for FaultyChainArena {
         unimplemented!()
     }
 
-    fn get_disjoint_inx_mut<const N: usize>(
+    fn get_inx_mut(
         &mut self,
-        _indices: [<QLargeInx as Ptr>::Inx; N],
-    ) -> Result<[(<QLargeInx as Ptr>::Gen, &mut u8); N], GetDisjointMutError> {
+        _p: <QLargeInx as Ptr>::Inx,
+    ) -> Option<(<QLargeInx as Ptr>::Gen, &mut u8)> {
         unimplemented!()
-    }
-
-    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (QLargeInx, &'a mut u8)>
-    where
-        u8: 'a,
-    {
-        core::iter::empty()
     }
 
     fn drain(&mut self) -> impl Iterator<Item = InvalidationOption<(QLargeInx, u8)>> {

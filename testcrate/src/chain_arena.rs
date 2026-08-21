@@ -7,7 +7,8 @@ use triple_arena::{
     StackBacking,
     errors::{AllocError, ChainInsertionError, MaxCapacityReductionError, ReallocationError},
     traits::{
-        Advancer, ArenaInsertEntryTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait, Ptr,
+        Advancer, ArenaInsertEntryTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait,
+        DisjointableArenaTrait, Ptr,
     },
     utils::traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen, PtrInx},
 };
@@ -366,7 +367,10 @@ impl How {
 
 /// Attempts an insertion of `kind`, determining the expected outcome from the
 /// model beforehand and recording a successful insertion in `b`
-fn try_chain_insert<P: Ptr, A: CompactArenaTrait<P, Cd<()>> + ChainArenaTrait<P, Cd<()>>>(
+fn try_chain_insert<
+    P: Ptr,
+    A: CompactArenaTrait<P, Cd<()>> + DisjointableArenaTrait<P, Cd<()>> + ChainArenaTrait<P, Cd<()>>,
+>(
     a: &mut A,
     b: &mut Model<P>,
     cd_gen: &mut CdGen<()>,
@@ -541,7 +545,7 @@ fn snapshot<P: Ptr, T, B: ArenaBacking>(
 
 pub fn fuzz<
     P: Ptr,
-    A: CompactArenaTrait<P, Cd<()>> + ChainArenaTrait<P, Cd<()>>,
+    A: CompactArenaTrait<P, Cd<()>> + ChainArenaTrait<P, Cd<()>> + DisjointableArenaTrait<P, Cd<()>>,
     B1: ArenaBacking,
 >(
     meta: &mut Meta<Stats>,

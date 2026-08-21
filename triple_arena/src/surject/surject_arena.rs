@@ -8,7 +8,7 @@ use crate::{
     errors::{AllocError, ChainInsertionError, NotWithinCapacityError, ReallocationError},
     traits::{
         Advancer, ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaInsertEntryTrait,
-        ArenaInsertTrait, ArenaTrait, ChainArenaTrait, Ptr,
+        ArenaInsertTrait, ArenaTrait, ChainArenaTrait, DisjointableArenaTrait, Ptr,
     },
     utils::{
         PtrNoGen,
@@ -583,6 +583,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             &mut self.vals.get_inx_mut_unwrap(key.p_val.inx()).v,
         ))
     }
+
+    // FIXME replace with new `get_disjoint_mut`
 
     /// Gets two `&mut V` references pointed to by `p0` and `p1`. If
     /// `self.in_same_set(p0, p1)` or a pointer is invalid, `None` is

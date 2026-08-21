@@ -13,7 +13,7 @@ use triple_arena::{
     errors::{AllocError, MaxCapacityReductionError, NotWithinCapacityError, ReallocationError},
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
-        CompactArenaTrait, Ptr,
+        CompactArenaTrait, DisjointableArenaTrait, Ptr,
     },
     utils::traits::{PtrGen, PtrInx},
 };
@@ -113,7 +113,12 @@ pub fn gen_invalid<P: Ptr, T, A: CompactArenaTrait<P, T>>(rng: &mut StarRng, are
 /// arenas, takes up indexes 0..250. Some mutable functions like `invalidate`
 /// are possible generically because the `B` mirrors should have interlinks and
 /// orderings based on value and not on `Ptr` keying.
-pub fn common_compact_fuzz_step250<P: Ptr, T, A: CompactArenaTrait<P, T>, B>(
+pub fn common_compact_fuzz_step250<
+    P: Ptr,
+    T,
+    A: CompactArenaTrait<P, T> + DisjointableArenaTrait<P, T>,
+    B,
+>(
     rng: &mut StarRng,
     a: &mut A,
     test_limit: usize,
@@ -460,7 +465,10 @@ pub fn common_compact_fuzz_step250<P: Ptr, T, A: CompactArenaTrait<P, T>, B>(
 
 pub fn fuzz<
     P: Ptr,
-    A: ArenaCloneFromWith<P, Cd<()>> + CompactArenaTrait<P, Cd<()>> + ArenaInsertTrait<P, Cd<()>>,
+    A: ArenaCloneFromWith<P, Cd<()>>
+        + CompactArenaTrait<P, Cd<()>>
+        + DisjointableArenaTrait<P, Cd<()>>
+        + ArenaInsertTrait<P, Cd<()>>,
 >(
     meta: &mut Meta<Stats>,
     a: &mut A,

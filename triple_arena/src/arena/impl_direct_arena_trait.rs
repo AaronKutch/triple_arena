@@ -5,7 +5,7 @@ use crate::{
     errors::{AllocError, DirectInsertionError, ReallocationError},
     traits::{
         Advancer, ArenaCloneFromWith, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait,
-        ArenaTrait, CompactArenaTrait, Ptr,
+        ArenaTrait, CompactArenaTrait, DisjointableArenaTrait, Ptr,
     },
     utils::{
         DirectSlot::*,
@@ -76,38 +76,11 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for DirectArena<P, T, B> {
         Some((*generation, t))
     }
 
-    fn get_disjoint_inx_mut<const N: usize>(
-        &mut self,
-        indices: [<P as Ptr>::Inx; N],
-    ) -> Result<[(<P as Ptr>::Gen, &mut T); N], GetDisjointMutError> {
-        // check for PtrInx truncation, this is a no-op in the default case
-        for inx in indices {
-            if PtrInx::try_into_usize(inx).is_none() {
-                return Err(GetDisjointMutError::IndexOutOfBounds);
-            }
-        }
-        let indices = indices.map(|inx| PtrInx::try_into_usize(inx).unwrap());
-        match self.m.get_disjoint_mut(indices) {
-            Ok(a) => {
-                for slot in &a {
-                    if matches!(slot, Free) {
-                        return Err(GetDisjointMutError::IndexOutOfBounds);
-                    }
-                }
-                Ok(a.map(|slot| {
-                    let Allocated(generation, t) = slot else {
-                        unreachable!()
-                    };
-                    (*generation, t)
-                }))
-            }
-            Err(GetDisjointMutError::IndexOutOfBounds) => {
-                Err(GetDisjointMutError::IndexOutOfBounds)
-            }
-            Err(GetDisjointMutError::OverlappingIndices) => {
-                Err(GetDisjointMutError::OverlappingIndices)
-            }
-        }
+    fn get_inx_mut(&mut self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &mut T)> {
+        let Allocated(generation, t) = self.m.get_mut(PtrInx::try_into_usize(p)?)? else {
+            return None;
+        };
+        Some((*generation, t))
     }
 
     fn find_first_inx_ptr(&self) -> Option<P> {
@@ -130,13 +103,6 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for DirectArena<P, T, B> {
 
     fn advancer_inx(&self, inx: <P as Ptr>::Inx, rev: bool) -> Self::PtrAdvancer {
         self.internal_advancer_inx(inx, rev)
-    }
-
-    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
-    where
-        T: 'a,
-    {
-        self.internal_iter_mut()
     }
 
     fn invalidate(&mut self, p: P) -> InvalidationResult<P> {
@@ -215,6 +181,49 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for DirectArena<P, T, B> {
         // slots that advancers need to traverse
         self.pop_free_end_slots(usize::MAX);
         InvalidationOption::Success(())
+    }
+}
+
+impl<P: Ptr, T, B: ArenaBacking> DisjointableArenaTrait<P, T> for DirectArena<P, T, B> {
+    fn get_disjoint_inx_mut<const N: usize>(
+        &mut self,
+        indices: [<P as Ptr>::Inx; N],
+    ) -> Result<[(<P as Ptr>::Gen, &mut T); N], GetDisjointMutError> {
+        // check for PtrInx truncation, this is a no-op in the default case
+        for inx in indices {
+            if PtrInx::try_into_usize(inx).is_none() {
+                return Err(GetDisjointMutError::IndexOutOfBounds);
+            }
+        }
+        let indices = indices.map(|inx| PtrInx::try_into_usize(inx).unwrap());
+        match self.m.get_disjoint_mut(indices) {
+            Ok(a) => {
+                for slot in &a {
+                    if matches!(slot, Free) {
+                        return Err(GetDisjointMutError::IndexOutOfBounds);
+                    }
+                }
+                Ok(a.map(|slot| {
+                    let Allocated(generation, t) = slot else {
+                        unreachable!()
+                    };
+                    (*generation, t)
+                }))
+            }
+            Err(GetDisjointMutError::IndexOutOfBounds) => {
+                Err(GetDisjointMutError::IndexOutOfBounds)
+            }
+            Err(GetDisjointMutError::OverlappingIndices) => {
+                Err(GetDisjointMutError::OverlappingIndices)
+            }
+        }
+    }
+
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
+    where
+        T: 'a,
+    {
+        self.internal_iter_mut()
     }
 }
 

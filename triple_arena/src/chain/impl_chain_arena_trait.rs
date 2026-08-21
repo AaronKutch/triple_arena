@@ -8,7 +8,7 @@ use crate::{
     errors::{AllocError, ChainInsertionError, NotWithinCapacityError, ReallocationError},
     traits::{
         ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait,
-        Ptr,
+        DisjointableArenaTrait, Ptr,
     },
     utils::{
         ArenaSlot::*,
@@ -56,13 +56,10 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainArena<P, T, B> {
             .map(|(generation, link)| (generation, &link.t))
     }
 
-    fn get_disjoint_inx_mut<const N: usize>(
-        &mut self,
-        indices: [<P as Ptr>::Inx; N],
-    ) -> Result<[(<P as Ptr>::Gen, &mut T); N], GetDisjointMutError> {
+    fn get_inx_mut(&mut self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &mut T)> {
         self.a
-            .get_disjoint_inx_mut(indices)
-            .map(|a| a.map(|(generation, link)| (generation, &mut link.t)))
+            .get_inx_mut(p)
+            .map(|(generation, link)| (generation, &mut link.t))
     }
 
     fn find_first_inx_ptr(&self) -> Option<P> {
@@ -75,13 +72,6 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainArena<P, T, B> {
 
     fn advancer_inx(&self, inx: <P as Ptr>::Inx, rev: bool) -> Self::PtrAdvancer {
         self.internal_advancer_inx(inx, rev)
-    }
-
-    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
-    where
-        T: 'a,
-    {
-        self.a.iter_mut().map(|(p, link)| (p, &mut link.t))
     }
 
     fn invalidate(&mut self, p: P) -> InvalidationResult<P> {
@@ -175,6 +165,24 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for ChainArena<P, T, B> {
         // we were relying on the drop to fix this
         self.a.freelist_root = None;
         res
+    }
+}
+
+impl<P: Ptr, T, B: ArenaBacking> DisjointableArenaTrait<P, T> for ChainArena<P, T, B> {
+    fn get_disjoint_inx_mut<const N: usize>(
+        &mut self,
+        indices: [<P as Ptr>::Inx; N],
+    ) -> Result<[(<P as Ptr>::Gen, &mut T); N], GetDisjointMutError> {
+        self.a
+            .get_disjoint_inx_mut(indices)
+            .map(|a| a.map(|(generation, link)| (generation, &mut link.t)))
+    }
+
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
+    where
+        T: 'a,
+    {
+        self.a.iter_mut().map(|(p, link)| (p, &mut link.t))
     }
 }
 

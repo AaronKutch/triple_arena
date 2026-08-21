@@ -87,6 +87,7 @@ pub mod traits {
         arena::{
             ArenaCloneFromWith, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait,
             ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, CompactArenaTrait,
+            DisjointableArenaTrait,
         },
         chain::ChainArenaTrait,
         fundamental::{Advancer, Ptr},

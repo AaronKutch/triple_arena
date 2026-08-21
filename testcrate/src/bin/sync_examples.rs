@@ -1,5 +1,5 @@
-//! LLM coded helper, TODO if this is widely useful clean it up and make it its own library for
-//! testcrates to use
+//! LLM coded helper, TODO if this is widely useful clean it up and make it its
+//! own library for testcrates to use
 
 use std::{
     fs,
@@ -25,8 +25,8 @@ fn workspace_dir() -> PathBuf {
 }
 
 /// Syncs the examples of the examples files into the doc tests and readme code
-/// blocks that they are marked for, so that they only ever have to be edited, tested, and formatted
-/// in one place without cumbersome editing.
+/// blocks that they are marked for, so that they only ever have to be edited,
+/// tested, and formatted in one place without cumbersome editing.
 ///
 /// An example is preceded by one or more marker comments, each of which starts
 /// a line, is allowed to be wrapped across the comment lines following it, and

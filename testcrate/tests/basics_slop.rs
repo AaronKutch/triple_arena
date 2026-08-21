@@ -845,6 +845,10 @@ impl ArenaTrait<QLarge, u8> for FaultyArena {
         }
     }
 
+    fn get_inx_mut(&mut self, _p: <QLarge as Ptr>::Inx) -> Option<(<QLarge as Ptr>::Gen, &mut u8)> {
+        unimplemented!()
+    }
+
     fn find_first_inx_ptr(&self) -> Option<QLarge> {
         self.ptrs.first().copied()
     }
@@ -881,20 +885,6 @@ impl ArenaTrait<QLarge, u8> for FaultyArena {
 
     fn len(&self) -> usize {
         unimplemented!()
-    }
-
-    fn get_disjoint_inx_mut<const N: usize>(
-        &mut self,
-        _indices: [<QLarge as Ptr>::Inx; N],
-    ) -> Result<[(<QLarge as Ptr>::Gen, &mut u8); N], GetDisjointMutError> {
-        unimplemented!()
-    }
-
-    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (QLarge, &'a mut u8)>
-    where
-        u8: 'a,
-    {
-        core::iter::empty()
     }
 
     fn drain(&mut self) -> impl Iterator<Item = InvalidationOption<(QLarge, u8)>> {

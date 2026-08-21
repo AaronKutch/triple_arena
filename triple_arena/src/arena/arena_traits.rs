@@ -212,49 +212,9 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
             .and_then(|(generation, t)| (generation == p.generation()).then_some(t))
     }
 
-    // I'd rather just reuse `GetDisjointMutError`, there are necessarily so many
-    // specific cases from `P` overtruncation to unallocated vs out-of-bounds in the
-    // underlying stack anyways that wouldn't be general to split up, we would end
-    // up having a isomorphic enum with essentially the same useful semantics.
-
-    /// Returns mutable references to many elements at once, in order according
-    /// to the `indices` passed in. Returns an error if any `Ptr`s are invalid
-    /// or if any are repeated.
-    ///
-    /// This method does a `O(n^2)` check for overlapping indices, be careful
-    /// when passing in many indices. Any kind of invalid `Ptr` is reported
-    /// as `GetDisjointMutError::IndexOutOfBounds` and any repeated `Ptr`s are
-    /// reported as `GetDisjointMutError::OverlappingIndices`.
-    fn get_disjoint_mut<const N: usize>(
-        &mut self,
-        indices: [P; N],
-    ) -> Result<[&mut T; N], GetDisjointMutError> {
-        // check generations before `IndexOutOfBounds` could be returned, because it
-        // would be normal to have an invalidated `Ptr` collide with a newer `Ptr` by
-        // index, when the `Ptr`s were actually completely logically independent
-        for p in indices {
-            if !self.contains(p) {
-                return Err(GetDisjointMutError::IndexOutOfBounds);
-            }
-        }
-        self.get_disjoint_inx_mut(indices.map(|p| p.inx()))
-            .map(|a| a.map(|(_, t)| t))
-    }
-
     /// Like [ArenaTrait::get_mut], except generation counters are ignored and
     /// the existing generation is returned.
-    fn get_inx_mut(&mut self, p: P::Inx) -> Option<(P::Gen, &mut T)> {
-        let [res] = self.get_disjoint_inx_mut([p]).ok()?;
-        Some(res)
-    }
-
-    /// Like [ArenaTrait::get_disjoint_mut], except generation counters are
-    /// ignored and the existing generations are returned with the mutable
-    /// references.
-    fn get_disjoint_inx_mut<const N: usize>(
-        &mut self,
-        indices: [P::Inx; N],
-    ) -> Result<[(P::Gen, &mut T); N], GetDisjointMutError>;
+    fn get_inx_mut(&mut self, p: P::Inx) -> Option<(P::Gen, &mut T)>;
 
     /// Finds the first valid `Ptr` in terms of the `P::Inx` ordering, be
     /// aware that this is an `O(n)` operation on many implementations
@@ -304,14 +264,6 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
         })
     }
 
-    /// Iteration over all `&mut T` in the arena
-    fn vals_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut T>
-    where
-        T: 'a,
-    {
-        self.iter_mut().map(|(_, t)| t)
-    }
-
     /// Iteration over all `(P, &T)` in the arena
     fn iter<'a>(&'a self) -> impl Iterator<Item = (P, &'a T)>
     where
@@ -320,11 +272,6 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
         let mut adv = self.advancer();
         from_fn(move || adv.advance(self).and_then(|p| self.get(p).map(|t| (p, t))))
     }
-
-    /// Iteration over all `(P, &mut T)` in the arena
-    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
-    where
-        T: 'a;
 
     /// A draining iterator over `(P, T)` in the arena. This will run
     /// `self.clear()` (and any invalidation notifications will be lost) if the
@@ -527,6 +474,58 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
         reset_generation: bool,
         map: F,
     ) -> InvalidationOption<()>;
+}
+
+pub trait DisjointableArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
+    // I'd rather just reuse `GetDisjointMutError`, there are necessarily so many
+    // specific cases from `P` overtruncation to unallocated vs out-of-bounds in the
+    // underlying stack anyways that wouldn't be general to split up, we would end
+    // up having a isomorphic enum with essentially the same useful semantics.
+
+    /// Returns mutable references to many elements at once, in order according
+    /// to the `indices` passed in. Returns an error if any `Ptr`s are invalid
+    /// or if any are repeated.
+    ///
+    /// This method does a `O(n^2)` check for overlapping indices, be careful
+    /// when passing in many indices. Any kind of invalid `Ptr` is reported
+    /// as `GetDisjointMutError::IndexOutOfBounds` and any repeated `Ptr`s are
+    /// reported as `GetDisjointMutError::OverlappingIndices`.
+    fn get_disjoint_mut<const N: usize>(
+        &mut self,
+        indices: [P; N],
+    ) -> Result<[&mut T; N], GetDisjointMutError> {
+        // check generations before `IndexOutOfBounds` could be returned, because it
+        // would be normal to have an invalidated `Ptr` collide with a newer `Ptr` by
+        // index, when the `Ptr`s were actually completely logically independent
+        for p in indices {
+            if !self.contains(p) {
+                return Err(GetDisjointMutError::IndexOutOfBounds);
+            }
+        }
+        self.get_disjoint_inx_mut(indices.map(|p| p.inx()))
+            .map(|a| a.map(|(_, t)| t))
+    }
+
+    /// Like [ArenaTrait::get_disjoint_mut], except generation counters are
+    /// ignored and the existing generations are returned with the mutable
+    /// references.
+    fn get_disjoint_inx_mut<const N: usize>(
+        &mut self,
+        indices: [P::Inx; N],
+    ) -> Result<[(P::Gen, &mut T); N], GetDisjointMutError>;
+
+    /// Iteration over all `&mut T` in the arena
+    fn vals_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut T>
+    where
+        T: 'a,
+    {
+        self.iter_mut().map(|(_, t)| t)
+    }
+
+    /// Iteration over all `(P, &mut T)` in the arena
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
+    where
+        T: 'a;
 }
 
 /// A marker trait indicating that the arena has a "compact" internal

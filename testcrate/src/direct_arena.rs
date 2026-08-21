@@ -7,7 +7,7 @@ use triple_arena::{
     errors::{AllocError, DirectInsertionError, MaxCapacityReductionError, ReallocationError},
     traits::{
         Advancer, ArenaCloneFromWith, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait,
-        ArenaInsertTrait, ArenaTrait, CompactArenaTrait, Ptr,
+        ArenaInsertTrait, ArenaTrait, CompactArenaTrait, DisjointableArenaTrait, Ptr,
     },
     utils::traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen, PtrInx},
 };
@@ -44,7 +44,9 @@ fn rand_free_inx<P: Ptr, A: CompactArenaTrait<P, Cd<()>>>(
 /// being inserted into.
 fn try_direct_insert<
     P: Ptr,
-    A: CompactArenaTrait<P, Cd<()>> + ArenaDirectInsertTrait<P, Cd<()>>,
+    A: CompactArenaTrait<P, Cd<()>>
+        + DisjointableArenaTrait<P, Cd<()>>
+        + ArenaDirectInsertTrait<P, Cd<()>>,
 >(
     a: &mut A,
     b: &mut CkMap<(), P>,
@@ -104,6 +106,7 @@ pub fn fuzz<
     P: Ptr,
     A: ArenaCloneFromWith<P, Cd<()>>
         + CompactArenaTrait<P, Cd<()>>
+        + DisjointableArenaTrait<P, Cd<()>>
         + ArenaDirectInsertTrait<P, Cd<()>>,
 >(
     meta: &mut Meta<Stats>,

@@ -5,7 +5,7 @@ use crate::{
     chain::ChainArena,
     errors::{AllocError, ReallocationError},
     ord_iterators,
-    traits::{ArenaTrait, CompactArenaTrait, Ptr},
+    traits::{ArenaTrait, CompactArenaTrait, DisjointableArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 
@@ -56,13 +56,10 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
             .map(|(generation, node)| (generation, &node.t))
     }
 
-    fn get_disjoint_inx_mut<const N: usize>(
-        &mut self,
-        indices: [<P as Ptr>::Inx; N],
-    ) -> Result<[(<P as Ptr>::Gen, &mut T); N], GetDisjointMutError> {
+    fn get_inx_mut(&mut self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &mut T)> {
         self.a
-            .get_disjoint_inx_mut(indices)
-            .map(|a| a.map(|(generation, node)| (generation, &mut node.t)))
+            .get_inx_mut(p)
+            .map(|(generation, node)| (generation, &mut node.t))
     }
 
     fn find_first_inx_ptr(&self) -> Option<P> {
@@ -75,13 +72,6 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
 
     fn advancer_inx(&self, inx: <P as Ptr>::Inx, rev: bool) -> Self::PtrAdvancer {
         self.internal_advancer_inx(inx, rev)
-    }
-
-    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
-    where
-        T: 'a,
-    {
-        self.a.iter_mut().map(|(p, node)| (p, &mut node.t))
     }
 
     fn invalidate(&mut self, p: P) -> InvalidationResult<P> {
@@ -141,6 +131,24 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
         this.0
             .a
             .compress_with(reset_generation, |p, node, q| map(p, &mut node.t, q))
+    }
+}
+
+impl<P: Ptr, T, B: ArenaBacking> DisjointableArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
+    fn get_disjoint_inx_mut<const N: usize>(
+        &mut self,
+        indices: [<P as Ptr>::Inx; N],
+    ) -> Result<[(<P as Ptr>::Gen, &mut T); N], GetDisjointMutError> {
+        self.a
+            .get_disjoint_inx_mut(indices)
+            .map(|a| a.map(|(generation, node)| (generation, &mut node.t)))
+    }
+
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
+    where
+        T: 'a,
+    {
+        self.a.iter_mut().map(|(p, node)| (p, &mut node.t))
     }
 }
 

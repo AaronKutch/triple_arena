@@ -7,7 +7,7 @@ use crate::{
     chain::ChainArena,
     chain_iterators,
     surject::{Key, Val},
-    traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
+    traits::{Advancer, ArenaTrait, ChainArenaTrait, DisjointableArenaTrait, Ptr},
     utils::{PtrNoGen, traits::ArenaBacking},
 };
 

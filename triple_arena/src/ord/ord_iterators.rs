@@ -6,7 +6,7 @@ use crate::{
     ChainArena, SimpleOrdArena, arena_iterators,
     chain::ChainArenaTrait,
     chain_iterators,
-    traits::{Advancer, ArenaTrait, Ptr},
+    traits::{Advancer, ArenaTrait, DisjointableArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 

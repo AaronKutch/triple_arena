@@ -5,7 +5,7 @@ use recasting::{Recast, Recaster};
 pub use crate::arena_iterators::{CapacityDrain, Iter};
 use crate::{
     Arena, ChainArena, InvalidationOption, LinkNoGen, arena_iterators,
-    traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
+    traits::{Advancer, ArenaTrait, ChainArenaTrait, DisjointableArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 

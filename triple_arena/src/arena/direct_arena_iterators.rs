@@ -6,7 +6,7 @@ use recasting::{Recast, Recaster};
 
 use crate::{
     DirectArena, InvalidationOption,
-    traits::{Advancer, ArenaTrait, Ptr},
+    traits::{Advancer, ArenaTrait, DisjointableArenaTrait, Ptr},
     utils::{
         DirectSlot::*,
         traits::{ArenaBacking, NonZeroInxGenericStack, PtrInx},
