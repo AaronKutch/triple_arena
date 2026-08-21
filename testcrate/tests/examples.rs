@@ -1,6 +1,6 @@
 //! for ease of copying to the doc examples
 
-// SYNC(arena/arena_traits.rs, compress_with)
+// SYNC(triple_arena/src/arena/arena_traits.rs, compress_with)
 #[test]
 fn compress_with_example() {
     use triple_arena::{Arena, DirectArena, HeapBacking, ptr_struct, traits::*};
@@ -116,7 +116,7 @@ fn compress_with_example() {
     );
 }
 
-// SYNC(chain/chain_arena.rs, transfer_canonical_reallocating)
+// SYNC(triple_arena/src/chain/chain_arena.rs, transfer_canonical_reallocating)
 #[test]
 fn chain_transfer_canonical_example() {
     use triple_arena::{
@@ -200,7 +200,7 @@ fn chain_transfer_canonical_example() {
     assert_eq!(a[external], "A");
 }
 
-// SYNC(ord/simple_ord_arena.rs, SimpleOrdArena)
+// SYNC(triple_arena/src/ord/simple_ord_arena.rs, SimpleOrdArena)
 #[test]
 fn simple_ord_arena_example() {
     use core::cmp::Ordering;
@@ -250,7 +250,8 @@ fn simple_ord_arena_example() {
     }
 }
 
-// SYNC(ord/simple_ord_arena.rs, transfer_canonical_reallocating)
+// SYNC(triple_arena/src/ord/simple_ord_arena.rs,
+// transfer_canonical_reallocating)
 #[test]
 fn simple_ord_arena_transfer_canonical_example() {
     use triple_arena::{
@@ -330,7 +331,8 @@ fn simple_ord_arena_transfer_canonical_example() {
     assert_eq!(*a[external].k(), "A");
 }
 
-// SYNC(arena/base_arena.rs, Arena)
+// SYNC(triple_arena/src/arena/base_arena.rs, Arena)
+// SYNC(triple_arena/README.md, base_arena_example)
 #[test]
 fn arena_example() {
     use triple_arena::{Arena, ptr_struct, traits::*};
@@ -423,7 +425,7 @@ fn arena_example() {
     assert_eq!(arena3.iter().next().unwrap().1, "hello");
 }
 
-// SYNC(arena/direct_insertion_arena.rs, DirectArena)
+// SYNC(triple_arena/src/arena/direct_insertion_arena.rs, DirectArena)
 #[test]
 fn direct_arena_example() {
     use triple_arena::{Arena, DirectArena, ptr_struct, traits::*};
@@ -456,7 +458,7 @@ fn direct_arena_example() {
     );
 }
 
-// SYNC(chain/chain_arena.rs, ChainArena)
+// SYNC(triple_arena/src/chain/chain_arena.rs, ChainArena)
 #[test]
 fn chain_arena_example() {
     use triple_arena::{
@@ -579,7 +581,7 @@ fn chain_arena_example() {
     assert!(a.is_empty());
 }
 
-// SYNC(surject/surject_arena.rs, SurjectArena)
+// SYNC(triple_arena/src/surject/surject_arena.rs, SurjectArena)
 #[test]
 fn surject_arena_example() {
     use triple_arena::{SurjectArena, errors::ChainInsertionError, ptr_struct};
@@ -682,7 +684,7 @@ fn surject_arena_example() {
     );
 }
 
-// SYNC(ord/find.rs, _debug_arena)
+// SYNC(triple_arena/src/ord/find.rs, _debug_arena)
 /// This one is only for development debugging, and it writes a `tmp.svg` in the
 /// working directory if it ever does fail
 #[test]

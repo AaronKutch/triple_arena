@@ -1,6 +1,5 @@
-// note: for README version keep limit at 70 characters and change `out_file`
-
-// FIXME recopy
+// note: for README version keep limit at 70 characters
+//! SYNC(triple_arena_render/README.md, equation_example)
 
 use triple_arena::{Arena, ptr_struct, traits::*};
 use triple_arena_render::{DebugNode, DebugNodeTrait, render_to_svg_file};
@@ -85,7 +84,7 @@ fn main() {
     render_to_svg_file(
         &a,
         false,
-        std::path::PathBuf::from("./triple_arena_render/example.svg".to_owned()),
+        std::path::PathBuf::from("./example.svg".to_owned()),
     )
     .unwrap();
 }
