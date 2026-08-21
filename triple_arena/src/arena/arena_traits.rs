@@ -476,6 +476,8 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     ) -> InvalidationOption<()>;
 }
 
+/// Additional methods for arenas that can return independent mutable values in
+/// parallel safely
 pub trait DisjointableArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     // I'd rather just reuse `GetDisjointMutError`, there are necessarily so many
     // specific cases from `P` overtruncation to unallocated vs out-of-bounds in the
