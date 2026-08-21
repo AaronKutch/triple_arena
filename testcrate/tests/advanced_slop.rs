@@ -32,8 +32,7 @@ use triple_arena::{
 };
 #[cfg(feature = "alloc")]
 use triple_arena::{
-    HeapBacking, LimitedHeapBacking, errors::MaxCapacityReductionError,
-    utils::traits::SetMaxCapacity,
+    LimitedHeapBacking, errors::MaxCapacityReductionError, utils::traits::SetMaxCapacity,
 };
 
 ptr_struct!(Q0);
@@ -116,33 +115,20 @@ fn transfer_canonical_reallocating_layout() {
     // at the start link of an acyclic chain
     let (mut source, ..) = mixed_chains();
     let mut dst = ChainArena::<Q1, u8, StackBacking<8>>::new();
-    let mut recaster = DirectArena::<Q0, Q1, StackBacking<8>>::new();
-    dst.transfer_canonical_reallocating(
-        PtrGen::two(),
-        &mut source,
-        |_, o, _| o.allow(),
-        &mut recaster,
-    )
-    .unwrap();
+    dst.transfer_canonical_reallocating(PtrGen::two(), &mut source, |_, o, _| o.allow())
+        .unwrap();
     assert!(source.is_empty());
     assert_eq!(ChainArena::_check_invariants(&dst), Ok(()));
     assert_eq!(layout(&dst), vec![(1, 0), (2, 1), (3, 2), (4, 3), (5, 4)]);
     // the chains are the same ones, and the recaster is a complete mapping
     let p0 = dst.find_first_inx_ptr().unwrap();
     assert_eq!(chain_of(&dst, p0), vec![0, 1, 2]);
-    assert_eq!(recaster.len(), 5);
 
     // an empty source is the same as a clear
     let mut source = ChainArena::<Q0, u8, StackBacking<8>>::new();
-    dst.transfer_canonical_reallocating(
-        PtrGen::two(),
-        &mut source,
-        |_, o, _| o.allow(),
-        &mut recaster,
-    )
-    .unwrap();
+    dst.transfer_canonical_reallocating(PtrGen::two(), &mut source, |_, o, _| o.allow())
+        .unwrap();
     assert!(dst.is_empty());
-    assert!(recaster.is_empty());
 }
 
 #[test]
@@ -151,19 +137,13 @@ fn transfer_canonical_reallocating_panicking_map() {
     // having interlinks to links that never arrive
     let (mut source, ..) = mixed_chains();
     let mut dst = ChainArena::<Q1, u8, StackBacking<8>>::new();
-    let mut recaster = DirectArena::<Q0, Q1, StackBacking<8>>::new();
     let mut n = 0;
     let res = catch_unwind(AssertUnwindSafe(|| {
-        dst.transfer_canonical_reallocating(
-            PtrGen::two(),
-            &mut source,
-            |_, o, _| {
-                n += 1;
-                assert_ne!(n, 2, "map");
-                o.allow()
-            },
-            &mut recaster,
-        )
+        dst.transfer_canonical_reallocating(PtrGen::two(), &mut source, |_, o, _| {
+            n += 1;
+            assert_ne!(n, 2, "map");
+            o.allow()
+        })
         .unwrap();
     }));
     assert!(res.is_err());
@@ -608,14 +588,8 @@ fn chain_overflow_transfer() {
         source.insert(LinkInsertKind::Disconnected, ());
     }
     let mut a = ChainArena::<QSmall, (), StackBacking<512>>::new();
-    let mut recaster = DirectArena::<Q0, QSmall, StackBacking<512>>::new();
     assert_eq!(
-        a.transfer_canonical_reallocating(
-            PtrGen::two(),
-            &mut source,
-            |_, o, _| o.allow(),
-            &mut recaster
-        ),
+        a.transfer_canonical_reallocating(PtrGen::two(), &mut source, |_, o, _| o.allow(),),
         Err(ReallocationError::AllocError)
     );
     // neither side was touched
@@ -626,67 +600,16 @@ fn chain_overflow_transfer() {
     let mut source = ChainArena::<QLargeInx, (), StackBacking<512>>::new();
     let p = source.insert(LinkInsertKind::Disconnected, ());
     let mut a = ChainArena::<Q0, (), StackBacking<512>>::new();
-    let mut recaster = DirectArena::<QLargeInx, Q0, StackBacking<512>>::new();
     // this index is beyond what a `usize` recaster can be indexed by
     let far: QLargeInx = Ptr::_from_raw(NonZeroU128::new(1 << 100).unwrap(), PtrGen::two());
     assert!(!source.contains(far));
     assert_eq!(
-        a.transfer_canonical_reallocating(
-            PtrGen::two(),
-            &mut source,
-            |_, o, _| o.allow(),
-            &mut recaster
-        ),
+        a.transfer_canonical_reallocating(PtrGen::two(), &mut source, |_, o, _| o.allow(),),
         Ok(())
     );
     assert_eq!(a.len(), 1);
     assert!(source.is_empty());
     let _ = p;
-}
-
-#[cfg(feature = "alloc")]
-#[test]
-fn chain_transfer_grows_the_recaster() {
-    // the recaster is indexed by the raw source indexes, so it has to be able to
-    // reach the largest one and not just `source.len()`
-    let mut source = ChainArena::<Q0, u8, HeapBacking>::new();
-    let mut ptrs = vec![];
-    for i in 0..8 {
-        ptrs.push(source.insert(LinkInsertKind::Disconnected, i));
-    }
-    for p in &ptrs[..7] {
-        source.remove(*p).allow().unwrap();
-    }
-    assert_eq!(source.len(), 1);
-
-    let mut a = ChainArena::<Q0, u8, HeapBacking>::new();
-    let mut recaster = DirectArena::<Q0, Q0, LimitedHeapBacking>::new();
-    recaster.set_max_capacity(4).unwrap();
-    // the last source index is 8, which the recaster cannot be grown to
-    assert_eq!(
-        a.transfer_canonical_reallocating(
-            PtrGen::two(),
-            &mut source,
-            |_, o, _| o.allow(),
-            &mut recaster
-        ),
-        Err(ReallocationError::BeyondMaxCapacity)
-    );
-    assert_eq!(source.len(), 1);
-    assert!(a.is_empty());
-
-    recaster.set_max_capacity(8).unwrap();
-    assert_eq!(
-        a.transfer_canonical_reallocating(
-            PtrGen::two(),
-            &mut source,
-            |_, o, _| o.allow(),
-            &mut recaster
-        ),
-        Ok(())
-    );
-    assert_eq!(a.len(), 1);
-    assert!(recaster.capacity() >= 8);
 }
 
 /// A `ChainArenaTrait` implementor that misreports its state, for reaching the
@@ -883,28 +806,6 @@ impl ChainArenaTrait<QLargeInx, u8> for FaultyChainArena {
     fn compress_canonical(&mut self, _reset_generation: bool) -> InvalidationOption<()> {
         unimplemented!()
     }
-}
-
-#[test]
-fn faulty_chain_arena_last_inx_too_big() {
-    // REF(careful_index_checking) an index that no arena could have inserted at
-    // cannot be used to size the recaster, and it is an allocation error rather
-    // than a panic because `reallocate_min_capacity` is not reached to report it
-    let mut source = FaultyChainArena::new(1, 1 << 100, &[]);
-    let mut a = ChainArena::<Q0, u8, StackBacking<4>>::new();
-    let mut recaster = DirectArena::<QLargeInx, Q0, StackBacking<4>>::new();
-    assert_eq!(
-        a.transfer_canonical_reallocating(
-            PtrGen::two(),
-            &mut source,
-            |_, o, _| o.allow(),
-            &mut recaster
-        ),
-        Err(ReallocationError::AllocError)
-    );
-    // nothing was modified
-    assert!(a.is_empty());
-    assert!(recaster.is_empty());
 }
 
 #[test]
@@ -1659,9 +1560,8 @@ fn ord_compress_with_panicking_map() {
 fn ord_transfer_canonical() {
     let (mut a, _) = ord_of(&[(3, 3), (0, 0), (1, 1), (2, 2)]);
     let mut b = SimpleOrdArena::<Q0, OrdPair<u8, u8>, StackBacking<16>>::new();
-    let mut recaster = DirectArena::<Q0, Q0, StackBacking<16>>::new();
     let new_gen = PtrGen::two();
-    b.transfer_canonical_reallocating(new_gen, &mut a, |_, o, _| o.allow(), &mut recaster)
+    b.transfer_canonical_reallocating(new_gen, &mut a, |_, o, _| o.allow())
         .unwrap();
     assert!(a.is_empty());
     assert_eq!(SimpleOrdArena::_check_invariants(&a), Ok(()));
@@ -1688,7 +1588,7 @@ fn ord_transfer_canonical() {
     // an empty source clears the destination and sets the generation
     let mut empty = O8::new();
     let new_gen = PtrGen::generational_inc(new_gen).0;
-    b.transfer_canonical_reallocating(new_gen, &mut empty, |_, o, _| o.allow(), &mut recaster)
+    b.transfer_canonical_reallocating(new_gen, &mut empty, |_, o, _| o.allow())
         .unwrap();
     assert!(b.is_empty());
     assert_eq!(b.generation(), new_gen);
@@ -1698,18 +1598,13 @@ fn ord_transfer_canonical() {
     let (mut a, _) = ord_of(&[(3, 3), (0, 0), (1, 1), (2, 2)]);
     let mut n = 0usize;
     let res = catch_unwind(AssertUnwindSafe(|| {
-        b.transfer_canonical_reallocating(
-            new_gen,
-            &mut a,
-            |_, o, _| {
-                n += 1;
-                if n == 3 {
-                    panic!("test panic")
-                }
-                o.allow()
-            },
-            &mut recaster,
-        )
+        b.transfer_canonical_reallocating(new_gen, &mut a, |_, o, _| {
+            n += 1;
+            if n == 3 {
+                panic!("test panic")
+            }
+            o.allow()
+        })
         .unwrap()
     }));
     assert!(res.is_err());
@@ -1729,14 +1624,8 @@ fn ord_transfer_error_leaves_the_tree_alone() {
     let (mut a, _) = ord_of(&[(0, 0), (1, 1), (2, 2)]);
     let mut b = SimpleOrdArena::<Q0, OrdPair<u8, u8>, StackBacking<2>>::new();
     let _ = b.insert(OrdPair::new(9, 9));
-    let mut recaster = DirectArena::<Q0, Q0, StackBacking<16>>::new();
     assert_eq!(
-        b.transfer_canonical_reallocating(
-            PtrGen::two(),
-            &mut a,
-            |_, o, _| o.allow(),
-            &mut recaster
-        ),
+        b.transfer_canonical_reallocating(PtrGen::two(), &mut a, |_, o, _| o.allow(),),
         Err(ReallocationError::BeyondMaxCapacity)
     );
     assert_eq!(SimpleOrdArena::_check_invariants(&a), Ok(()));

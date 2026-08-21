@@ -249,7 +249,7 @@ fn fuzz_surject() {
                     assert!(a.get_key_mut(invalid).is_none());
                 }
             }
-            390..440 => {
+            390..446 => {
                 // get_val_mut
                 if len != 0 {
                     let v = list[next_inx!(rng, len)];
@@ -259,28 +259,6 @@ fn fuzz_surject() {
                     assert_eq!(*a.get_val_mut(pair.p).unwrap(), v);
                 } else {
                     assert!(a.get_val_mut(invalid).is_none());
-                }
-            }
-            440..=445 => {
-                // get2_val_mut
-                if len != 0 {
-                    let v0 = list[next_inx!(rng, len)];
-                    let v1 = list[next_inx!(rng, len)];
-                    let set0 = &b[&v0];
-                    let set_len0 = set0.len();
-                    let set1 = &b[&v1];
-                    let set_len1 = set1.len();
-                    let pair0 = set0[next_inx!(rng, set_len0)];
-                    let pair1 = set1[next_inx!(rng, set_len1)];
-                    if v0 == v1 {
-                        assert!(a.get2_val_mut(pair0.p, pair1.p).is_none());
-                    } else {
-                        let tmp = a.get2_val_mut(pair0.p, pair1.p).unwrap();
-                        assert_eq!(*tmp.0, v0);
-                        assert_eq!(*tmp.1, v1);
-                    }
-                } else {
-                    assert!(a.get2_val_mut(invalid, invalid).is_none());
                 }
             }
             446..=449 => {

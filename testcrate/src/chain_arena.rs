@@ -7,8 +7,8 @@ use triple_arena::{
     StackBacking,
     errors::{AllocError, ChainInsertionError, MaxCapacityReductionError, ReallocationError},
     traits::{
-        Advancer, ArenaInsertEntryTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait,
-        DisjointableArenaTrait, Ptr,
+        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaTrait, ChainArenaTrait,
+        CompactArenaTrait, DisjointableArenaTrait, Ptr,
     },
     utils::traits::{ArenaBacking, NonZeroInxGenericStack, PtrGen, PtrInx},
 };
@@ -1123,18 +1123,15 @@ pub fn fuzz<
                 let mut list = vec![];
                 // do something that isn't setting to a low constant
                 let next_gen = PtrGen::generational_inc(g.0).0;
-                a1.transfer_canonical_reallocating(
-                    next_gen,
-                    a,
-                    |q, o, p| {
-                        assert_eq!(o.is_overflow(), g.invalidate());
-                        let u = o.allow();
-                        list.push((u.key(), q, p));
-                        let (_, t) = cd_gen1.new_cd();
-                        t
-                    },
-                    &mut recaster,
-                )
+                recaster.clone_from_with(a, |_, _| P::invalid()).unwrap();
+                a1.transfer_canonical_reallocating(next_gen, a, |q, o, p| {
+                    recaster[q] = p;
+                    assert_eq!(o.is_overflow(), g.invalidate());
+                    let u = o.allow();
+                    list.push((u.key(), q, p));
+                    let (_, t) = cd_gen1.new_cd();
+                    t
+                })
                 .unwrap();
                 ensure!(a.is_empty());
                 ensure_eq!(list.len(), len);
@@ -1449,18 +1446,15 @@ pub fn fuzz_multi_chain_arena<P: Ptr>(
                 // overflow
                 let transfer_generation = PtrGen::generational_inc(a1.generation()).0;
                 b0.clear();
-                a0.transfer_canonical_reallocating(
-                    transfer_generation,
-                    &mut a1,
-                    |q, o, p| {
-                        assert_eq!(o.is_overflow(), g1.invalidate());
-                        assert_eq!(*b1.get(o.allow().key()).unwrap(), q);
-                        let (k, t) = cd_gen0.new_cd();
-                        b0.insert(k, p);
-                        t
-                    },
-                    &mut recaster,
-                )
+                recaster.clone_from_with(&a1, |_, _| P::invalid()).unwrap();
+                a0.transfer_canonical_reallocating(transfer_generation, &mut a1, |q, o, p| {
+                    recaster[q] = p;
+                    assert_eq!(o.is_overflow(), g1.invalidate());
+                    assert_eq!(*b1.get(o.allow().key()).unwrap(), q);
+                    let (k, t) = cd_gen0.new_cd();
+                    b0.insert(k, p);
+                    t
+                })
                 .unwrap();
                 g0.0 = transfer_generation;
                 b1.clear();
@@ -1474,18 +1468,15 @@ pub fn fuzz_multi_chain_arena<P: Ptr>(
                 let snapshot0 = snapshot(&a0);
                 let transfer_generation = PtrGen::generational_inc(a0.generation()).0;
                 b1.clear();
-                a1.transfer_canonical_reallocating(
-                    transfer_generation,
-                    &mut a0,
-                    |q, o, p| {
-                        assert_eq!(o.is_overflow(), g0.invalidate());
-                        assert_eq!(*b0.get(o.allow().key()).unwrap(), q);
-                        let (k, t) = cd_gen1.new_cd();
-                        b1.insert(k, p);
-                        t
-                    },
-                    &mut recaster,
-                )
+                recaster.clone_from_with(&a0, |_, _| P::invalid()).unwrap();
+                a1.transfer_canonical_reallocating(transfer_generation, &mut a0, |q, o, p| {
+                    recaster[q] = p;
+                    assert_eq!(o.is_overflow(), g0.invalidate());
+                    assert_eq!(*b0.get(o.allow().key()).unwrap(), q);
+                    let (k, t) = cd_gen1.new_cd();
+                    b1.insert(k, p);
+                    t
+                })
                 .unwrap();
                 g1.0 = transfer_generation;
                 b0.clear();

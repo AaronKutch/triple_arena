@@ -1,14 +1,13 @@
-use core::{fmt, mem, num::NonZeroUsize};
+use core::{fmt, mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use fmt::Debug;
 
 use crate::{
     Arena, ChainArena, InvalidationOption, InvalidationResult, LinkInsertKind, LinkNoGen,
-    arena::ArenaDirectInsertEntryTrait,
     errors::{AllocError, ChainInsertionError, NotWithinCapacityError, ReallocationError},
     traits::{
-        Advancer, ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaInsertEntryTrait,
-        ArenaInsertTrait, ArenaTrait, ChainArenaTrait, DisjointableArenaTrait, Ptr,
+        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
+        ChainArenaTrait, DisjointableArenaTrait, Ptr,
     },
     utils::{
         PtrNoGen,
@@ -541,6 +540,16 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         self.keys.get(p).as_ref().map(|key| &key.k)
     }
 
+    /// Like [SurjectArena::get_key], except generation counters are ignored and
+    /// the existing generation is returned.
+    #[must_use]
+    pub fn get_key_inx(&self, p: P::Inx) -> Option<(P::Gen, &K)> {
+        self.keys
+            .get_inx(p)
+            .as_ref()
+            .map(|(generation, key)| (*generation, &key.k))
+    }
+
     /// Returns a reference to the value associated with the key pointed to by
     /// `p`
     #[must_use]
@@ -584,17 +593,35 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         ))
     }
 
-    // FIXME replace with new `get_disjoint_mut`
+    /// The same as [crate::traits::DisjointableArenaTrait::get_disjoint_mut]
+    /// for keys
+    pub fn get_disjoint_key_mut<const N: usize>(
+        &mut self,
+        indices: [P; N],
+    ) -> Result<[&mut K; N], GetDisjointMutError> {
+        self.keys
+            .get_disjoint_mut(indices)
+            .map(|keys| keys.map(|key| &mut key.k))
+    }
 
-    /// Gets two `&mut V` references pointed to by `p0` and `p1`. If
-    /// `self.in_same_set(p0, p1)` or a pointer is invalid, `None` is
-    /// returned.
-    #[must_use]
-    pub fn get2_val_mut(&mut self, p0: P, p1: P) -> Option<(&mut V, &mut V)> {
-        let p_val0 = self.keys.get(p0)?.p_val;
-        let p_val1 = self.keys.get(p1)?.p_val;
-        let [val0, val1] = self.vals.get_disjoint_mut([p_val0, p_val1]).ok()?;
-        Some((&mut val0.v, &mut val1.v))
+    /// The same as [crate::traits::DisjointableArenaTrait::get_disjoint_mut]
+    /// for values, but this additionally requires that the indices all be from
+    /// different key sets.
+    pub fn get_disjoint_val_mut<const N: usize>(
+        &mut self,
+        indices: [P; N],
+    ) -> Result<[&mut V; N], GetDisjointMutError> {
+        let mut p_vals = [PtrNoGen::<P>::invalid(); N];
+        for (p_val, p) in p_vals.iter_mut().zip(indices) {
+            *p_val = self
+                .keys
+                .get(p)
+                .ok_or(GetDisjointMutError::IndexOutOfBounds)?
+                .p_val;
+        }
+        self.vals
+            .get_disjoint_mut(p_vals)
+            .map(|vals| vals.map(|val| &mut val.v))
     }
 
     /// Returns the generation associated with `p` and a `LinkNoGen<P, &K>`, the
@@ -702,7 +729,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         }
     }
 
-    // TODO have a drain_surject instead
+    // FIXME have a drain_surject instead
 
     /// Removes the entire key set and value cheaply, returning the value. `p`
     /// can point to any key from the key set. Returns `None` if `p` is invalid.
@@ -733,10 +760,28 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         self.keys.clear()
     }
 
+    /// This is similar to [crate::ChainArenaTrait::compress_canonical], laying
+    /// out keys within the same key set to be continuous with one another,
+    /// improving cache locality.
+    ///
+    /// Because an element can be internally swapped multiple times to achieve
+    /// this in-place in the allocation, this cannot have a map. Use
+    /// [transfer_canonical_reallocating](crate::SurjectArena::transfer_canonical_reallocating)
+    /// if you need a recaster.
+    pub fn compress_canonical(&mut self, reset_generation: bool) -> InvalidationOption<()> {
+        let res = self.keys.compress_canonical(reset_generation);
+        // because we can't lookup keys from values, and because it is the most
+        // canonical thing and probably results in better locality, swap values until
+        // they are in an order corresponding with their key sets
+
+        // FIXME
+        res
+    }
+
     /// `aux_recaster` is for internal use only and is filled with arbirary data
     /// unrelated to the logical keys.
     ///
-    /// This mess of a function is used like so: FIXME
+    /// FIXME recaster example
     pub fn transfer_canonical_reallocating<
         Q: Ptr,
         K1,
@@ -744,23 +789,17 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         B1: ArenaBacking,
         F0: FnMut(Q, InvalidationOption<K1>, P) -> K,
         F1: FnMut(V1) -> V,
-        D: ArenaDirectInsertTrait<Q, P>,
-        Aux: ArenaDirectInsertTrait<PtrNoGen<Q>, PtrNoGen<P>>,
     >(
         &mut self,
         new_generation: P::Gen,
         source: &mut SurjectArena<Q, K1, V1, B1>,
         mut map_key: F0,
         mut map_val: F1,
-        recaster: &mut D,
-        aux_recaster: &mut Aux,
     ) -> Result<(), ReallocationError> {
         // precheck both keys and values first, can't have atomic fallibility without it
 
         let Some(len_keys) = NonZeroUsize::new(source.len_keys()) else {
             // follow what the other path would logically do
-            recaster.clear().allow();
-            aux_recaster.clear().allow();
             self.clear().allow();
             self.set_generation(new_generation);
             return Ok(());
@@ -784,149 +823,50 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             self.reallocate_min_capacity_vals(len_vals.get())?;
         }
 
-        let q_last = source.keys.find_last_inx_ptr().unwrap();
-        let Some(raw_last) = Q::Inx::try_into_usize(q_last.inx()) else {
-            return Err(ReallocationError::AllocError);
-        };
-        if raw_last.get() > recaster.capacity() {
-            // max capacity is tested here
-            recaster.reallocate_min_capacity(raw_last.get())?;
-        }
-
-        let q_last = source.vals.find_last_inx_ptr().unwrap();
-        let Some(raw_last) = Q::Inx::try_into_usize(q_last.inx()) else {
-            return Err(ReallocationError::AllocError);
-        };
-        if raw_last.get() > aux_recaster.capacity() {
-            // max capacity is tested here
-            aux_recaster.reallocate_min_capacity(raw_last.get())?;
-        }
-
         // the rest should be infallible if soft invariants are followed
-        recaster.clear().allow();
-        aux_recaster.clear().allow();
         self.clear().allow();
         self.set_generation(new_generation);
 
-        // setup `aux_recaster`
-        self.vals
-            .transfer_reallocating((), &mut source.vals, |q_val, o, p_val| {
-                aux_recaster
-                    .direct_insert_within_capacity(q_val)
-                    .unwrap()
-                    .insert(p_val);
-                // internal can't overflow
-                let val = o.allow();
-                Val {
-                    v: map_val(val.v),
-                    key_count: val.key_count,
+        // Transfer and canonicalize keys first. We rely on the canonical ordering to
+        // focus on the key sets one at a time completely, and in order so that we can
+        // map the value and its new `Ptr` all in one step
+
+        let mut current_source_p_val = None;
+        let mut mapped_p_val = PtrNoGen::<P>::invalid();
+        self.keys
+            .transfer_canonical_reallocating(new_generation, &mut source.keys, |q, o, p| {
+                let (key, o) = o.overflowing();
+                let arg = if o {
+                    InvalidationOption::GenerationOverflow(key.k)
+                } else {
+                    InvalidationOption::Success(key.k)
+                };
+                let k = map_key(q, arg, p);
+
+                let new_key_set = if let Some(p_val) = current_source_p_val {
+                    key.p_val != p_val
+                } else {
+                    true
+                };
+                if new_key_set {
+                    current_source_p_val = Some(key.p_val);
+                    let val = source.vals.remove(key.p_val).allow().unwrap();
+                    let mapped_val = map_val(val.v);
+                    mapped_p_val = self.vals.insert(Val {
+                        v: mapped_val,
+                        key_count: val.key_count,
+                    });
+                }
+
+                Key {
+                    k,
+                    p_val: mapped_p_val,
                 }
             })
-            .unwrap();
-
-        self.keys
-            .transfer_canonical_reallocating(
-                new_generation,
-                &mut source.keys,
-                |q, o, p| {
-                    let (key, o) = o.overflowing();
-                    let arg = if o {
-                        InvalidationOption::GenerationOverflow(key.k)
-                    } else {
-                        InvalidationOption::Success(key.k)
-                    };
-                    Key {
-                        k: map_key(q, arg, p),
-                        p_val: *aux_recaster.get(key.p_val).unwrap(),
-                    }
-                },
-                recaster,
-            )
             .unwrap();
 
         Ok(())
     }
-
-    // TODO a mapless `canonicalize` version?
-    /*
-    /// The same as [SurjectArena::compress_and_shrink] except that `map` is run
-    /// on every `(P, &mut K, &mut V, P)` with the first `P` being the old `Ptr`
-    /// and the last `P` being the new `Ptr`.
-    pub fn compress_and_shrink_with<F: FnMut(P, &mut K, &mut V, P)>(&mut self, mut map: F) {
-        // we run into the problem of not being able to lookup keys from values, so we
-        // do a special kind of manual compression on the values
-        let mut first_unallocated = None;
-        for i in self.vals.nziter() {
-            if matches!(self.vals.m.get(i).unwrap(), ArenaSlot::Free(_)) {
-                first_unallocated = Some(i);
-                break;
-            }
-        }
-
-        // first compress the keys so that their cache locality is improved
-        let mut p_val_last = None;
-        let mut new_p_val = None;
-        self.keys
-            .compress_with(false, |p, key, q| {
-                let p_val = key.p_val;
-                if Some(p_val) != p_val_last {
-                    let mut new_change = false;
-                    if let Some(i_unallocated) = first_unallocated {
-                        let i = P::Inx::try_into_usize(p_val.inx()).unwrap();
-                        if i > i_unallocated {
-                            // move it into the unallocated spot
-                            self.vals.raw_entry_swap_special(i_unallocated, i);
-                            // change all `p_val`s of the surject
-                            new_p_val = Some(P::Inx::try_from_usize(i_unallocated).unwrap());
-                            new_change = true;
-                            // get the next unallocated index
-                            let mut j = i_unallocated.get().wrapping_add(1);
-                            loop {
-                                if j > self.vals.m.len() {
-                                    first_unallocated = None;
-                                    break;
-                                }
-                                let j_nz = NonZeroUsize::new(j).unwrap();
-                                if matches!(self.vals.m.get(j_nz).unwrap(), ArenaSlot::Free(_)) {
-                                    first_unallocated = Some(j_nz);
-                                    break;
-                                }
-                                j = j.wrapping_add(1);
-                            }
-                        }
-                    }
-                    if !new_change {
-                        // the `p_val` of this new surject we are encountering does not need to be
-                        // changed
-                        new_p_val = None;
-                    }
-                    p_val_last = Some(p_val);
-                }
-                if let Some(new_p_val) = new_p_val {
-                    key.p_val = Ptr::_from_raw(new_p_val, ());
-                }
-                map(
-                    p,
-                    &mut key.k,
-                    &mut self.vals.get_inx_mut_unwrap(key.p_val.inx()).v,
-                    q,
-                )
-            })
-            .allow();
-        // important: remove all free entries, set freelist root to `None`, and shrink
-        // to fit `self.vals`, completes the compression and fixes the likely broken
-        // freelist
-        while let Some(i) = NonZeroUsize::new(self.vals.m.len()) {
-            if let Some(ArenaSlot::Free(_)) = self.vals.m.get(i) {
-                self.vals.m.pop().unwrap();
-            } else {
-                break;
-            }
-        }
-        self.vals.freelist_root = None;
-        let _ = self.vals.reallocate_min_capacity(0);
-    }
-    */
 
     /// Has the same properties of [Arena::clone_from_with]
     pub fn clone_from_with<
@@ -960,7 +900,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
 
     /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
-    /// `self`, with groups of keys preserved as cyclical chains.
+    /// `self`, with sets of keys preserved as cyclical chains.
     pub fn clone_keys_to_chain_arena<T, F: FnMut(P, &K) -> T>(
         &self,
         chain_arena: &mut ChainArena<P, T, B>,

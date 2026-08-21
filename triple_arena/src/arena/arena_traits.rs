@@ -368,12 +368,10 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     ///     // for the new domain because we do not know them yet.
     ///     recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
     ///     // Compress and write the new `Ptr`s at the indexes of the corresponding old
-    ///     // `Ptr`s, and using the values seen by the closure to complete the mapping of
+    ///     // `Ptr`s, using the values seen by the closure to complete the mapping of
     ///     // the old domain to the new domain.
-    ///     this.compress_with(reset_generation, |p, _, q| {
-    ///         *recaster.get_mut(p).unwrap() = q
-    ///     })
-    ///     .allow();
+    ///     this.compress_with(reset_generation, |q, _, p| recaster[q] = p)
+    ///         .allow();
     ///     recaster
     /// }
     ///

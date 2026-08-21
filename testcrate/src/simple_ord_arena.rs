@@ -6,7 +6,7 @@ use triple_arena::{
     Arena, ChainArena, DirectArena, InvalidationOption, InvalidationResult, OrdEntryKind,
     OrdInsertKind, OrdPair, SimpleOrdArena, StackBacking,
     errors::{AllocError, MaxCapacityReductionError, OrdInsertionError, ReallocationError},
-    traits::{Advancer, ArenaTrait, ChainArenaTrait, Ptr},
+    traits::{Advancer, ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, Ptr},
     utils::traits::{ArenaBacking, PtrGen, PtrInx},
 };
 
@@ -866,25 +866,22 @@ fn transfer_round_trip<P: Ptr, B: ArenaBacking>(
     // overflow is reached
     let next_gen = PtrGen::generational_inc(g1.0).0;
     let mut fwd: Vec<Ck<D1>> = vec![];
-    a1.transfer_canonical_reallocating(
-        next_gen,
-        a,
-        |q, o, p| {
-            let i = fwd.len();
-            assert_eq!(o.is_overflow(), g.invalidate());
-            let u = o.allow();
-            // `map` is called in key order, and the destination indexes are assigned
-            // in order
-            assert_eq!(ck(&u), expected[i].c);
-            assert_eq!(q, expected[i].p);
-            assert_eq!(PtrInx::try_into_usize(p.inx()).unwrap().get(), i + 1);
-            assert_eq!(p.generation(), next_gen);
-            let (c1, t1) = cd_gen1.new_cd();
-            fwd.push(c1);
-            OrdPair::new(*u.k(), t1)
-        },
-        recaster,
-    )
+    recaster.clone_from_with(a, |_, _| P::invalid()).unwrap();
+    a1.transfer_canonical_reallocating(next_gen, a, |q, o, p| {
+        recaster[q] = p;
+        let i = fwd.len();
+        assert_eq!(o.is_overflow(), g.invalidate());
+        let u = o.allow();
+        // `map` is called in key order, and the destination indexes are assigned
+        // in order
+        assert_eq!(ck(&u), expected[i].c);
+        assert_eq!(q, expected[i].p);
+        assert_eq!(PtrInx::try_into_usize(p.inx()).unwrap().get(), i + 1);
+        assert_eq!(p.generation(), next_gen);
+        let (c1, t1) = cd_gen1.new_cd();
+        fwd.push(c1);
+        OrdPair::new(*u.k(), t1)
+    })
     .stack()?;
     ensure!(a.is_empty());
     ensure_eq!(fwd.len(), len);
@@ -904,21 +901,16 @@ fn transfer_round_trip<P: Ptr, B: ArenaBacking>(
 
     let next_gen = PtrGen::generational_inc(g.0).0;
     let mut back: Vec<Ck<()>> = vec![];
-    a.transfer_canonical_reallocating(
-        next_gen,
-        a1,
-        |_, o, p| {
-            let i = back.len();
-            assert_eq!(o.is_overflow(), g1.invalidate());
-            let u = o.allow();
-            assert_eq!(ck1(&u), fwd[i]);
-            assert_eq!(PtrInx::try_into_usize(p.inx()).unwrap().get(), i + 1);
-            let (c, t) = cd_gen.new_cd();
-            back.push(c);
-            OrdPair::new(*u.k(), t)
-        },
-        recaster,
-    )
+    a.transfer_canonical_reallocating(next_gen, a1, |_, o, p| {
+        let i = back.len();
+        assert_eq!(o.is_overflow(), g1.invalidate());
+        let u = o.allow();
+        assert_eq!(ck1(&u), fwd[i]);
+        assert_eq!(PtrInx::try_into_usize(p.inx()).unwrap().get(), i + 1);
+        let (c, t) = cd_gen.new_cd();
+        back.push(c);
+        OrdPair::new(*u.k(), t)
+    })
     .stack()?;
     ensure!(a1.is_empty());
     ensure_eq!(back.len(), len);
@@ -1419,10 +1411,8 @@ pub fn fuzz<P: Ptr, B: ArenaBacking>(
                         let keys = key_sequence(&a1);
                         let mut on_first_call = true;
                         let next_gen = PtrGen::generational_inc(g.0).0;
-                        let res = a.transfer_canonical_reallocating(
-                            next_gen,
-                            &mut a1,
-                            |_, o, _| {
+                        let res =
+                            a.transfer_canonical_reallocating(next_gen, &mut a1, |_, o, _| {
                                 if on_first_call {
                                     b.clear();
                                     on_first_call = false;
@@ -1430,9 +1420,7 @@ pub fn fuzz<P: Ptr, B: ArenaBacking>(
                                 assert_eq!(o.is_overflow(), g1.invalidate());
                                 let u = o.allow();
                                 OrdPair::new(*u.k(), cd_gen.new_cd().1)
-                            },
-                            &mut recaster,
-                        );
+                            });
                         if let Some(max) = max_before
                             && a1_len > max
                         {

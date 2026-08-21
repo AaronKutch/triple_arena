@@ -12,10 +12,7 @@ use crate::{
     arena::{ArenaSlot, from_checked_ptr, from_checked_raw},
     errors::{MaxCapacityReductionError, ReallocationError},
     stack::{NonZeroInxArray, NonZeroInxGenericStack},
-    traits::{
-        ArenaCloneFromWith, ArenaDirectInsertTrait, ArenaTrait, ChainArenaTrait,
-        DisjointableArenaTrait, Ptr,
-    },
+    traits::{ArenaCloneFromWith, ArenaTrait, ChainArenaTrait, DisjointableArenaTrait, Ptr},
     utils::traits::{ArenaBacking, SetMaxCapacity},
 };
 
@@ -548,14 +545,9 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// // make on the backing of the recaster arena and how fallibility should be
     /// // handled)
     /// fn compress_canonical_recaster<P: Ptr, T>(
-    ///     a: &mut SimpleOrdArena<P, T, HeapBacking>,
+    ///     this: &mut SimpleOrdArena<P, T, HeapBacking>,
     ///     reset_generation: bool,
     /// ) -> DirectArena<P, P, HeapBacking> {
-    ///     // This arena will be a recaster in which we create a mapping from the old
-    ///     // `Ptr` domain to the new one. We use a `DirectArena` for this since it will
-    ///     // only be used for this purpose and then discarded.
-    ///     let mut recaster = DirectArena::<P, P, HeapBacking>::new();
-    ///     let mut res = SimpleOrdArena::<P, T, HeapBacking>::new();
     ///     let new_generation = if reset_generation {
     ///         // reset for compactness, only safe if logically old domain `Ptr`s can be
     ///         // eliminated
@@ -563,11 +555,27 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     ///     } else {
     ///         // use incremented generation so that all `Ptr`s of the old domain are
     ///         // invalidated
-    ///         P::Gen::generational_inc(a.generation()).0
+    ///         P::Gen::generational_inc(this.generation()).0
     ///     };
-    ///     res.transfer_canonical_reallocating(new_generation, a, |_, o, _| o.allow(), &mut recaster)
+    ///     // This arena will be a recaster in which we create a mapping from the old `Ptr`
+    ///     // domain to the new one. We use a `DirectArena` for this since it will only
+    ///     // be used for this purpose and then discarded.
+    ///     let mut recaster = DirectArena::<P, P, HeapBacking>::new();
+    ///     // This all the keys of the mapping, by cloning the `Ptr` validities of the
+    ///     // pre-transfer `this` into the recaster, and puts in invalid placeholders
+    ///     // for the new domain because we do not know them yet.
+    ///     recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
+    ///     let mut replacement = SimpleOrdArena::<P, T, HeapBacking>::new();
+    ///     // Transfer and write the new `Ptr`s at the indexes of the corresponding old
+    ///     // `Ptr`s, using the values seen by the closure to complete the mapping of
+    ///     // the old domain to the new domain.
+    ///     replacement
+    ///         .transfer_canonical_reallocating(new_generation, this, |q, o, p| {
+    ///             recaster[q] = p;
+    ///             o.allow()
+    ///         })
     ///         .unwrap();
-    ///     *a = res;
+    ///     *this = replacement;
     ///     recaster
     /// }
     ///
@@ -627,13 +635,11 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         U,
         B1: ArenaBacking,
         F: FnMut(Q, InvalidationOption<U>, P) -> T,
-        D: ArenaDirectInsertTrait<Q, P>,
     >(
         &mut self,
         new_generation: P::Gen,
         source: &mut SimpleOrdArena<Q, U, B1>,
         mut map: F,
-        recaster: &mut D,
     ) -> Result<(), ReallocationError> {
         // REF(ord_rebalance_guard)
         struct Rebalance<'a, P: Ptr, T, B: ArenaBacking>(&'a mut SimpleOrdArena<P, T, B>);
@@ -651,18 +657,18 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
 
         let this = Rebalance(self);
         // by chain arena canonicalization this also sets it up how we want it
-        let res = this.0.a.transfer_canonical_reallocating(
-            new_generation,
-            &mut source.a,
-            |q, o, p| SimpleOrdArenaNode {
-                t: map(q, o.map(|node| node.t), p),
-                p_back: None,
-                p_tree0: None,
-                p_tree1: None,
-                rank: 0,
-            },
-            recaster,
-        );
+        let res =
+            this.0
+                .a
+                .transfer_canonical_reallocating(new_generation, &mut source.a, |q, o, p| {
+                    SimpleOrdArenaNode {
+                        t: map(q, o.map(|node| node.t), p),
+                        p_back: None,
+                        p_tree0: None,
+                        p_tree1: None,
+                        rank: 0,
+                    }
+                });
         if res.is_err() {
             // all of the fallible points happen before anything is modified, so the
             // preexisting tree is still intact and must not be rebalanced over

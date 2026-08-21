@@ -10,7 +10,7 @@ use testcrate::{
 };
 use triple_arena::{
     ChainArena, SimpleOrdArena, StackBacking,
-    traits::{ArenaTrait, Ptr},
+    traits::{ArenaCloneFromWith, ArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
 #[cfg(feature = "alloc")]
@@ -85,7 +85,13 @@ fn fuzz_chain_arena() -> Result<(), StackedError> {
                     },
                     |a, a1, map| a.clone_from_with(a1, map),
                     |a, new_gen, src, map, recaster| {
-                        a.transfer_canonical_reallocating(new_gen, src, map, recaster)
+                        recaster
+                            .clone_from_with(src, |_, _| Ptr::invalid())
+                            .unwrap();
+                        a.transfer_canonical_reallocating(new_gen, src, |q, t, p| {
+                            recaster[q] = p;
+                            map(q, t, p)
+                        })
                     },
                 )
             },
@@ -117,7 +123,13 @@ fn fuzz_chain_arena() -> Result<(), StackedError> {
                         },
                         |a, a1, map| a.clone_from_with(a1, map),
                         |a, new_gen, src, map, recaster| {
-                            a.transfer_canonical_reallocating(new_gen, src, map, recaster)
+                            recaster
+                                .clone_from_with(src, |_, _| Ptr::invalid())
+                                .unwrap();
+                            a.transfer_canonical_reallocating(new_gen, src, |q, t, p| {
+                                recaster[q] = p;
+                                map(q, t, p)
+                            })
                         },
                     )
                 },
@@ -145,7 +157,13 @@ fn fuzz_chain_arena() -> Result<(), StackedError> {
                         },
                         |a, a1, map| a.clone_from_with(a1, map),
                         |a, new_gen, src, map, recaster| {
-                            a.transfer_canonical_reallocating(new_gen, src, map, recaster)
+                            recaster
+                                .clone_from_with(src, |_, _| Ptr::invalid())
+                                .unwrap();
+                            a.transfer_canonical_reallocating(new_gen, src, |q, t, p| {
+                                recaster[q] = p;
+                                map(q, t, p)
+                            })
                         },
                     )
                 },
@@ -174,7 +192,13 @@ fn fuzz_chain_arena() -> Result<(), StackedError> {
                     },
                     |a, a1, map| a.clone_from_with(a1, map),
                     |a, new_gen, src, map, recaster| {
-                        a.transfer_canonical_reallocating(new_gen, src, map, recaster)
+                        recaster
+                            .clone_from_with(src, |_, _| Ptr::invalid())
+                            .unwrap();
+                        a.transfer_canonical_reallocating(new_gen, src, |q, t, p| {
+                            recaster[q] = p;
+                            map(q, t, p)
+                        })
                     },
                 )
             })

@@ -9,9 +9,8 @@ use crate::{
     Arena, InvalidationOption, LinkNoGen,
     errors::{MaxCapacityReductionError, ReallocationError},
     traits::{
-        Advancer, ArenaCloneFromWith, ArenaDirectInsertEntryTrait, ArenaDirectInsertTrait,
-        ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait, ChainArenaTrait, CompactArenaTrait,
-        Ptr, SetMaxCapacity,
+        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
+        ChainArenaTrait, CompactArenaTrait, Ptr, SetMaxCapacity,
     },
     utils::{
         ArenaSlot,
@@ -264,8 +263,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         }
     }
 
-    // FIXME I forgot to remove the recaster
-
     /// The chain arena counterpart of
     /// [transfer_reallocating](Arena::transfer_reallocating), transferring
     /// every entry out of `source` and into `self`, but also in a
@@ -280,11 +277,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// destination `P: Ptr`, and then `map` must return the `T` that will be
     /// inserted into `self`. The new links are all given `new_generation`.
     ///
-    /// `recaster` is overwritten with the complete mapping of the old `Q`
-    /// domain to the new `P` domain, which is what external `Q`s should be
-    /// recast with. Its keys are the raw `Q::Inx`s, so it needs to be able to
-    /// reach the largest index in `source` and not just `source.len()`.
-    ///
     /// The normal [transfer_reallocating](Arena::transfer_reallocating) keeps
     /// the entries in the same order of increasing index before and after the
     /// transfer, but this function will reorder entries to bring links of
@@ -295,14 +287,13 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// start link, while cyclic chains begin at the link that the
     /// source advancer reaches first.
     ///
-    /// Reallocation only occurs if `source.len() > self.capacity()` or if
-    /// `recaster` cannot already reach the largest index in `source`. All of
+    /// Reallocation only occurs if `source.len() > self.capacity()`. All of
     /// the fallible points happen before anything is modified, such that
-    /// `self`, `source`, and `recaster` are logically unchanged if an error is
+    /// `self` and `source` are logically unchanged if an error is
     /// returned. An error is returned if a reallocation fails, if a
     /// [max_capacity](ArenaTrait::max_capacity) limit prevents a reallocation,
     /// or if `source.len()` or the largest index in `source` is more than what
-    /// `P::Inx` or `Q::Inx` can represent.
+    /// `P::Inx` can represent.
     ///
     /// This is the chain arena counterpart of the recaster example on
     /// [compress_with](ArenaTrait::compress_with). Links have to travel between
@@ -320,14 +311,9 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// // make on the backing of the recaster arena and how fallibility should be
     /// // handled)
     /// fn compress_canonical_recaster<P: Ptr, T>(
-    ///     a: &mut ChainArena<P, T, HeapBacking>,
+    ///     this: &mut ChainArena<P, T, HeapBacking>,
     ///     reset_generation: bool,
     /// ) -> DirectArena<P, P, HeapBacking> {
-    ///     // This arena will be a recaster in which we create a mapping from the old
-    ///     // `Ptr` domain to the new one. We use a `DirectArena` for this since it will
-    ///     // only be used for this purpose and then discarded.
-    ///     let mut recaster = DirectArena::<P, P, HeapBacking>::new();
-    ///     let mut res = ChainArena::<P, T, HeapBacking>::new();
     ///     let new_generation = if reset_generation {
     ///         // reset for compactness, only safe if logically old domain `Ptr`s can be
     ///         // eliminated
@@ -335,11 +321,27 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     ///     } else {
     ///         // use incremented generation so that all `Ptr`s of the old domain are
     ///         // invalidated
-    ///         P::Gen::generational_inc(a.generation()).0
+    ///         P::Gen::generational_inc(this.generation()).0
     ///     };
-    ///     res.transfer_canonical_reallocating(new_generation, a, |_, o, _| o.allow(), &mut recaster)
+    ///     // This arena will be a recaster in which we create a mapping from the old `Ptr`
+    ///     // domain to the new one. We use a `DirectArena` for this since it will only
+    ///     // be used for this purpose and then discarded.
+    ///     let mut recaster = DirectArena::<P, P, HeapBacking>::new();
+    ///     // This all the keys of the mapping, by cloning the `Ptr` validities of the
+    ///     // pre-transfer `this` into the recaster, and puts in invalid placeholders
+    ///     // for the new domain because we do not know them yet.
+    ///     recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
+    ///     let mut replacement = ChainArena::<P, T, HeapBacking>::new();
+    ///     // Transfer and write the new `Ptr`s at the indexes of the corresponding old
+    ///     // `Ptr`s, using the values seen by the closure to complete the mapping of
+    ///     // the old domain to the new domain.
+    ///     replacement
+    ///         .transfer_canonical_reallocating(new_generation, this, |q, o, p| {
+    ///             recaster[q] = p;
+    ///             o.allow()
+    ///         })
     ///         .unwrap();
-    ///     *a = res;
+    ///     *this = replacement;
     ///     recaster
     /// }
     ///
@@ -402,17 +404,14 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
         U,
         A: ChainArenaTrait<Q, U> + CompactArenaTrait<Q, U>,
         F: FnMut(Q, InvalidationOption<U>, P) -> T,
-        D: ArenaDirectInsertTrait<Q, P>,
     >(
         &mut self,
         new_generation: P::Gen,
         source: &mut A,
         mut map: F,
-        recaster: &mut D,
     ) -> Result<(), ReallocationError> {
         let Some(len) = NonZeroUsize::new(source.len()) else {
             // follow what the other path would logically do
-            recaster.clear().allow();
             self.clear().allow();
             self.set_generation(new_generation);
             return Ok(());
@@ -426,18 +425,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
             self.reallocate_min_capacity(len.get())?;
         }
 
-        // REF(careful_index_checking)
-        let q_last = source.find_last_inx_ptr().unwrap();
-        let Some(raw_last) = Q::Inx::try_into_usize(q_last.inx()) else {
-            return Err(ReallocationError::AllocError);
-        };
-        if raw_last.get() > recaster.capacity() {
-            // max capacity is tested here
-            recaster.reallocate_min_capacity(raw_last.get())?;
-        }
-
         // the rest should be infallible if soft invariants are followed
-        recaster.clear().allow();
         self.clear().allow();
         self.set_generation(new_generation);
 
@@ -470,12 +458,6 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
                     chain_first = Some(p.inx());
                 }
                 chain_prev = Some(p.inx());
-                match recaster.direct_insert_within_capacity(q) {
-                    Ok(entry) => {
-                        entry.insert(p);
-                    }
-                    _ => unreachable!(),
-                }
             }
             if cyclic
                 && let Some(first) = chain_first

@@ -21,12 +21,10 @@ fn compress_with_example() {
         // for the new domain because we do not know them yet.
         recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
         // Compress and write the new `Ptr`s at the indexes of the corresponding old
-        // `Ptr`s, and using the values seen by the closure to complete the mapping of
+        // `Ptr`s, using the values seen by the closure to complete the mapping of
         // the old domain to the new domain.
-        this.compress_with(reset_generation, |p, _, q| {
-            *recaster.get_mut(p).unwrap() = q
-        })
-        .allow();
+        this.compress_with(reset_generation, |q, _, p| recaster[q] = p)
+            .allow();
         recaster
     }
 
@@ -129,14 +127,9 @@ fn chain_transfer_canonical_example() {
     // make on the backing of the recaster arena and how fallibility should be
     // handled)
     fn compress_canonical_recaster<P: Ptr, T>(
-        a: &mut ChainArena<P, T, HeapBacking>,
+        this: &mut ChainArena<P, T, HeapBacking>,
         reset_generation: bool,
     ) -> DirectArena<P, P, HeapBacking> {
-        // This arena will be a recaster in which we create a mapping from the old
-        // `Ptr` domain to the new one. We use a `DirectArena` for this since it will
-        // only be used for this purpose and then discarded.
-        let mut recaster = DirectArena::<P, P, HeapBacking>::new();
-        let mut res = ChainArena::<P, T, HeapBacking>::new();
         let new_generation = if reset_generation {
             // reset for compactness, only safe if logically old domain `Ptr`s can be
             // eliminated
@@ -144,11 +137,27 @@ fn chain_transfer_canonical_example() {
         } else {
             // use incremented generation so that all `Ptr`s of the old domain are
             // invalidated
-            P::Gen::generational_inc(a.generation()).0
+            P::Gen::generational_inc(this.generation()).0
         };
-        res.transfer_canonical_reallocating(new_generation, a, |_, o, _| o.allow(), &mut recaster)
+        // This arena will be a recaster in which we create a mapping from the old `Ptr`
+        // domain to the new one. We use a `DirectArena` for this since it will only
+        // be used for this purpose and then discarded.
+        let mut recaster = DirectArena::<P, P, HeapBacking>::new();
+        // This all the keys of the mapping, by cloning the `Ptr` validities of the
+        // pre-transfer `this` into the recaster, and puts in invalid placeholders
+        // for the new domain because we do not know them yet.
+        recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
+        let mut replacement = ChainArena::<P, T, HeapBacking>::new();
+        // Transfer and write the new `Ptr`s at the indexes of the corresponding old
+        // `Ptr`s, using the values seen by the closure to complete the mapping of
+        // the old domain to the new domain.
+        replacement
+            .transfer_canonical_reallocating(new_generation, this, |q, o, p| {
+                recaster[q] = p;
+                o.allow()
+            })
             .unwrap();
-        *a = res;
+        *this = replacement;
         recaster
     }
 
@@ -264,14 +273,9 @@ fn simple_ord_arena_transfer_canonical_example() {
     // make on the backing of the recaster arena and how fallibility should be
     // handled)
     fn compress_canonical_recaster<P: Ptr, T>(
-        a: &mut SimpleOrdArena<P, T, HeapBacking>,
+        this: &mut SimpleOrdArena<P, T, HeapBacking>,
         reset_generation: bool,
     ) -> DirectArena<P, P, HeapBacking> {
-        // This arena will be a recaster in which we create a mapping from the old
-        // `Ptr` domain to the new one. We use a `DirectArena` for this since it will
-        // only be used for this purpose and then discarded.
-        let mut recaster = DirectArena::<P, P, HeapBacking>::new();
-        let mut res = SimpleOrdArena::<P, T, HeapBacking>::new();
         let new_generation = if reset_generation {
             // reset for compactness, only safe if logically old domain `Ptr`s can be
             // eliminated
@@ -279,11 +283,27 @@ fn simple_ord_arena_transfer_canonical_example() {
         } else {
             // use incremented generation so that all `Ptr`s of the old domain are
             // invalidated
-            P::Gen::generational_inc(a.generation()).0
+            P::Gen::generational_inc(this.generation()).0
         };
-        res.transfer_canonical_reallocating(new_generation, a, |_, o, _| o.allow(), &mut recaster)
+        // This arena will be a recaster in which we create a mapping from the old `Ptr`
+        // domain to the new one. We use a `DirectArena` for this since it will only
+        // be used for this purpose and then discarded.
+        let mut recaster = DirectArena::<P, P, HeapBacking>::new();
+        // This all the keys of the mapping, by cloning the `Ptr` validities of the
+        // pre-transfer `this` into the recaster, and puts in invalid placeholders
+        // for the new domain because we do not know them yet.
+        recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
+        let mut replacement = SimpleOrdArena::<P, T, HeapBacking>::new();
+        // Transfer and write the new `Ptr`s at the indexes of the corresponding old
+        // `Ptr`s, using the values seen by the closure to complete the mapping of
+        // the old domain to the new domain.
+        replacement
+            .transfer_canonical_reallocating(new_generation, this, |q, o, p| {
+                recaster[q] = p;
+                o.allow()
+            })
             .unwrap();
-        *a = res;
+        *this = replacement;
         recaster
     }
 
