@@ -1,3 +1,4 @@
+mod impl_surject_arena_trait;
 mod surject_arena;
 pub mod surject_iterators;
 

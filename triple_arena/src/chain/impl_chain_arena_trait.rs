@@ -450,9 +450,9 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
 
     fn drain_chain(
         &mut self,
-        p: P,
+        p_init: P,
     ) -> Option<impl Iterator<Item = InvalidationOption<(P, LinkNoGen<P, T>)>>> {
-        self.internal_drain_chain(p)
+        self.internal_drain_chain(p_init)
     }
 
     fn compress_canonical(&mut self, reset_generation: bool) -> InvalidationOption<()> {

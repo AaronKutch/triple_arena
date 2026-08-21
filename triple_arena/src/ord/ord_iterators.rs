@@ -3,7 +3,7 @@
 use recasting::{Recast, Recaster};
 
 use crate::{
-    ChainArena, SimpleOrdArena, arena_iterators,
+    ChainArena, InvalidationOption, SimpleOrdArena, arena_iterators,
     chain::ChainArenaTrait,
     chain_iterators,
     traits::{Advancer, ArenaTrait, DisjointableArenaTrait, Ptr},
@@ -95,15 +95,13 @@ impl<P: Ptr, T, B: ArenaBacking> Drop for OrderedDrain<'_, P, T, B> {
 }
 
 impl<P: Ptr, T, B: ArenaBacking> Iterator for OrderedDrain<'_, P, T, B> {
-    type Item = (P, T);
+    type Item = InvalidationOption<(P, T)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // TODO if we can make it !Forget, we can advance over the chain instead of
         // having to use `O(log n)` ops
-        self.adv.advance(self.arena).map(|p| {
-            // allow generation overflows
-            (p, self.arena.remove(p).allow().unwrap())
-        })
+        let p = self.adv.advance(self.arena)?;
+        Some(self.arena.remove(p).map(|t| (p, t)).unwrap())
     }
 }
 

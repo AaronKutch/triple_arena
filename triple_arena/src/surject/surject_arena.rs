@@ -292,7 +292,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
 
     /// See [ArenaTrait::with_min_capacity], this has separate capacities for
     /// the keys and vals
-    pub fn with_min_capacity(
+    pub fn with_min_capacity_separated(
         min_capacity_keys: usize,
         min_capacity_vals: usize,
     ) -> Result<Self, AllocError> {

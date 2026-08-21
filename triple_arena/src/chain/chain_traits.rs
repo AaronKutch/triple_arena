@@ -371,11 +371,11 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
         p: P::Inx,
     ) -> InvalidationResult<(P::Gen, LinkNoGen<P, T>)>;
 
-    /// Efficiently removes the entire chain that `p` is connected to (which
-    /// might only include itself), yielding the links in the same order that
-    /// [advancer_chain](ChainArenaTrait::advancer_chain) would advance over
-    /// them. If the iterator is dropped, the rest of the chain is removed.
-    /// Returns `None` if `p` is not valid.
+    /// Efficiently removes the entire chain that `p_init` is connected to
+    /// (which might only include itself), yielding the links in the same
+    /// order that [advancer_chain](ChainArenaTrait::advancer_chain) would
+    /// advance over them. If the iterator is dropped, the rest of the chain
+    /// is removed. Returns `None` if `p` is not valid.
     ///
     /// # Unwind Safety
     ///
@@ -383,7 +383,7 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// that have yet to be removed are left in the arena as a valid chain.
     fn drain_chain(
         &mut self,
-        p: P,
+        p_init: P,
     ) -> Option<impl Iterator<Item = InvalidationOption<(P, LinkNoGen<P, T>)>>>;
 
     /// This is a more advanced version of [ArenaTrait::compress] that lays out

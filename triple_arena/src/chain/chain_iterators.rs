@@ -197,11 +197,11 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     // unordered iterator which can rely on directly accessing the internal stack
     // which has strong requirements).
 
-    pub(crate) fn internal_drain_chain(&mut self, p: P) -> Option<ChainDrain<'_, P, T, B>> {
-        if !self.contains(p) {
+    pub(crate) fn internal_drain_chain(&mut self, p_init: P) -> Option<ChainDrain<'_, P, T, B>> {
+        if !self.contains(p_init) {
             return None;
         }
-        let p_init = p.inx();
+        let p_init = p_init.inx();
         let prev_init = self.a.get_inx_unwrap(p_init).prev();
         Some(ChainDrain {
             arena: self,
