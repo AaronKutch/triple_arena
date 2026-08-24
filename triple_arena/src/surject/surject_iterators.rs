@@ -131,7 +131,7 @@ pub struct SurjectDrain<'a, P: Ptr, T, S, B: ArenaBacking> {
 
 impl<P: Ptr, T, S, B: ArenaBacking> Drop for SurjectDrain<'_, P, T, S, B> {
     fn drop(&mut self) {
-        self.arena.clear().allow();
+        while self.next().is_some() {}
     }
 }
 
