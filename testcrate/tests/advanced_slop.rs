@@ -11,13 +11,14 @@ use core::{
 };
 use std::{
     cmp::Ordering,
-    collections::hash_map::DefaultHasher,
+    collections::{HashSet, hash_map::DefaultHasher},
     panic::{AssertUnwindSafe, catch_unwind},
 };
 
+use star_rng::StarRng;
 use triple_arena::{
     Arena, ChainArena, DirectArena, InvalidationOption, InvalidationResult, Link, LinkInsertKind,
-    LinkNoGen, OrdEntryKind, OrdInsertKind, OrdPair, SimpleOrdArena, StackBacking,
+    LinkNoGen, OrdEntryKind, OrdInsertKind, OrdPair, SimpleOrdArena, StackBacking, SurjectArena,
     chain_iterators::ChainPtrAdvancer,
     errors::{AllocError, ChainInsertionError, OrdInsertionError, ReallocationError},
     ptr_struct,
@@ -1725,4 +1726,187 @@ fn chain_arena_into_iterators() {
     // and by value, which is a capacity drain that keeps the interlinks
     let owned: Vec<FlatLink> = a.into_iter().map(|(p, link)| flat_link(p, link)).collect();
     assert_eq!(owned, by_ref);
+}
+
+type Surj = SurjectArena<Q0, u16, u16, StackBacking<32>>;
+
+/// Returns `(element index, element, shared index, shared value)` for every
+/// element of `a`, in element index order
+fn surject_layout(a: &Surj) -> Vec<(usize, u16, usize, u16)> {
+    let (elements, shared_vals) = a.backing();
+    let mut res = vec![];
+    for i in 1..=elements.len() {
+        let Some(ArenaSlot::Allocated(_, link)) = elements.get(nz(i)) else {
+            continue;
+        };
+        let inx_shared = PtrInx::try_into_usize(link.t.p_shared.inx()).unwrap();
+        let Some(ArenaSlot::Allocated(_, shared)) = shared_vals.get(inx_shared) else {
+            panic!("element points to a free shared value slot")
+        };
+        res.push((i, link.t.t, inx_shared.get(), shared.s));
+    }
+    res
+}
+
+/// Returns `(shared index, shared value, element count)` for every shared value
+/// of `a`, in shared index order
+fn shared_layout(a: &Surj) -> Vec<(usize, u16, usize)> {
+    let (_, shared_vals) = a.backing();
+    let mut res = vec![];
+    for i in 1..=shared_vals.len() {
+        let Some(ArenaSlot::Allocated(_, shared)) = shared_vals.get(nz(i)) else {
+            continue;
+        };
+        res.push((i, shared.s, shared.element_count.get()));
+    }
+    res
+}
+
+/// The logical contents of `a` in a form that is invariant under every kind of
+/// compression: for each surject, its shared value and its sorted elements,
+/// with the surjects themselves sorted
+fn surject_logical(a: &Surj) -> Vec<(u16, Vec<u16>)> {
+    let mut seen = HashSet::new();
+    let mut res = vec![];
+    for p in a.ptrs().collect::<Vec<_>>() {
+        if seen.contains(&p) {
+            continue;
+        }
+        let mut elements = vec![];
+        let mut shared = None;
+        for (q, t, s) in a.iter_surject(p).unwrap() {
+            seen.insert(q);
+            elements.push(*t);
+            shared = Some(*s);
+        }
+        elements.sort_unstable();
+        res.push((shared.unwrap(), elements));
+    }
+    res.sort_unstable();
+    res
+}
+
+/// Builds a pseudorandom arena with distinct elements and shared values,
+/// checking invariants along the way
+fn random_surject(rng: &mut StarRng) -> Surj {
+    let mut a = Surj::new();
+    let mut ptrs: Vec<Q0> = vec![];
+    let mut counter = 0u16;
+    for _ in 0..rng.index_inclusive(40) {
+        let choice = rng.index_inclusive(7);
+        if (choice < 2) || ptrs.is_empty() {
+            if a.len() < 24 {
+                counter = counter.wrapping_add(1);
+                let t = counter;
+                counter = counter.wrapping_add(1);
+                ptrs.push(a.insert_surject(t, counter));
+            }
+        } else if choice < 5 {
+            if a.len() < 24 {
+                let p = ptrs[rng.index(ptrs.len()).unwrap()];
+                counter = counter.wrapping_add(1);
+                ptrs.push(a.insert(p, counter));
+            }
+        } else if choice < 7 {
+            let i = rng.index(ptrs.len()).unwrap();
+            let p = ptrs.swap_remove(i);
+            a.remove_element(p).allow().unwrap();
+        } else {
+            let i = rng.index(ptrs.len()).unwrap();
+            let p = ptrs.swap_remove(i);
+            a.remove_shared(p).allow().unwrap();
+            ptrs.retain(|q| a.contains(*q));
+        }
+        SurjectArena::_check_invariants(&a).unwrap();
+    }
+    a
+}
+
+/// Checks that `compress_canonical` preserves the contents while producing the
+/// canonical layout
+#[test]
+fn surject_compress_canonical() {
+    let mut rng = StarRng::new(0);
+    // totals over all the rounds, to check that the interesting cases are
+    // actually being reached: multiple surjects per arena, and layouts that
+    // `compress_canonical` really has to permute
+    let mut total_shared = 0usize;
+    let mut total_moved = 0usize;
+    for _ in 0..2000 {
+        let mut a = random_surject(&mut rng);
+        let expected = surject_logical(&a);
+        let before = surject_layout(&a);
+        a.compress_canonical(rng.next_bool()).allow();
+        SurjectArena::_check_invariants(&a).unwrap();
+        assert_eq!(surject_logical(&a), expected);
+
+        let layout = surject_layout(&a);
+        assert_eq!(layout.len(), a.len());
+        if before != layout {
+            total_moved = total_moved.wrapping_add(1);
+        }
+        // both backings are compressed down to exactly what is used
+        assert_eq!(a.backing().0.len(), a.len());
+        assert_eq!(a.backing().1.len(), a.len_shared());
+        // the elements are at `1..=len`, each surject occupies one contiguous run
+        // of them, and the shared indexes are `1..=len_shared` in that same order
+        let mut expected_shared = 0usize;
+        let mut prev_shared = 0usize;
+        for (i, entry) in layout.iter().enumerate() {
+            assert_eq!(entry.0, i.wrapping_add(1));
+            if entry.2 != prev_shared {
+                expected_shared = expected_shared.wrapping_add(1);
+                assert_eq!(entry.2, expected_shared);
+                prev_shared = entry.2;
+            }
+        }
+        assert_eq!(expected_shared, a.len_shared());
+        total_shared = total_shared.wrapping_add(a.len_shared());
+
+        // compressing an already canonical arena moves nothing
+        a.compress_canonical(false).allow();
+        SurjectArena::_check_invariants(&a).unwrap();
+        assert_eq!(surject_layout(&a), layout);
+    }
+    assert_eq!((total_shared, total_moved), (5303, 1384));
+}
+
+/// Checks that `ArenaTrait::compress_with` compresses the elements and leaves
+/// the shared values exactly where they were
+#[test]
+fn surject_compress_with() {
+    let mut rng = StarRng::new(1);
+    let mut total_shared = 0usize;
+    let mut total_holes = 0usize;
+    for _ in 0..2000 {
+        let mut a = random_surject(&mut rng);
+        let expected = surject_logical(&a);
+        let shared_before = shared_layout(&a);
+        if shared_before.len() != a.backing().1.len() {
+            // there is a free slot in the middle of the shared values, which
+            // this deliberately does not compress away
+            total_holes = total_holes.wrapping_add(1);
+        }
+        let mut mapping = vec![];
+        a.compress_with(rng.next_bool(), |p, t, q| mapping.push((p, *t, q)))
+            .allow();
+        SurjectArena::_check_invariants(&a).unwrap();
+        assert_eq!(surject_logical(&a), expected);
+        assert_eq!(shared_layout(&a), shared_before);
+
+        // every element was mapped once, in old index order, onto `1..=len`
+        assert_eq!(mapping.len(), a.len());
+        assert_eq!(a.backing().0.len(), a.len());
+        for (i, (_, t, q)) in mapping.iter().enumerate() {
+            assert_eq!(
+                PtrInx::try_into_usize(q.inx()).unwrap().get(),
+                i.wrapping_add(1)
+            );
+            assert_eq!(a.get(*q).unwrap(), t);
+        }
+        total_shared = total_shared.wrapping_add(a.len_shared());
+    }
+    // as above, check that the interesting cases are reached, in particular the
+    // free slots among the shared values that this leaves alone
+    assert_eq!((total_shared, total_holes), (5283, 550));
 }

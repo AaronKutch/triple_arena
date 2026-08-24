@@ -100,12 +100,27 @@ impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B
         self.elements.clear()
     }
 
+    /// Note that this only compresses the elements. A shared value cannot be
+    /// moved without also updating the `Ptr` indirections of every element of
+    /// its surject, and those can only be found by starting from an element of
+    /// that surject, which the relative ordering this preserves does not give
+    /// us in general. Use
+    /// [compress_canonical](SurjectArena::compress_canonical), which lays the
+    /// surjects out contiguously and can therefore compress the shared values
+    /// as well.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If `map` panics, this follows
+    /// [compress_with](ArenaTrait::compress_with) on the elements, and the
+    /// shared values are left untouched, so `self` is left in a valid state.
     fn compress_with<F: FnMut(P, &mut T, P)>(
         &mut self,
         reset_generation: bool,
         mut map: F,
     ) -> InvalidationOption<()> {
-        todo!();
+        self.elements
+            .compress_with(reset_generation, |p, element, q| map(p, &mut element.t, q))
     }
 }
 

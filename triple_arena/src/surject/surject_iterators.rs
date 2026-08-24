@@ -149,9 +149,9 @@ impl<P: Ptr, T, S, B: ArenaBacking> Iterator for SurjectDrain<'_, P, T, S, B> {
     }
 }
 
-/// A draining iterator over all of the `(P, T, Option<S>)` in a `SurjectArena`. Each surject is
-/// drained completely before moving onto the next one, so the shared value
-/// arrives with the last element of each surject.
+/// A draining iterator over all of the `(P, T, Option<S>)` in a `SurjectArena`.
+/// Each surject is drained completely before moving onto the next one, so the
+/// shared value arrives with the last element of each surject.
 pub struct Drain<'a, P: Ptr, T, S, B: ArenaBacking> {
     arena: &'a mut SurjectArena<P, T, S, B>,
     adv0: PtrAdvancer<P>,

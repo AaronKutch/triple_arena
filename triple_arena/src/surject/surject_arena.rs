@@ -10,7 +10,7 @@ use fmt::Debug;
 
 use crate::{
     Arena, ChainArena, InvalidationOption, InvalidationResult, LinkInsertKind, LinkNoGen,
-    arena::ArenaSlot,
+    arena::{ArenaSlot, from_checked_ptr, from_checked_raw},
     errors::{
         AllocError, ChainInsertionError, MaxCapacityReductionError, NotWithinCapacityError,
         ReallocationError,
@@ -20,8 +20,8 @@ use crate::{
         ChainArenaTrait, DisjointableArenaTrait, Ptr, SetMaxCapacity,
     },
     utils::{
-        PtrNoGen,
-        traits::{ArenaBacking, PtrInx},
+        PtrNoGen, nzusize_iter,
+        traits::{ArenaBacking, NonZeroInxGenericStack, PtrInx},
     },
 };
 
@@ -756,9 +756,12 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
 
     /// This is similar to
     /// [compress_canonical](crate::traits::ChainArenaTrait::compress_canonical),
-    /// laying
-    /// out the elements within the same surject to be contiguous with one
-    /// another, improving cache locality.
+    /// laying out the elements within the same surject to be contiguous with
+    /// one another, improving cache locality. The shared values are laid out
+    /// canonically as well, such that their indexes are `1..=self.len_shared()`
+    /// in the same order that their surjects occupy the elements. Unlike
+    /// [compress_with](ArenaTrait::compress_with), which only compresses the
+    /// elements, this also removes any free slots among the shared values.
     ///
     /// Because an element can be internally swapped multiple times to achieve
     /// this in-place in the allocation, this cannot have a map. Use
@@ -766,12 +769,92 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
     /// if you need a recaster.
     pub fn compress_canonical(&mut self, reset_generation: bool) -> InvalidationOption<()> {
         let res = self.elements.compress_canonical(reset_generation);
-        // because we can't lookup elements from shared values, and because it is the
-        // most canonical thing and probably results in better locality, swap shared
-        // values until they are in an order corresponding with their surjects
+        let Some(len_shared) = NonZeroUsize::new(self.shared_vals.len()) else {
+            // the arena is empty, but there can still be free slots to remove
+            self.shared_vals.remove_free_end_slots();
+            self.shared_vals.freelist_root = None;
+            return res;
+        };
 
-        // FIXME
+        // The elements are now at indexes `1..=self.len()` with each surject occupying
+        // one contiguous run of them, so the surjects have a well defined order and we
+        // want the `k`th of them to have its shared value at index `k`. Because we
+        // can't lookup elements from shared values, moving a shared value to where we
+        // want it would displace another one that we have no way of finding the
+        // elements of. Instead we do this in three passes.
+
+        // REF(surject_canonical_perm) First, record the permutation. The `k`th surject
+        // starts at element index `s >= k`, because every surject has at least one
+        // element, so we can write the current index of its shared value into element
+        // `k` without clobbering anything we still need: element `k` belongs to a
+        // surject we have already recorded, or it is element `s` itself in which case
+        // we write back the same value that we just read.
+        let mut s = NonZeroUsize::new(1).unwrap();
+        for raw_k in nzusize_iter(NonZeroUsize::new(1).unwrap(), Some(len_shared)) {
+            let inx_s = from_checked_raw::<P>(s);
+            let p_shared = self.elements.get_inx_unwrap(inx_s).p_shared;
+            let element_count = self
+                .shared_vals
+                .get_inx_unwrap(p_shared.inx())
+                .element_count;
+            self.elements
+                .get_inx_mut_unwrap(from_checked_raw::<P>(raw_k))
+                .p_shared = p_shared;
+            s = s.checked_add(element_count.get()).unwrap();
+        }
+
+        // Second, apply that permutation to the shared value slots in place. This is
+        // the standard trick for a gather permutation, where an entry that has already
+        // been moved out of a finalized slot is found again by following the
+        // permutation forwards until it lands on a slot that has not been finalized
+        // yet.
+        for raw_i in nzusize_iter(NonZeroUsize::new(1).unwrap(), Some(len_shared)) {
+            let mut raw_j = self.perm_entry(raw_i);
+            while raw_j < raw_i {
+                raw_j = self.perm_entry(raw_j);
+            }
+            if raw_j != raw_i {
+                let [slot_i, slot_j] = self
+                    .shared_vals
+                    .m
+                    .get_disjoint_mut([raw_i, raw_j])
+                    .unwrap_or_else(|_| unreachable!());
+                mem::swap(slot_i, slot_j);
+            }
+        }
+
+        // Third, overwrite the permutation and every other element with the final
+        // indexes. Each shared value knows how many elements its surject has, and they
+        // are in the same order, so this is just a matter of walking both in tandem.
+        let mut s = NonZeroUsize::new(1).unwrap();
+        for raw_k in nzusize_iter(NonZeroUsize::new(1).unwrap(), Some(len_shared)) {
+            let inx_k = from_checked_raw::<PtrNoGen<P>>(raw_k);
+            let element_count = self.shared_vals.get_inx_unwrap(inx_k).element_count.get();
+            let p_shared = Ptr::_from_raw(inx_k, ());
+            for _ in 0..element_count {
+                self.elements
+                    .get_inx_mut_unwrap(from_checked_raw::<P>(s))
+                    .p_shared = p_shared;
+                s = s.checked_add(1).unwrap();
+            }
+        }
+
+        // all of the shared values are now at `1..=len_shared` and everything after
+        // them is free
+        self.shared_vals.remove_free_end_slots();
+        self.shared_vals.freelist_root = None;
         res
+    }
+
+    /// REF(surject_canonical_perm) Reads back an entry of the permutation that
+    /// the first pass of [compress_canonical](SurjectArena::compress_canonical)
+    /// wrote into the first `self.len_shared()` elements
+    fn perm_entry(&self, raw_inx: NonZeroUsize) -> NonZeroUsize {
+        let p_shared = self
+            .elements
+            .get_inx_unwrap(from_checked_raw::<P>(raw_inx))
+            .p_shared;
+        from_checked_ptr::<PtrNoGen<P>>(p_shared.inx())
     }
 
     /// FIXME recaster example
@@ -873,8 +956,6 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
         // FIXME try to reallocate the shared values and fail ahead of time
         self.elements.clone_from_with(&source.elements, |p, link| {
             let t = map_element(p, &link.t.t);
-            // both clones preserve indexes exactly, so the indirection carries over
-            // unchanged
             SurjectElement {
                 t,
                 p_shared: link.t.p_shared,
