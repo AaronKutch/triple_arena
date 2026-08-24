@@ -291,15 +291,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         Ok(())
     }
 
-    /// Creates an empty surjection arena, which may have any capacity of keys
-    /// and any capacity of values to start with
-    pub fn new() -> Self {
-        Self {
-            keys: ChainArena::new(),
-            vals: Arena::new(),
-        }
-    }
-
     /// See [ArenaTrait::with_min_capacity], this has separate capacities for
     /// the keys and vals
     pub fn with_min_capacity_separated(

@@ -1,5 +1,7 @@
 //! for ease of copying to the doc examples
 
+use triple_arena::traits::ArenaTrait;
+
 // SYNC(triple_arena/src/arena/arena_traits.rs, compress_with)
 #[test]
 fn compress_with_example() {

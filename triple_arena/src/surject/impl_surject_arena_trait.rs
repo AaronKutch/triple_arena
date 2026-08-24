@@ -8,7 +8,7 @@ use crate::{
     utils::traits::ArenaBacking,
 };
 
-impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, B> {
+impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B> {
     type PtrAdvancer = surject_iterators::PtrAdvancer<P>;
 
     fn new() -> Self {
@@ -98,7 +98,7 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, B> {
     }
 }
 
-impl<P: Ptr, T, B: ArenaBacking> DisjointableArenaTrait<P, T> for SurjectArena<P, T, B> {
+impl<P: Ptr, T, S, B: ArenaBacking> DisjointableArenaTrait<P, T> for SurjectArena<P, T, S, B> {
     fn get_disjoint_inx_mut<const N: usize>(
         &mut self,
         indices: [<P as Ptr>::Inx; N],
@@ -116,4 +116,4 @@ impl<P: Ptr, T, B: ArenaBacking> DisjointableArenaTrait<P, T> for SurjectArena<P
     }
 }
 
-impl<P: Ptr, T, B: ArenaBacking> CompactArenaTrait<P, T> for SurjectArena<P, T, B> {}
+impl<P: Ptr, T, S, B: ArenaBacking> CompactArenaTrait<P, T> for SurjectArena<P, T, S, B> {}
