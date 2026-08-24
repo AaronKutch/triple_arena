@@ -90,7 +90,7 @@ impl<'a, P: Ptr, K, V, B: ArenaBacking> Iterator for IterSurject<'a, P, K, V, B>
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(p) = self.adv.advance(self.arena) {
-            Some((p, self.arena.get_key(p).unwrap(), self.surject_val.unwrap()))
+            Some((p, self.arena.get(p).unwrap(), self.surject_val.unwrap()))
         } else {
             None
         }

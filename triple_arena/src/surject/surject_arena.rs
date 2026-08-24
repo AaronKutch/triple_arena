@@ -80,9 +80,9 @@ pub(crate) struct Val<V> {
 /// // set can be used with the same `O(1)` computational complexity incurred.
 /// let p2_42 = a.insert_key(p0_42, "key2".to_owned());
 ///
-/// assert_eq!(a.get_key(p0_42).unwrap(), "key0");
-/// assert_eq!(a.get_key(p1_42).unwrap(), "key1");
-/// assert_eq!(a.get_key(p2_42).unwrap(), "key2");
+/// assert_eq!(a.get(p0_42).unwrap(), "key0");
+/// assert_eq!(a.get(p1_42).unwrap(), "key1");
+/// assert_eq!(a.get(p2_42).unwrap(), "key2");
 /// assert_eq!(a.get_val(p0_42).unwrap(), "42");
 /// assert_eq!(a.get_val(p1_42).unwrap(), "42");
 /// assert_eq!(a.get_val(p2_42).unwrap(), "42");
@@ -318,10 +318,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         Some(self.vals.get_inx_unwrap(p_val.inx()).key_count)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.vals.is_empty()
-    }
-
     /// Returns the key capacity of the arena
     pub fn capacity_keys(&self) -> usize {
         self.keys.capacity()
@@ -515,31 +511,10 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         })
     }
 
-    /// Returns if `p` is a valid `Ptr`
-    pub fn contains(&self, p: P) -> bool {
-        self.keys.contains(p)
-    }
-
     /// Returns if `p0` and `p1` point to keys in the same key set
     #[must_use]
     pub fn in_same_set(&self, p0: P, p1: P) -> Option<bool> {
         Some(self.keys.get(p0)?.p_val == self.keys.get(p1)?.p_val)
-    }
-
-    /// Returns a reference to the key pointed to by `p`
-    #[must_use]
-    pub fn get_key(&self, p: P) -> Option<&K> {
-        self.keys.get(p).as_ref().map(|key| &key.k)
-    }
-
-    /// Like [SurjectArena::get_key], except generation counters are ignored and
-    /// the existing generation is returned.
-    #[must_use]
-    pub fn get_key_inx(&self, p: P::Inx) -> Option<(P::Gen, &K)> {
-        self.keys
-            .get_inx(p)
-            .as_ref()
-            .map(|(generation, key)| (*generation, &key.k))
     }
 
     /// Returns a reference to the value associated with the key pointed to by
@@ -550,50 +525,12 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         Some(&self.vals.get_inx_unwrap(p_val.inx()).v)
     }
 
-    /// Returns a reference to the key-value pair pointed to by `p`
-    #[must_use]
-    pub fn get(&self, p: P) -> Option<(&K, &V)> {
-        let key = self.keys.get(p)?;
-        Some((&key.k, &self.vals.get_inx_unwrap(key.p_val.inx()).v))
-    }
-
-    /// Returns a mutable reference to the value pointed to by `p`
-    #[must_use]
-    pub fn get_key_mut(&mut self, p: P) -> Option<&mut K> {
-        if let Some(key) = self.keys.get_mut(p) {
-            Some(&mut key.k)
-        } else {
-            None
-        }
-    }
-
     /// Returns a mutable reference to the value associated with the key pointed
     /// to by `p`
     #[must_use]
     pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
         let p_val = self.keys.get(p)?.p_val;
         Some(&mut self.vals.get_inx_mut_unwrap(p_val.inx()).v)
-    }
-
-    /// Returns a mutable reference to the key-value pair pointed to by `p`
-    #[must_use]
-    pub fn get_mut(&mut self, p: P) -> Option<(&mut K, &mut V)> {
-        let key = self.keys.get_mut(p)?;
-        Some((
-            &mut key.k,
-            &mut self.vals.get_inx_mut_unwrap(key.p_val.inx()).v,
-        ))
-    }
-
-    /// The same as [crate::traits::DisjointableArenaTrait::get_disjoint_mut]
-    /// for keys
-    pub fn get_disjoint_key_mut<const N: usize>(
-        &mut self,
-        indices: [P; N],
-    ) -> Result<[&mut K; N], GetDisjointMutError> {
-        self.keys
-            .get_disjoint_mut(indices)
-            .map(|keys| keys.map(|key| &mut key.k))
     }
 
     /// The same as [crate::traits::DisjointableArenaTrait::get_disjoint_mut]
@@ -930,7 +867,7 @@ impl<P: Ptr, K, V, B: ArenaBacking, Q: Borrow<P>> Index<Q> for SurjectArena<P, K
     #[track_caller]
     fn index(&self, inx: Q) -> &K {
         let p: P = *inx.borrow();
-        self.get_key(p)
+        self.get(p)
             .expect("indexed `SimpleOrdArena` with invalidated `Ptr`")
     }
 }
@@ -946,7 +883,7 @@ impl<P: Ptr, K, V, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for SurjectArena<P
     #[track_caller]
     fn index_mut(&mut self, inx: Q) -> &mut K {
         let p: P = *inx.borrow();
-        self.get_key_mut(p)
+        self.get_mut(p)
             .expect("indexed `SurjectArena` with invalidated `Ptr`")
     }
 }

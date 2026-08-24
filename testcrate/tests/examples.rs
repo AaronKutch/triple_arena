@@ -621,9 +621,9 @@ fn surject_arena_example() {
     // set can be used with the same `O(1)` computational complexity incurred.
     let p2_42 = a.insert_key(p0_42, "key2".to_owned());
 
-    assert_eq!(a.get_key(p0_42).unwrap(), "key0");
-    assert_eq!(a.get_key(p1_42).unwrap(), "key1");
-    assert_eq!(a.get_key(p2_42).unwrap(), "key2");
+    assert_eq!(a.get(p0_42).unwrap(), "key0");
+    assert_eq!(a.get(p1_42).unwrap(), "key1");
+    assert_eq!(a.get(p2_42).unwrap(), "key2");
     assert_eq!(a.get_val(p0_42).unwrap(), "42");
     assert_eq!(a.get_val(p1_42).unwrap(), "42");
     assert_eq!(a.get_val(p2_42).unwrap(), "42");
@@ -650,7 +650,8 @@ fn surject_arena_example() {
     // set or map, so multiple of the same exact values can exist in different
     // surjects.
     assert!(!a.in_same_set(p0_42, other42).unwrap());
-    let _ = a.drain_surject(other42).unwrap();
+    // removes the entire set
+    a.remove_shared(other42).unwrap().allow();
 
     let p4_7 = a.insert("key4".to_owned(), "7".to_owned());
     let p5_7 = a.insert_key(p4_7, "key5".to_owned());

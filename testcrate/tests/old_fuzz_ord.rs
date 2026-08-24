@@ -281,13 +281,13 @@ fn fuzz_ord() {
                 }
             }
             400..480 => {
-                // contains, get_link, get, get_key, get_val, get_link_mut, get_mut, get_val_mut
+                // contains, get_link, get, get, get_val, get_link_mut, get_mut, get_val_mut
                 if len != 0 {
                     let t = &list[next_inx!(rng, len)];
                     assert!(a.contains(t.p));
                     assert_eq!(a.get(t.p).unwrap(), &OrdPair::new(t.k, t.v));
                     /*assert_eq!(a.get(t.p).unwrap(), (&t.k, &t.v));
-                    assert_eq!(a.get_key(t.p).unwrap(), &t.k);
+                    assert_eq!(a.get(t.p).unwrap(), &t.k);
                     assert_eq!(a.get_val(t.p).unwrap(), &t.v);
                     let mut tmp = t.v;
                     assert_eq!(a.get_mut(t.p).unwrap(), (&t.k, &mut tmp));
@@ -296,7 +296,7 @@ fn fuzz_ord() {
                     assert!(!a.contains(invalid));
                     /*assert!(a.get_link(invalid).is_none());
                     assert!(a.get(invalid).is_none());
-                    assert!(a.get_key(invalid).is_none());
+                    assert!(a.get(invalid).is_none());
                     assert!(a.get_val(invalid).is_none());
                     assert!(a.get_mut(invalid).is_none());
                     assert!(a.get_val_mut(invalid).is_none());*/
