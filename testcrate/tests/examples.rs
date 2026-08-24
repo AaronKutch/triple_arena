@@ -669,7 +669,7 @@ fn surject_arena_example() {
     // this iterator is not cloning the values, it is simply repeatedly
     // indexing the values when multiple keys are associated with a single
     // value
-    for (i, (p, key, val)) in a.iter().enumerate() {
+    for (i, (p, key, val)) in a.iter_combined().enumerate() {
         assert_eq!(expected[i], (p, key.as_str(), val.as_str()));
     }
 
@@ -688,7 +688,7 @@ fn surject_arena_example() {
         (p4_7, "key4", "42 + 7"),
         (p5_7, "key5", "42 + 7"),
     ];
-    for (i, (p, key, val)) in a.iter().enumerate() {
+    for (i, (p, key, val)) in a.iter_combined().enumerate() {
         assert_eq!(expected[i], (p, key.as_str(), val.as_str()));
     }
 

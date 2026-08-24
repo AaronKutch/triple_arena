@@ -411,7 +411,7 @@ fn fuzz_surject() {
                     let mut iters = 0;
                     let mut seen = HashSet::new();
 
-                    let mut adv = a.advancer_surject(pair.p);
+                    let mut adv = a.advancer_surject(pair.p).unwrap();
                     while let Some(p) = adv.advance(&a) {
                         seen.insert(p);
                         iters += 1;
@@ -423,8 +423,7 @@ fn fuzz_surject() {
                     }
                     assert!(seen.is_empty());
                 } else {
-                    let mut adv = a.advancer_surject(P0::invalid());
-                    assert!(adv.advance(&a).is_none());
+                    assert!(a.advancer_surject(P0::invalid()).is_none());
                 }
             }
             990..=996 => {
@@ -435,8 +434,8 @@ fn fuzz_surject() {
                     let set_len = set.len();
                     let pair = set[next_inx!(rng, set_len)];
                     let init = pair.p;
-                    let mut iter = a.iter_surject(init);
-                    let mut adv = a.advancer_surject(init);
+                    let mut iter = a.iter_surject(init).unwrap();
+                    let mut adv = a.advancer_surject(init).unwrap();
                     while let Some(p) = adv.advance(&a) {
                         assert_eq!(
                             iter.next().unwrap(),
@@ -444,8 +443,7 @@ fn fuzz_surject() {
                         );
                     }
                 } else {
-                    let mut iter = a.iter_surject(invalid);
-                    assert!(iter.next().is_none());
+                    assert!(a.iter_surject(invalid).is_none());
                 }
             }
             997 => {

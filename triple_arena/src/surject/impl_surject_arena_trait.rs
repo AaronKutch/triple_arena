@@ -72,82 +72,48 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, B> {
     }
 
     fn drain(&mut self) -> impl Iterator<Item = InvalidationOption<(P, T)>> {
-        self.internal_drain()
-            .map(|o| o.map(|(p, node)| (p, node.t)))
+        self.drain_combined().map(|o| o.map(|(p, t, _)| (p, t)))
     }
 
     fn remove(&mut self, p: P) -> InvalidationResult<T> {
-        if !self.contains(p) {
-            return InvalidationResult::InvalidPtr;
-        }
-        self.internal_remove(p.inx()).map(|(_, t)| t)
+        self.remove_key(p).map(|(t, _)| t)
     }
 
     fn remove_inx(&mut self, p: <P as Ptr>::Inx) -> InvalidationResult<(<P as Ptr>::Gen, T)> {
-        self.internal_remove(p)
+        self.remove_key_inx(p)
+            .map(|(generation, t, _)| (generation, t))
     }
 
     fn clear(&mut self) -> InvalidationOption<()> {
-        self.a.clear()
+        self.vals.clear().allow();
+        self.keys.clear()
     }
 
-    /// Note that this also completely rebalances the tree, which is `O(n)` and
-    /// therefore does not change the complexity of the compression itself.
-    ///
-    /// # Unwind Safety
-    ///
-    /// If `map` panics, this follows
-    /// [compress_with](ArenaTrait::compress_with) on the base arena, and
-    /// additionally the tree is rebalanced over the partially compressed
-    /// entries so that `self` is left in a valid state.
     fn compress_with<F: FnMut(P, &mut T, P)>(
         &mut self,
         reset_generation: bool,
         mut map: F,
     ) -> InvalidationOption<()> {
-        // REF(ord_rebalance_guard)
-        struct Rebalance<'a, P: Ptr, T, B: ArenaBacking>(&'a mut SimpleOrdArena<P, T, B>);
-        impl<P: Ptr, T, B: ArenaBacking> Drop for Rebalance<'_, P, T, B> {
-            fn drop(&mut self) {
-                // this is the precondition for the rebalance, and doing it here rather
-                // than in the `map` closure also covers the entries that `map` did not
-                // reach
-                for node in self.0.a.vals_mut() {
-                    node.p_back = None;
-                    node.p_tree0 = None;
-                    node.p_tree1 = None;
-                }
-                self.0.raw_rebalance_assuming_prepared();
-            }
-        }
-
-        let this = Rebalance(self);
-        this.0
-            .a
-            .compress_with(reset_generation, |p, node, q| map(p, &mut node.t, q))
+        todo!();
     }
 }
 
-impl<P: Ptr, T, B: ArenaBacking> DisjointableArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
+impl<P: Ptr, T, B: ArenaBacking> DisjointableArenaTrait<P, T> for SurjectArena<P, T, B> {
     fn get_disjoint_inx_mut<const N: usize>(
         &mut self,
         indices: [<P as Ptr>::Inx; N],
     ) -> Result<[(<P as Ptr>::Gen, &mut T); N], GetDisjointMutError> {
-        self.a
+        self.keys
             .get_disjoint_inx_mut(indices)
-            .map(|a| a.map(|(generation, node)| (generation, &mut node.t)))
+            .map(|a| a.map(|(generation, key)| (generation, &mut key.k)))
     }
 
     fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
     where
         T: 'a,
     {
-        self.a.iter_mut().map(|(p, node)| (p, &mut node.t))
+        self.keys.iter_mut().map(|(p, key)| (p, &mut key.k))
     }
 }
 
-impl<P: Ptr, T, B: ArenaBacking> CompactArenaTrait<P, T> for SimpleOrdArena<P, T, B> {}
-
-// TODO? If this is common enough do this
-//struct SimpleOrdArenaRecaster(SimpleOrdArena<R, OrdPair<P, Q>, B>)
-//impl ArenaDirectInsertTrait<Q, P> for SimpleOrdArenaRecaster
+impl<P: Ptr, T, B: ArenaBacking> CompactArenaTrait<P, T> for SurjectArena<P, T, B> {}

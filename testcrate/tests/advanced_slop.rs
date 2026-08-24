@@ -1261,7 +1261,7 @@ fn ord_into_iterators() {
     let (mut a, _) = ord_of(&[(2, 2), (0, 0), (1, 1)]);
     {
         let mut drain = a.drain_ordered();
-        assert_eq!(*drain.next().unwrap().1.k(), 0);
+        assert_eq!(*drain.next().unwrap().allow().1.k(), 0);
     }
     assert!(a.is_empty());
     assert_eq!(SimpleOrdArena::_check_invariants(&a), Ok(()));

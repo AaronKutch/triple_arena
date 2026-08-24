@@ -97,8 +97,8 @@ impl<P: Ptr, T, B: ArenaBacking> ArenaTrait<P, T> for SimpleOrdArena<P, T, B> {
         self.a.clear()
     }
 
-    /// Note that this also completely rebalances the tree, which is `O(n)` and
-    /// therefore does not change the complexity of the compression itself.
+    /// Note that this also completely rebalances the tree, which is still
+    /// `O(n)`
     ///
     /// # Unwind Safety
     ///

@@ -706,7 +706,14 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// removed and returned like `Some((key, Some(val)))`. Returns
     /// `None` if `p` is not valid.
     pub fn remove_key(&mut self, p: P) -> InvalidationResult<(K, Option<V>)> {
-        let (key, o) = match self.keys.remove(p) {
+        if !self.contains(p) {
+            return InvalidationResult::InvalidPtr;
+        }
+        self.remove_key_inx(p.inx()).map(|(_, k, v)| (k, v))
+    }
+
+    pub fn remove_key_inx(&mut self, p: P::Inx) -> InvalidationResult<(P::Gen, K, Option<V>)> {
+        let ((generation, key), o) = match self.keys.remove_inx(p) {
             InvalidationResult::Success(key) => (key, false),
             InvalidationResult::GenerationOverflow(key) => (key, true),
             InvalidationResult::InvalidPtr => return InvalidationResult::InvalidPtr,
@@ -717,10 +724,14 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         let res = if let Some(next) = NonZeroUsize::new(key_count.get() - 1) {
             // decrement the key count
             *key_count = next;
-            (k, None)
+            (generation, k, None)
         } else {
             // last key, remove the value
-            (k, Some(self.vals.remove(p_val).allow().unwrap().v))
+            (
+                generation,
+                k,
+                Some(self.vals.remove(p_val).allow().unwrap().v),
+            )
         };
         if o {
             InvalidationResult::GenerationOverflow(res)
@@ -926,7 +937,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
 
 impl<P: Ptr, K: Debug, V: Debug, B: ArenaBacking> Debug for SurjectArena<P, K, V, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_set().entries(self.iter()).finish()
+        f.debug_set().entries(self.internal_iter()).finish()
     }
 }
 

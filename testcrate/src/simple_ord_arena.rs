@@ -1365,8 +1365,10 @@ pub fn fuzz<P: Ptr, B: ArenaBacking>(
                         {
                             let mut drain = a.drain_ordered();
                             while i < stop_at
-                                && let Some((p, t)) = drain.next()
+                                && let Some(o) = drain.next()
                             {
+                                ensure_eq!(o.is_overflow(), g.invalidate());
+                                let (p, t) = o.allow();
                                 ensure_eq!(p, expected[i].p);
                                 ensure_eq!(ck(&t), expected[i].c);
                                 i = i.wrapping_add(1);
@@ -1374,11 +1376,7 @@ pub fn fuzz<P: Ptr, B: ArenaBacking>(
                         }
                         ensure!(a.is_empty());
                         b.clear();
-                        // every removal advances the generation, and then the `Drop`
-                        // impl clears whatever is left which advances it once more
-                        for _ in 0..i {
-                            g.invalidate();
-                        }
+                        // handle `Drop` impl invalidations
                         if i < len {
                             g.invalidate();
                         }
