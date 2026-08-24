@@ -1,13 +1,23 @@
-use core::{fmt, mem, num::NonZeroUsize, slice::GetDisjointMutError};
+use core::{
+    borrow::Borrow,
+    fmt, mem,
+    num::NonZeroUsize,
+    ops::{Index, IndexMut},
+    slice::GetDisjointMutError,
+};
 
 use fmt::Debug;
 
 use crate::{
     Arena, ChainArena, InvalidationOption, InvalidationResult, LinkInsertKind, LinkNoGen,
-    errors::{AllocError, ChainInsertionError, NotWithinCapacityError, ReallocationError},
+    arena::ArenaSlot,
+    errors::{
+        AllocError, ChainInsertionError, MaxCapacityReductionError, NotWithinCapacityError,
+        ReallocationError,
+    },
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
-        ChainArenaTrait, DisjointableArenaTrait, Ptr,
+        ChainArenaTrait, DisjointableArenaTrait, Ptr, SetMaxCapacity,
     },
     utils::{
         PtrNoGen,
@@ -932,8 +942,49 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     }
 }
 
-// we can't implement `Index` because the format would force `&(&K, &V)` which
-// causes many further problems
+impl<P: Ptr, K, V, B: ArenaBacking> Default for SurjectArena<P, K, V, B> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// Note: I would try returning both, but `&(&K, &V)` becomes problematic and we
+// may as well follow the other arenas with respect to `ArenaTrait` definitions
+
+impl<P: Ptr, K, V, B: ArenaBacking, Q: Borrow<P>> Index<Q> for SurjectArena<P, K, V, B> {
+    type Output = K;
+
+    /// Returns a reference to the `T` pointed to by `inx`. Use
+    /// [get](ArenaTrait::get) if invalid `Ptr`s need to be handled, or
+    /// [get_inx_link_no_gen](SimpleOrdArena::get_inx_link_no_gen) if the
+    /// neighboring keys are also needed.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
+    fn index(&self, inx: Q) -> &K {
+        let p: P = *inx.borrow();
+        self.get_key(p)
+            .expect("indexed `SimpleOrdArena` with invalidated `Ptr`")
+    }
+}
+
+impl<P: Ptr, K, V, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for SurjectArena<P, K, V, B> {
+    /// Returns a mutable reference to the `T` pointed to by `inx`. Use
+    /// [get_mut](ArenaTrait::get_mut) if invalid `Ptr`s need to be handled.
+    /// Note that it is a logic error to change the key ordering of the `T`.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
+    fn index_mut(&mut self, inx: Q) -> &mut K {
+        let p: P = *inx.borrow();
+        self.get_key_mut(p)
+            .expect("indexed `SurjectArena` with invalidated `Ptr`")
+    }
+}
 
 impl<P: Ptr, K: Debug, V: Debug, B: ArenaBacking> Debug for SurjectArena<P, K, V, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -958,8 +1009,15 @@ impl<P: Ptr, K: Clone, V: Clone, B: ArenaBacking> Clone for SurjectArena<P, K, V
     }
 }
 
-impl<P: Ptr, K, V, B: ArenaBacking> Default for SurjectArena<P, K, V, B> {
-    fn default() -> Self {
-        Self::new()
+impl<P: Ptr, K, V, B: ArenaBacking> SetMaxCapacity for SurjectArena<P, K, V, B>
+where
+    <B as ArenaBacking>::Stack<ArenaSlot<P, LinkNoGen<P, Key<P, K>>>>: SetMaxCapacity,
+    <B as ArenaBacking>::Stack<ArenaSlot<PtrNoGen<P>, Val<V>>>: SetMaxCapacity,
+{
+    fn set_max_capacity(&mut self, max_capacity: usize) -> Result<(), MaxCapacityReductionError> {
+        // `vals` are implicitly limitied, but we may be increasing beyond the original
+        // limits
+        self.vals.set_max_capacity(max_capacity)?;
+        self.keys.set_max_capacity(max_capacity)
     }
 }
