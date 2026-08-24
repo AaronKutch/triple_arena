@@ -203,7 +203,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         Some(SurjectPtrAdvancer {
             init: p_init.inx(),
             ptr: Some(p_init.inx()),
-            max_advances: self.len_keys(),
+            max_advances: self.len(),
         })
     }
 

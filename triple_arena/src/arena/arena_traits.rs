@@ -733,25 +733,3 @@ pub trait ArenaDirectInsertTrait<P: Ptr, T>: ArenaTrait<P, T> {
         p: P,
     ) -> Result<Self::DirectInsertionEntry<'_>, DirectInsertionError>;
 }
-
-/*
-pub trait OrdArenaTrait<P: Ptr, K, V> {
-    //fn insert_nonhereditary_linear(&mut self, p_init: P, num: usize, k: K, v: V)
-    // -> P {
-
-    //fn get_link(&self, p: P) -> Option<(P, Link<P, &T>)>;
-    fn get_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, (&K, &V)>)>;
-    //fn find_with<F: FnMut(P, &T) -> Ordering>(&self, f: F) -> Option<P>;
-
-    //fn replace_val_*
-    //fn swap_vals
-
-    //fn insert_overwrite
-    //fn insert_unique
-}
-
-// this just needs to be entirely separate
-pub trait SurjectArenaTrait<P: Ptr, T> {
-    fn len_keys(&self) -> usize;
-}
-*/

@@ -650,7 +650,7 @@ fn surject_arena_example() {
     // set or map, so multiple of the same exact values can exist in different
     // surjects.
     assert!(!a.in_same_set(p0_42, other42).unwrap());
-    a.remove_surject(other42).allow().unwrap();
+    let _ = a.drain_surject(other42).unwrap();
 
     let p4_7 = a.insert("key4".to_owned(), "7".to_owned());
     let p5_7 = a.insert_key(p4_7, "key5".to_owned());

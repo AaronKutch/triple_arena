@@ -71,13 +71,13 @@ fn fuzz_surject() {
     let mut max_val_len = 0;
 
     for _ in 0..N {
-        assert_eq!(a.len_vals(), list.len());
-        assert_eq!(a.len_vals(), b.len());
+        assert_eq!(a.len_shared(), list.len());
+        assert_eq!(a.len_shared(), b.len());
         let len = list.len();
         let _ = generation;
         assert_eq!(a.is_empty(), list.is_empty());
         if !cfg!(miri) {
-            let mut len_keys = 0;
+            let mut len = 0;
             for set in b.values() {
                 assert!(!set.is_empty());
                 let set_len = set.len();
@@ -85,9 +85,9 @@ fn fuzz_surject() {
                     set.len(),
                     a.len_key_set(set[next_inx!(rng, set_len)].p).unwrap().get()
                 );
-                len_keys += set_len;
+                len += set_len;
             }
-            assert_eq!(a.len_keys(), len_keys);
+            assert_eq!(a.len(), len);
             if let Err(e) = SurjectArena::_check_invariants(&a) {
                 panic!("{e}");
             }
@@ -122,14 +122,18 @@ fn fuzz_surject() {
                     let v = list.swap_remove(next_inx!(rng, len));
                     let set = b.remove(&v).unwrap();
                     let set_len = set.len();
-                    let removed = a
-                        .remove_surject(set[next_inx!(rng, set_len)].p)
-                        .allow()
-                        .unwrap();
-                    assert_eq!(removed, v);
+                    let mut iter = a.drain_surject(set[next_inx!(rng, set_len)].p).unwrap();
+                    let mut encountered = false;
+                    while let Some((_, _, removed)) = iter.next().map(|o| o.allow()) {
+                        if let Some(removed) = removed {
+                            encountered = true;
+                            assert_eq!(removed, v);
+                        }
+                    }
+                    assert!(encountered);
                     generation += 1;
                 } else {
-                    assert!(a.remove_surject(invalid).allow().is_none());
+                    assert!(a.drain_surject(invalid).is_none());
                 }
             }
             105..=199 => {
@@ -365,7 +369,7 @@ fn fuzz_surject() {
                         tmp.insert(*val, set);
                     }
                 });
-                assert_eq!(tmp.len(), a.len_vals());
+                assert_eq!(tmp.len(), a.len_shared());
                 generation += 1;
                 let mut total_keys = 0;
                 for (val, set) in &tmp {
@@ -377,7 +381,7 @@ fn fuzz_surject() {
                     let q_any = set.iter().next().unwrap().1;
                     assert_eq!(set.len(), a.len_key_set(*q_any).unwrap().get());
                 }
-                assert_eq!(total_keys, a.len_keys());
+                assert_eq!(total_keys, a.len());
                 // fix `Ptr`s
                 for (val, set) in &tmp {
                     for pair in b.get_mut(val).unwrap() {
@@ -395,11 +399,7 @@ fn fuzz_surject() {
                     i += 1;
                 }
                 // depends on the invalidated elements witnessed
-                assert!(
-                    (i == a.len_keys().saturating_sub(1))
-                        || (i == a.len_keys())
-                        || (i == (a.len_keys() + 1))
-                );
+                assert!((i == a.len().saturating_sub(1)) || (i == a.len()) || (i == (a.len() + 1)));
             }
             980..=989 => {
                 // advancer_surject
@@ -487,7 +487,7 @@ fn fuzz_surject() {
             }
             _ => unreachable!(),
         }
-        max_key_len = max(max_key_len, a.len_keys());
-        max_val_len = max(max_val_len, a.len_vals());
+        max_key_len = max(max_key_len, a.len());
+        max_val_len = max(max_val_len, a.len_shared());
     }
 }

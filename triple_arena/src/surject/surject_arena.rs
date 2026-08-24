@@ -109,7 +109,7 @@ pub(crate) struct Val<V> {
 /// // set or map, so multiple of the same exact values can exist in different
 /// // surjects.
 /// assert!(!a.in_same_set(p0_42, other42).unwrap());
-/// a.remove_surject(other42).allow().unwrap();
+/// let _ = a.drain_surject(other42).unwrap();
 ///
 /// let p4_7 = a.insert("key4".to_owned(), "7".to_owned());
 /// let p5_7 = a.insert_key(p4_7, "key5".to_owned());
@@ -303,16 +303,9 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         })
     }
 
-    /// Returns the total number of valid `Ptr`s, or equivalently the number of
-    /// keys in the arena. `self.len_keys() >= self.len_vals()` is always
-    /// true.
-    pub fn len_keys(&self) -> usize {
-        self.keys.len()
-    }
-
-    /// Returns the number of values, or equivalently the number of key sets in
-    /// the arena
-    pub fn len_vals(&self) -> usize {
+    /// Returns the number of shared values, or equivalently the number of key
+    /// sets in the arena
+    pub fn len_shared(&self) -> usize {
         self.vals.len()
     }
 
@@ -325,8 +318,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         Some(self.vals.get_inx_unwrap(p_val.inx()).key_count)
     }
 
-    /// Returns if the arena is empty (`self.len_keys() == 0` if and only if
-    /// `self.len_vals() == 0`)
     pub fn is_empty(&self) -> bool {
         self.vals.is_empty()
     }
@@ -741,11 +732,9 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         }
     }
 
-    // FIXME have a drain_surject instead
-
-    /// Removes the entire key set and value cheaply, returning the value. `p`
-    /// can point to any key from the key set. Returns `None` if `p` is invalid.
-    pub fn remove_surject(&mut self, p: P) -> InvalidationResult<V> {
+    /// A version of [SurjectArena::drain_surject] optimized for just returning
+    /// the value
+    pub fn remove_shared(&mut self, p: P) -> InvalidationResult<V> {
         let Some(key) = self.keys.get(p) else {
             return InvalidationResult::InvalidPtr;
         };
@@ -755,21 +744,6 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             InvalidationOption::Success(()) => InvalidationResult::Success(v),
             InvalidationOption::GenerationOverflow(()) => InvalidationResult::GenerationOverflow(v),
         }
-    }
-
-    /// Invalidates the `Ptr` `p` (no other `Ptr`s to keys in the key set are
-    /// invalidated), returning a new valid `Ptr`
-    pub fn invalidate(&mut self, p: P) -> InvalidationResult<P> {
-        // the chain arena fixes interlinks
-        self.keys.invalidate(p)
-    }
-
-    /// Drops all keys and values from the arena and invalidates all pointers
-    /// previously created from it. This has no effect on allocated
-    /// capacities of keys or values.
-    pub fn clear(&mut self) -> InvalidationOption<()> {
-        self.vals.clear().allow();
-        self.keys.clear()
     }
 
     /// This is similar to [crate::ChainArenaTrait::compress_canonical], laying
@@ -810,29 +784,29 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     ) -> Result<(), ReallocationError> {
         // precheck both keys and values first, can't have atomic fallibility without it
 
-        let Some(len_keys) = NonZeroUsize::new(source.len_keys()) else {
+        let Some(len) = NonZeroUsize::new(source.len()) else {
             // follow what the other path would logically do
             self.clear().allow();
             self.set_generation(new_generation);
             return Ok(());
         };
         // REF(careful_index_checking) here and in the rest of this function
-        if P::Inx::try_from_usize(len_keys).is_none() {
+        if P::Inx::try_from_usize(len).is_none() {
             return Err(ReallocationError::AllocError);
         };
-        if len_keys.get() > self.capacity_keys() {
+        if len.get() > self.capacity_keys() {
             // max capacity is tested here
-            self.reallocate_min_capacity_keys(len_keys.get())?;
+            self.reallocate_min_capacity_keys(len.get())?;
         }
 
         // guaranteed nonempty at this point
-        let len_vals = NonZeroUsize::new(source.len_vals()).unwrap();
-        if P::Inx::try_from_usize(len_vals).is_none() {
+        let len_shared = NonZeroUsize::new(source.len_shared()).unwrap();
+        if P::Inx::try_from_usize(len_shared).is_none() {
             return Err(ReallocationError::AllocError);
         };
-        if len_vals.get() > self.capacity_vals() {
+        if len_shared.get() > self.capacity_vals() {
             // max capacity is tested here
-            self.reallocate_min_capacity_vals(len_vals.get())?;
+            self.reallocate_min_capacity_vals(len_shared.get())?;
         }
 
         // the rest should be infallible if soft invariants are followed

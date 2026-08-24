@@ -423,7 +423,7 @@ pub fn std_surject() -> SurjectArena<P1, CKey, CVal> {
         let p1 = ptrs[(rng.next_u64() as usize) % len];
         let _ = a.union(p0, p1);
     }
-    assert_eq!(a.len_keys(), A as usize);
+    assert_eq!(a.len(), A as usize);
     assert!(a.capacity_keys() >= (2 * A as usize));
     a
 }

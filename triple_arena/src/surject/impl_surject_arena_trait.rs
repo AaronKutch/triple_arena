@@ -39,6 +39,11 @@ impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B
         self.keys.len()
     }
 
+    /// Note that `self.len() == 0` if and only if `self.len_shared() == 0`
+    fn is_empty(&self) -> bool {
+        self.vals.len() == 0
+    }
+
     fn singular_generation(&self) -> Option<<P as Ptr>::Gen> {
         Some(self.generation())
     }
