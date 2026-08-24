@@ -57,6 +57,7 @@ pub mod utils {
         fundamental::{IntoNonZeroUsizeIterator, NonZeroUsizeIterator, PtrNoGen, nzusize_iter},
         ord::{SimpleOrdArenaInsertEntry, SimpleOrdArenaNode},
         stack::{NonZeroInxArray, NonZeroInxArrayPushEntry},
+        surject::{SurjectElement, SurjectShared},
     };
     /// A reexport used by the macros
     #[cfg(feature = "serde_support")]

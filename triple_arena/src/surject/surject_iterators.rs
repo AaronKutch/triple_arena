@@ -4,7 +4,7 @@ use recasting::{Recast, Recaster};
 
 use crate::{
     Arena, InvalidationOption, LinkNoGen, SurjectArena, arena_iterators,
-    surject::{Key, Val},
+    surject::{SurjectElement, SurjectShared},
     traits::{Advancer, ArenaTrait, ChainArenaTrait, DisjointableArenaTrait, Ptr},
     utils::{PtrNoGen, traits::ArenaBacking},
 };
@@ -18,7 +18,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> Advancer<SurjectArena<P, K, V, B>> for PtrAd
     type Item = P;
 
     fn advance(&mut self, collection: &SurjectArena<P, K, V, B>) -> Option<Self::Item> {
-        self.adv.advance(&collection.keys.a)
+        self.adv.advance(&collection.elements.a)
     }
 
     fn empty() -> Self {
@@ -47,7 +47,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> Advancer<SurjectArena<P, K, V, B>> for Surje
             self.max_advances = self.max_advances.wrapping_sub(1);
         }
         if let Some(ptr) = self.ptr {
-            if let Some((generation, link)) = collection.keys.get_inx_link_no_gen(ptr) {
+            if let Some((generation, link)) = collection.elements.get_inx_link_no_gen(ptr) {
                 if let Some(next) = link.next() {
                     if next == self.init {
                         self.ptr = None;
@@ -99,8 +99,8 @@ impl<'a, P: Ptr, K, V, B: ArenaBacking> Iterator for IterSurject<'a, P, K, V, B>
 
 /// An iterator over `(P, &K, &V)` in a `SurjectArena`
 pub struct Iter<'a, P: Ptr, K, V, B: ArenaBacking> {
-    iter: arena_iterators::Iter<'a, P, LinkNoGen<P, Key<P, K>>, B>,
-    vals: &'a Arena<PtrNoGen<P>, Val<V>, B>,
+    iter: arena_iterators::Iter<'a, P, LinkNoGen<P, SurjectElement<P, K>>, B>,
+    vals: &'a Arena<PtrNoGen<P>, SurjectShared<V>, B>,
 }
 
 impl<'a, P: Ptr, K, V, B: ArenaBacking> Iterator for Iter<'a, P, K, V, B> {
@@ -108,7 +108,7 @@ impl<'a, P: Ptr, K, V, B: ArenaBacking> Iterator for Iter<'a, P, K, V, B> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let (p, link) = self.iter.next()?;
-        Some((p, &link.t.k, &self.vals.get(link.t.p_val).unwrap().v))
+        Some((p, &link.t.t, &self.vals.get(link.t.p_shared).unwrap().s))
     }
 }
 
@@ -181,7 +181,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> Iterator for Drain<'_, P, K, V, B> {
 impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     pub(crate) fn internal_advancer_inx(&self, inx: P::Inx, rev: bool) -> PtrAdvancer<P> {
         PtrAdvancer {
-            adv: self.keys.a.advancer_inx(inx, rev),
+            adv: self.elements.a.advancer_inx(inx, rev),
         }
     }
 
@@ -192,7 +192,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// Has the same properties as [crate::Arena::advancer]
     pub fn advancer(&self) -> PtrAdvancer<P> {
         PtrAdvancer {
-            adv: self.keys.a.advancer(),
+            adv: self.elements.a.advancer(),
         }
     }
 
@@ -229,8 +229,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
 
     pub(crate) fn internal_iter(&self) -> Iter<'_, P, K, V, B> {
         Iter {
-            iter: self.keys.internal_iter(),
-            vals: &self.vals,
+            iter: self.elements.internal_iter(),
+            vals: &self.shared_vals,
         }
     }
 
@@ -238,39 +238,23 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
 
     /// Iteration over all valid `P` in the arena
     pub fn ptrs(&self) -> impl Iterator<Item = P> {
-        self.keys.ptrs()
-    }
-
-    /// Iteration over `&K`
-    pub fn keys<'a>(&'a self) -> impl Iterator<Item = &'a K>
-    where
-        K: 'a,
-    {
-        self.keys.vals().map(|key| &key.k)
+        self.elements.ptrs()
     }
 
     /// Iteration over `&V`
-    pub fn vals<'a>(&'a self) -> impl Iterator<Item = &'a V>
+    pub fn shared_vals<'a>(&'a self) -> impl Iterator<Item = &'a V>
     where
         V: 'a,
     {
-        self.vals.vals().map(|val| &val.v)
-    }
-
-    /// Mutable iteration over `&mut K`
-    pub fn keys_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut K>
-    where
-        K: 'a,
-    {
-        self.keys.iter_mut().map(|(_, key)| &mut key.k)
+        self.shared_vals.vals().map(|val| &val.s)
     }
 
     /// Mutable iteration over `&mut V`
-    pub fn vals_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut V>
+    pub fn shared_vals_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut V>
     where
         V: 'a,
     {
-        self.vals.iter_mut().map(|(_, val)| &mut val.v)
+        self.shared_vals.iter_mut().map(|(_, val)| &mut val.s)
     }
 
     /// Iteration over `(P, &K, &V)` tuples. For each surject with multiple `P`
@@ -310,11 +294,11 @@ impl<P: Ptr, I, K: Recast<I>, V: Recast<I>, B: ArenaBacking> Recast<I>
     /// Note that this recasts both keys and values (only the `Ptr`s are the
     /// keyed items from the `Recast` perspective)
     fn recast<R: Recaster<Item = I>>(&mut self, recaster: &R) -> Result<(), <R as Recaster>::Item> {
-        for key in self.keys_mut() {
-            key.recast(recaster)?;
-        }
         for val in self.vals_mut() {
             val.recast(recaster)?;
+        }
+        for shared in self.shared_vals_mut() {
+            shared.recast(recaster)?;
         }
         Ok(())
     }

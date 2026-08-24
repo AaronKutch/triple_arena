@@ -411,19 +411,19 @@ fn fuzz_surject() {
                 for (_, _, v) in &a {
                     assert!(b.contains_key(v));
                 }
-                for k in a.keys() {
+                for k in a.vals() {
                     black_box(k);
                 }
-                for k in a.keys_mut() {
+                for k in a.vals_mut() {
                     black_box(k);
                 }
                 for p in a.ptrs() {
                     black_box(p);
                 }
-                for v in a.vals() {
+                for v in a.shared_vals() {
                     assert!(b.contains_key(v));
                 }
-                for v in a.vals_mut() {
+                for v in a.shared_vals_mut() {
                     assert!(b.contains_key(v));
                 }
             }

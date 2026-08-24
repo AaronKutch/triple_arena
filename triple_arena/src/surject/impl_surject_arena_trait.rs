@@ -13,8 +13,8 @@ impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B
 
     fn new() -> Self {
         Self {
-            keys: ChainArena::new(),
-            vals: Arena::new(),
+            elements: ChainArena::new(),
+            shared_vals: Arena::new(),
         }
     }
 
@@ -23,25 +23,25 @@ impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B
     }
 
     fn capacity(&self) -> usize {
-        self.keys.capacity()
+        self.elements.capacity()
     }
 
     fn max_capacity(&self) -> Option<usize> {
-        self.keys.max_capacity()
+        self.elements.max_capacity()
     }
 
     fn reallocate_min_capacity(&mut self, min_capacity: usize) -> Result<(), ReallocationError> {
-        self.vals.reallocate_min_capacity(min_capacity)?;
-        self.keys.reallocate_min_capacity(min_capacity)
+        self.shared_vals.reallocate_min_capacity(min_capacity)?;
+        self.elements.reallocate_min_capacity(min_capacity)
     }
 
     fn len(&self) -> usize {
-        self.keys.len()
+        self.elements.len()
     }
 
     /// Note that `self.len() == 0` if and only if `self.len_shared() == 0`
     fn is_empty(&self) -> bool {
-        self.vals.len() == 0
+        self.shared_vals.len() == 0
     }
 
     fn singular_generation(&self) -> Option<<P as Ptr>::Gen> {
@@ -49,23 +49,23 @@ impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B
     }
 
     fn get_inx(&self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &T)> {
-        self.keys
+        self.elements
             .get_inx(p)
-            .map(|(generation, key)| (generation, &key.k))
+            .map(|(generation, key)| (generation, &key.t))
     }
 
     fn get_inx_mut(&mut self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &mut T)> {
-        self.keys
+        self.elements
             .get_inx_mut(p)
-            .map(|(generation, key)| (generation, &mut key.k))
+            .map(|(generation, key)| (generation, &mut key.t))
     }
 
     fn find_first_inx_ptr(&self) -> Option<P> {
-        self.keys.find_first_inx_ptr()
+        self.elements.find_first_inx_ptr()
     }
 
     fn find_last_inx_ptr(&self) -> Option<P> {
-        self.keys.find_last_inx_ptr()
+        self.elements.find_last_inx_ptr()
     }
 
     fn advancer_inx(&self, inx: <P as Ptr>::Inx, rev: bool) -> Self::PtrAdvancer {
@@ -73,7 +73,7 @@ impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B
     }
 
     fn invalidate(&mut self, p: P) -> InvalidationResult<P> {
-        self.keys.invalidate(p)
+        self.elements.invalidate(p)
     }
 
     fn drain(&mut self) -> impl Iterator<Item = InvalidationOption<(P, T)>> {
@@ -90,8 +90,8 @@ impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B
     }
 
     fn clear(&mut self) -> InvalidationOption<()> {
-        self.vals.clear().allow();
-        self.keys.clear()
+        self.shared_vals.clear().allow();
+        self.elements.clear()
     }
 
     fn compress_with<F: FnMut(P, &mut T, P)>(
@@ -108,16 +108,16 @@ impl<P: Ptr, T, S, B: ArenaBacking> DisjointableArenaTrait<P, T> for SurjectAren
         &mut self,
         indices: [<P as Ptr>::Inx; N],
     ) -> Result<[(<P as Ptr>::Gen, &mut T); N], GetDisjointMutError> {
-        self.keys
+        self.elements
             .get_disjoint_inx_mut(indices)
-            .map(|a| a.map(|(generation, key)| (generation, &mut key.k)))
+            .map(|a| a.map(|(generation, key)| (generation, &mut key.t)))
     }
 
     fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
     where
         T: 'a,
     {
-        self.keys.iter_mut().map(|(p, key)| (p, &mut key.k))
+        self.elements.iter_mut().map(|(p, key)| (p, &mut key.t))
     }
 }
 
