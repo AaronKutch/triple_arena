@@ -67,6 +67,32 @@ pub struct SurjectShared<S> {
 /// of adding and removing of pointers. This is more powerful than pure
 /// reference counting or epoch-like structures.
 ///
+/// # Note
+///
+/// `SurjectArena` naturally implements the same main traits that the other
+/// arena types do, but there are a few technicalities. Internally, there are
+/// two different arenas with separate sets of capacities and max capacities.
+/// All of the [ArenaTrait] methods should work as naturally as they do
+/// elsewhere, except:
+/// 1. The [SetMaxCapacity] impl, [ArenaTrait::reallocate_min_capacity],
+///    [ArenaTrait::with_min_capacity], and impls involving reallocation will
+///    first try fallible operations on the capacity of shared values, and if
+///    they succeed they will then try acting on the element capacity. But if
+///    the action on the element capacity fails, the change that first happened
+///    on the shared value capacity will remain.
+/// 2. [ArenaTrait::capacity] uses the capacity of the `T` elements. It is
+///    possible for a successful [ArenaTrait::reallocate_min_capacity] to
+///    reserve more than requested, and that extra capacity can be asymmetrical
+///    between [ArenaTrait::capacity] and [SurjectArena::capacity_shared].
+///    Inserting new surjects within capacity requires both kinds of capacity,
+///    so be aware not to rely on just [ArenaTrait::capacity] after expanding.
+/// 3. Due to an unfortunate confluence of necessary design choices,
+///    [ArenaTrait::compress_with] for `SurjectArena`s is the only element-wise
+///    method in this crate that has `O(n^2)` complexity. Instead, use
+///    [compress_canonical](SurjectArena::compress_canonical) or
+///    [transfer_canonical_reallocating](SurjectArena::transfer_canonical_reallocating),
+///    which are `O(n)` and improve cache locality as well.
+///
 /// ```
 /// use triple_arena::{SurjectArena, errors::ChainInsertionError, ptr_struct, traits::ArenaTrait};
 ///
@@ -448,13 +474,13 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
     pub fn entry_insert_surject_within_capacity(
         &mut self,
     ) -> Result<SurjectArenaInsertSurjectEntry<'_, P, T, S, B>, NotWithinCapacityError> {
+        // will need space for a new shared value
+        let _ = self.shared_vals.entry_insert_within_capacity()?;
         let entry = self
             .elements
             .entry_insert_within_capacity(LinkInsertKind::SingleLinkCyclic)
             .map_err(|_| NotWithinCapacityError)?;
         let p = entry.ptr();
-        // will need space for a new shared value
-        let _ = self.shared_vals.entry_insert_within_capacity()?;
         Ok(SurjectArenaInsertSurjectEntry { this: self, p })
     }
 
@@ -463,6 +489,7 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
     pub fn entry_insert_surject_reallocating(
         &mut self,
     ) -> Result<SurjectArenaInsertSurjectEntry<'_, P, T, S, B>, ReallocationError> {
+        let _ = self.shared_vals.entry_insert_reallocating()?;
         let p = match self
             .elements
             .entry_insert_reallocating(LinkInsertKind::SingleLinkCyclic)
@@ -473,7 +500,6 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
             }
             Err(_) => return Err(ReallocationError::AllocError),
         };
-        let _ = self.shared_vals.entry_insert_reallocating()?;
         Ok(SurjectArenaInsertSurjectEntry { this: self, p })
     }
 
@@ -1120,5 +1146,29 @@ where
         // increasing beyond the original limits
         self.shared_vals.set_max_capacity(max_capacity)?;
         self.elements.set_max_capacity(max_capacity)
+    }
+}
+
+impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B>
+where
+    <B as ArenaBacking>::Stack<ArenaSlot<P, LinkNoGen<P, SurjectElement<P, T>>>>: SetMaxCapacity,
+{
+    pub fn set_max_capacity_elements(
+        &mut self,
+        max_capacity: usize,
+    ) -> Result<(), MaxCapacityReductionError> {
+        self.elements.set_max_capacity(max_capacity)
+    }
+}
+
+impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B>
+where
+    <B as ArenaBacking>::Stack<ArenaSlot<PtrNoGen<P>, SurjectShared<S>>>: SetMaxCapacity,
+{
+    pub fn set_max_capacity_shared(
+        &mut self,
+        max_capacity: usize,
+    ) -> Result<(), MaxCapacityReductionError> {
+        self.shared_vals.set_max_capacity(max_capacity)
     }
 }

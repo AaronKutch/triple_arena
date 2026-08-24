@@ -1,11 +1,14 @@
-use core::slice::GetDisjointMutError;
+use core::{mem, num::NonZeroUsize, slice::GetDisjointMutError};
 
 use crate::{
     Arena, ChainArena, InvalidationOption, InvalidationResult, SurjectArena,
+    arena::{ArenaSlot, from_checked_raw},
+    chain::ChainArenaTrait,
     errors::{AllocError, ReallocationError},
+    stack::NonZeroInxGenericStack,
     surject_iterators,
-    traits::{ArenaTrait, CompactArenaTrait, DisjointableArenaTrait, Ptr},
-    utils::traits::ArenaBacking,
+    traits::{Advancer, ArenaTrait, CompactArenaTrait, DisjointableArenaTrait, Ptr},
+    utils::{PtrNoGen, traits::ArenaBacking},
 };
 
 impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B> {
@@ -100,27 +103,79 @@ impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B
         self.elements.clear()
     }
 
-    /// Note that this only compresses the elements. A shared value cannot be
-    /// moved without also updating the `Ptr` indirections of every element of
-    /// its surject, and those can only be found by starting from an element of
-    /// that surject, which the relative ordering this preserves does not give
-    /// us in general. Use
-    /// [compress_canonical](SurjectArena::compress_canonical), which lays the
-    /// surjects out contiguously and can therefore compress the shared values
-    /// as well.
+    /// Note that this signature on `SurjectArena` unfortunately requires
+    /// `O(n^2)` complexity. Instead, use
+    /// [compress_canonical](SurjectArena::compress_canonical) or
+    /// [transfer_canonical_reallocating](SurjectArena::transfer_canonical_reallocating),
+    /// which are `O(n)` and improve cache locality as well.
     ///
     /// # Unwind Safety
     ///
     /// If `map` panics, this follows
-    /// [compress_with](ArenaTrait::compress_with) on the elements, and the
-    /// shared values are left untouched, so `self` is left in a valid state.
+    /// [compress_with](ArenaTrait::compress_with) on the elements. `map` can
+    /// only run during that stage, so the shared values are left untouched and
+    /// `self` is left in a valid state.
     fn compress_with<F: FnMut(P, &mut T, P)>(
         &mut self,
         reset_generation: bool,
         mut map: F,
     ) -> InvalidationOption<()> {
-        self.elements
-            .compress_with(reset_generation, |p, element, q| map(p, &mut element.t, q))
+        let res = self
+            .elements
+            .compress_with(reset_generation, |p, element, q| map(p, &mut element.t, q));
+
+        // It is much more important for this to have the same uniform capacity
+        // reduction guarantees as the other uniform arenas, than for it to be `O(n)`.
+        // Because of the difficulties we are going through already, keep the shared
+        // values in their relative order, because that order can be observed through
+        // `SurjectArena::shared_vals`. The empty case needs no special handling, every
+        // slot is skipped and only the free slot removal below happens.
+
+        // we are moving from `j` to `i`
+        let mut i = NonZeroUsize::new(1).unwrap();
+        for j in self.shared_vals.nziter() {
+            let ArenaSlot::Allocated(..) = self.shared_vals.m.get(j).unwrap() else {
+                continue;
+            };
+            if i != j {
+                let entry = mem::replace(
+                    self.shared_vals.m.get_mut(j).unwrap(),
+                    // this will be overwritten or dropped
+                    ArenaSlot::Free(P::invalid().inx()),
+                );
+                // the slot at `i` is always free at this point
+                let _ = mem::replace(self.shared_vals.m.get_mut(i).unwrap(), entry);
+
+                // find any one element of the surject that was pointing at `j`, then
+                // repoint all of them at `i`
+                let p_shared_j = PtrNoGen::<P>::_from_raw(from_checked_raw::<PtrNoGen<P>>(j), ());
+                let p_shared_i = PtrNoGen::<P>::_from_raw(from_checked_raw::<PtrNoGen<P>>(i), ());
+                let mut found = false;
+                let mut outer_adv = self.elements.advancer();
+                while let Some(p_init) = outer_adv.advance(&self.elements) {
+                    let element = self.elements.get(p_init).unwrap();
+                    if element.p_shared == p_shared_j {
+                        let mut adv = self.elements.advancer_chain(p_init).unwrap();
+                        while let Some(p) = adv.advance(&self.elements) {
+                            // update
+                            self.elements.get_mut(p).unwrap().p_shared = p_shared_i;
+                        }
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    // there is always exactly one surject pointing at an allocated
+                    // shared value
+                    unreachable!()
+                }
+            }
+            i = i.checked_add(1).unwrap();
+        }
+
+        self.shared_vals.remove_free_end_slots();
+        self.shared_vals.freelist_root = None;
+        res
     }
 }
 

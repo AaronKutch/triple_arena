@@ -1793,29 +1793,36 @@ fn random_surject(rng: &mut StarRng) -> Surj {
     let mut ptrs: Vec<Q0> = vec![];
     let mut counter = 0u16;
     for _ in 0..rng.index_inclusive(40) {
-        let choice = rng.index_inclusive(7);
-        if (choice < 2) || ptrs.is_empty() {
+        let choice = rng.index_inclusive(9);
+        if (choice < 3) || ptrs.is_empty() {
             if a.len() < 24 {
                 counter = counter.wrapping_add(1);
                 let t = counter;
                 counter = counter.wrapping_add(1);
                 ptrs.push(a.insert_surject(t, counter));
             }
-        } else if choice < 5 {
+        } else if choice < 6 {
             if a.len() < 24 {
                 let p = ptrs[rng.index(ptrs.len()).unwrap()];
                 counter = counter.wrapping_add(1);
                 ptrs.push(a.insert(p, counter));
             }
-        } else if choice < 7 {
+        } else if choice < 8 {
             let i = rng.index(ptrs.len()).unwrap();
             let p = ptrs.swap_remove(i);
             a.remove_element(p).allow().unwrap();
-        } else {
+        } else if choice < 9 {
             let i = rng.index(ptrs.len()).unwrap();
             let p = ptrs.swap_remove(i);
             a.remove_shared(p).allow().unwrap();
             ptrs.retain(|q| a.contains(*q));
+        } else {
+            // this is the only thing that frees a shared value slot without also
+            // freeing an element slot, so it is what makes the two allocations
+            // drift apart
+            let p0 = ptrs[rng.index(ptrs.len()).unwrap()];
+            let p1 = ptrs[rng.index(ptrs.len()).unwrap()];
+            let _ = a.union(p0, p1);
         }
         SurjectArena::_check_invariants(&a).unwrap();
     }
@@ -1868,7 +1875,7 @@ fn surject_compress_canonical() {
         SurjectArena::_check_invariants(&a).unwrap();
         assert_eq!(surject_layout(&a), layout);
     }
-    assert_eq!((total_shared, total_moved), (5303, 1384));
+    assert_eq!((total_shared, total_moved), (6467, 1485));
 }
 
 /// Checks that `ArenaTrait::compress_with` compresses the elements and leaves
@@ -1883,8 +1890,8 @@ fn surject_compress_with() {
         let expected = surject_logical(&a);
         let shared_before = shared_layout(&a);
         if shared_before.len() != a.backing().1.len() {
-            // there is a free slot in the middle of the shared values, which
-            // this deliberately does not compress away
+            // there is a free slot in the middle of the shared values for this
+            // to compress away
             total_holes = total_holes.wrapping_add(1);
         }
         let mut mapping = vec![];
@@ -1892,7 +1899,21 @@ fn surject_compress_with() {
             .allow();
         SurjectArena::_check_invariants(&a).unwrap();
         assert_eq!(surject_logical(&a), expected);
-        assert_eq!(shared_layout(&a), shared_before);
+
+        // the shared values are compressed down to `1..=len_shared` with their
+        // relative order and their surjects preserved
+        let shared_after = shared_layout(&a);
+        assert_eq!(shared_after.len(), a.len_shared());
+        assert_eq!(a.backing().1.len(), a.len_shared());
+        for (i, entry) in shared_after.iter().enumerate() {
+            assert_eq!(entry.0, i.wrapping_add(1));
+            // the value and the surject size ride along unchanged
+            assert_eq!((entry.1, entry.2), (shared_before[i].1, shared_before[i].2));
+        }
+        assert_eq!(
+            a.shared_vals().copied().collect::<Vec<u16>>(),
+            shared_before.iter().map(|e| e.1).collect::<Vec<u16>>()
+        );
 
         // every element was mapped once, in old index order, onto `1..=len`
         assert_eq!(mapping.len(), a.len());
@@ -1908,5 +1929,5 @@ fn surject_compress_with() {
     }
     // as above, check that the interesting cases are reached, in particular the
     // free slots among the shared values that this leaves alone
-    assert_eq!((total_shared, total_holes), (5283, 550));
+    assert_eq!((total_shared, total_holes), (6391, 634));
 }
