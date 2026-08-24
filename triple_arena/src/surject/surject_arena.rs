@@ -754,17 +754,6 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
         }
     }
 
-    /// REF(surject_canonical_perm) Reads back an entry of the permutation that
-    /// the first pass of [compress_canonical](SurjectArena::compress_canonical)
-    /// wrote into the first `self.len_shared()` elements
-    fn permutation_entry(&self, raw_inx: NonZeroUsize) -> NonZeroUsize {
-        let p_shared = self
-            .elements
-            .get_inx_unwrap(from_checked_raw::<P>(raw_inx))
-            .p_shared;
-        from_checked_ptr::<PtrNoGen<P>>(p_shared.inx())
-    }
-
     /// This is similar to
     /// [compress_canonical](crate::traits::ChainArenaTrait::compress_canonical),
     /// laying out the elements within the same surject to be contiguous with
@@ -819,19 +808,47 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
             s = s.checked_add(element_count.get()).unwrap();
         }
 
-        // canonicalize the shared values
+        // Canonicalize the shared values. Observe that we are always doing a no-op or
+        // moving an unfinalized slot into a finalized slot, but that during that swap,
+        // an unfinalized slot can be displaced and moved up into unfinalized space
+        // potentially many times. We can't quickly find which synthetic `p_shared` was
+        // pointing to that. The trick here is that we don't care about the `p_shared`
+        // of the finalized slots and can thus reuse them to extend the permutation
+        // encoding into a linked list, where if a `p_shared` points to finalized slots,
+        // we keep following it until it points to an unfinalized slot.
         for raw_i in nzusize_iter(NonZeroUsize::new(1).unwrap(), Some(len_shared)) {
-            let mut raw_j = self.permutation_entry(raw_i);
+            let mut raw_j = from_checked_ptr::<PtrNoGen<P>>(
+                self.elements
+                    .get_inx_unwrap(from_checked_raw::<P>(raw_i))
+                    .p_shared
+                    .inx(),
+            );
+            // get to the end of the linked list
             while raw_j < raw_i {
-                raw_j = self.permutation_entry(raw_j);
+                raw_j = from_checked_ptr::<PtrNoGen<P>>(
+                    self.elements
+                        .get_inx_unwrap(from_checked_raw::<P>(raw_j))
+                        .p_shared
+                        .inx(),
+                );
             }
             if raw_j != raw_i {
+                // move known unfinalized `slot_j` down to finalized location at `slot_i`
                 let [slot_i, slot_j] = self
                     .shared_vals
                     .m
                     .get_disjoint_mut([raw_i, raw_j])
                     .unwrap_or_else(|_| unreachable!());
                 mem::swap(slot_i, slot_j);
+                // It happens that the function is correct without this extra step, but doing
+                // this is path compression needed to achieve `O(n)`.
+
+                // in case there was an unfinalized slot moved from `slot_i` to `slot_j`, extend
+                // the linked list to point at where it is at `raw_shared_i`
+                self.elements
+                    .get_inx_mut_unwrap(from_checked_raw::<P>(raw_i))
+                    .p_shared =
+                    PtrNoGen::<P>::_from_raw(from_checked_raw::<PtrNoGen<P>>(raw_j), ());
             }
         }
 
