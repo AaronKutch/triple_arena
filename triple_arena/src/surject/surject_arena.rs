@@ -41,26 +41,27 @@ pub(crate) struct Val<V> {
     pub(crate) key_count: NonZeroUsize,
 }
 
-/// A generalization of an `Arena` with three parameters: a `P: Ptr` type, a `K`
-/// key type, and a `V` value type. Each `P` points to a single `K` like in a
-/// normal arena, but multiple `P` can point to a single `V` in a surjective map
-/// structure. When all `Ptr`s to a single `V` are removed, the `V` is removed
-/// as well. Efficient union-find functionality is also possible.
+/// A generalization of an `Arena` with three parameters: a `P: Ptr` type, a `T`
+/// element type, and an `S` shared type. Each `P` points to a single `T` like
+/// in a normal arena, but multiple `(P, T)` entries can point to a single
+/// shared `S` in a surjective map structure. When all `Ptr`s to a single `S`
+/// are removed, the `S` is removed as well. Efficient union-find functionality
+/// is also possible.
 ///
 /// This is a more powerful version of union-find data structures, incorporating
-/// types on both sides of the key-value surjection, individual pointer-key
-/// validity tracking, `O(1)` single and double element operations, and allowing
+/// types on both sides of the surjection, individual entry `Ptr` validity
+/// tracking, `O(1)` single and double element operations, and allowing
 /// generation counted removal. Under the hood, this uses a `O(n log n)`
 /// strategy for union-find, but for many usecases this should actually be
 /// faster than the theoretical `O(n iterated log n)`, because there is always
 /// only a single layer of indirections at any one time for caches to deal with
 /// (we use a clever `ChainArena` based strategy that avoids any tree structures
-/// or key reinsertion).
+/// or element reinsertion).
 ///
-/// `SurjectArena<P, (), V>` is more like a classic union-find structure, and
-/// `SurjectArena<P, K, ()>` is a kind of non-hereditary set. Even
+/// `SurjectArena<P, (), S>` is more like a classic union-find structure, and
+/// `SurjectArena<P, T, ()>` is a kind of non-hereditary set. Even
 /// `SurjectArena<P, (), ()>` can be useful (assuming `P` has generation
-/// counters) for its O(1) validity tracking capabilities under any order
+/// counters) for its `O(1)` validity tracking capabilities under any order
 /// of adding and removing of pointers. This is more powerful than pure
 /// reference counting or epoch-like structures.
 ///
@@ -85,9 +86,9 @@ pub(crate) struct Val<V> {
 /// assert_eq!(a.get(p0_42).unwrap(), "key0");
 /// assert_eq!(a.get(p1_42).unwrap(), "key1");
 /// assert_eq!(a.get(p2_42).unwrap(), "key2");
-/// assert_eq!(a.get_val(p0_42).unwrap(), "42");
-/// assert_eq!(a.get_val(p1_42).unwrap(), "42");
-/// assert_eq!(a.get_val(p2_42).unwrap(), "42");
+/// assert_eq!(a.get_shared(p0_42).unwrap(), "42");
+/// assert_eq!(a.get_shared(p1_42).unwrap(), "42");
+/// assert_eq!(a.get_shared(p2_42).unwrap(), "42");
 ///
 /// assert_eq!(
 ///     a.remove_element(p1_42).allow(),
@@ -98,7 +99,7 @@ pub(crate) struct Val<V> {
 /// assert!(a.contains(p2_42));
 /// // the value is perpetuated as long as there is a nonempty set of
 /// // pointer-keys associated with it
-/// assert_eq!(a.get_val(p2_42).unwrap(), "42");
+/// assert_eq!(a.get_shared(p2_42).unwrap(), "42");
 ///
 /// // We cannot use an invalidated pointer as a reference
 /// assert_eq!(
@@ -107,13 +108,13 @@ pub(crate) struct Val<V> {
 /// );
 /// // We need to use an existing valid key
 /// let p3_42 = a.insert(p2_42, "key3".to_owned());
-/// assert_eq!(a.get_val(p3_42).unwrap(), "42");
+/// assert_eq!(a.get_shared(p3_42).unwrap(), "42");
 ///
 /// let other42 = a.insert_surject("test".to_owned(), "42".to_owned());
 /// // note this is still a general `Arena`-like structure and not a hereditary
 /// // set or map, so multiple of the same exact values can exist in different
 /// // surjects.
-/// assert!(!a.in_same_set(p0_42, other42).unwrap());
+/// assert!(!a.in_same_surject(p0_42, other42).unwrap());
 /// // removes the entire set
 /// a.remove_shared(other42).unwrap().allow();
 ///
@@ -145,7 +146,8 @@ pub(crate) struct Val<V> {
 /// // and the other remains in the arena. Suppose we want
 /// // to take a custom union of the `String`s to go along
 /// // with the union of the keys, we would do something like
-/// *a.get_val_mut(kept_p).unwrap() = format!("{} + {}", a.get_val(kept_p).unwrap(), removed_v);
+/// *a.get_shared_mut(kept_p).unwrap() =
+///     format!("{} + {}", a.get_shared(kept_p).unwrap(), removed_v);
 ///
 /// assert_eq!(a.len_surject(p0_42).unwrap().get(), 5);
 /// let expected = [
@@ -225,8 +227,8 @@ pub struct SurjectArenaInsertEntry<'a, P: Ptr, K, V, B: ArenaBacking> {
 }
 
 impl<'a, P: Ptr, K, V, B: ArenaBacking> SurjectArenaInsertEntry<'a, P, K, V, B> {
-    /// Returns the `P` that the newly inserted key will be associated with, and
-    /// not the `ptr_in_target_set`
+    /// Returns the `P` that the newly inserted element will be associated with,
+    /// and not the `ptr_in_target_set`
     pub fn ptr(&self) -> P {
         self.p_new
     }
@@ -241,11 +243,6 @@ impl<'a, P: Ptr, K, V, B: ArenaBacking> SurjectArenaInsertEntry<'a, P, K, V, B> 
     }
 }
 
-/// # Note
-///
-/// `Ptr`s in a `SurjectArena` follow the same validity rules as `Ptr`s in a
-/// regular `Arena` (see the documentation on the main
-/// `impl<P: Ptr, T> Arena<P, T>`). The validity of each `Ptr` is kept separate.
 impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// Used by tests
     #[doc(hidden)]
@@ -362,7 +359,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     }
 
     /// Follows [ArenaTrait::reallocate_min_capacity] for keys
-    pub fn reallocate_min_capacity_keys(
+    pub fn reallocate_min_capacity_elements(
         &mut self,
         min_capacity: usize,
     ) -> Result<(), ReallocationError> {
@@ -370,7 +367,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     }
 
     /// Follows [ArenaTrait::reallocate_min_capacity] for vals
-    pub fn reallocate_min_capacity_vals(
+    pub fn reallocate_min_capacity_shared(
         &mut self,
         min_capacity: usize,
     ) -> Result<(), ReallocationError> {
@@ -522,16 +519,17 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         })
     }
 
-    /// Returns if `p0` and `p1` point to keys in the same key set
+    /// Returns if `p0` and `p1` point to keys in the same surject. Returns
+    /// `None` if `p0` or `p1` are invalid.
     #[must_use]
-    pub fn in_same_set(&self, p0: P, p1: P) -> Option<bool> {
+    pub fn in_same_surject(&self, p0: P, p1: P) -> Option<bool> {
         Some(self.keys.get(p0)?.p_val == self.keys.get(p1)?.p_val)
     }
 
     /// Returns a reference to the value associated with the key pointed to by
     /// `p`
     #[must_use]
-    pub fn get_val(&self, p: P) -> Option<&V> {
+    pub fn get_shared(&self, p: P) -> Option<&V> {
         let p_val = self.keys.get(p)?.p_val;
         Some(&self.vals.get_inx_unwrap(p_val.inx()).v)
     }
@@ -539,15 +537,15 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// Returns a mutable reference to the value associated with the key pointed
     /// to by `p`
     #[must_use]
-    pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
+    pub fn get_shared_mut(&mut self, p: P) -> Option<&mut V> {
         let p_val = self.keys.get(p)?.p_val;
         Some(&mut self.vals.get_inx_mut_unwrap(p_val.inx()).v)
     }
 
     /// The same as [crate::traits::DisjointableArenaTrait::get_disjoint_mut]
     /// for values, but this additionally requires that the indices all be from
-    /// different key sets.
-    pub fn get_disjoint_val_mut<const N: usize>(
+    /// different surjects.
+    pub fn get_disjoint_shared_mut<const N: usize>(
         &mut self,
         indices: [P; N],
     ) -> Result<[&mut V; N], GetDisjointMutError> {
@@ -565,7 +563,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     }
 
     /// Returns the generation associated with `p` and a `LinkNoGen<P, &K>`, the
-    /// interlinks of which point to other keys in the key set. The key set is a
+    /// interlinks of which point to other keys in the surject. The surject is a
     /// cyclic chain of `LinkNoGen`s.
     #[must_use]
     pub fn get_inx_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &K>)> {
@@ -574,30 +572,32 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             .map(|(p, link)| (p, LinkNoGen::new(link.prev_next(), &link.t.k)))
     }
 
-    /// Takes the union of two key sets, of which `p0` points to a key in one
-    /// set and `p1` points to a key in the other set. If
-    /// `self.len_surject(p0) < self.len_surject(p1)`, then the value
+    /// Takes the union of two surjects, of which `p0` points to an element in
+    /// one set and `p1` points to an element in the other set. If
+    /// `self.len_surject(p0) < self.len_surject(p1)`, then the shared value
     /// associated with `p0` is removed and returned in a tuple with `p1`,
-    /// and the key set of `p0` is changed to point to the value of `p1`'s
-    /// key set. If `self.len_surject(p0) >= self.len_surject(p1)`, the
-    /// value pointed to by `p1` is removed and returned in a tuple with
-    /// `p0`, and the key set of `p1` is changed to point to the value of
-    /// `p0`'s key set. Returns `None` if `self.in_same_set(p0, p1)`.
+    /// and the surject of `p0` is changed to point to the shared value of
+    /// `p1`'s surject. If `self.len_surject(p0) >= self.len_surject(p1)`,
+    /// the shared value pointed to by `p1` is removed and returned in a
+    /// tuple with `p0`, and the surject of `p1` is changed to point to the
+    /// shared value of `p0`'s surject. Returns `None` if
+    /// `self.in_same_surject(p0, p1)`.
     ///
     /// # Note
     ///
-    /// No `Ptr`s are invalidated even though a value is removed, all that
-    /// happens is both key sets are redirected point to a common value.
+    /// No `Ptr`s are invalidated even though a shared value is removed, all
+    /// that happens is both sets of entries are redirected point to a
+    /// common shared value.
     ///
     /// This function is defined in this way to guarantee a `O(n log n)` cost
     /// for performing repeated unions in any order on a given starting arena.
-    /// If the two `V`s are some kind of additive structure that also need to
-    /// have their union taken, then the contents of the `V` in the return tuple
+    /// If the two `S`s are some kind of additive structure that also need to
+    /// have their union taken, then the contents of the `S` in the return tuple
     /// can be transferred to the value pointed to by the `P` also in the
     /// return tuple. This way, users do not actually need to consider key set
     /// sizes explicitly.
     ///
-    /// We purposely reverse the typical order from `(P, V)` to `(V, P)`
+    /// We purposely reverse the typical order from `(P, S)` to `(S, P)`
     /// to give a visual that the returned things were not pointing to each
     /// other.
     #[must_use]
@@ -744,7 +744,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         };
         if len.get() > self.capacity() {
             // max capacity is tested here
-            self.reallocate_min_capacity_keys(len.get())?;
+            self.reallocate_min_capacity_elements(len.get())?;
         }
 
         // guaranteed nonempty at this point
@@ -754,7 +754,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         };
         if len_shared.get() > self.capacity_shared() {
             // max capacity is tested here
-            self.reallocate_min_capacity_vals(len_shared.get())?;
+            self.reallocate_min_capacity_shared(len_shared.get())?;
         }
 
         // the rest should be infallible if soft invariants are followed

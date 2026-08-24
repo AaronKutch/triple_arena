@@ -624,9 +624,9 @@ fn surject_arena_example() {
     assert_eq!(a.get(p0_42).unwrap(), "key0");
     assert_eq!(a.get(p1_42).unwrap(), "key1");
     assert_eq!(a.get(p2_42).unwrap(), "key2");
-    assert_eq!(a.get_val(p0_42).unwrap(), "42");
-    assert_eq!(a.get_val(p1_42).unwrap(), "42");
-    assert_eq!(a.get_val(p2_42).unwrap(), "42");
+    assert_eq!(a.get_shared(p0_42).unwrap(), "42");
+    assert_eq!(a.get_shared(p1_42).unwrap(), "42");
+    assert_eq!(a.get_shared(p2_42).unwrap(), "42");
 
     assert_eq!(
         a.remove_element(p1_42).allow(),
@@ -637,7 +637,7 @@ fn surject_arena_example() {
     assert!(a.contains(p2_42));
     // the value is perpetuated as long as there is a nonempty set of
     // pointer-keys associated with it
-    assert_eq!(a.get_val(p2_42).unwrap(), "42");
+    assert_eq!(a.get_shared(p2_42).unwrap(), "42");
 
     // We cannot use an invalidated pointer as a reference
     assert_eq!(
@@ -646,13 +646,13 @@ fn surject_arena_example() {
     );
     // We need to use an existing valid key
     let p3_42 = a.insert(p2_42, "key3".to_owned());
-    assert_eq!(a.get_val(p3_42).unwrap(), "42");
+    assert_eq!(a.get_shared(p3_42).unwrap(), "42");
 
     let other42 = a.insert_surject("test".to_owned(), "42".to_owned());
     // note this is still a general `Arena`-like structure and not a hereditary
     // set or map, so multiple of the same exact values can exist in different
     // surjects.
-    assert!(!a.in_same_set(p0_42, other42).unwrap());
+    assert!(!a.in_same_surject(p0_42, other42).unwrap());
     // removes the entire set
     a.remove_shared(other42).unwrap().allow();
 
@@ -684,7 +684,8 @@ fn surject_arena_example() {
     // and the other remains in the arena. Suppose we want
     // to take a custom union of the `String`s to go along
     // with the union of the keys, we would do something like
-    *a.get_val_mut(kept_p).unwrap() = format!("{} + {}", a.get_val(kept_p).unwrap(), removed_v);
+    *a.get_shared_mut(kept_p).unwrap() =
+        format!("{} + {}", a.get_shared(kept_p).unwrap(), removed_v);
 
     assert_eq!(a.len_surject(p0_42).unwrap().get(), 5);
     let expected = [

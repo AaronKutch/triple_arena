@@ -223,7 +223,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         Some(IterSurject {
             arena: self,
             adv: self.advancer_surject(p_init)?,
-            surject_val: self.get_val(p_init),
+            surject_val: self.get_shared(p_init),
         })
     }
 
