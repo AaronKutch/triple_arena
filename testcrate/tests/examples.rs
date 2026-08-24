@@ -656,8 +656,8 @@ fn surject_arena_example() {
     let p4_7 = a.insert("key4".to_owned(), "7".to_owned());
     let p5_7 = a.insert_key(p4_7, "key5".to_owned());
 
-    assert_eq!(a.len_key_set(p0_42).unwrap().get(), 3);
-    assert_eq!(a.len_key_set(p4_7).unwrap().get(), 2);
+    assert_eq!(a.len_surject(p0_42).unwrap().get(), 3);
+    assert_eq!(a.len_surject(p4_7).unwrap().get(), 2);
 
     // I know the order ahead of time because the arena is deterministic, but
     // note that in general this will be completely unsorted with respect to
@@ -683,7 +683,7 @@ fn surject_arena_example() {
     // with the union of the keys, we would do something like
     *a.get_val_mut(kept_p).unwrap() = format!("{} + {}", a.get_val(kept_p).unwrap(), removed_v);
 
-    assert_eq!(a.len_key_set(p0_42).unwrap().get(), 5);
+    assert_eq!(a.len_surject(p0_42).unwrap().get(), 5);
     let expected = [
         (p0_42, "key0", "42 + 7"),
         (p3_42, "key3", "42 + 7"),

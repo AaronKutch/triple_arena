@@ -114,8 +114,8 @@ pub(crate) struct Val<V> {
 /// let p4_7 = a.insert("key4".to_owned(), "7".to_owned());
 /// let p5_7 = a.insert_key(p4_7, "key5".to_owned());
 ///
-/// assert_eq!(a.len_key_set(p0_42).unwrap().get(), 3);
-/// assert_eq!(a.len_key_set(p4_7).unwrap().get(), 2);
+/// assert_eq!(a.len_surject(p0_42).unwrap().get(), 3);
+/// assert_eq!(a.len_surject(p4_7).unwrap().get(), 2);
 ///
 /// // I know the order ahead of time because the arena is deterministic, but
 /// // note that in general this will be completely unsorted with respect to
@@ -141,7 +141,7 @@ pub(crate) struct Val<V> {
 /// // with the union of the keys, we would do something like
 /// *a.get_val_mut(kept_p).unwrap() = format!("{} + {}", a.get_val(kept_p).unwrap(), removed_v);
 ///
-/// assert_eq!(a.len_key_set(p0_42).unwrap().get(), 5);
+/// assert_eq!(a.len_surject(p0_42).unwrap().get(), 5);
 /// let expected = [
 ///     (p0_42, "key0", "42 + 7"),
 ///     (p3_42, "key3", "42 + 7"),
@@ -294,17 +294,17 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// See [ArenaTrait::with_min_capacity], this has separate capacities for
     /// the keys and vals
     pub fn with_min_capacity_separated(
-        min_capacity_keys: usize,
-        min_capacity_vals: usize,
+        min_capacity_elements: usize,
+        min_capacity_shared: usize,
     ) -> Result<Self, AllocError> {
         Ok(Self {
-            keys: ChainArena::with_min_capacity(min_capacity_keys)?,
-            vals: Arena::with_min_capacity(min_capacity_vals)?,
+            keys: ChainArena::with_min_capacity(min_capacity_elements)?,
+            vals: Arena::with_min_capacity(min_capacity_shared)?,
         })
     }
 
-    /// Returns the number of shared values, or equivalently the number of key
-    /// sets in the arena
+    /// Returns the number of shared values, or equivalently the number of
+    /// surjection sets in the arena
     pub fn len_shared(&self) -> usize {
         self.vals.len()
     }
@@ -313,29 +313,18 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// being a `Ptr` to any one of those keys. Returns `None` if `p` is
     /// invalid.
     #[must_use]
-    pub fn len_key_set(&self, p: P) -> Option<NonZeroUsize> {
+    pub fn len_surject(&self, p: P) -> Option<NonZeroUsize> {
         let p_val = self.keys.get(p)?.p_val;
         Some(self.vals.get_inx_unwrap(p_val.inx()).key_count)
     }
 
-    /// Returns the key capacity of the arena
-    pub fn capacity_keys(&self) -> usize {
-        self.keys.capacity()
-    }
-
-    /// Returns the value capacity of the arena
-    pub fn capacity_vals(&self) -> usize {
+    /// Returns the capacity of shared values of the arena
+    pub fn capacity_shared(&self) -> usize {
         self.vals.capacity()
     }
 
-    /// Returns the max key capacity of the arena. See
-    /// [ArenaTrait::max_capacity].
-    pub fn max_capacity_keys(&self) -> Option<usize> {
-        self.keys.max_capacity()
-    }
-
-    /// Returns the max value capacity of the arena
-    pub fn max_capacity_vals(&self) -> Option<usize> {
+    /// Returns the max shared value capacity of the arena
+    pub fn max_capacity_shared(&self) -> Option<usize> {
         self.vals.max_capacity()
     }
 
@@ -565,10 +554,10 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
 
     /// Takes the union of two key sets, of which `p0` points to a key in one
     /// set and `p1` points to a key in the other set. If
-    /// `self.len_key_set(p0) < self.len_key_set(p1)`, then the value
+    /// `self.len_surject(p0) < self.len_surject(p1)`, then the value
     /// associated with `p0` is removed and returned in a tuple with `p1`,
     /// and the key set of `p0` is changed to point to the value of `p1`'s
-    /// key set. If `self.len_key_set(p0) >= self.len_key_set(p1)`, the
+    /// key set. If `self.len_surject(p0) >= self.len_surject(p1)`, the
     /// value pointed to by `p1` is removed and returned in a tuple with
     /// `p0`, and the key set of `p1` is changed to point to the value of
     /// `p0`'s key set. Returns `None` if `self.in_same_set(p0, p1)`.
@@ -731,7 +720,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         if P::Inx::try_from_usize(len).is_none() {
             return Err(ReallocationError::AllocError);
         };
-        if len.get() > self.capacity_keys() {
+        if len.get() > self.capacity() {
             // max capacity is tested here
             self.reallocate_min_capacity_keys(len.get())?;
         }
@@ -741,7 +730,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         if P::Inx::try_from_usize(len_shared).is_none() {
             return Err(ReallocationError::AllocError);
         };
-        if len_shared.get() > self.capacity_vals() {
+        if len_shared.get() > self.capacity_shared() {
             // max capacity is tested here
             self.reallocate_min_capacity_vals(len_shared.get())?;
         }

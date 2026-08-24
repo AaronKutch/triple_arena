@@ -83,7 +83,7 @@ fn fuzz_surject() {
                 let set_len = set.len();
                 assert_eq!(
                     set.len(),
-                    a.len_key_set(set[next_inx!(rng, set_len)].p).unwrap().get()
+                    a.len_surject(set[next_inx!(rng, set_len)].p).unwrap().get()
                 );
                 len += set_len;
             }
@@ -339,7 +339,7 @@ fn fuzz_surject() {
                         total_keys += 1;
                     }
                     let q_any = set.iter().next().unwrap().1;
-                    assert_eq!(set.len(), a.len_key_set(*q_any).unwrap().get());
+                    assert_eq!(set.len(), a.len_surject(*q_any).unwrap().get());
                 }
                 assert_eq!(total_keys, a.len());
                 // fix `Ptr`s
@@ -429,11 +429,11 @@ fn fuzz_surject() {
             }
             998 => {
                 // clear
-                let prev_cap_keys = a.capacity_keys();
-                let prev_cap_vals = a.capacity_vals();
+                let prev_cap_keys = a.capacity();
+                let prev_cap_vals = a.capacity_shared();
                 a.clear().allow();
-                assert_eq!(a.capacity_keys(), prev_cap_keys);
-                assert_eq!(a.capacity_vals(), prev_cap_vals);
+                assert_eq!(a.capacity(), prev_cap_keys);
+                assert_eq!(a.capacity_shared(), prev_cap_vals);
                 b.clear();
                 generation += 1;
                 list.clear();
