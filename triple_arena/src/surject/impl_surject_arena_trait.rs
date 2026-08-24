@@ -81,11 +81,11 @@ impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B
     }
 
     fn remove(&mut self, p: P) -> InvalidationResult<T> {
-        self.remove_key(p).map(|(t, _)| t)
+        self.remove_element(p).map(|(t, _)| t)
     }
 
     fn remove_inx(&mut self, p: <P as Ptr>::Inx) -> InvalidationResult<(<P as Ptr>::Gen, T)> {
-        self.remove_key_inx(p)
+        self.remove_element_inx(p)
             .map(|(generation, t, _)| (generation, t))
     }
 

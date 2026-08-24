@@ -65,20 +65,22 @@ pub(crate) struct Val<V> {
 /// reference counting or epoch-like structures.
 ///
 /// ```
-/// use triple_arena::{SurjectArena, errors::ChainInsertionError, ptr_struct};
+/// use triple_arena::{SurjectArena, errors::ChainInsertionError, ptr_struct, traits::ArenaTrait};
 ///
 /// ptr_struct!(P0);
 /// let mut a: SurjectArena<P0, String, String> = SurjectArena::new();
 ///
-/// // There must be at least one key associated with each value
-/// let p0_42 = a.insert("key0".to_owned(), "42".to_owned());
-/// // If we want new keys to be associated with the same key set pointing to
-/// // "42", then instead of calling `insert_val` we call `insert_key`
-/// let p1_42 = a.insert_key(p0_42, "key1".to_owned());
+/// // There must be at least one key associated with each value, so the first
+/// // insertion must always be a surject insertion
+/// let p0_42 = a.insert_surject("key0".to_owned(), "42".to_owned());
+/// // If we want new keys to be associated with the same surject set pointing to
+/// // "42", then instead of calling `insert_surject` we call `insert` to insert
+/// // elements to associate with an existing surject
+/// let p1_42 = a.insert(p0_42, "key1".to_owned());
 /// // We could use either `p0_42` or `p1_42` as our reference to get
 /// // associated with the same key set; any valid pointer in the preexisting
 /// // set can be used with the same `O(1)` computational complexity incurred.
-/// let p2_42 = a.insert_key(p0_42, "key2".to_owned());
+/// let p2_42 = a.insert(p0_42, "key2".to_owned());
 ///
 /// assert_eq!(a.get(p0_42).unwrap(), "key0");
 /// assert_eq!(a.get(p1_42).unwrap(), "key1");
@@ -87,7 +89,10 @@ pub(crate) struct Val<V> {
 /// assert_eq!(a.get_val(p1_42).unwrap(), "42");
 /// assert_eq!(a.get_val(p2_42).unwrap(), "42");
 ///
-/// assert_eq!(a.remove_key(p1_42).allow(), Some(("key1".to_owned(), None)));
+/// assert_eq!(
+///     a.remove_element(p1_42).allow(),
+///     Some(("key1".to_owned(), None))
+/// );
 /// assert!(a.contains(p0_42));
 /// assert!(!a.contains(p1_42));
 /// assert!(a.contains(p2_42));
@@ -97,27 +102,28 @@ pub(crate) struct Val<V> {
 ///
 /// // We cannot use an invalidated pointer as a reference
 /// assert_eq!(
-///     a.insert_key_reallocating(p1_42, "key3".to_owned()),
+///     a.insert_reallocating(p1_42, "key3".to_owned()),
 ///     Err(ChainInsertionError::FailedLinkRequirement)
 /// );
 /// // We need to use an existing valid key
-/// let p3_42 = a.insert_key(p2_42, "key3".to_owned());
+/// let p3_42 = a.insert(p2_42, "key3".to_owned());
 /// assert_eq!(a.get_val(p3_42).unwrap(), "42");
 ///
-/// let other42 = a.insert("test".to_owned(), "42".to_owned());
+/// let other42 = a.insert_surject("test".to_owned(), "42".to_owned());
 /// // note this is still a general `Arena`-like structure and not a hereditary
 /// // set or map, so multiple of the same exact values can exist in different
 /// // surjects.
 /// assert!(!a.in_same_set(p0_42, other42).unwrap());
-/// let _ = a.drain_surject(other42).unwrap();
+/// // removes the entire set
+/// a.remove_shared(other42).unwrap().allow();
 ///
-/// let p4_7 = a.insert("key4".to_owned(), "7".to_owned());
-/// let p5_7 = a.insert_key(p4_7, "key5".to_owned());
+/// let p4_7 = a.insert_surject("key4".to_owned(), "7".to_owned());
+/// let p5_7 = a.insert(p4_7, "key5".to_owned());
 ///
 /// assert_eq!(a.len_surject(p0_42).unwrap().get(), 3);
 /// assert_eq!(a.len_surject(p4_7).unwrap().get(), 2);
 ///
-/// // I know the order ahead of time because the arena is deterministic, but
+/// // The order here is known ahead of time because the arena is deterministic, but
 /// // note that in general this will be completely unsorted with respect to
 /// // keys or values.
 /// let expected = [
@@ -130,7 +136,7 @@ pub(crate) struct Val<V> {
 /// // this iterator is not cloning the values, it is simply repeatedly
 /// // indexing the values when multiple keys are associated with a single
 /// // value
-/// for (i, (p, key, val)) in a.iter().enumerate() {
+/// for (i, (p, key, val)) in a.iter_combined().enumerate() {
 ///     assert_eq!(expected[i], (p, key.as_str(), val.as_str()));
 /// }
 ///
@@ -149,18 +155,30 @@ pub(crate) struct Val<V> {
 ///     (p4_7, "key4", "42 + 7"),
 ///     (p5_7, "key5", "42 + 7"),
 /// ];
-/// for (i, (p, key, val)) in a.iter().enumerate() {
+/// for (i, (p, key, val)) in a.iter_combined().enumerate() {
 ///     assert_eq!(expected[i], (p, key.as_str(), val.as_str()));
 /// }
 ///
 /// // only upon removing the last key is the value is returned
-/// // (or we could use the wholesale `remove`)
-/// assert_eq!(a.remove_key(p4_7).allow(), Some(("key4".to_owned(), None)));
-/// assert_eq!(a.remove_key(p0_42).allow(), Some(("key0".to_owned(), None)));
-/// assert_eq!(a.remove_key(p3_42).allow(), Some(("key3".to_owned(), None)));
-/// assert_eq!(a.remove_key(p5_7).allow(), Some(("key5".to_owned(), None)));
+/// // (or we could use the wholesale `remove_shared`)
 /// assert_eq!(
-///     a.remove_key(p2_42).allow(),
+///     a.remove_element(p4_7).allow(),
+///     Some(("key4".to_owned(), None))
+/// );
+/// assert_eq!(
+///     a.remove_element(p0_42).allow(),
+///     Some(("key0".to_owned(), None))
+/// );
+/// assert_eq!(
+///     a.remove_element(p3_42).allow(),
+///     Some(("key3".to_owned(), None))
+/// );
+/// assert_eq!(
+///     a.remove_element(p5_7).allow(),
+///     Some(("key5".to_owned(), None))
+/// );
+/// assert_eq!(
+///     a.remove_element(p2_42).allow(),
 ///     Some(("key2".to_owned(), Some("42 + 7".to_owned())))
 /// );
 /// ```
@@ -178,12 +196,12 @@ pub struct SurjectArena<
 // REF(insertion_idempotency)
 
 /// See [crate::traits::ArenaInsertTrait]
-pub struct SurjectArenaInsertEntry<'a, P: Ptr, K, V, B: ArenaBacking> {
+pub struct SurjectArenaInsertSurjectEntry<'a, P: Ptr, K, V, B: ArenaBacking> {
     this: &'a mut SurjectArena<P, K, V, B>,
     p: P,
 }
 
-impl<'a, P: Ptr, K, V, B: ArenaBacking> SurjectArenaInsertEntry<'a, P, K, V, B> {
+impl<'a, P: Ptr, K, V, B: ArenaBacking> SurjectArenaInsertSurjectEntry<'a, P, K, V, B> {
     pub fn ptr(&self) -> P {
         self.p
     }
@@ -200,13 +218,13 @@ impl<'a, P: Ptr, K, V, B: ArenaBacking> SurjectArenaInsertEntry<'a, P, K, V, B> 
 }
 
 /// See [crate::traits::ArenaInsertTrait]
-pub struct SurjectArenaInsertKeyEntry<'a, P: Ptr, K, V, B: ArenaBacking> {
+pub struct SurjectArenaInsertEntry<'a, P: Ptr, K, V, B: ArenaBacking> {
     this: &'a mut SurjectArena<P, K, V, B>,
     p_target: P::Inx,
     p_new: P,
 }
 
-impl<'a, P: Ptr, K, V, B: ArenaBacking> SurjectArenaInsertKeyEntry<'a, P, K, V, B> {
+impl<'a, P: Ptr, K, V, B: ArenaBacking> SurjectArenaInsertEntry<'a, P, K, V, B> {
     /// Returns the `P` that the newly inserted key will be associated with, and
     /// not the `ptr_in_target_set`
     pub fn ptr(&self) -> P {
@@ -361,8 +379,12 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
 
     /// Inserts a new surject into the arena, with initial key `k` for the key
     /// set and associated value `v`. Returns a `Ptr` to the key.
-    pub fn insert_within_capacity(&mut self, k: K, v: V) -> Result<P, NotWithinCapacityError> {
-        let entry = self.entry_insert_within_capacity()?;
+    pub fn insert_surject_within_capacity(
+        &mut self,
+        k: K,
+        v: V,
+    ) -> Result<P, NotWithinCapacityError> {
+        let entry = self.entry_insert_surject_within_capacity()?;
         let p = entry.ptr();
         entry.insert(k, v);
         Ok(p)
@@ -370,8 +392,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
 
     /// Inserts a new surject into the arena, with initial key `k` for the key
     /// set and associated value `v`. Returns a `Ptr` to the key.
-    pub fn insert_reallocating(&mut self, k: K, v: V) -> Result<P, ReallocationError> {
-        let entry = self.entry_insert_reallocating()?;
+    pub fn insert_surject_reallocating(&mut self, k: K, v: V) -> Result<P, ReallocationError> {
+        let entry = self.entry_insert_surject_reallocating()?;
         let p = entry.ptr();
         entry.insert(k, v);
         Ok(p)
@@ -384,15 +406,15 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     ///
     /// Panics on allocation failure or if max capacity is used up
     #[track_caller]
-    pub fn insert(&mut self, k: K, v: V) -> P {
-        self.insert_reallocating(k, v)
+    pub fn insert_surject(&mut self, k: K, v: V) -> P {
+        self.insert_surject_reallocating(k, v)
             .expect("`SurjectArena::insert_reallocating` failed")
     }
 
     /// Entry version of [SurjectArena::insert_within_capacity]
-    pub fn entry_insert_within_capacity(
+    pub fn entry_insert_surject_within_capacity(
         &mut self,
-    ) -> Result<SurjectArenaInsertEntry<'_, P, K, V, B>, NotWithinCapacityError> {
+    ) -> Result<SurjectArenaInsertSurjectEntry<'_, P, K, V, B>, NotWithinCapacityError> {
         let entry = self
             .keys
             .entry_insert_within_capacity(LinkInsertKind::SingleLinkCyclic)
@@ -400,13 +422,13 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         let p = entry.ptr();
         // will need space for a new value
         let _ = self.vals.entry_insert_within_capacity()?;
-        Ok(SurjectArenaInsertEntry { this: self, p })
+        Ok(SurjectArenaInsertSurjectEntry { this: self, p })
     }
 
     /// Entry version of [SurjectArena::insert_reallocating]
-    pub fn entry_insert_reallocating(
+    pub fn entry_insert_surject_reallocating(
         &mut self,
-    ) -> Result<SurjectArenaInsertEntry<'_, P, K, V, B>, ReallocationError> {
+    ) -> Result<SurjectArenaInsertSurjectEntry<'_, P, K, V, B>, ReallocationError> {
         let p = match self
             .keys
             .entry_insert_reallocating(LinkInsertKind::SingleLinkCyclic)
@@ -418,31 +440,31 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             Err(_) => return Err(ReallocationError::AllocError),
         };
         let _ = self.vals.entry_insert_reallocating()?;
-        Ok(SurjectArenaInsertEntry { this: self, p })
+        Ok(SurjectArenaInsertSurjectEntry { this: self, p })
     }
 
     /// Inserts a new key into the arena, associating it with an existing
     /// surject, of which `ptr_in_target_set` is an existing key in that set.
     /// Returns `ChainInsertionError::FailedLinkRequirement` if
     /// `ptr_in_target_set` is invalid.
-    pub fn insert_key_within_capacity(
+    pub fn insert_within_capacity(
         &mut self,
         ptr_in_target_set: P,
         k: K,
     ) -> Result<P, ChainInsertionError> {
-        let entry = self.entry_insert_key_within_capacity(ptr_in_target_set)?;
+        let entry = self.entry_insert_within_capacity(ptr_in_target_set)?;
         let p = entry.ptr();
         entry.insert(k);
         Ok(p)
     }
 
     /// Reallocating version of [SurjectArena::insert_key_within_capacity]
-    pub fn insert_key_reallocating(
+    pub fn insert_reallocating(
         &mut self,
         ptr_in_target_set: P,
         k: K,
     ) -> Result<P, ChainInsertionError> {
-        let entry = self.entry_insert_key_reallocating(ptr_in_target_set)?;
+        let entry = self.entry_insert_reallocating(ptr_in_target_set)?;
         let p = entry.ptr();
         entry.insert(k);
         Ok(p)
@@ -455,16 +477,16 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// Panics on allocation failure, or if max capacity is used up, or if
     /// `ptr_in_target_set` was invalid
     #[track_caller]
-    pub fn insert_key(&mut self, ptr_in_target_set: P, k: K) -> P {
-        self.insert_key_reallocating(ptr_in_target_set, k)
+    pub fn insert(&mut self, ptr_in_target_set: P, k: K) -> P {
+        self.insert_reallocating(ptr_in_target_set, k)
             .expect("`SurjectArena::insert_key_reallocating` failed")
     }
 
     /// Entry version of [SurjectArena::insert_key_within_capacity]
-    pub fn entry_insert_key_within_capacity(
+    pub fn entry_insert_within_capacity(
         &mut self,
         ptr_in_target_set: P,
-    ) -> Result<SurjectArenaInsertKeyEntry<'_, P, K, V, B>, ChainInsertionError> {
+    ) -> Result<SurjectArenaInsertEntry<'_, P, K, V, B>, ChainInsertionError> {
         if !self.contains(ptr_in_target_set) {
             return Err(ChainInsertionError::FailedLinkRequirement);
         }
@@ -473,7 +495,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             .keys
             .entry_insert_within_capacity(LinkInsertKind::SingleLinkCyclic)?;
         let p = entry.ptr();
-        Ok(SurjectArenaInsertKeyEntry {
+        Ok(SurjectArenaInsertEntry {
             this: self,
             p_target: ptr_in_target_set.inx(),
             p_new: p,
@@ -481,10 +503,10 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     }
 
     /// Entry version of [SurjectArena::insert_key_reallocating]
-    pub fn entry_insert_key_reallocating(
+    pub fn entry_insert_reallocating(
         &mut self,
         ptr_in_target_set: P,
-    ) -> Result<SurjectArenaInsertKeyEntry<'_, P, K, V, B>, ChainInsertionError> {
+    ) -> Result<SurjectArenaInsertEntry<'_, P, K, V, B>, ChainInsertionError> {
         if !self.contains(ptr_in_target_set) {
             return Err(ChainInsertionError::FailedLinkRequirement);
         }
@@ -493,7 +515,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
             .keys
             .entry_insert_reallocating(LinkInsertKind::SingleLinkCyclic)?;
         let p = entry.ptr();
-        Ok(SurjectArenaInsertKeyEntry {
+        Ok(SurjectArenaInsertEntry {
             this: self,
             p_target: ptr_in_target_set.inx(),
             p_new: p,
@@ -618,19 +640,19 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
         Some((self.vals.remove(p_val1).allow().unwrap().v, p0))
     }
 
-    /// Removes the key pointed to by `p`. If there were other keys still in the
-    /// key set, the value is not removed and `Some((key, None))` is
-    /// returned. If `p` was the last key in the key set, then the value is
-    /// removed and returned like `Some((key, Some(val)))`. Returns
-    /// `None` if `p` is not valid.
-    pub fn remove_key(&mut self, p: P) -> InvalidationResult<(K, Option<V>)> {
+    /// Removes the element pointed to by `p`. If there were other element still
+    /// in the surject set, the shared value is not removed and `Some((t,
+    /// None))` is returned. If `p` was the last remaining element in the
+    /// surject set, then the shared value is removed and returned like
+    /// `Some((t, Some(shared)))`. Returns `None` if `p` is not valid.
+    pub fn remove_element(&mut self, p: P) -> InvalidationResult<(K, Option<V>)> {
         if !self.contains(p) {
             return InvalidationResult::InvalidPtr;
         }
-        self.remove_key_inx(p.inx()).map(|(_, k, v)| (k, v))
+        self.remove_element_inx(p.inx()).map(|(_, k, v)| (k, v))
     }
 
-    pub fn remove_key_inx(&mut self, p: P::Inx) -> InvalidationResult<(P::Gen, K, Option<V>)> {
+    pub fn remove_element_inx(&mut self, p: P::Inx) -> InvalidationResult<(P::Gen, K, Option<V>)> {
         let ((generation, key), o) = match self.keys.remove_inx(p) {
             InvalidationResult::Success(key) => (key, false),
             InvalidationResult::GenerationOverflow(key) => (key, true),
@@ -659,7 +681,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     }
 
     /// A version of [SurjectArena::drain_surject] optimized for just returning
-    /// the value
+    /// the shared value
     pub fn remove_shared(&mut self, p: P) -> InvalidationResult<V> {
         let Some(key) = self.keys.get(p) else {
             return InvalidationResult::InvalidPtr;
@@ -812,8 +834,8 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
 
     /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
     /// generation counter, and reusing capacity) with the `Ptr` mapping of
-    /// `self`, with sets of keys preserved as cyclical chains.
-    pub fn clone_keys_to_chain_arena<T, F: FnMut(P, &K) -> T>(
+    /// `self`, with surjects each preserved as cyclical chains.
+    pub fn clone_to_chain_arena<T, F: FnMut(P, &K) -> T>(
         &self,
         chain_arena: &mut ChainArena<P, T, B>,
         mut map: F,
@@ -824,7 +846,7 @@ impl<P: Ptr, K, V, B: ArenaBacking> SurjectArena<P, K, V, B> {
     /// Overwrites `arena` (dropping all preexisting `T` and relations,
     /// overwriting the generation counter, and reusing capacity) with the
     /// `Ptr` mapping of `self`.
-    pub fn clone_keys_to_arena<T, F: FnMut(P, &K) -> T>(
+    pub fn clone_to_arena<T, F: FnMut(P, &K) -> T>(
         &self,
         arena: &mut Arena<P, T, B>,
         mut map: F,

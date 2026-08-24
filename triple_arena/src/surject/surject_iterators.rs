@@ -134,7 +134,12 @@ impl<P: Ptr, K, V, B: ArenaBacking> Iterator for SurjectDrain<'_, P, K, V, B> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let p = self.adv.advance(self.arena)?;
-        Some(self.arena.remove_key(p).unwrap().map(|(k, v)| (p, k, v)))
+        Some(
+            self.arena
+                .remove_element(p)
+                .unwrap()
+                .map(|(k, v)| (p, k, v)),
+        )
     }
 }
 
@@ -157,7 +162,12 @@ impl<P: Ptr, K, V, B: ArenaBacking> Iterator for Drain<'_, P, K, V, B> {
         loop {
             if let Some(adv1) = &mut self.adv1 {
                 if let Some(p) = adv1.advance(self.arena) {
-                    return Some(self.arena.remove_key(p).unwrap().map(|(k, v)| (p, k, v)));
+                    return Some(
+                        self.arena
+                            .remove_element(p)
+                            .unwrap()
+                            .map(|(k, v)| (p, k, v)),
+                    );
                 } else {
                     self.adv1 = None;
                 }

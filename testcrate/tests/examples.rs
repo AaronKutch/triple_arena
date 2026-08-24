@@ -1,7 +1,5 @@
 //! for ease of copying to the doc examples
 
-use triple_arena::traits::ArenaTrait;
-
 // SYNC(triple_arena/src/arena/arena_traits.rs, compress_with)
 #[test]
 fn compress_with_example() {
@@ -606,20 +604,22 @@ fn chain_arena_example() {
 // SYNC(triple_arena/src/surject/surject_arena.rs, SurjectArena)
 #[test]
 fn surject_arena_example() {
-    use triple_arena::{SurjectArena, errors::ChainInsertionError, ptr_struct};
+    use triple_arena::{SurjectArena, errors::ChainInsertionError, ptr_struct, traits::ArenaTrait};
 
     ptr_struct!(P0);
     let mut a: SurjectArena<P0, String, String> = SurjectArena::new();
 
-    // There must be at least one key associated with each value
-    let p0_42 = a.insert("key0".to_owned(), "42".to_owned());
-    // If we want new keys to be associated with the same key set pointing to
-    // "42", then instead of calling `insert_val` we call `insert_key`
-    let p1_42 = a.insert_key(p0_42, "key1".to_owned());
+    // There must be at least one key associated with each value, so the first
+    // insertion must always be a surject insertion
+    let p0_42 = a.insert_surject("key0".to_owned(), "42".to_owned());
+    // If we want new keys to be associated with the same surject set pointing to
+    // "42", then instead of calling `insert_surject` we call `insert` to insert
+    // elements to associate with an existing surject
+    let p1_42 = a.insert(p0_42, "key1".to_owned());
     // We could use either `p0_42` or `p1_42` as our reference to get
     // associated with the same key set; any valid pointer in the preexisting
     // set can be used with the same `O(1)` computational complexity incurred.
-    let p2_42 = a.insert_key(p0_42, "key2".to_owned());
+    let p2_42 = a.insert(p0_42, "key2".to_owned());
 
     assert_eq!(a.get(p0_42).unwrap(), "key0");
     assert_eq!(a.get(p1_42).unwrap(), "key1");
@@ -628,7 +628,10 @@ fn surject_arena_example() {
     assert_eq!(a.get_val(p1_42).unwrap(), "42");
     assert_eq!(a.get_val(p2_42).unwrap(), "42");
 
-    assert_eq!(a.remove_key(p1_42).allow(), Some(("key1".to_owned(), None)));
+    assert_eq!(
+        a.remove_element(p1_42).allow(),
+        Some(("key1".to_owned(), None))
+    );
     assert!(a.contains(p0_42));
     assert!(!a.contains(p1_42));
     assert!(a.contains(p2_42));
@@ -638,14 +641,14 @@ fn surject_arena_example() {
 
     // We cannot use an invalidated pointer as a reference
     assert_eq!(
-        a.insert_key_reallocating(p1_42, "key3".to_owned()),
+        a.insert_reallocating(p1_42, "key3".to_owned()),
         Err(ChainInsertionError::FailedLinkRequirement)
     );
     // We need to use an existing valid key
-    let p3_42 = a.insert_key(p2_42, "key3".to_owned());
+    let p3_42 = a.insert(p2_42, "key3".to_owned());
     assert_eq!(a.get_val(p3_42).unwrap(), "42");
 
-    let other42 = a.insert("test".to_owned(), "42".to_owned());
+    let other42 = a.insert_surject("test".to_owned(), "42".to_owned());
     // note this is still a general `Arena`-like structure and not a hereditary
     // set or map, so multiple of the same exact values can exist in different
     // surjects.
@@ -653,13 +656,13 @@ fn surject_arena_example() {
     // removes the entire set
     a.remove_shared(other42).unwrap().allow();
 
-    let p4_7 = a.insert("key4".to_owned(), "7".to_owned());
-    let p5_7 = a.insert_key(p4_7, "key5".to_owned());
+    let p4_7 = a.insert_surject("key4".to_owned(), "7".to_owned());
+    let p5_7 = a.insert(p4_7, "key5".to_owned());
 
     assert_eq!(a.len_surject(p0_42).unwrap().get(), 3);
     assert_eq!(a.len_surject(p4_7).unwrap().get(), 2);
 
-    // I know the order ahead of time because the arena is deterministic, but
+    // The order here is known ahead of time because the arena is deterministic, but
     // note that in general this will be completely unsorted with respect to
     // keys or values.
     let expected = [
@@ -696,13 +699,25 @@ fn surject_arena_example() {
     }
 
     // only upon removing the last key is the value is returned
-    // (or we could use the wholesale `remove`)
-    assert_eq!(a.remove_key(p4_7).allow(), Some(("key4".to_owned(), None)));
-    assert_eq!(a.remove_key(p0_42).allow(), Some(("key0".to_owned(), None)));
-    assert_eq!(a.remove_key(p3_42).allow(), Some(("key3".to_owned(), None)));
-    assert_eq!(a.remove_key(p5_7).allow(), Some(("key5".to_owned(), None)));
+    // (or we could use the wholesale `remove_shared`)
     assert_eq!(
-        a.remove_key(p2_42).allow(),
+        a.remove_element(p4_7).allow(),
+        Some(("key4".to_owned(), None))
+    );
+    assert_eq!(
+        a.remove_element(p0_42).allow(),
+        Some(("key0".to_owned(), None))
+    );
+    assert_eq!(
+        a.remove_element(p3_42).allow(),
+        Some(("key3".to_owned(), None))
+    );
+    assert_eq!(
+        a.remove_element(p5_7).allow(),
+        Some(("key5".to_owned(), None))
+    );
+    assert_eq!(
+        a.remove_element(p2_42).allow(),
         Some(("key2".to_owned(), Some("42 + 7".to_owned())))
     );
 }

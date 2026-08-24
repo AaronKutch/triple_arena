@@ -61,8 +61,8 @@ fn fuzz_surject() {
     let mut generation = 2;
     let mut b: HashMap<Val, Vec<Pair>> = HashMap::new();
 
-    let invalid = a.insert(Key::MAX, Val { v: u64::MAX });
-    a.remove_key(invalid).allow().unwrap();
+    let invalid = a.insert_surject(Key::MAX, Val { v: u64::MAX });
+    a.remove(invalid).allow().unwrap();
     generation += 1;
     a.clear().allow();
     generation += 1;
@@ -98,7 +98,7 @@ fn fuzz_surject() {
                 // insert
                 let k = new_k();
                 let v = new_v();
-                let p = a.insert(k, v);
+                let p = a.insert_surject(k, v);
                 list.push(v);
                 b.insert(v, vec![Pair { p, k }]);
             }
@@ -110,10 +110,10 @@ fn fuzz_surject() {
                     let set = &b[&v];
                     let set_len = set.len();
                     let Pair { p, .. } = set[next_inx!(rng, set_len)];
-                    let p_new = a.insert_key(p, k);
+                    let p_new = a.insert(p, k);
                     b.get_mut(&v).unwrap().push(Pair { p: p_new, k });
                 } else {
-                    assert!(a.insert_key_reallocating(invalid, Key::MAX).is_err());
+                    assert!(a.insert_reallocating(invalid, Key::MAX).is_err());
                 }
             }
             100..=104 => {
@@ -141,7 +141,7 @@ fn fuzz_surject() {
                     let set_len = set.len();
                     let i_set = next_inx!(rng, set_len);
                     let pair = set[i_set];
-                    let res = a.remove_key(pair.p).allow();
+                    let res = a.remove_element(pair.p).allow();
                     generation += 1;
                     if set_len == 1 {
                         list.swap_remove(i);
@@ -152,7 +152,7 @@ fn fuzz_surject() {
                         assert_eq!(res, Some((pair.k, None)));
                     }
                 } else {
-                    assert!(a.remove_key(invalid).allow().is_none());
+                    assert!(a.remove(invalid).allow().is_none());
                 }
             }
             200..=249 => {
