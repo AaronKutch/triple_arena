@@ -51,13 +51,13 @@ impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B
     fn get_inx(&self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &T)> {
         self.elements
             .get_inx(p)
-            .map(|(generation, key)| (generation, &key.t))
+            .map(|(generation, element)| (generation, &element.t))
     }
 
     fn get_inx_mut(&mut self, p: <P as Ptr>::Inx) -> Option<(<P as Ptr>::Gen, &mut T)> {
         self.elements
             .get_inx_mut(p)
-            .map(|(generation, key)| (generation, &mut key.t))
+            .map(|(generation, element)| (generation, &mut element.t))
     }
 
     fn find_first_inx_ptr(&self) -> Option<P> {
@@ -76,14 +76,20 @@ impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B
         self.elements.invalidate(p)
     }
 
+    /// Note that this drains one whole surject at a time, see
+    /// [drain_combined](SurjectArena::drain_combined)
     fn drain(&mut self) -> impl Iterator<Item = InvalidationOption<(P, T)>> {
         self.drain_combined().map(|o| o.map(|(p, t, _)| (p, t)))
     }
 
+    /// Note that this drops the shared value if `p` was the last element of its
+    /// surject, see [remove_element](SurjectArena::remove_element)
     fn remove(&mut self, p: P) -> InvalidationResult<T> {
         self.remove_element(p).map(|(t, _)| t)
     }
 
+    /// Note that this drops the shared value if `p` was the last element of its
+    /// surject, see [remove_element_inx](SurjectArena::remove_element_inx)
     fn remove_inx(&mut self, p: <P as Ptr>::Inx) -> InvalidationResult<(<P as Ptr>::Gen, T)> {
         self.remove_element_inx(p)
             .map(|(generation, t, _)| (generation, t))
@@ -110,14 +116,16 @@ impl<P: Ptr, T, S, B: ArenaBacking> DisjointableArenaTrait<P, T> for SurjectAren
     ) -> Result<[(<P as Ptr>::Gen, &mut T); N], GetDisjointMutError> {
         self.elements
             .get_disjoint_inx_mut(indices)
-            .map(|a| a.map(|(generation, key)| (generation, &mut key.t)))
+            .map(|a| a.map(|(generation, element)| (generation, &mut element.t)))
     }
 
     fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (P, &'a mut T)>
     where
         T: 'a,
     {
-        self.elements.iter_mut().map(|(p, key)| (p, &mut key.t))
+        self.elements
+            .iter_mut()
+            .map(|(p, element)| (p, &mut element.t))
     }
 }
 

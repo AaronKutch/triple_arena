@@ -609,117 +609,117 @@ fn surject_arena_example() {
     ptr_struct!(P0);
     let mut a: SurjectArena<P0, String, String> = SurjectArena::new();
 
-    // There must be at least one key associated with each value, so the first
-    // insertion must always be a surject insertion
-    let p0_42 = a.insert_surject("key0".to_owned(), "42".to_owned());
-    // If we want new keys to be associated with the same surject set pointing to
-    // "42", then instead of calling `insert_surject` we call `insert` to insert
-    // elements to associate with an existing surject
-    let p1_42 = a.insert(p0_42, "key1".to_owned());
-    // We could use either `p0_42` or `p1_42` as our reference to get
-    // associated with the same key set; any valid pointer in the preexisting
-    // set can be used with the same `O(1)` computational complexity incurred.
-    let p2_42 = a.insert(p0_42, "key2".to_owned());
+    // There must be at least one element associated with each shared value, so
+    // the first insertion must always be a surject insertion
+    let p0_42 = a.insert_surject("e0".to_owned(), "42".to_owned());
+    // If we want new elements to be associated with the same surject that
+    // shares "42", then instead of calling `insert_surject` we call `insert` to
+    // insert elements into an existing surject
+    let p1_42 = a.insert(p0_42, "e1".to_owned());
+    // We could use either `p0_42` or `p1_42` as our reference to get associated
+    // with the same surject; any valid pointer in the preexisting surject can
+    // be used with the same `O(1)` computational complexity incurred.
+    let p2_42 = a.insert(p0_42, "e2".to_owned());
 
-    assert_eq!(a.get(p0_42).unwrap(), "key0");
-    assert_eq!(a.get(p1_42).unwrap(), "key1");
-    assert_eq!(a.get(p2_42).unwrap(), "key2");
+    assert_eq!(a.get(p0_42).unwrap(), "e0");
+    assert_eq!(a.get(p1_42).unwrap(), "e1");
+    assert_eq!(a.get(p2_42).unwrap(), "e2");
     assert_eq!(a.get_shared(p0_42).unwrap(), "42");
     assert_eq!(a.get_shared(p1_42).unwrap(), "42");
     assert_eq!(a.get_shared(p2_42).unwrap(), "42");
 
     assert_eq!(
         a.remove_element(p1_42).allow(),
-        Some(("key1".to_owned(), None))
+        Some(("e1".to_owned(), None))
     );
     assert!(a.contains(p0_42));
     assert!(!a.contains(p1_42));
     assert!(a.contains(p2_42));
-    // the value is perpetuated as long as there is a nonempty set of
-    // pointer-keys associated with it
+    // the shared value is perpetuated as long as the surject still has at least
+    // one element
     assert_eq!(a.get_shared(p2_42).unwrap(), "42");
 
     // We cannot use an invalidated pointer as a reference
     assert_eq!(
-        a.insert_reallocating(p1_42, "key3".to_owned()),
+        a.insert_reallocating(p1_42, "e3".to_owned()),
         Err(ChainInsertionError::FailedLinkRequirement)
     );
-    // We need to use an existing valid key
-    let p3_42 = a.insert(p2_42, "key3".to_owned());
+    // We need to use an existing valid element
+    let p3_42 = a.insert(p2_42, "e3".to_owned());
     assert_eq!(a.get_shared(p3_42).unwrap(), "42");
 
     let other42 = a.insert_surject("test".to_owned(), "42".to_owned());
     // note this is still a general `Arena`-like structure and not a hereditary
-    // set or map, so multiple of the same exact values can exist in different
-    // surjects.
+    // set or map, so multiple of the same exact shared values can exist in
+    // different surjects.
     assert!(!a.in_same_surject(p0_42, other42).unwrap());
-    // removes the entire set
+    // removes the entire surject
     a.remove_shared(other42).unwrap().allow();
 
-    let p4_7 = a.insert_surject("key4".to_owned(), "7".to_owned());
-    let p5_7 = a.insert(p4_7, "key5".to_owned());
+    let p4_7 = a.insert_surject("e4".to_owned(), "7".to_owned());
+    let p5_7 = a.insert(p4_7, "e5".to_owned());
 
     assert_eq!(a.len_surject(p0_42).unwrap().get(), 3);
     assert_eq!(a.len_surject(p4_7).unwrap().get(), 2);
 
-    // The order here is known ahead of time because the arena is deterministic, but
-    // note that in general this will be completely unsorted with respect to
-    // keys or values.
+    // The order here is known ahead of time because the arena is deterministic,
+    // but note that in general this will be completely unsorted with respect to
+    // the elements or the shared values.
     let expected = [
-        (p0_42, "key0", "42"),
-        (p3_42, "key3", "42"),
-        (p2_42, "key2", "42"),
-        (p4_7, "key4", "7"),
-        (p5_7, "key5", "7"),
+        (p0_42, "e0", "42"),
+        (p3_42, "e3", "42"),
+        (p2_42, "e2", "42"),
+        (p4_7, "e4", "7"),
+        (p5_7, "e5", "7"),
     ];
-    // this iterator is not cloning the values, it is simply repeatedly
-    // indexing the values when multiple keys are associated with a single
+    // this iterator is not cloning the shared values, it is simply repeatedly
+    // indexing them when multiple elements are associated with a single shared
     // value
-    for (i, (p, key, val)) in a.iter_combined().enumerate() {
-        assert_eq!(expected[i], (p, key.as_str(), val.as_str()));
+    for (i, (p, element, shared)) in a.iter_combined().enumerate() {
+        assert_eq!(expected[i], (p, element.as_str(), shared.as_str()));
     }
 
-    let (removed_v, kept_p) = a.union(p0_42, p4_7).unwrap();
-    // One of the "7" or "42" values was removed from the arena,
-    // and the other remains in the arena. Suppose we want
-    // to take a custom union of the `String`s to go along
-    // with the union of the keys, we would do something like
+    let (removed_s, kept_p) = a.union(p0_42, p4_7).unwrap();
+    // One of the "7" or "42" shared values was removed from the arena, and the
+    // other remains in the arena. Suppose we want to take a custom union of the
+    // `String`s to go along with the union of the elements, we would do
+    // something like
     *a.get_shared_mut(kept_p).unwrap() =
-        format!("{} + {}", a.get_shared(kept_p).unwrap(), removed_v);
+        format!("{} + {}", a.get_shared(kept_p).unwrap(), removed_s);
 
     assert_eq!(a.len_surject(p0_42).unwrap().get(), 5);
     let expected = [
-        (p0_42, "key0", "42 + 7"),
-        (p3_42, "key3", "42 + 7"),
-        (p2_42, "key2", "42 + 7"),
-        (p4_7, "key4", "42 + 7"),
-        (p5_7, "key5", "42 + 7"),
+        (p0_42, "e0", "42 + 7"),
+        (p3_42, "e3", "42 + 7"),
+        (p2_42, "e2", "42 + 7"),
+        (p4_7, "e4", "42 + 7"),
+        (p5_7, "e5", "42 + 7"),
     ];
-    for (i, (p, key, val)) in a.iter_combined().enumerate() {
-        assert_eq!(expected[i], (p, key.as_str(), val.as_str()));
+    for (i, (p, element, shared)) in a.iter_combined().enumerate() {
+        assert_eq!(expected[i], (p, element.as_str(), shared.as_str()));
     }
 
-    // only upon removing the last key is the value is returned
+    // only upon removing the last element is the shared value returned
     // (or we could use the wholesale `remove_shared`)
     assert_eq!(
         a.remove_element(p4_7).allow(),
-        Some(("key4".to_owned(), None))
+        Some(("e4".to_owned(), None))
     );
     assert_eq!(
         a.remove_element(p0_42).allow(),
-        Some(("key0".to_owned(), None))
+        Some(("e0".to_owned(), None))
     );
     assert_eq!(
         a.remove_element(p3_42).allow(),
-        Some(("key3".to_owned(), None))
+        Some(("e3".to_owned(), None))
     );
     assert_eq!(
         a.remove_element(p5_7).allow(),
-        Some(("key5".to_owned(), None))
+        Some(("e5".to_owned(), None))
     );
     assert_eq!(
         a.remove_element(p2_42).allow(),
-        Some(("key2".to_owned(), Some("42 + 7".to_owned())))
+        Some(("e2".to_owned(), Some("42 + 7".to_owned())))
     );
 }
 

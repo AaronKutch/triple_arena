@@ -506,7 +506,8 @@ pub trait DisjointableArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
             .map(|a| a.map(|(_, t)| t))
     }
 
-    /// Like [ArenaTrait::get_disjoint_mut], except generation counters are
+    /// Like [get_disjoint_mut](DisjointableArenaTrait::get_disjoint_mut),
+    /// except generation counters are
     /// ignored and the existing generations are returned with the mutable
     /// references.
     fn get_disjoint_inx_mut<const N: usize>(
