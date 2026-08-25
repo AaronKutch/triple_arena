@@ -12,8 +12,6 @@ pub enum InvalidationOption<T> {
     GenerationOverflow(T),
 }
 
-// FIXME scan through and update based on these methods
-
 impl<T> InvalidationOption<T> {
     /// If `matches!(self, Self::Success(_))`
     pub fn is_success(&self) -> bool {

@@ -64,9 +64,6 @@ Unwind safety and the "# Unwind Safety" sections shouldn't matter to sane progra
 
 */
 
-// FIXME put `get_disjoint_*`, `vals_mut`, `iter_mut` on a
-// `DisjointableArenaTrait``
-
 /// The base trait for `triple_arena` style Arenas. See [Arena](crate::Arena)
 /// for the standard implementor.
 ///

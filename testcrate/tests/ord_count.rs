@@ -17,8 +17,6 @@ fn get_std_insts() -> Vec<Result<(CKey, CVal), usize>> {
     insts
 }
 
-// FIXME we do want to keep this
-
 #[test]
 fn ord_arena_count() {
     let mut a = SimpleOrdArena::<P1, OrdPair<CKey, CVal>>::new();
