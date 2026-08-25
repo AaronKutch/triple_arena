@@ -411,9 +411,9 @@ pub trait SetMaxCapacity {
     /// max capacity. Additionally, some fixed capacity types have a maximum
     /// achievable capacity set upon construction. This function is only
     /// fallible to prevent violating the invariant `self.capacity() <=
-    /// self.max_capacity()` at runtime, and does not warn for fixed width
-    /// unreachabilities and cannot be relied upon for reallocation
-    /// infallibility.
+    /// self.max_capacity()` at runtime, and does not warn about capacities that
+    /// a fixed width type can never reach, and cannot be relied upon for
+    /// reallocation infallibility.
     ///
     /// This is usually an `O(1)` operation, but if `self.capacity()` decreases,
     /// it can be an `O(n)` operation (not because it reallocates, but

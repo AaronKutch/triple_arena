@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0] - FIXME
+### Crate
+- MSRV 1.88
+- `triple_arena` 0.15
+
+### Changes
+- The rendering functions are now generic over any arena implementing `CompactArenaTrait`, instead of taking a concrete `Arena`
+
 ## [0.14.0] - 2025-02-10
 ### Crate
 - `triple_arena` 0.14

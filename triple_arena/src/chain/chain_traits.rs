@@ -37,13 +37,13 @@ pub enum LinkInsertKind<P: Ptr> {
     /// could be anywhere on any chain, maintaining continuity of the chain
     PrevTo(P),
     PrevToInx(P::Inx),
-    /// Insert a link inbetween two `P` that have an interlink between them,
+    /// Insert a link in between two `P` that have an interlink between them,
     /// maintaining continuity of the chain. The insertion will fail if the two
     /// links are not neighbors. Note that the arguments are directionally
-    /// sensitive: calling [crate::Link::next] on the link at `next_to` must
+    /// sensitive: calling [Link::next] on the link at `next_to` must
     /// result in `prev_to` and not the other way around. Note that this can
     /// act on a single link cyclic chain with `next_to == prev_to`, but
-    /// `next_to == prev_to` is allowed only in that case as the "inbetween"
+    /// `next_to == prev_to` is allowed only in that case as the "in between"
     /// acts upon the interlink of a link with itself. Single link chains
     /// without a cycle can never succeed with this operation, because there
     /// is no interlink.
@@ -56,10 +56,10 @@ pub enum LinkInsertKind<P: Ptr> {
         prev_to: P::Inx,
     },
     // (named bridge because 3 links are involved, "connect" only involves interlinks)
-    /// Insert a link as a bridge inbetween the end and start of chains. If this
-    /// is the end and start of the same chain, this creates a unified cyclic
-    /// chain. If this is the end and start of different chains, this makes a
-    /// unified linear chain.
+    /// Insert a link as a bridge in between the end and start of chains. If
+    /// this is the end and start of the same chain, this creates a unified
+    /// cyclic chain. If this is the end and start of different chains, this
+    /// makes a unified linear chain.
     Bridge {
         end: P,
         start: P,
@@ -84,9 +84,9 @@ pub(crate) enum LinkInsertInxKind<P: Ptr> {
 }
 
 /// A trait for storing an idealized doubly-linked-list on arenas. Multiple
-/// separate chains and cyclical chains are supported. This inherits all the
+/// separate chains and cyclic chains are supported. This inherits all the
 /// methods of [ArenaTrait] but adds on some [Link]-aware
-/// ones. See [crate::ChainArena] for the standard implementor.
+/// ones. See [ChainArena](crate::ChainArena) for the standard implementor.
 ///
 /// # Note
 ///
@@ -300,11 +300,11 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     ///
     /// # Note
     ///
-    /// This handles cyclical chains, however if links or interlinks of the
+    /// This handles cyclic chains, however if links or interlinks of the
     /// chain that contains `p_init` are invalidated during the loop, or if the
-    /// chain starts as noncyclical and is reconnected to become cyclical during
+    /// chain starts as noncyclic and is reconnected to become cyclic during
     /// the loop, it can lead to a loop where the same `Ptr` can be returned
-    /// multiple times. There is a internal fail safe that prevents
+    /// multiple times. There is an internal fail safe that prevents
     /// non-termination.
     fn advancer_chain(&self, p_init: P) -> Option<Self::ChainPtrAdvancer>;
 
@@ -347,7 +347,8 @@ pub trait ChainArenaTrait<P: Ptr, T>: ArenaTrait<P, T> {
     /// is that `exchange_next` on two `Ptr`s of the same cyclic chain always
     /// results in two cyclic chains (except for if `p0 == p1`), and
     /// `exchange_next` on two `Ptr`s of two separate cyclic chains always
-    /// results in a single cyclic chain. This is used by [crate::SurjectArena]
+    /// results in a single cyclic chain. This is used by
+    /// [SurjectArena](crate::SurjectArena)
     /// to efficiently track and merge sets of nodes.
     #[must_use]
     fn exchange_next(&mut self, p0: P, p1: P) -> Option<()>;

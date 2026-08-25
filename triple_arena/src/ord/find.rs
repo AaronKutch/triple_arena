@@ -276,7 +276,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Combines the behaviors of [SimpleOrdArena::find_similar_key] and
     /// [SimpleOrdArena::find_key_linear]. Note that unlike `find_key_linear`,
     /// `p_init` is a raw index and the generation is not checked, which matches
-    /// [crate::OrdInsertKind::Linear]. Unlike `find_key_linear`, once the
+    /// [OrdInsertKind::Linear](crate::OrdInsertKind::Linear). Unlike
+    /// `find_key_linear`, once the
     /// linear comparisons have narrowed the key down to being between two
     /// neighboring entries, this returns immediately instead of falling back to
     /// a normal search.

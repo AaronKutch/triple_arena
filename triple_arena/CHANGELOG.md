@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.15.0] - TODO
+## [0.15.0] - FIXME
 ### Crate
 - MSRV 1.88
 
@@ -10,8 +10,11 @@
 - Added new `DirectArena` type.
 - Unified `ChainNoGenArena` and `ChainArena` so that there is just one `ChainArena` type now, optimized for space, since usually if the neighboring generation counters are needed, then you are probably accessing their cache lines anyways. The generation counters on interlinks are often not needed.
 - Removed the old `OrdArena`, added a `SimpleOrdArena` which is almost the same as the old `OrdArena` except that it allows getting the key from a substructure of a single `T`. `SimpleOrdArena` will be preserved as an ideal ordered arena into the future. A full `OrdArena<P, K, V, B>` arena with optimized cache locality will be added in a future version. `SimpleOrdArena<P, OrdPair<K, V>, B>` can be used to replicate the old `OrdArena`.
+- Reworked `SurjectArena` around "element" and "shared value" terminology instead of "key" and "value", and renamed a bunch of stuff
+- `SurjectArena` now implements `ArenaTrait`, `DisjointableArenaTrait`, and `CompactArenaTrait`, which is what supplies its `new`, `with_min_capacity`, `capacity`, `len`, `is_empty`, `contains`, `get*`, `get_disjoint*`, `invalidate`, `remove`, `clear`, `compress*`, and iteration functions. The element side is what all of these act on, and `with_min_capacity_separated` is available if the two internal capacities need to differ. Note that `ArenaTrait::compress_with` for `SurjectArena`s is the only element-wise method in the crate with `O(n^2)` complexity, because the relative ordering it has to preserve leaves the surjects scattered.
+- Added `SurjectArena::compress_canonical` and `SurjectArena::transfer_canonical_reallocating`, which are `O(n)` and lay the elements of a surject out contiguously for cache locality. Also added `drain_surject`, `drain_combined`, `iter_surject`, `iter_combined`, `advancer_surject`, and entry based insertion.
 - Be aware that the advancers and iterators that come with `ArenaTrait` are not ordered like they were previously for the ordered arena type. The `*_ordered` versions should be used instead if needed.
-- More ideal deterministic behavior, it should be stable for the forseeable future (but note however that the heap types can have nondeterminism in some capacity interactive cases from the allocator giving extra). For duplicating `Ptr` validities across arenas however, we recommend the new `ArenaDirectInsertTrait` and arenas that implement it to follow `ArenaInsertTrait` type arenas.
+- More ideal deterministic behavior, it should be stable for the foreseeable future (but note however that the heap types can have nondeterminism in some capacity interactive cases from the allocator giving extra). For duplicating `Ptr` validities across arenas however, we recommend the new `ArenaDirectInsertTrait` and arenas that implement it to follow `ArenaInsertTrait` type arenas.
 - Generation overflow no longer panics, has the best possible behavior in the default case, and can be explicitly checked with various functions now.
 - The `PtrInx` and `PtrGen` traits have been changed to be safe, and have stricter semantics around conversion now
 - Removed `swap`, `replace_and_update_gen`, and `replace_and_keep_gen` because they were barely used, would have very awkward signatures with the new design, and wouldn't work with potential future `!Overwrite` abilities

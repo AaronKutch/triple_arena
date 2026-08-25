@@ -236,7 +236,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     }
 
     /// Following the style of
-    /// [crate::traits::ArenaInsertTrait::insert_within_capacity]. Uses
+    /// [ArenaInsertTrait::insert_within_capacity](crate::traits::ArenaInsertTrait::insert_within_capacity).
+    /// Uses
     /// [OrdInsertKind::Normal], so the returned `Option<T>` is the replaced
     /// item if there was already an entry with an equal key.
     pub fn insert_within_capacity(&mut self, t: T) -> Result<(P, Option<T>), OrdInsertionError> {
@@ -246,7 +247,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     }
 
     /// Following the style of
-    /// [crate::traits::ArenaInsertTrait::insert_reallocating]. Uses
+    /// [ArenaInsertTrait::insert_reallocating](crate::traits::ArenaInsertTrait::insert_reallocating).
+    /// Uses
     /// [OrdInsertKind::Normal], so the returned `Option<T>` is the replaced
     /// item if there was already an entry with an equal key.
     pub fn insert_reallocating(&mut self, t: T) -> Result<(P, Option<T>), OrdInsertionError> {
@@ -255,9 +257,10 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         Ok((p, entry.insert(t)))
     }
 
-    /// Following the style of [crate::traits::ArenaInsertTrait::insert]. Uses
-    /// [OrdInsertKind::Normal]. Panics if there was a reallocation error or if
-    /// max capacity was reached.
+    /// Following the style of
+    /// [ArenaInsertTrait::insert](crate::traits::ArenaInsertTrait::insert).
+    /// Uses [OrdInsertKind::Normal]. Panics if there was a reallocation
+    /// error or if max capacity was reached.
     ///
     /// # Panics
     ///
@@ -269,7 +272,7 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     }
 
     /// Following the style of
-    /// [crate::traits::ArenaInsertTrait::entry_insert_within_capacity]
+    /// [ArenaInsertTrait::entry_insert_within_capacity](crate::traits::ArenaInsertTrait::entry_insert_within_capacity)
     pub fn entry_insert_within_capacity<'a>(
         &mut self,
         kind: OrdInsertKind<P, T::Key<'a>>,
@@ -302,7 +305,7 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     }
 
     /// Following the style of
-    /// [crate::traits::ArenaInsertTrait::entry_insert_reallocating]
+    /// [ArenaInsertTrait::entry_insert_reallocating](crate::traits::ArenaInsertTrait::entry_insert_reallocating)
     pub fn entry_insert_reallocating<'a>(
         &mut self,
         kind: OrdInsertKind<P, T::Key<'a>>,
@@ -340,7 +343,8 @@ impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         }
     }
 
-    /// Following the style of [crate::traits::ArenaInsertTrait::entry_insert].
+    /// Following the style of
+    /// [ArenaInsertTrait::entry_insert](crate::traits::ArenaInsertTrait::entry_insert).
     /// Panics if there was a reallocation error, or if max capacity was
     /// reached, or if a `OrdInsertKind` requirement was violated.
     ///
@@ -440,7 +444,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
         }
     }
 
-    /// Rebalances starting from newly inserted node `p`. Do do not call this in
+    /// Rebalances starting from newly inserted node `p`. Do not call this in
     /// the empty insertion case when inserting the first node.
     fn rebalance_inserted(&mut self, p: P::Inx) {
         // We keep record of the last three nodes for trinode restructuring.

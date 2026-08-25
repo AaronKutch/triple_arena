@@ -84,7 +84,7 @@ pub struct SimpleOrdArenaNode<P: Ptr, T> {
 /// An Ordered Arena with two main parameters: a `P: Ptr` type that gives single
 /// indirection access to elements, and a `T: SimpleOrdItem` type that functions
 /// as a unified key and value type, with
-/// [crate::utils::traits::SimpleOrdItem::key] used to define an ordering among
+/// [key](crate::utils::traits::SimpleOrdItem::key) used to define an ordering
 /// elements. `O(log n)` insertions, finds, and deletions are guaranteed.
 ///
 /// In common use, you should use `SimpleOrdArena<P, OrdPair<K, V>, B>`, where
@@ -114,7 +114,8 @@ pub struct SimpleOrdArenaNode<P: Ptr, T> {
 /// Note: it is a logic error for a key's ordering to change relative to other
 /// keys (by using internal mutability or directly modifying the relevant part
 /// of the `T: SimpleOrdItem` while it is still in the arena), or for a special
-/// function like `insert_inx_manual_unwrap` or [crate::OrdInsertKind::Manual]
+/// function like `insert_inx_manual_unwrap` or
+/// [OrdInsertKind::Manual](crate::OrdInsertKind::Manual)
 /// to be used incorrectly. Unlike some other implementations, the functions on
 /// `SimpleOrdArena`s are constructed such that _no_ panics (unless explicitly
 /// documented), aborts, memory leaks, or non-termination occurs, regardless of
@@ -499,7 +500,7 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// This is a more advanced version of [ArenaTrait::compress] that reorders
     /// the entries to be one after another internally and rebalances the tree
     /// deterministically, completely canonicalizing at every level (at least
-    /// with respect to the prexisting ordering, this preserves the
+    /// with respect to the preexisting ordering, this preserves the
     /// [LinkNoGen::prev_next] relations as they existed before this function
     /// was called). Improves cache locality, at least with respect to
     /// advancing over the entries in order.

@@ -32,7 +32,7 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer<SimpleOrdArena<P, T, B>> for PtrAdvanc
 
 /// An ordered advancer
 pub struct OrderedPtrAdvancer<P: Ptr> {
-    // same as for `ChainPtrAdvancer` except we get to assume the chain is acyclical and we start
+    // same as for `ChainPtrAdvancer` except we get to assume the chain is acyclic and we start
     // from the beginning
     inx: Option<P::Inx>,
     // if in reverse

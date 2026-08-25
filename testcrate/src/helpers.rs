@@ -51,11 +51,7 @@ pub fn get_next_seed() -> u64 {
     })
 }
 
-pub fn get_clone_count() -> u64 {
-    CLONE_COUNT.with(|f| *f.borrow())
-}
-
-pub fn inc_clone_count() {
+fn inc_clone_count() {
     CLONE_COUNT.with(|f| {
         let x = f.borrow().checked_add(1).unwrap();
         *f.borrow_mut() = x;
@@ -66,7 +62,7 @@ pub fn get_cmp_count() -> u64 {
     CMP_COUNT.with(|f| *f.borrow())
 }
 
-pub fn inc_cmp_count() {
+fn inc_cmp_count() {
     CMP_COUNT.with(|f| {
         let x = f.borrow().checked_add(1).unwrap();
         *f.borrow_mut() = x;
@@ -133,7 +129,7 @@ impl Clone for CVal {
     }
 }
 
-pub fn next_key_val_pair(rng: &mut Xoshiro128StarStar) -> (CKey, CVal) {
+fn next_key_val_pair(rng: &mut Xoshiro128StarStar) -> (CKey, CVal) {
     let v = VAL_NUM.with(|f| {
         let x: u64 = *f.borrow();
         *f.borrow_mut() = x.checked_add(1).unwrap();

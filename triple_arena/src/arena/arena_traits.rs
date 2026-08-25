@@ -90,9 +90,9 @@ Unwind safety and the "# Unwind Safety" sections shouldn't matter to sane progra
 /// When using the default `P::Inx = usize` and `P::Gen = NonZeroU64`, only
 /// memory exhaustion should be a concern on all platforms. It would take over
 /// 500 years for generation overflow to occur if 1 billion invalidations per
-/// second occured. Note that generation overflow with the `NonZero*` primitives
-/// wraps around and skips the invalid `Ptr` generation case, and does not
-/// panic.
+/// second occurred. Note that generation overflow with the `NonZero*`
+/// primitives wraps around and skips the invalid `Ptr` generation case, and
+/// does not panic.
 ///
 /// For example, in most cases, you should just use
 /// [insert](ArenaInsertTrait::insert) to insert elements into the arena and
@@ -309,7 +309,7 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
 
     /// Drops all `T` from the arena and invalidates all pointers previously
     /// created from it. This has no effect on allocated capacity. Returns if
-    /// any generation overflow occured (for arena implementations that have
+    /// any generation overflow occurred (for arena implementations that have
     /// generations per internal slot or domain, this will return overflow if
     /// any single one overflowed).
     ///

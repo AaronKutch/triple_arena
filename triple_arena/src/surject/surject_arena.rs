@@ -62,7 +62,7 @@ pub struct SurjectShared<S> {
 /// or element reinsertion).
 ///
 /// `SurjectArena<P, (), S>` is more like a classic union-find structure, and
-/// `SurjectArena<P, T, ()>` is a kind of non-hereditary set. Even
+/// `SurjectArena<P, T, ()>` is a kind of nonhereditary set. Even
 /// `SurjectArena<P, (), ()>` can be useful (assuming `P` has generation
 /// counters) for its `O(1)` validity tracking capabilities under any order
 /// of adding and removing of pointers. This is more powerful than pure
@@ -675,8 +675,8 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
     /// `p1`'s surject. If `self.len_surject(p0) >= self.len_surject(p1)`,
     /// the shared value pointed to by `p1` is removed and returned in a
     /// tuple with `p0`, and the surject of `p1` is changed to point to the
-    /// shared value of `p0`'s surject. Returns `None` if
-    /// `self.in_same_surject(p0, p1)`.
+    /// shared value of `p0`'s surject. Returns `None` if `p0` or `p1` are
+    /// invalid, or if they already point into the same surject.
     ///
     /// # Note
     ///
@@ -1089,7 +1089,7 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
     ///
     /// If `map_element` or `map_shared` panics, the element it was called with
     /// is lost to whatever the closure does, the rest of the surject that was
-    /// being drained out of `source` is dropped, and `source` is left with the
+    /// being drained out of `source` is dropped, `source` is left with the
     /// surjects that have yet to be transferred, and `self` is cleared.
     pub fn transfer_canonical_reallocating<
         Q: Ptr,

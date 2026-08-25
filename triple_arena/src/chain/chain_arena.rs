@@ -22,7 +22,7 @@ use crate::{
 
 /// A doubly-linked-list based on an arena for handling usecases involving
 /// `O(1)` insertion, deletion, and other functions on linear lists of elements
-/// that we call "chains" of "links". Multiple separate chains and cyclical
+/// that we call "chains" of "links". Multiple separate chains and cyclic
 /// chains are supported.
 ///
 /// ```
@@ -107,7 +107,7 @@ use crate::{
 ///
 /// // `iter_chain` will iterate over all links in the chain that the given
 /// // `Ptr` is a part of. It will iterate across the chain in order (but
-/// // check the documentation for how starting in the middle or in a cyclical
+/// // check the documentation for how starting in the middle or in a cyclic
 /// // chain works).
 /// let expected = [
 ///     (p_a, "A"),
@@ -221,7 +221,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     }
 
     /// Returns the singular arena generation counter, the same as
-    /// [crate::traits::ArenaTrait::singular_generation]
+    /// [ArenaTrait::singular_generation]
     #[inline]
     pub fn generation(&self) -> P::Gen {
         self.a.generation()

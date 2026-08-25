@@ -32,7 +32,7 @@ impl<P: Ptr, T, S, B: ArenaBacking> Advancer<SurjectArena<P, T, S, B>> for PtrAd
 
 /// An advancer over the valid `P`s of one surject in a `SurjectArena`
 pub struct SurjectPtrAdvancer<P: Ptr> {
-    // same as for `ChainPtrAdvancer` except we get to assume the chain is cyclical
+    // same as for `ChainPtrAdvancer` except we get to assume the chain is cyclic
     init: P::Inx,
     ptr: Option<P::Inx>,
     // prevent infinite loops

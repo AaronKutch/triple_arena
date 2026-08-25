@@ -17,7 +17,11 @@ use triple_arena::{
     utils::{NonZeroInxVec, traits::NonZeroInxGenericStack},
 };
 
-// FIXME reinspect
+// Last inspected for 0.15.0: each of these compiles down to one bounds check
+// against the stack length, one check of whether the slot is allocated (which
+// for a generation counted `Ptr` is folded into comparing the generation), and
+// then the loads of the entry itself. There is no redundant branching or
+// double bounds checking.
 
 ptr_struct!(P0());
 ptr_struct!(P1);

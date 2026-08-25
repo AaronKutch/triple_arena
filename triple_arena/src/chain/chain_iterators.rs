@@ -69,7 +69,7 @@ impl<P: Ptr, T, B: ArenaBacking> Advancer<ChainArena<P, T, B>> for ChainPtrAdvan
             } else if let Some((generation, link)) = collection.a.get_inx(ptr) {
                 if let Some(next) = link.next() {
                     if next == self.init {
-                        // cyclical
+                        // cyclic
                         self.ptr = None;
                     } else {
                         self.ptr = Some(next);

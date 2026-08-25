@@ -89,15 +89,18 @@ impl<P: Ptr> DebugNode<P> {
     }
 }
 
-/// A trait implemented for the `T` in `triple_arena::Arena<P, T>`, intended
-/// where `T` is some kind of graph node element. `P` corresponds to the
-/// `P` being used for the arena, and allows renderers to automatically
-/// traverse the graph in the arena.
+/// A trait implemented for the `T` of any arena implementing
+/// `triple_arena::traits::CompactArenaTrait<P, T>`, intended where `T` is some
+/// kind of graph node element. `P` corresponds to the `P` being used for the
+/// arena, and allows renderers to automatically traverse the graph in the
+/// arena.
 ///
 /// `p_this` corresponds to the `Ptr` that the renderer finds the `this` node at
-/// when calling `debug_node` (much of the time it is ignored, but it can useful
-/// when including `format!("{:?}", p_this))` in the `center`.
+/// when calling `debug_node` (much of the time it is ignored, but it can be
+/// useful when including `format!("{p_this:?}")` in the `center`).
 pub trait DebugNodeTrait<P: Ptr> {
+    /// Returns the [DebugNode] that `this`, found at `p_this`, should be
+    /// rendered as
     fn debug_node(p_this: P, this: &Self) -> DebugNode<P>;
 }
 
@@ -117,6 +120,7 @@ impl<P: Ptr, T: DebugNodeTrait<P>> DebugNodeTrait<P> for Link<P, T> {
     }
 }
 
+/// An error from one of the rendering functions
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum RenderError<P: Ptr> {

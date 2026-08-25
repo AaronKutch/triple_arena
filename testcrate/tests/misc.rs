@@ -2,9 +2,13 @@ use std::num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZe
 
 use testcrate::P0;
 use triple_arena::{
-    Arena, StackBacking, ptr_struct,
+    Arena, ChainArena, DirectArena, LinkInsertKind, OrdPair, SimpleOrdArena, StackBacking,
+    SurjectArena, ptr_struct,
     traits::*,
-    utils::{PtrNoGen, traits::PtrInx},
+    utils::{
+        PtrNoGen,
+        traits::{PtrGen, PtrInx},
+    },
 };
 
 #[test]
@@ -92,9 +96,145 @@ fn ptr_display() {
     );
 }
 
+fn nz(x: usize) -> NonZeroUsize {
+    NonZeroUsize::new(x).unwrap()
+}
+
 #[test]
 fn arena_display() {
-    // FIXME links and arenas
+    // the unordered arenas are `Debug` maps in internal slot order, and free
+    // slots are simply not shown
+    let mut a = Arena::<P0, u8, StackBacking<8>>::new();
+    a.insert(10);
+    let p1 = a.insert(11);
+    a.insert(12);
+    a.remove(p1).allow().unwrap();
+    assert_eq!(&format!("{a:?}"), "{P0[1](2): 10, P0[3](2): 12}");
+    assert_eq!(
+        &format!("{a:#?}"),
+        r#"{
+    P0[1](2): 10,
+    P0[3](2): 12,
+}"#
+    );
+
+    let mut d = DirectArena::<P0, u8, StackBacking<8>>::new();
+    for (i, t) in [30u8, 31].into_iter().enumerate() {
+        let p: P0 = Ptr::_from_raw(PtrInx::try_from_usize(nz(i + 1)).unwrap(), PtrGen::two());
+        d.direct_insert_within_capacity(p).unwrap().insert(t);
+    }
+    assert_eq!(&format!("{d:?}"), "{P0[1](2): 30, P0[2](2): 31}");
+    assert_eq!(
+        &format!("{d:#?}"),
+        r#"{
+    P0[1](2): 30,
+    P0[2](2): 31,
+}"#
+    );
+
+    // a chain arena prefixes each entry with its interlinks in hex, using
+    // `(start)` and `(end)` for the ends of a noncyclic chain. The `&str`
+    // entries show that the `Debug` and `Display` impls really do dispatch to
+    // the corresponding impl of the entry.
+    let mut c = ChainArena::<P0, &str, StackBacking<128>>::new();
+    let q0 = c.insert(LinkInsertKind::Disconnected, "x");
+    c.insert(LinkInsertKind::ChainEnd(q0), "y");
+    c.insert(LinkInsertKind::SingleLinkCyclic, "z");
+    // make sure it is hex
+    let mut v = vec![];
+    for _ in 0..10 {
+        v.push(c.insert(LinkInsertKind::Disconnected, "w"));
+    }
+    c.insert(LinkInsertKind::SingleLinkCyclic, "w");
+    for i in 0..9 {
+        c.remove(v[i]).allow().unwrap();
+    }
+    assert_eq!(
+        &format!("{c:?}"),
+        r#"{P0[1](2): {(start), 2} "x", P0[2](2): {1, (end)} "y", P0[3](2): {3, 3} "z", P0[d](2): {(start), (end)} "w", P0[e](2): {e, e} "w"}"#
+    );
+    assert_eq!(
+        &format!("{c:#?}"),
+        r#"{
+    P0[1](2): {(start), 2} "x",
+    P0[2](2): {1, (end)} "y",
+    P0[3](2): {3, 3} "z",
+    P0[d](2): {(start), (end)} "w",
+    P0[e](2): {e, e} "w",
+}"#
+    );
+
+    // and the same prefix is used by the standalone links
+    let link = c.get_link(q0).unwrap();
+    let link_no_gen = c.get_link_no_gen(q0).unwrap();
+    assert_eq!(&format!("{link:?}"), r#"{(start), 2} "x""#);
+    assert_eq!(&format!("{link:#?}"), r#"{(start), 2} "x""#);
+    assert_eq!(&format!("{link}"), "{(start), 2} x");
+    assert_eq!(&format!("{link:#}"), "{(start), 2} x");
+    assert_eq!(&format!("{link_no_gen:?}"), r#"{(start), 2} "x""#);
+    assert_eq!(&format!("{link_no_gen:#?}"), r#"{(start), 2} "x""#);
+    assert_eq!(&format!("{link_no_gen}"), "{(start), 2} x");
+    assert_eq!(&format!("{link_no_gen:#}"), "{(start), 2} x");
+
+    // in key order
+    let mut o = SimpleOrdArena::<P0, OrdPair<u8, u8>, StackBacking<8>>::new();
+    let _ = o.insert(OrdPair::new(3, 40));
+    let _ = o.insert(OrdPair::new(1, 41));
+    let _ = o.insert(OrdPair::new(2, 42));
+    assert_eq!(
+        &format!("{o:?}"),
+        "{P0[2](2): (1, 41), P0[3](2): (2, 42), P0[1](2): (3, 40)}"
+    );
+    assert_eq!(&format!("{:?}", OrdPair::new(1u8, 41u8)), "(1, 41)");
+
+    let mut s = SurjectArena::<P0, u8, u8, StackBacking<8>>::new();
+    let r0 = s.insert_surject(50, 200);
+    s.insert(r0, 51);
+    s.insert_surject(52, 202);
+    assert_eq!(
+        &format!("{s:?}"),
+        "{(P0[1](2), 50, 200), (P0[2](2), 51, 200), (P0[3](2), 52, 202)}"
+    );
+
+    // maybe we should change this, see the TODO on the `SimpleOrdArena` `Debug`
+    // impl
+    assert_eq!(
+        &format!("{o:#?}"),
+        r#"{
+    P0[2](2): (
+        1,
+        41,
+    ),
+    P0[3](2): (
+        2,
+        42,
+    ),
+    P0[1](2): (
+        3,
+        40,
+    ),
+}"#
+    );
+    assert_eq!(
+        &format!("{s:#?}"),
+        r#"{
+    (
+        P0[1](2),
+        50,
+        200,
+    ),
+    (
+        P0[2](2),
+        51,
+        200,
+    ),
+    (
+        P0[3](2),
+        52,
+        202,
+    ),
+}"#
+    );
 }
 
 // this is a hard coded test, there is a section in the fuzz test and in the

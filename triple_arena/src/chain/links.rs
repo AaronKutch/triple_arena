@@ -2,7 +2,7 @@ use core::{fmt, hash};
 
 use crate::{fundamental::PtrInx, traits::Ptr};
 
-/// The same as [crate::Link] except that the interlinks do not have a
+/// The same as [Link] except that the interlinks do not have a
 /// generation counter
 pub struct LinkNoGen<P: Ptr, T> {
     // I think the code gen should be overall better with this ordering

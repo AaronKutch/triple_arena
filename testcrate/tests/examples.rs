@@ -562,7 +562,7 @@ fn chain_arena_example() {
 
     // `iter_chain` will iterate over all links in the chain that the given
     // `Ptr` is a part of. It will iterate across the chain in order (but
-    // check the documentation for how starting in the middle or in a cyclical
+    // check the documentation for how starting in the middle or in a cyclic
     // chain works).
     let expected = [
         (p_a, "A"),
@@ -617,7 +617,7 @@ fn surject_arena_example() {
     // insert elements into an existing surject
     let p1_42 = a.insert(p0_42, "e1".to_owned());
     // We could use either `p0_42` or `p1_42` as our reference to get associated
-    // with the same surject; any valid pointer in the preexisting surject can
+    // with the same surject. Any valid pointer in the preexisting surject can
     // be used with the same `O(1)` computational complexity incurred.
     let p2_42 = a.insert(p0_42, "e2".to_owned());
 

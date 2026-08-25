@@ -471,8 +471,8 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
 
         // with this method, we do the same thing as normal compression, except that
         // every time we encounter a new chain, we iterate to find the start of the
-        // chain (or discover that it is cyclical), and then starting from the start
-        // link (or from the earliest index link if cyclical), we move that entire chain
+        // chain (or discover that it is cyclic), and then starting from the start
+        // link (or from the earliest index link if cyclic), we move that entire chain
         // to be in order compressed at `i` incrementing, swapping entries (and
         // preserving interlinks) if there was an allocation at `i` that we can't deal
         // with yet.
@@ -493,7 +493,7 @@ impl<P: Ptr, T, B: ArenaBacking> ChainArenaTrait<P, T> for ChainArena<P, T, B> {
                 while let Some(p) = prev {
                     target = p;
                     if p == p_init {
-                        // cyclical, and `target` is set to what we want
+                        // cyclic, and `target` is set to what we want
                         break;
                     }
                     prev = self.a.get_inx_unwrap(p).prev();
