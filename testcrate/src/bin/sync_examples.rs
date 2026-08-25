@@ -32,24 +32,30 @@ fn workspace_dir() -> PathBuf {
 /// a line, is allowed to be wrapped across the comment lines following it, and
 /// is either
 ///
+/// ```text
 ///     // SYNC(<file relative to the root>, <name>)
+/// ```
 ///
 /// in which case the example is the body of the test function that the markers
 /// are attached to, dedented by the one level of being inside the function, or
 ///
+/// ```text
 ///     //! SYNC(<file relative to the root>, <name>)
+/// ```
 ///
 /// in which case the example is every line after the markers. Leading and
 /// trailing blank lines are removed either way.
 ///
 /// Each marker copies the example into
 ///
+/// ```text
 ///     - a `.rs` file, replacing the interior of the fenced code block of the
 ///       doc test that is attached to the item named <name>
 ///     - a `.md` file, replacing the interior of the fenced code block that a
 ///       `<!-- <name> -->` comment marks
+/// ```
 ///
-/// <name> only has to be unique among the doc tests of that one `.rs` file or
+/// `<name>` only has to be unique among the doc tests of that one `.rs` file or
 /// the marked code blocks of that one `.md` file, so this does not care about
 /// doc tests being added or reordered.
 #[derive(Debug, Parser)]

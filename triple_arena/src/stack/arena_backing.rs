@@ -2,7 +2,7 @@ use crate::utils::{NonZeroInxArray, traits::NonZeroInxGenericStack};
 #[cfg(feature = "alloc")]
 use crate::utils::{NonZeroInxBoxedSlice, NonZeroInxLimitedVec, NonZeroInxVec};
 
-/// A trait describing the backing for an Arena
+/// A trait describing the backing for an Arena.
 ///
 /// # Safety
 ///
@@ -14,8 +14,8 @@ pub unsafe trait ArenaBacking {
     type Stack<U>: NonZeroInxGenericStack<U>;
 }
 
-/// The default heap backing for arenas. When creating new arenas, this will not
-/// allocate until the first reallocation.
+/// The default unlimited heap backing for arenas. This is like a `Vec`. When
+/// creating new arenas, this will not allocate until the first reallocation.
 #[cfg(feature = "alloc")]
 pub struct HeapBacking;
 
@@ -24,7 +24,10 @@ unsafe impl ArenaBacking for HeapBacking {
     type Stack<U> = NonZeroInxVec<U>;
 }
 
-/// The standard limited heap backing for arenas
+/// The standard limited heap backing for arenas. This is the same as
+/// [HeapBacking] but with an additional max logical capacity setting. Plain
+/// `new` functions with this backing will start with zero max capacity, use
+/// `with_min_capacity` or change with `set_max_capacity`.
 #[cfg(feature = "alloc")]
 pub struct LimitedHeapBacking;
 
@@ -33,7 +36,8 @@ unsafe impl ArenaBacking for LimitedHeapBacking {
     type Stack<U> = NonZeroInxLimitedVec<U>;
 }
 
-/// The standard fixed capacity heap backing for arenas
+/// The standard fixed capacity heap backing for arenas, capacity can only be
+/// created once at `with_min_capacity` and never changed.
 #[cfg(feature = "alloc")]
 pub struct FixedHeapBacking;
 

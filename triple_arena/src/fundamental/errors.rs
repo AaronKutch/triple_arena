@@ -1,3 +1,5 @@
+//! Error types from this crate
+
 use core::{error::Error, fmt};
 
 // TODO

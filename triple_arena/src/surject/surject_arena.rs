@@ -44,9 +44,9 @@ pub struct SurjectShared<S> {
     pub element_count: NonZeroUsize,
 }
 
-/// A generalization of an `Arena` with three parameters: a `P: Ptr` type, a `T`
-/// element type, and an `S` shared type. Each `P` points to a single `T` like
-/// in a normal arena, but multiple `(P, T)` entries can point to a single
+/// A generalization of an `Arena` with three main parameters: a `P: Ptr` type,
+/// a `T` element type, and an `S` shared type. Each `P` points to a single `T`
+/// like in a normal arena, but multiple `(P, T)` entries can point to a single
 /// shared `S` in a surjective map structure. When all `Ptr`s to a single `S`
 /// are removed, the `S` is removed as well. Efficient union-find functionality
 /// is also possible.
@@ -108,7 +108,7 @@ pub struct SurjectShared<S> {
 /// // insert elements into an existing surject
 /// let p1_42 = a.insert(p0_42, "e1".to_owned());
 /// // We could use either `p0_42` or `p1_42` as our reference to get associated
-/// // with the same surject; any valid pointer in the preexisting surject can
+/// // with the same surject. Any valid pointer in the preexisting surject can
 /// // be used with the same `O(1)` computational complexity incurred.
 /// let p2_42 = a.insert(p0_42, "e2".to_owned());
 ///
