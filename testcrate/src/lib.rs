@@ -12,6 +12,7 @@ pub mod nonzero_inx_generic_stack;
 pub mod old_helpers;
 mod ptrs;
 pub mod simple_ord_arena;
+pub mod surject_arena;
 
 pub use old_helpers::*;
 pub use ptrs::*;

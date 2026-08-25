@@ -194,17 +194,6 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
         }
     }
 
-    // FIXME remove
-
-    /// Advances over every valid `Ptr` in `self`.
-    ///
-    /// Has the same properties as [crate::Arena::advancer]
-    pub fn advancer(&self) -> PtrAdvancer<P> {
-        PtrAdvancer {
-            adv: self.elements.a.advancer(),
-        }
-    }
-
     /// Advances over every valid `Ptr` in the surject that contains `p_init`.
     /// This does _not_ support invalidating `Ptr`s of the surject of `p_init`
     /// during the loop.
@@ -245,13 +234,6 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
         }
     }
 
-    // TODO until we have a proper trait
-
-    /// Iteration over all valid `P` in the arena
-    pub fn ptrs(&self) -> impl Iterator<Item = P> {
-        self.elements.ptrs()
-    }
-
     /// Iteration over the `&S` of every surject, once each
     pub fn shared_vals<'a>(&'a self) -> impl Iterator<Item = &'a S>
     where
@@ -277,7 +259,14 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
 
     /// Draining iteration over the surject that contains `p_init`, returning
     /// `(P, T, Option<S>)` with the shared value arriving with the last
-    /// element. Returns `None` if `p_init` is invalid.
+    /// element. If the iterator is dropped, the rest of the surject is
+    /// removed. Returns `None` if `p_init` is invalid.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If a `T::drop` or `S::drop` panics while the iterator is being dropped,
+    /// the elements that have yet to be removed are left in the arena as a
+    /// valid smaller surject.
     pub fn drain_surject(&mut self, p_init: P) -> Option<SurjectDrain<'_, P, T, S, B>> {
         let adv = self.advancer_surject(p_init)?;
         Some(SurjectDrain { arena: self, adv })
@@ -285,7 +274,14 @@ impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
 
     /// Draining iteration over every element of the arena, returning
     /// `(P, T, Option<S>)` with the shared value of each surject arriving with
-    /// the last element of that surject
+    /// the last element of that surject. If the iterator is dropped, the arena
+    /// is cleared.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If a `T::drop` or `S::drop` panics while the iterator is being dropped,
+    /// this follows [clear](ArenaTrait::clear) and the arena is left empty and
+    /// in a valid state.
     pub fn drain_combined(&mut self) -> Drain<'_, P, T, S, B> {
         let adv0 = self.advancer();
         Drain {

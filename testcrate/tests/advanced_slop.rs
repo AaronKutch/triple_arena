@@ -20,8 +20,11 @@ use triple_arena::{
     Arena, ChainArena, DirectArena, InvalidationOption, InvalidationResult, Link, LinkInsertKind,
     LinkNoGen, OrdEntryKind, OrdInsertKind, OrdPair, SimpleOrdArena, StackBacking, SurjectArena,
     chain_iterators::ChainPtrAdvancer,
-    errors::{AllocError, ChainInsertionError, OrdInsertionError, ReallocationError},
-    ptr_struct,
+    errors::{
+        AllocError, ChainInsertionError, NotWithinCapacityError, OrdInsertionError,
+        ReallocationError,
+    },
+    ptr_struct, surject_iterators,
     traits::{
         Advancer, ArenaCloneFromWith, ArenaInsertTrait, ArenaTrait, ChainArenaTrait,
         CompactArenaTrait, Ptr, Recast,
@@ -33,13 +36,15 @@ use triple_arena::{
 };
 #[cfg(feature = "alloc")]
 use triple_arena::{
-    LimitedHeapBacking, errors::MaxCapacityReductionError, utils::traits::SetMaxCapacity,
+    HeapBacking, LimitedHeapBacking, errors::MaxCapacityReductionError,
+    utils::traits::SetMaxCapacity,
 };
 
 ptr_struct!(Q0);
 ptr_struct!(Q1);
 ptr_struct!(QSmall[NonZeroU8]);
 ptr_struct!(QLargeInx[NonZeroU128]);
+ptr_struct!(QSmallGen(NonZeroU8));
 
 type C8 = ChainArena<Q0, u8, StackBacking<8>>;
 
@@ -1930,4 +1935,516 @@ fn surject_compress_with() {
     // as above, check that the interesting cases are reached, in particular the
     // free slots among the shared values that this leaves alone
     assert_eq!((total_shared, total_holes), (6391, 634));
+}
+
+/// A shared value that panics on drop or on clone when armed, for reaching
+/// REF(surject_clear_guard) and the guard in [ArenaTrait::clear]
+#[derive(Debug, PartialEq, Eq)]
+struct PanicOn {
+    v: u16,
+    on_drop: bool,
+}
+
+impl PanicOn {
+    fn new(v: u16) -> Self {
+        Self { v, on_drop: false }
+    }
+
+    fn armed(v: u16) -> Self {
+        Self { v, on_drop: true }
+    }
+}
+
+impl Drop for PanicOn {
+    fn drop(&mut self) {
+        if self.on_drop {
+            // disarm so that the unwinding drop of `self` does not abort
+            self.on_drop = false;
+            panic!("PanicOn dropped")
+        }
+    }
+}
+
+#[test]
+fn surject_misc() {
+    // `Default`, `Debug`, and `backing`
+    let mut a = Surj::default();
+    assert!(a.is_empty());
+    assert_eq!(a.len_shared(), 0);
+    let mut s = String::new();
+    write!(s, "{a:?}").unwrap();
+    assert_eq!(s, "{}");
+    let p0 = a.insert_surject(10, 100);
+    let p1 = a.insert(p0, 11);
+    let mut s = String::new();
+    write!(s, "{a:?}").unwrap();
+    assert_eq!(s, "{(Q0[1](2), 10, 100), (Q0[2](2), 11, 100)}");
+
+    let (elements, shared_vals) = a.backing();
+    assert_eq!(elements.len(), 2);
+    assert_eq!(shared_vals.len(), 1);
+    // Safety: nothing about the allocation state, the interlinks, or the
+    // surjection is changed
+    let (elements, shared_vals) = unsafe { a.backing_mut() };
+    let Some(ArenaSlot::Allocated(_, link)) = elements.get_mut(nz(1)) else {
+        panic!()
+    };
+    link.t.t = 12;
+    let Some(ArenaSlot::Allocated(_, shared)) = shared_vals.get_mut(nz(1)) else {
+        panic!()
+    };
+    shared.s = 101;
+    assert_eq!(*a.get(p0).unwrap(), 12);
+    assert_eq!(*a.get_shared(p1).unwrap(), 101);
+    SurjectArena::_check_invariants(&a).unwrap();
+
+    // an empty surject advancer never yields anything
+    let mut adv = <surject_iterators::SurjectPtrAdvancer<Q0> as Advancer<Surj>>::empty();
+    assert!(adv.advance(&a).is_none());
+    let mut adv = <surject_iterators::PtrAdvancer<Q0> as Advancer<Surj>>::empty();
+    assert!(adv.advance(&a).is_none());
+}
+
+#[test]
+fn surject_recast() {
+    // both the elements and the shared values are recast
+    let mut a = SurjectArena::<Q0, Q1, Q1, StackBacking<8>>::new();
+    let mut recaster = Arena::<Q1, Q1, StackBacking<8>>::new();
+    let x0 = recaster.insert(Q1::invalid());
+    let x1 = recaster.insert(Q1::invalid());
+    let y0 = recaster.insert(Q1::invalid());
+    *recaster.get_mut(x0).unwrap() = x1;
+    *recaster.get_mut(x1).unwrap() = x0;
+    *recaster.get_mut(y0).unwrap() = y0;
+
+    let p0 = a.insert_surject(x0, y0);
+    a.insert(p0, x1);
+    a.recast(&recaster).unwrap();
+    let vals: Vec<Q1> = a.vals().copied().collect();
+    assert_eq!(vals, vec![x1, x0]);
+    assert_eq!(*a.get_shared(p0).unwrap(), y0);
+
+    // an element that the recaster does not have a key for is reported
+    let mut a = SurjectArena::<Q0, Q1, Q1, StackBacking<8>>::new();
+    let p0 = a.insert_surject(Q1::invalid(), y0);
+    assert_eq!(a.recast(&recaster), Err(Q1::invalid()));
+    // and the same for a shared value
+    let mut a = SurjectArena::<Q0, Q1, Q1, StackBacking<8>>::new();
+    let _ = a.insert_surject(x0, Q1::invalid());
+    assert_eq!(a.recast(&recaster), Err(Q1::invalid()));
+    let _ = p0;
+}
+
+#[test]
+fn surject_clone() {
+    let mut a = Surj::new();
+    let p0 = a.insert_surject(10, 100);
+    let p1 = a.insert(p0, 11);
+    let p2 = a.insert_surject(20, 200);
+    a.remove_element(p1).allow().unwrap();
+
+    // `Clone` preserves the `Ptr`s and the whole surjection
+    let a1 = a.clone();
+    SurjectArena::_check_invariants(&a1).unwrap();
+    assert_eq!(surject_layout(&a1), surject_layout(&a));
+    assert!(!a1.contains(p1));
+    assert!(!a1.in_same_surject(p0, p2).unwrap());
+
+    // and `clone_from` reuses the capacity of an unrelated arena
+    let mut a2 = Surj::new();
+    let q = a2.insert_surject(30, 300);
+    a2.insert(q, 31);
+    a2.clone_from(&a);
+    SurjectArena::_check_invariants(&a2).unwrap();
+    assert_eq!(surject_layout(&a2), surject_layout(&a));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn surject_separated_capacity() {
+    // the two halves can be given different capacities
+    let mut a = SurjectArena::<Q0, u16, u16, LimitedHeapBacking>::with_min_capacity_separated(6, 2)
+        .unwrap();
+    assert!(a.capacity() >= 6);
+    assert!(a.capacity_shared() >= 2);
+    assert_eq!(a.max_capacity(), Some(a.capacity()));
+    assert_eq!(a.max_capacity_shared(), Some(a.capacity_shared()));
+
+    // and the max capacities can be set independently
+    a.set_max_capacity_elements(4).unwrap();
+    assert_eq!(a.max_capacity(), Some(4));
+    a.set_max_capacity_shared(1).unwrap();
+    assert_eq!(a.max_capacity_shared(), Some(1));
+
+    // only one surject fits, but it can hold several elements
+    let p0 = a.insert_surject(10, 100);
+    assert_eq!(
+        a.insert_surject_reallocating(20, 200),
+        Err(ReallocationError::BeyondMaxCapacity)
+    );
+    for i in 1..4 {
+        a.insert(p0, 10 + i);
+    }
+    assert_eq!(a.len(), 4);
+    assert_eq!(
+        a.insert_reallocating(p0, 99),
+        Err(ChainInsertionError::BeyondMaxCapacity)
+    );
+
+    // The combined setter restores the shared value limit when the element half
+    // fails. Reducing to 1 succeeds on the shared values, which only have one
+    // entry, and then fails on the four elements.
+    assert_eq!(a.set_max_capacity(1), Err(MaxCapacityReductionError));
+    assert_eq!(a.max_capacity(), Some(4));
+    assert_eq!(a.max_capacity_shared(), Some(1));
+    SurjectArena::_check_invariants(&a).unwrap();
+
+    // so two limits that start out in agreement never end up disagreeing
+    a.set_max_capacity(5).unwrap();
+    assert_eq!(a.max_capacity(), Some(5));
+    assert_eq!(a.max_capacity_shared(), Some(5));
+    assert_eq!(a.set_max_capacity(2), Err(MaxCapacityReductionError));
+    assert_eq!(a.max_capacity(), Some(5));
+    assert_eq!(a.max_capacity_shared(), Some(5));
+
+    // and a successful reduction sets both
+    a.set_max_capacity(4).unwrap();
+    assert_eq!(a.max_capacity(), Some(4));
+    assert_eq!(a.max_capacity_shared(), Some(4));
+}
+
+#[test]
+fn surject_clone_from_with_capacity() {
+    let mut source = Surj::new();
+    let p0 = source.insert_surject(10, 100);
+    source.insert(p0, 11);
+    source.insert_surject(20, 200);
+
+    // the destination starts with no capacity at all, so both halves have to be
+    // reserved before either clone happens
+    let mut a = SurjectArena::<Q0, u32, u32, StackBacking<32>>::new();
+    a.clone_from_with(
+        &source,
+        |_, t| u32::from(*t),
+        |element_count, s| u32::from(*s) + (element_count.get() as u32),
+    )
+    .unwrap();
+    SurjectArena::_check_invariants(&a).unwrap();
+    assert_eq!(a.len(), 3);
+    assert_eq!(a.len_shared(), 2);
+    assert_eq!(*a.get(p0).unwrap(), 10);
+    assert_eq!(*a.get_shared(p0).unwrap(), 102);
+
+    // a destination that has to grow both of its halves
+    #[cfg(feature = "alloc")]
+    {
+        let mut a = SurjectArena::<Q0, u32, u32, HeapBacking>::new();
+        assert_eq!(a.capacity(), 0);
+        assert_eq!(a.capacity_shared(), 0);
+        a.clone_from_with(&source, |_, t| u32::from(*t), |_, s| u32::from(*s))
+            .unwrap();
+        SurjectArena::_check_invariants(&a).unwrap();
+        assert_eq!(a.len(), 3);
+        assert_eq!(a.len_shared(), 2);
+        assert!(a.capacity() >= 3);
+        assert!(a.capacity_shared() >= 2);
+    }
+
+    // a destination that cannot fit the elements fails without touching itself
+    let mut a = SurjectArena::<Q0, u32, u32, StackBacking<2>>::new();
+    let q = a.insert_surject(7, 70);
+    assert_eq!(
+        a.clone_from_with(&source, |_, t| u32::from(*t), |_, s| u32::from(*s)),
+        Err(ReallocationError::BeyondMaxCapacity)
+    );
+    assert_eq!(a.len(), 1);
+    assert_eq!(*a.get(q).unwrap(), 7);
+    SurjectArena::_check_invariants(&a).unwrap();
+}
+
+#[test]
+fn surject_check_surjects_errors() {
+    let mut a = Surj::new();
+    let p0 = a.insert_surject(10, 100);
+    a.insert(p0, 11);
+    SurjectArena::_check_invariants(&a).unwrap();
+
+    // an element pointing at a shared value slot that does not exist
+    let mut a0 = a.clone();
+    // Safety: this deliberately breaks the surjection to check that the test
+    // helper reports it, and nothing else is done with `a0`
+    let (elements, _) = unsafe { a0.backing_mut() };
+    let Some(ArenaSlot::Allocated(_, link)) = elements.get_mut(nz(1)) else {
+        panic!()
+    };
+    link.t.p_shared = Ptr::_from_raw(PtrInx::try_from_usize(nz(9)).unwrap(), ());
+    assert_eq!(
+        SurjectArena::_check_surjects(&a0),
+        Err("element points to nonexistent shared value")
+    );
+
+    // an element count that disagrees with the number of elements
+    let mut a1 = a.clone();
+    // Safety: as above
+    let (_, shared_vals) = unsafe { a1.backing_mut() };
+    let Some(ArenaSlot::Allocated(_, shared)) = shared_vals.get_mut(nz(1)) else {
+        panic!()
+    };
+    shared.element_count = nz(3);
+    assert_eq!(
+        SurjectArena::_check_surjects(&a1),
+        Err("element count does not match actual")
+    );
+    // put it back so that the drop is on a valid arena
+    let (_, shared_vals) = unsafe { a1.backing_mut() };
+    let Some(ArenaSlot::Allocated(_, shared)) = shared_vals.get_mut(nz(1)) else {
+        panic!()
+    };
+    shared.element_count = nz(2);
+    SurjectArena::_check_invariants(&a1).unwrap();
+}
+
+#[test]
+fn surject_unwind() {
+    type A = SurjectArena<Q0, PanicOn, PanicOn, StackBacking<8>>;
+
+    // `clear` has to clear both halves even if an element drop panics
+    let mut a = A::new();
+    let p0 = a.insert_surject(PanicOn::armed(10), PanicOn::new(100));
+    a.insert(p0, PanicOn::new(11));
+    a.insert_surject(PanicOn::new(20), PanicOn::new(200));
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        a.clear().allow();
+    }));
+    assert!(res.is_err());
+    assert!(a.is_empty());
+    assert_eq!(a.len_shared(), 0);
+    SurjectArena::_check_invariants(&a).unwrap();
+
+    // REF(surject_clear_guard) `remove_shared` cannot rebuild the surject that a
+    // panicking element drop left behind, so it clears the whole arena
+    let mut a = A::new();
+    let p0 = a.insert_surject(PanicOn::new(10), PanicOn::new(100));
+    a.insert(p0, PanicOn::armed(11));
+    a.insert_surject(PanicOn::new(20), PanicOn::new(200));
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let _ = a.remove_shared(p0).allow();
+    }));
+    assert!(res.is_err());
+    assert!(a.is_empty());
+    assert_eq!(a.len_shared(), 0);
+    SurjectArena::_check_invariants(&a).unwrap();
+
+    // and the same for a panicking `clone_from_with` map
+    let mut source = Surj::new();
+    let q0 = source.insert_surject(10, 100);
+    source.insert(q0, 11);
+    source.insert_surject(20, 200);
+    let mut a = A::new();
+    let p0 = a.insert_surject(PanicOn::new(30), PanicOn::new(300));
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let mut i = 0;
+        a.clone_from_with(
+            &source,
+            |_, t| {
+                i += 1;
+                if i == 2 {
+                    panic!("map_element")
+                }
+                PanicOn::new(*t)
+            },
+            |_, s| PanicOn::new(*s),
+        )
+        .unwrap();
+    }));
+    assert!(res.is_err());
+    assert!(a.is_empty());
+    SurjectArena::_check_invariants(&a).unwrap();
+    let _ = p0;
+
+    // and for a panicking `transfer_canonical_reallocating` map
+    let mut a = A::new();
+    let p0 = a.insert_surject(PanicOn::new(30), PanicOn::new(300));
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let mut i = 0;
+        a.transfer_canonical_reallocating(
+            PtrGen::two(),
+            &mut source,
+            |_, o, _| {
+                i += 1;
+                if i == 2 {
+                    panic!("map_element")
+                }
+                PanicOn::new(o.allow())
+            },
+            PanicOn::new,
+        )
+        .unwrap();
+    }));
+    assert!(res.is_err());
+    assert!(a.is_empty());
+    SurjectArena::_check_invariants(&a).unwrap();
+    SurjectArena::_check_invariants(&source).unwrap();
+    let _ = p0;
+}
+
+/// The generation just before [PtrGen::generational_inc] overflows
+fn max_gen<P: Ptr>() -> P::Gen {
+    let mut g: P::Gen = PtrGen::two();
+    loop {
+        let (next, overflow) = PtrGen::generational_inc(g);
+        if overflow {
+            return g;
+        }
+        g = next;
+    }
+}
+
+#[test]
+fn surject_alloc_error() {
+    // the index type runs out before the backing does, which is an allocation
+    // error rather than a max capacity one
+    let mut a = SurjectArena::<QSmall, (), (), StackBacking<512>>::new();
+    // one surject of the maximum number of elements, so that there is still room
+    // for another shared value and the element half is what fails
+    let p0 = a.insert_surject((), ());
+    for _ in 1..255 {
+        a.insert(p0, ());
+    }
+    assert_eq!(a.len(), 255);
+    assert_eq!(a.len_shared(), 1);
+    assert_eq!(
+        a.insert_surject_within_capacity((), ()),
+        Err(NotWithinCapacityError)
+    );
+    assert_eq!(
+        a.insert_surject_reallocating((), ()),
+        Err(ReallocationError::AllocError)
+    );
+    assert_eq!(
+        a.entry_insert_surject_reallocating().map(|_| ()),
+        Err(ReallocationError::AllocError)
+    );
+    assert_eq!(
+        a.insert_reallocating(p0, ()),
+        Err(ChainInsertionError::AllocError)
+    );
+    // and the link requirement still takes priority
+    assert_eq!(
+        a.insert_reallocating(QSmall::invalid(), ()),
+        Err(ChainInsertionError::FailedLinkRequirement)
+    );
+    SurjectArena::_check_invariants(&a).unwrap();
+}
+
+#[test]
+fn surject_generation_overflow() {
+    type A = SurjectArena<QSmallGen, u16, u16, StackBacking<8>>;
+
+    // `remove_element` and `remove_element_inx` report the overflow along with
+    // the element and the shared value
+    let mut a = A::new();
+    a.set_generation(max_gen::<QSmallGen>());
+    let p0 = a.insert_surject(10, 100);
+    let p1 = a.insert(p0, 11);
+    match a.remove_element_inx(p1.inx()) {
+        InvalidationResult::GenerationOverflow((generation, t, shared)) => {
+            assert_eq!(generation, p1.generation());
+            assert_eq!(t, 11);
+            assert!(shared.is_none());
+        }
+        _ => panic!("expected a generation overflow"),
+    }
+    SurjectArena::_check_invariants(&a).unwrap();
+
+    // and so does the last removal of a surject
+    let mut a = A::new();
+    a.set_generation(max_gen::<QSmallGen>());
+    let p0 = a.insert_surject(10, 100);
+    match a.remove_element(p0) {
+        InvalidationResult::GenerationOverflow((t, shared)) => {
+            assert_eq!(t, 10);
+            assert_eq!(shared, Some(100));
+        }
+        _ => panic!("expected a generation overflow"),
+    }
+    assert!(a.is_empty());
+    SurjectArena::_check_invariants(&a).unwrap();
+
+    // `remove_shared` increments the generation on its own
+    let mut a = A::new();
+    a.set_generation(max_gen::<QSmallGen>());
+    let p0 = a.insert_surject(10, 100);
+    a.insert(p0, 11);
+    match a.remove_shared(p0) {
+        InvalidationResult::GenerationOverflow(shared) => assert_eq!(shared, 100),
+        _ => panic!("expected a generation overflow"),
+    }
+    assert!(a.is_empty());
+    SurjectArena::_check_invariants(&a).unwrap();
+
+    // and a transfer passes the overflow of the source through to `map_element`
+    let mut source = A::new();
+    source.set_generation(max_gen::<QSmallGen>());
+    let p0 = source.insert_surject(10, 100);
+    source.insert(p0, 11);
+    let mut a = SurjectArena::<Q0, u16, u16, StackBacking<8>>::new();
+    let mut overflows = 0;
+    a.transfer_canonical_reallocating(
+        PtrGen::two(),
+        &mut source,
+        |_, o, _| {
+            if o.is_overflow() {
+                overflows += 1;
+            }
+            o.allow()
+        },
+        |s| s,
+    )
+    .unwrap();
+    // only the first one overflows, which wraps the counter around
+    assert_eq!(overflows, 1);
+    assert_eq!(a.len(), 2);
+    assert!(source.is_empty());
+    SurjectArena::_check_invariants(&a).unwrap();
+}
+
+#[test]
+fn surject_transfer_index_limits() {
+    // more elements than the destination index type can represent
+    let mut source = SurjectArena::<Q0, (), (), StackBacking<512>>::new();
+    let p0 = source.insert_surject((), ());
+    for _ in 1..256 {
+        source.insert(p0, ());
+    }
+    let mut a = SurjectArena::<QSmall, (), (), StackBacking<512>>::new();
+    assert_eq!(
+        a.transfer_canonical_reallocating(PtrGen::two(), &mut source, |_, o, _| o.allow(), |s| s),
+        Err(ReallocationError::AllocError)
+    );
+    // neither side was touched
+    assert_eq!(source.len(), 256);
+    assert!(a.is_empty());
+    SurjectArena::_check_invariants(&source).unwrap();
+
+    // and it fits exactly after one element is removed
+    source
+        .remove_element(source.find_last_inx_ptr().unwrap())
+        .allow()
+        .unwrap();
+    a.transfer_canonical_reallocating(PtrGen::two(), &mut source, |_, o, _| o.allow(), |s| s)
+        .unwrap();
+    assert!(source.is_empty());
+    assert_eq!(a.len(), 255);
+    assert_eq!(a.len_shared(), 1);
+    SurjectArena::_check_invariants(&a).unwrap();
+
+    // an empty source only clears and regenerates the destination
+    let mut source = SurjectArena::<Q0, (), (), StackBacking<512>>::new();
+    let next_gen = PtrGen::generational_inc(a.generation()).0;
+    a.transfer_canonical_reallocating(next_gen, &mut source, |_, o, _| o.allow(), |s| s)
+        .unwrap();
+    assert!(a.is_empty());
+    assert_eq!(a.generation(), next_gen);
+    SurjectArena::_check_invariants(&a).unwrap();
 }

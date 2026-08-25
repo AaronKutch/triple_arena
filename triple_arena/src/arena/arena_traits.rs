@@ -363,9 +363,9 @@ pub trait ArenaTrait<P: Ptr, T>: Sized {
     ///     // domain to the new one. We use a `DirectArena` for this since it will only
     ///     // be used for this purpose and then discarded.
     ///     let mut recaster = DirectArena::<P, P, HeapBacking>::new();
-    ///     // This all the keys of the mapping, by cloning the `Ptr` validities of the
-    ///     // pre-compression `this` into the recaster, and puts in invalid placeholders
-    ///     // for the new domain because we do not know them yet.
+    ///     // Set all the keys of the mapping, by cloning the `Ptr` validities of the
+    ///     // pre-compression `this` into the recaster, and putting in invalid
+    ///     // placeholders for the new domain because we do not know them yet.
     ///     recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
     ///     // Compress and write the new `Ptr`s at the indexes of the corresponding old
     ///     // `Ptr`s, using the values seen by the closure to complete the mapping of

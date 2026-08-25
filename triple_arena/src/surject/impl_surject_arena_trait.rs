@@ -6,6 +6,7 @@ use crate::{
     chain::ChainArenaTrait,
     errors::{AllocError, ReallocationError},
     stack::NonZeroInxGenericStack,
+    surject::SurjectShared,
     surject_iterators,
     traits::{Advancer, ArenaTrait, CompactArenaTrait, DisjointableArenaTrait, Ptr},
     utils::{PtrNoGen, traits::ArenaBacking},
@@ -99,7 +100,17 @@ impl<P: Ptr, T, S, B: ArenaBacking> ArenaTrait<P, T> for SurjectArena<P, T, S, B
     }
 
     fn clear(&mut self) -> InvalidationOption<()> {
-        self.shared_vals.clear().allow();
+        // Both arenas have to end up cleared, but REF(surject_clear_guard) cannot be
+        // used
+        struct ClearShared<'a, P: Ptr, S, B: ArenaBacking>(
+            &'a mut Arena<PtrNoGen<P>, SurjectShared<S>, B>,
+        );
+        impl<P: Ptr, S, B: ArenaBacking> Drop for ClearShared<'_, P, S, B> {
+            fn drop(&mut self) {
+                self.0.clear().allow();
+            }
+        }
+        let _shared = ClearShared(&mut self.shared_vals);
         self.elements.clear()
     }
 

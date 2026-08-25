@@ -7,9 +7,10 @@ use testcrate::{
     chain_arena,
     misc::Meta,
     simple_ord_arena::{self, TItem},
+    surject_arena,
 };
 use triple_arena::{
-    ChainArena, SimpleOrdArena, StackBacking,
+    ChainArena, SimpleOrdArena, StackBacking, SurjectArena,
     traits::{ArenaCloneFromWith, ArenaTrait, Ptr},
     utils::traits::ArenaBacking,
 };
@@ -384,6 +385,184 @@ fn fuzz_simple_ord_arena() -> Result<(), StackedError> {
             meta.test(stats, |meta| {
                 simple_ord_arena::fuzz(meta, &mut a, check_arena, None)
             })
+            .stack()?;
+        }
+
+        Ok(())
+    }
+
+    if let Err(e) = inner(&mut meta).stack_err(format!("{meta:#?}")) {
+        Err(e)
+    } else {
+        Ok(())
+    }
+}
+
+#[test]
+fn fuzz_surject_arena() -> Result<(), StackedError> {
+    let mut meta = Meta::new(29);
+
+    // at higher layers debug becomes a lot more expensive but much less important
+    const N: usize = if cfg!(miri) {
+        100
+    } else if cfg!(debug_assertions) {
+        50_000
+    } else {
+        2_000_000
+    };
+    pub const LIMIT: usize = surject_arena::LIMIT;
+
+    fn check_arena<P: Ptr, B: ArenaBacking>(
+        this: &SurjectArena<P, surject_arena::TElement, surject_arena::TShared, B>,
+    ) -> Result<(), StackedError> {
+        if !cfg!(miri) {
+            SurjectArena::_check_invariants(this).stack()
+        } else {
+            Ok(())
+        }
+    }
+
+    fn inner(meta: &mut Meta<surject_arena::Stats>) -> Result<(), StackedError> {
+        let iters999 = if cfg!(miri) {
+            None
+        } else if cfg!(debug_assertions) {
+            Some(expect![[r#"
+                457
+            "#]])
+        } else {
+            Some(expect![[r#"
+                17626
+            "#]])
+        };
+        let max_len = if cfg!(miri) {
+            None
+        } else if cfg!(debug_assertions) {
+            Some(expect![[r#"
+                22
+            "#]])
+        } else {
+            Some(expect![[r#"
+                24
+            "#]])
+        };
+        let max_len_surject = if cfg!(miri) {
+            None
+        } else if cfg!(debug_assertions) {
+            Some(expect![[r#"
+                17
+            "#]])
+        } else {
+            Some(expect![[r#"
+                19
+            "#]])
+        };
+        meta.test(
+            surject_arena::Stats {
+                test_limit: LIMIT,
+                fixed_cap: None,
+                n: N,
+                iters999,
+                max_len,
+                max_len_surject,
+                cd_gen: CdGen::new(),
+                cd_gen1: CdGen::new(),
+                cd_gen2: CdGen::new(),
+                cd_gen3: CdGen::new(),
+            },
+            |meta| {
+                surject_arena::fuzz(
+                    meta,
+                    &mut SurjectArena::<P2, _, _, StackBacking<{ 4 * LIMIT }>>::new(),
+                    check_arena,
+                    None,
+                )
+            },
+        )
+        .stack()?;
+
+        #[cfg(feature = "alloc")]
+        {
+            let mut a = SurjectArena::<
+                P2,
+                surject_arena::TElement,
+                surject_arena::TShared,
+                LimitedHeapBacking,
+            >::new();
+            a.set_max_capacity(4 * LIMIT).stack()?;
+            meta.test(
+                surject_arena::Stats {
+                    test_limit: LIMIT,
+                    fixed_cap: None,
+                    n: N,
+                    iters999: None,
+                    max_len: None,
+                    max_len_surject: None,
+                    cd_gen: CdGen::new(),
+                    cd_gen1: CdGen::new(),
+                    cd_gen2: CdGen::new(),
+                    cd_gen3: CdGen::new(),
+                },
+                |meta| {
+                    surject_arena::fuzz(
+                        meta,
+                        &mut a,
+                        check_arena,
+                        Some(
+                            |a: &mut SurjectArena<_, _, _, LimitedHeapBacking>, max_capacity| {
+                                a.set_max_capacity(max_capacity)
+                            },
+                        ),
+                    )
+                },
+            )
+            .stack()?;
+
+            meta.test(
+                surject_arena::Stats {
+                    test_limit: LIMIT,
+                    fixed_cap: None,
+                    n: N,
+                    iters999: None,
+                    max_len: None,
+                    max_len_surject: None,
+                    cd_gen: CdGen::new(),
+                    cd_gen1: CdGen::new(),
+                    cd_gen2: CdGen::new(),
+                    cd_gen3: CdGen::new(),
+                },
+                |meta| {
+                    surject_arena::fuzz(
+                        meta,
+                        &mut SurjectArena::<P2, _, _, HeapBacking>::new(),
+                        check_arena,
+                        None,
+                    )
+                },
+            )
+            .stack()?;
+
+            let mut a = SurjectArena::<
+                P2,
+                surject_arena::TElement,
+                surject_arena::TShared,
+                FixedHeapBacking,
+            >::with_min_capacity_separated(4 * LIMIT, 4 * LIMIT)
+            .stack()?;
+            meta.test(
+                surject_arena::Stats {
+                    test_limit: LIMIT,
+                    fixed_cap: Some(a.capacity()),
+                    n: N,
+                    iters999: None,
+                    max_len: None,
+                    max_len_surject: None,
+                    cd_gen: CdGen::new(),
+                    cd_gen1: CdGen::new(),
+                    cd_gen2: CdGen::new(),
+                    cd_gen3: CdGen::new(),
+                },
+                |meta| surject_arena::fuzz(meta, &mut a, check_arena, None),
+            )
             .stack()?;
         }
 

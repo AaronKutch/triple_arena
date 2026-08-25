@@ -361,6 +361,10 @@ pub trait SetMaxCapacity {
     /// (and invariants imply that all implementations must return an error if
     /// requesting a `max_capacity` less than `self.len()`). It is also possible
     /// for `self.capacity()` to increase from increasing the maximum capacity.
+    /// One other requirement is that, if this method succeeds, it must be
+    /// possible to go back to the original capacity if no other kinds of
+    /// operations occurred (this is used by compound arenas to be able to make
+    /// their `SetMaxCapacity` implementations atomic).
     ///
     /// To reiterate, there can be 3 different values at play:
     /// - The logical capacity according to `self.capacity()`, which is what

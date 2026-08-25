@@ -60,3 +60,11 @@ impl<T: fmt::Debug + TryInternalDrop> Meta<T> {
 /// For second domains
 #[derive(Clone, Copy, Default)]
 pub struct D1;
+
+/// For third domains
+#[derive(Clone, Copy, Default)]
+pub struct D2;
+
+/// For fourth domains
+#[derive(Clone, Copy, Default)]
+pub struct D3;

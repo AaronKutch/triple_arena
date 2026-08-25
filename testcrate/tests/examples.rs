@@ -16,9 +16,9 @@ fn compress_with_example() {
         // domain to the new one. We use a `DirectArena` for this since it will only
         // be used for this purpose and then discarded.
         let mut recaster = DirectArena::<P, P, HeapBacking>::new();
-        // This all the keys of the mapping, by cloning the `Ptr` validities of the
-        // pre-compression `this` into the recaster, and puts in invalid placeholders
-        // for the new domain because we do not know them yet.
+        // Set all the keys of the mapping, by cloning the `Ptr` validities of the
+        // pre-compression `this` into the recaster, and putting in invalid
+        // placeholders for the new domain because we do not know them yet.
         recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
         // Compress and write the new `Ptr`s at the indexes of the corresponding old
         // `Ptr`s, using the values seen by the closure to complete the mapping of
@@ -131,8 +131,8 @@ fn chain_transfer_canonical_example() {
         reset_generation: bool,
     ) -> DirectArena<P, P, HeapBacking> {
         let new_generation = if reset_generation {
-            // reset for compactness, only safe if logically old domain `Ptr`s can be
-            // eliminated
+            // reset for serialization compactness, only safe if logically old domain `Ptr`s
+            // can be eliminated
             P::Gen::two()
         } else {
             // use incremented generation so that all `Ptr`s of the old domain are
@@ -143,8 +143,8 @@ fn chain_transfer_canonical_example() {
         // domain to the new one. We use a `DirectArena` for this since it will only
         // be used for this purpose and then discarded.
         let mut recaster = DirectArena::<P, P, HeapBacking>::new();
-        // This all the keys of the mapping, by cloning the `Ptr` validities of the
-        // pre-transfer `this` into the recaster, and puts in invalid placeholders
+        // Set all the keys of the mapping, by cloning the `Ptr` validities of the
+        // pre-transfer `this` into the recaster, and putting in invalid placeholders
         // for the new domain because we do not know them yet.
         recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
         let mut replacement = ChainArena::<P, T, HeapBacking>::new();
@@ -277,8 +277,8 @@ fn simple_ord_arena_transfer_canonical_example() {
         reset_generation: bool,
     ) -> DirectArena<P, P, HeapBacking> {
         let new_generation = if reset_generation {
-            // reset for compactness, only safe if logically old domain `Ptr`s can be
-            // eliminated
+            // reset for serialization compactness, only safe if logically old domain `Ptr`s
+            // can be eliminated
             P::Gen::two()
         } else {
             // use incremented generation so that all `Ptr`s of the old domain are
@@ -289,8 +289,8 @@ fn simple_ord_arena_transfer_canonical_example() {
         // domain to the new one. We use a `DirectArena` for this since it will only
         // be used for this purpose and then discarded.
         let mut recaster = DirectArena::<P, P, HeapBacking>::new();
-        // This all the keys of the mapping, by cloning the `Ptr` validities of the
-        // pre-transfer `this` into the recaster, and puts in invalid placeholders
+        // Set all the keys of the mapping, by cloning the `Ptr` validities of the
+        // pre-transfer `this` into the recaster, and putting in invalid placeholders
         // for the new domain because we do not know them yet.
         recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
         let mut replacement = SimpleOrdArena::<P, T, HeapBacking>::new();
@@ -721,6 +721,129 @@ fn surject_arena_example() {
         a.remove_element(p2_42).allow(),
         Some(("e2".to_owned(), Some("42 + 7".to_owned())))
     );
+}
+
+// SYNC(triple_arena/src/surject/surject_arena.rs,
+// transfer_canonical_reallocating)
+#[test]
+fn surject_transfer_canonical_example() {
+    use triple_arena::{
+        DirectArena, HeapBacking, SurjectArena, ptr_struct,
+        traits::*,
+        utils::traits::{PtrGen, PtrInx},
+    };
+
+    // (This would be a standard function, except there are far too many choices to
+    // make on the backing of the recaster arena and how fallibility should be
+    // handled)
+    fn compress_canonical_recaster<P: Ptr, T, S>(
+        this: &mut SurjectArena<P, T, S, HeapBacking>,
+        reset_generation: bool,
+    ) -> DirectArena<P, P, HeapBacking> {
+        let new_generation = if reset_generation {
+            // reset for serialization compactness, only safe if logically old domain `Ptr`s
+            // can be eliminated
+            P::Gen::two()
+        } else {
+            // use incremented generation so that all `Ptr`s of the old domain are
+            // invalidated
+            P::Gen::generational_inc(this.generation()).0
+        };
+        // This arena will be a recaster in which we create a mapping from the old `Ptr`
+        // domain to the new one. We use a `DirectArena` for this since it will only
+        // be used for this purpose and then discarded.
+        let mut recaster = DirectArena::<P, P, HeapBacking>::new();
+        // Set all the keys of the mapping, by cloning the `Ptr` validities of the
+        // pre-transfer `this` into the recaster, and putting in invalid placeholders
+        // for the new domain because we do not know them yet.
+        recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
+        let mut replacement = SurjectArena::<P, T, S, HeapBacking>::new();
+        // Transfer and write the new `Ptr`s at the indexes of the corresponding old
+        // `Ptr`s, using the values seen by the closure to complete the mapping of
+        // the old domain to the new domain. Only the elements are keyed items from
+        // the recaster perspective, so the shared values pass straight through.
+        replacement
+            .transfer_canonical_reallocating(
+                new_generation,
+                this,
+                |q, o, p| {
+                    recaster[q] = p;
+                    o.allow()
+                },
+                |s| s,
+            )
+            .unwrap();
+        *this = replacement;
+        recaster
+    }
+
+    ptr_struct!(P0);
+
+    let mut a: SurjectArena<P0, &str, &str> = SurjectArena::new();
+    let p_a = a.insert_surject("A", "a");
+    let p_b = a.insert_surject("B", "b");
+    a.insert(p_b, "B2");
+    let p_c = a.insert_surject("C", "c");
+    // a union frees a shared value slot without freeing an element slot
+    let _ = a.union(p_a, p_b).unwrap();
+    let p_d = a.insert_surject("D", "d");
+    // interleave the last two surjects so that they are not contiguous
+    a.insert(p_c, "C2");
+    a.insert(p_d, "D2");
+
+    fn layout<'a>(a: &SurjectArena<P0, &'a str, &'a str>) -> Vec<(usize, &'a str, &'a str)> {
+        a.iter_combined()
+            .map(|(p, t, s)| (PtrInx::try_into_usize(p.inx()).unwrap().get(), *t, *s))
+            .collect()
+    }
+
+    assert_eq!(layout(&a), vec![
+        (1, "A", "b"),
+        (2, "B", "b"),
+        (3, "B2", "b"),
+        (4, "C", "c"),
+        (5, "D", "d"),
+        (6, "C2", "c"),
+        (7, "D2", "d"),
+    ]);
+    assert_eq!(a.shared_vals().copied().collect::<Vec<&str>>(), vec![
+        "d", "b", "c"
+    ]);
+
+    let recaster = compress_canonical_recaster(&mut a, false);
+
+    // now each surject is one contiguous run of indexes
+    assert_eq!(layout(&a), vec![
+        (1, "A", "b"),
+        (2, "B2", "b"),
+        (3, "B", "b"),
+        (4, "C", "c"),
+        (5, "C2", "c"),
+        (6, "D", "d"),
+        (7, "D2", "d"),
+    ]);
+    // and the shared values are in corresponding order
+    assert_eq!(a.shared_vals().copied().collect::<Vec<&str>>(), vec![
+        "b", "c", "d"
+    ]);
+    // and the recaster is a complete description of where the elements went
+    assert_eq!(
+        &format!("{recaster:#?}"),
+        r#"{
+    P0[1](2): P0[1](3),
+    P0[2](2): P0[3](3),
+    P0[3](2): P0[2](3),
+    P0[4](2): P0[4](3),
+    P0[5](2): P0[6](3),
+    P0[6](2): P0[5](3),
+    P0[7](2): P0[7](3),
+}"#
+    );
+
+    // external `Ptr`s are fixed up with it
+    let mut external = p_a;
+    external.recast(&recaster).unwrap();
+    assert_eq!(a[external], "A");
 }
 
 // SYNC(triple_arena/src/ord/find.rs, _debug_arena)

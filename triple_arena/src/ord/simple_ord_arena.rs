@@ -549,8 +549,8 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     ///     reset_generation: bool,
     /// ) -> DirectArena<P, P, HeapBacking> {
     ///     let new_generation = if reset_generation {
-    ///         // reset for compactness, only safe if logically old domain `Ptr`s can be
-    ///         // eliminated
+    ///         // reset for serialization compactness, only safe if logically old domain `Ptr`s
+    ///         // can be eliminated
     ///         P::Gen::two()
     ///     } else {
     ///         // use incremented generation so that all `Ptr`s of the old domain are
@@ -561,8 +561,8 @@ impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     ///     // domain to the new one. We use a `DirectArena` for this since it will only
     ///     // be used for this purpose and then discarded.
     ///     let mut recaster = DirectArena::<P, P, HeapBacking>::new();
-    ///     // This all the keys of the mapping, by cloning the `Ptr` validities of the
-    ///     // pre-transfer `this` into the recaster, and puts in invalid placeholders
+    ///     // Set all the keys of the mapping, by cloning the `Ptr` validities of the
+    ///     // pre-transfer `this` into the recaster, and putting in invalid placeholders
     ///     // for the new domain because we do not know them yet.
     ///     recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
     ///     let mut replacement = SimpleOrdArena::<P, T, HeapBacking>::new();
