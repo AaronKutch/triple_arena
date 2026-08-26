@@ -1,7 +1,7 @@
 [package]
 name = "triple_arena"
-# change the dependency used by `triple_arena_render` when the minor version or higher is changed
-version = "0.14.0"
+# update `triple_arena_render` when the minor version or higher is changed
+version = "0.15.0"
 edition = "2024"
 # `flake.nix` and `ci.yml` read this automatically, but run `nix flake update`
 # and fix any hashes. The pinned toolchain in `pinned-toolchain.toml` is
@@ -27,10 +27,9 @@ std = ["alloc", "recasting/std"]
 serde_support = ["serde"]
 
 [dependencies]
-#recasting = { path = "../../recasting", default-features = false }
-recasting = { version = "0.2", default-features = false }
-serde = { version = "1.0", default-features = false, optional = true }
+recasting = { workspace = true }
+serde = { workspace = true, optional = true }
 
 [dev-dependencies]
-ron = "0.12"
-triple_arena_render = { path = "../triple_arena_render" }
+ron = { workspace = true }
+triple_arena_render = { workspace = true }
