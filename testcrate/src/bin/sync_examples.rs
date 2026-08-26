@@ -55,9 +55,13 @@ fn workspace_dir() -> PathBuf {
 ///       `<!-- <name> -->` comment marks
 /// ```
 ///
-/// `<name>` only has to be unique among the doc tests of that one `.rs` file or
-/// the marked code blocks of that one `.md` file, so this does not care about
-/// doc tests being added or reordered.
+/// `<name>` addresses the item or the marker comment rather than a line, so
+/// this does not care about doc tests being added or reordered elsewhere in the
+/// target file. An item is allowed to have more than one code block, and a
+/// markdown file is allowed to have more than one `<!-- <name> -->` comment, in
+/// which case there has to be one marker per block and the nth marker in order
+/// fills the nth block. Markers are ordered by the order of the `--examples`
+/// files and then by their line within a file.
 #[derive(Debug, Parser)]
 #[command(verbatim_doc_comment)]
 struct Args {
@@ -137,8 +141,9 @@ struct Group<'a> {
     file: &'a str,
     /// What kind of file it is
     kind: TargetFile,
-    /// The examples that are copied into it, and where in it they go
-    targets: Vec<(&'a Example, &'a Target)>,
+    /// The examples that are copied into it, where in it they go, and which
+    /// block of that name they fill when the name has more than one
+    targets: Vec<(&'a Example, &'a Target, usize)>,
 }
 
 /// The lines that an example replaces in a target file
@@ -483,77 +488,75 @@ fn owner_name(lines: &[String], close: usize) -> Option<String> {
     None
 }
 
-/// The doc test of a Rust file that is attached to an item named `name`
-fn find_doc_test(lines: &[String], name: &str) -> Result<Span, String> {
-    let doc_tests = find_doc_tests(lines)?;
-    let mut matches = doc_tests
+/// The doc tests of a Rust file that are attached to an item named `name`, in
+/// source order
+fn find_doc_tests_of(lines: &[String], name: &str) -> Result<Vec<Span>, String> {
+    let res: Vec<Span> = find_doc_tests(lines)?
         .into_iter()
-        .filter(|span| owner_name(lines, span.close).as_deref() == Some(name));
-    let Some(span) = matches.next() else {
+        .filter(|span| owner_name(lines, span.close).as_deref() == Some(name))
+        .collect();
+    if res.is_empty() {
         return Err(format!("no doc test is attached to an item named `{name}`"));
-    };
-    if matches.next().is_some() {
-        return Err(format!(
-            "more than one doc test is attached to an item named `{name}`"
-        ));
     }
-    Ok(span)
+    Ok(res)
 }
 
-/// The code block of a markdown file that a `<!-- name -->` comment marks
-fn find_md_block(lines: &[String], name: &str) -> Result<Span, String> {
+/// The code blocks of a markdown file that `<!-- name -->` comments mark, in
+/// source order
+fn find_md_blocks(lines: &[String], name: &str) -> Result<Vec<Span>, String> {
     let marker = format!("<!-- {name} -->");
-    let mut matches = lines
+    let marked: Vec<usize> = lines
         .iter()
         .enumerate()
-        .filter(|(_, line)| line.trim() == marker);
-    let Some((marked, _)) = matches.next() else {
+        .filter(|(_, line)| line.trim() == marker)
+        .map(|(i, _)| i)
+        .collect();
+    if marked.is_empty() {
         return Err(format!("no code block is marked with `{marker}`"));
-    };
-    if matches.next().is_some() {
-        return Err(format!(
-            "more than one code block is marked with `{marker}`"
-        ));
     }
-    // the fence is allowed to be separated from the comment by blank lines
-    let mut open = marked.wrapping_add(1);
-    while lines.get(open).is_some_and(|line| line.trim().is_empty()) {
-        open = open.wrapping_add(1);
-    }
-    let Some(info) = lines
-        .get(open)
-        .and_then(|line| line.trim().strip_prefix("```"))
-    else {
-        return Err(format!("`{marker}` is not followed by a code fence"));
-    };
-    let info = info.trim();
-    if !(info.is_empty() || (info == "rust")) {
-        return Err(format!(
-            "the code block marked with `{marker}` is a `{info}` block, but it must be a `rust` \
-             block"
-        ));
-    }
-    // the block ends at the next fence, which has to be a closing one, otherwise
-    // an unclosed block would swallow everything up to the next one
-    let mut close = open.wrapping_add(1);
-    loop {
-        let never_closed = || format!("the code block marked with `{marker}` is never closed");
-        let Some(line) = lines.get(close) else {
-            return Err(never_closed());
-        };
-        if let Some(info) = line.trim().strip_prefix("```") {
-            if !info.trim().is_empty() {
-                return Err(never_closed());
-            }
-            break;
+    let mut res = vec![];
+    for marked in marked {
+        // the fence is allowed to be separated from the comment by blank lines
+        let mut open = marked.wrapping_add(1);
+        while lines.get(open).is_some_and(|line| line.trim().is_empty()) {
+            open = open.wrapping_add(1);
         }
-        close = close.wrapping_add(1);
+        let Some(info) = lines
+            .get(open)
+            .and_then(|line| line.trim().strip_prefix("```"))
+        else {
+            return Err(format!("`{marker}` is not followed by a code fence"));
+        };
+        let info = info.trim();
+        if !(info.is_empty() || (info == "rust")) {
+            return Err(format!(
+                "the code block marked with `{marker}` is a `{info}` block, but it must be a \
+                 `rust` block"
+            ));
+        }
+        // the block ends at the next fence, which has to be a closing one, otherwise
+        // an unclosed block would swallow everything up to the next one
+        let mut close = open.wrapping_add(1);
+        loop {
+            let never_closed = || format!("the code block marked with `{marker}` is never closed");
+            let Some(line) = lines.get(close) else {
+                return Err(never_closed());
+            };
+            if let Some(info) = line.trim().strip_prefix("```") {
+                if !info.trim().is_empty() {
+                    return Err(never_closed());
+                }
+                break;
+            }
+            close = close.wrapping_add(1);
+        }
+        res.push(Span {
+            open,
+            close,
+            prefix: None,
+        });
     }
-    Ok(Span {
-        open,
-        close,
-        prefix: None,
-    })
+    Ok(res)
 }
 
 /// Turns the lines of an example into the lines that go inside the code block
@@ -587,33 +590,20 @@ fn run(args: &Args) -> Result<ExitCode, String> {
         examples.extend(parsed);
     }
 
-    // group by target file so that files with more than one target are only read
-    // and written once, and so that two examples that would silently fight over
-    // the same target are caught before anything is written
+    // group by target file so that files with more than one target is only read
+    // and written once. Repeats of the same name are not a conflict, they are the
+    // ordered code blocks of that one name, so each one records which block it is.
     let mut groups: Vec<Group> = vec![];
     for example in &examples {
         for target in &example.targets {
             match groups.iter_mut().find(|group| group.file == target.file) {
                 Some(group) => {
-                    if let Some((other, other_target)) = group
+                    let index = group
                         .targets
                         .iter()
-                        .find(|(_, other)| other.name == target.name)
-                    {
-                        return Err(format!(
-                            "`{}` on line {} of {} and `{}` on line {} of {} both target `{}` in \
-                             `{}`",
-                            other.label,
-                            other_target.line,
-                            other.source,
-                            example.label,
-                            target.line,
-                            example.source,
-                            target.name,
-                            target.file
-                        ));
-                    }
-                    group.targets.push((example, target));
+                        .filter(|(_, other, _)| other.name == target.name)
+                        .count();
+                    group.targets.push((example, target, index));
                 }
                 None => {
                     let kind = match Path::new(&target.file)
@@ -633,7 +623,7 @@ fn run(args: &Args) -> Result<ExitCode, String> {
                     groups.push(Group {
                         file: &target.file,
                         kind,
-                        targets: vec![(example, target)],
+                        targets: vec![(example, target, 0)],
                     });
                 }
             }
@@ -651,14 +641,44 @@ fn run(args: &Args) -> Result<ExitCode, String> {
         let ends_with_newline = text.ends_with('\n');
         let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
         let mut changed = false;
-        for (example, target) in &group.targets {
+        for (example, target, index) in &group.targets {
             // the target has to be refound for each example, because splicing in a body
-            // of a different length shifts every line index after it
-            let span = match group.kind {
-                TargetFile::Rust => find_doc_test(&lines, &target.name),
-                TargetFile::Markdown => find_md_block(&lines, &target.name),
+            // of a different length shifts every line index after it. Splicing never
+            // changes how many blocks a name has or what order they are in, so `index`
+            // stays valid.
+            let spans = match group.kind {
+                TargetFile::Rust => find_doc_tests_of(&lines, &target.name),
+                TargetFile::Markdown => find_md_blocks(&lines, &target.name),
             }
             .map_err(|e| format!("{} line {} -> {file}: {e}", example.source, target.line))?;
+            let markers = group
+                .targets
+                .iter()
+                .filter(|(_, other, _)| other.name == target.name)
+                .count();
+            if spans.len() != markers {
+                let plural = |n: usize| if n == 1 { "" } else { "s" };
+                return Err(format!(
+                    "{} line {} -> {file}: {markers} marker{} target{} `{}`, but it has {} code \
+                     block{} to fill",
+                    example.source,
+                    target.line,
+                    plural(markers),
+                    if markers == 1 { "s" } else { "" },
+                    target.name,
+                    spans.len(),
+                    plural(spans.len()),
+                ));
+            }
+            let Some(span) = spans.into_iter().nth(*index) else {
+                return Err(format!(
+                    "{} line {} -> {file}: `{}` has no code block number {}",
+                    example.source,
+                    target.line,
+                    target.name,
+                    index.wrapping_add(1)
+                ));
+            };
             let new = render(&example.body, span.prefix.as_deref());
             if span.prefix.is_some() {
                 for line in &new {
@@ -676,7 +696,16 @@ fn run(args: &Args) -> Result<ExitCode, String> {
                     }
                 }
             }
-            let what = format!("`{}` -> `{}` in {file}", example.label, target.name);
+            let what = if markers > 1 {
+                format!(
+                    "`{}` -> block {} of `{}` in {file}",
+                    example.label,
+                    index.wrapping_add(1),
+                    target.name
+                )
+            } else {
+                format!("`{}` -> `{}` in {file}", example.label, target.name)
+            };
             if lines[span.body_range()] == new[..] {
                 synced = synced.wrapping_add(1);
                 continue;
