@@ -19,7 +19,7 @@ ron = { version = "0.12", features = ["integer128"] }
 serde = { version = "1.0", default-features = false }
 stacked_errors = { version = "0.8", features = ["supports-color"] }
 star_rng = { version = "0.3" }
-triple_arena = { path = "./triple_arena", default-features = false }
+triple_arena = { version = "0.15", path = "./triple_arena", default-features = false }
 triple_arena_render = { path = "./triple_arena_render" }
 
 [patch.crates-io]
