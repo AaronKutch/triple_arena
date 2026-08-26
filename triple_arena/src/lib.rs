@@ -103,7 +103,8 @@ pub mod utils {
     }
 }
 
-/// All the main traits, this can be glob imported
+/// All the main traits, this can be glob imported. [Recast](recasting::Recast)
+/// and [Recaster](recasting::Recaster) are reexported from [recasting].
 pub mod traits {
     pub use recasting::{Recast, Recaster};
 

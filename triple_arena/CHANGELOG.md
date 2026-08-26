@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.15.1] - 2026-08-26
+This is just to guarantee `recasting` 0.2.3
+
 ## [0.15.0] - 2026-08-26
 ### Crate
 - MSRV 1.88
