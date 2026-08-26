@@ -1,13 +1,20 @@
 [workspace]
 resolver = "3"
-members = ["no_std_test", "testcrate", "triple_arena", "triple_arena_render"]
+members = [
+    # note: this must be a separate workspace
+    #"no_alloc_test",
+    "no_std_test",
+    "testcrate",
+    "triple_arena",
+    "triple_arena_render",
+]
 
 [workspace.dependencies]
 clap = { version = "4.6", features = ["derive"] }
 expect-test = "1.5"
 postcard = { version = "1.0", features = ["alloc"] }
 rand_xoshiro = "0.8"
-recasting = { version = "0.2", default-features = false }
+recasting = { version = "^0.2.2", default-features = false }
 ron = { version = "0.12", features = ["integer128"] }
 serde = { version = "1.0", default-features = false }
 stacked_errors = { version = "0.8", features = ["supports-color"] }
@@ -16,3 +23,4 @@ triple_arena = { path = "./triple_arena", default-features = false }
 triple_arena_render = { path = "./triple_arena_render" }
 
 [patch.crates-io]
+#recasting = { path = "../recasting/recasting" }
