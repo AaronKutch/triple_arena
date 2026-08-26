@@ -146,8 +146,8 @@ fn arena_display() {
         v.push(c.insert(LinkInsertKind::Disconnected, "w"));
     }
     c.insert(LinkInsertKind::SingleLinkCyclic, "w");
-    for i in 0..9 {
-        c.remove(v[i]).allow().unwrap();
+    for p in v.iter().take(9) {
+        c.remove(*p).allow().unwrap();
     }
     assert_eq!(
         &format!("{c:?}"),

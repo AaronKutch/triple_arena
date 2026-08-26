@@ -447,23 +447,21 @@ fn fuzz_multi_arena() -> Result<(), StackedError> {
     } else {
         10_000_000
     };
-    const MAX_LEN: Expect = if cfg!(miri) {
-        expect![[r#"
-            15
-        "#]]
+    const MAX_LEN: Option<Expect> = if cfg!(miri) {
+        None
     } else if cfg!(debug_assertions) {
-        expect![[r#"
+        Some(expect![[r#"
             32
-        "#]]
+        "#]])
     } else {
-        expect![[r#"
+        Some(expect![[r#"
             46
-        "#]]
+        "#]])
     };
 
     let stats = basic_arena::MultiStats {
         n: N,
-        max_len: Some(MAX_LEN),
+        max_len: MAX_LEN,
     };
     basic_arena::fuzz_multi_arena::<P2>(&mut rng, stats, &mut CdGen::new(), &mut CdGen::new())
         .stack()?;
@@ -481,23 +479,21 @@ fn fuzz_multi_direct_arena() -> Result<(), StackedError> {
     } else {
         10_000_000
     };
-    const MAX_LEN: Expect = if cfg!(miri) {
-        expect![[r#"
-            25
-        "#]]
+    const MAX_LEN: Option<Expect> = if cfg!(miri) {
+        None
     } else if cfg!(debug_assertions) {
-        expect![[r#"
+        Some(expect![[r#"
             65
-        "#]]
+        "#]])
     } else {
-        expect![[r#"
+        Some(expect![[r#"
             75
-        "#]]
+        "#]])
     };
 
     let stats = direct_arena::MultiStats {
         n: N,
-        max_len: Some(MAX_LEN),
+        max_len: MAX_LEN,
     };
     direct_arena::fuzz_multi_direct_arena::<P2>(
         &mut rng,

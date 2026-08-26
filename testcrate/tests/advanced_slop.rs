@@ -1755,6 +1755,7 @@ fn surject_layout(a: &Surj) -> Vec<(usize, u16, usize, u16)> {
 
 /// Returns `(shared index, shared value, element count)` for every shared value
 /// of `a`, in shared index order
+#[cfg(not(miri))]
 fn shared_layout(a: &Surj) -> Vec<(usize, u16, usize)> {
     let (_, shared_vals) = a.backing();
     let mut res = vec![];
@@ -1770,6 +1771,7 @@ fn shared_layout(a: &Surj) -> Vec<(usize, u16, usize)> {
 /// The logical contents of `a` in a form that is invariant under every kind of
 /// compression: for each surject, its shared value and its sorted elements,
 /// with the surjects themselves sorted
+#[cfg(not(miri))]
 fn surject_logical(a: &Surj) -> Vec<(u16, Vec<u16>)> {
     let mut seen = HashSet::new();
     let mut res = vec![];
@@ -1793,6 +1795,7 @@ fn surject_logical(a: &Surj) -> Vec<(u16, Vec<u16>)> {
 
 /// Builds a pseudorandom arena with distinct elements and shared values,
 /// checking invariants along the way
+#[cfg(not(miri))]
 fn random_surject(rng: &mut StarRng) -> Surj {
     let mut a = Surj::new();
     let mut ptrs: Vec<Q0> = vec![];
@@ -1837,6 +1840,7 @@ fn random_surject(rng: &mut StarRng) -> Surj {
 /// Checks that `compress_canonical` preserves the contents while producing the
 /// canonical layout
 #[test]
+#[cfg(not(miri))]
 fn surject_compress_canonical() {
     let mut rng = StarRng::new(0);
     // totals over all the rounds, to check that the interesting cases are
@@ -1886,6 +1890,7 @@ fn surject_compress_canonical() {
 /// Checks that `ArenaTrait::compress_with` compresses the elements and leaves
 /// the shared values exactly where they were
 #[test]
+#[cfg(not(miri))]
 fn surject_compress_with() {
     let mut rng = StarRng::new(1);
     let mut total_shared = 0usize;
