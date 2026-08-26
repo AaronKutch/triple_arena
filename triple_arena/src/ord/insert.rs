@@ -1,117 +1,388 @@
-#![allow(clippy::type_complexity)]
-
 use core::{cmp::Ordering, mem};
 
-use super::ord_arena::Node;
-use crate::{OrdArena, Ptr};
+use crate::{
+    LinkInsertKind, SimpleOrdArena,
+    arena::ArenaInsertEntryTrait,
+    errors::{ChainInsertionError, OrdInsertionError},
+    traits::{ArenaTrait, ChainArenaTrait, Ptr},
+    utils::{
+        SimpleOrdArenaNode,
+        traits::{ArenaBacking, SimpleOrdItem},
+    },
+};
 
-impl<P: Ptr, K: Ord, V> OrdArena<P, K, V> {
-    /// Inserts key `v` with associated value `v` into `self` and returns a
-    /// `Ptr` to it. If the inserted key is equal to a key already contained
-    /// in `self`, the new value replaces the old value, and `k` and the old
-    /// value are returned. The existing key is not replaced, which should
-    /// not make a difference unless special `Ord` definitions are being
-    /// used.
-    #[must_use]
-    pub fn insert(&mut self, k: K, v: V) -> (P, Option<(K, V)>) {
-        if self.is_empty() {
-            (self.insert_empty(k, v).unwrap(), None)
-        } else {
-            let (p, direction) = self.find_similar_key(&k).unwrap();
-            self.insert_inx_manual_unwrap(p.inx(), direction, k, v)
-        }
-    }
+// this enum prevents certain bugs and allows anticipating replacement
 
-    /// Inserts key `v` with associated value `v` into `self` and returns a
-    /// `Ptr` to it. If the inserted key is equal to a key already contained in
-    /// `self`, it does not replace the entry and is inserted in addition to it,
-    /// such that there can be multiple neighboring entries with equal keys.
-    /// Future calls to `self.find_key` could find any one of the equal keys.
-    pub fn insert_nonhereditary(&mut self, k: K, v: V) -> P {
-        if self.is_empty() {
-            self.insert_empty(k, v).unwrap()
-        } else {
-            let (p, mut direction) = self.find_similar_key(&k).unwrap();
-            if direction == Ordering::Equal {
-                direction = Ordering::Less;
-            }
-            self.insert_inx_manual_unwrap(p.inx(), direction, k, v).0
-        }
-    }
+/// Indicates the kind of entry insertion that will occur
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrdEntryKind<P: Ptr> {
+    /// Ordinary insertion to a currently unallocated slot
+    New(P),
+    /// Unlike many entry insertion options in this crate, this returned `P`
+    /// points to an _existing_ entry that will be replaced once the insert
+    /// operation is actually executed. Capacity does not change.
+    Replacing(P),
+}
 
-    /// The same as [OrdArena::insert], except it uses linear comparisons
-    /// starting at `p_init`. If the insertion point is not found within `num`
-    /// comparisons, or `p_init` is invalid, a normal insertion is used.
-    pub fn insert_linear(&mut self, p_init: P, num: usize, k: K, v: V) -> (P, Option<(K, V)>) {
-        if self.is_empty() {
-            (self.insert_empty(k, v).unwrap(), None)
-        } else {
-            let (p, direction) = self.find_similar_key_linear(p_init, num, &k).unwrap();
-            self.insert_inx_manual_unwrap(p.inx(), direction, k, v)
-        }
-    }
-
-    /// Combines the behaviors of [OrdArena::insert_nonhereditary] and
-    /// [OrdArena::insert_linear]
-    pub fn insert_nonhereditary_linear(&mut self, p_init: P, num: usize, k: K, v: V) -> P {
-        if self.is_empty() {
-            self.insert_empty(k, v).unwrap()
-        } else {
-            let (p, mut direction) = self.find_similar_key_linear(p_init, num, &k).unwrap();
-            if direction == Ordering::Equal {
-                direction = Ordering::Less;
-            }
-            self.insert_inx_manual_unwrap(p.inx(), direction, k, v).0
-        }
-    }
-
-    /// Inserts key `k` and value `v` into an empty arena, returning a `Ptr` to
-    /// it. Returns `None` if the arena was not empty.
-    pub fn insert_empty(&mut self, k: K, v: V) -> Option<P> {
-        if self.is_empty() {
-            let p_new = self.a.insert_new(Node {
-                k,
-                v,
-                p_back: None,
-                p_tree0: None,
-                p_tree1: None,
-                rank: 1,
-            });
-            self.first = p_new.inx();
-            self.last = p_new.inx();
-            self.root = p_new.inx();
-            Some(p_new)
-        } else {
-            None
+impl<P: Ptr> OrdEntryKind<P> {
+    /// Returns the `Ptr` of any kind of insertion
+    pub fn any(self) -> P {
+        match self {
+            Self::New(p) => p,
+            Self::Replacing(p) => p,
         }
     }
 }
 
-/// Does not require `K: Ord`
-impl<P: Ptr, K, V> OrdArena<P, K, V> {
-    /// Inserts key `k` with associated value `v` at `p`. Does not enforce key
-    /// orderings, and instead accepts whatever `direction` says. If
-    /// `direction` is `Ordering::Equal`, the value at `p` is replaced and
-    /// returned with `k`. If `direction` is `Ordering::Less`, the pair is
-    /// inserted as a new entry before `p`. If `direction` is
-    /// `Ordering::Greater`, the pair is inserted after `p`. Returns the
-    /// `Ptr` to the pair, and the replaced pair if there was one.
+/// Indicates how the insertion point of an entry is determined
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrdInsertKind<P: Ptr, K: Ord> {
+    /// Inserts an item into an empty arena. Fails if the arena is not empty.
+    Empty,
+    /// Normal hereditary insertion. If the inserted key is equal to a key
+    /// already contained in `self`, the new item replaces the old item, and
+    /// the old item is returned.
+    Normal(K),
+    /// If the inserted key is equal to an already contained key, it does not
+    /// replace the entry and is instead inserted in addition to it,
+    /// such that there can be multiple neighboring items with equal keys.
+    /// Future calls like [SimpleOrdArena::find_key] will find one of these, but
+    /// it could find any one of the equal keys.
+    Nonhereditary(K),
+    /// The same as normal insertion, except it starts by using linear
+    /// comparisons starting at `p_init`. If the insertion point is not
+    /// found within `num` comparisons, or `p_init` is invalid, a normal
+    /// insertion is used.
+    Linear { p_init: P::Inx, num: usize, k: K },
+    /// Combines nonhereditary insertion with linear startup
+    NonhereditaryLinear { p_init: P::Inx, num: usize, k: K },
+    /// Manual insertion. Does not enforce key orderings, and instead accepts
+    /// whatever `direction` says. If `direction` is `Ordering::Equal`, the
+    /// item at `p_target` is replaced and returned, and no capacity is used.
+    /// If `direction` is `Ordering::Less`, the item is inserted as a new entry
+    /// before `p_target`. If `direction` is `Ordering::Greater`, it is
+    /// inserted after `p_target`. Causes an entry insertion error if
+    /// `p_target` was invalid (which necessarily includes the empty arena case)
+    /// instead of panicking, unlike
+    /// [SimpleOrdArena::insert_inx_manual_unwrap].
+    Manual {
+        p_target: P::Inx,
+        direction: Ordering,
+    },
+}
+
+/// Insertion is cancelled when this is dropped, but note that the processing
+/// time needed by some operations to find the entry has already happened, and
+/// any reallocations that would have been needed have happened.
+pub struct SimpleOrdArenaInsertEntry<'a, P: Ptr, T, B: ArenaBacking> {
+    // REF(insertion_idempotency) we drop the entry when constructing this and are relying on
+    // idempotency
+    a: &'a mut SimpleOrdArena<P, T, B>,
+    // must be prechecked, the Empty case is based on `a.is_empty()`
+
+    // `p == p_target` in the replacement case but there is going to be redundant space anyways
+    p: P,
+    p_target: P::Inx,
+    direction: Ordering,
+}
+
+impl<'a, P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArenaInsertEntry<'a, P, T, B> {
+    // keep the name
+
+    /// Returns an elaborated `Ptr` indicating if a replacement will occur when
+    /// `insert` is called
+    pub fn ptr(&self) -> OrdEntryKind<P> {
+        if self.a.is_empty() {
+            OrdEntryKind::New(self.p)
+        } else {
+            match self.direction {
+                Ordering::Equal => OrdEntryKind::Replacing(self.p),
+                _ => OrdEntryKind::New(self.p),
+            }
+        }
+    }
+
+    /// Inserts `t` into the arena, returning the replaced `T` if any
+    pub fn insert(mut self, t: T) -> Option<T> {
+        let a = &mut self.a;
+        let c = &mut a.a;
+        if c.is_empty() {
+            let p = c
+                .insert_within_capacity(LinkInsertKind::Disconnected, SimpleOrdArenaNode {
+                    t,
+                    p_back: None,
+                    p_tree0: None,
+                    p_tree1: None,
+                    rank: 1,
+                })
+                .unwrap();
+            // REF(insertion_idempotency)
+            if p != self.p {
+                unreachable!()
+            }
+            let p = self.p.inx();
+            a.first = p;
+            a.last = p;
+            a.root = p;
+            None
+        } else {
+            a.insert_inx_manual_unwrap(self.p_target, self.direction, t)
+        }
+    }
+}
+
+enum InternalPrepared<P: Ptr> {
+    Fail,
+    New {
+        p_target: P::Inx,
+        direction: Ordering,
+    },
+    Replace(P),
+}
+
+impl<P: Ptr, T: SimpleOrdItem, B: ArenaBacking> SimpleOrdArena<P, T, B> {
+    // The tricky part about insertion is that equal keys get replaced in the
+    // hereditary cases and no capacity change occurs. We have to do key finding
+    // first
+    fn check_ord_insert_kind<'a>(&self, kind: OrdInsertKind<P, T::Key<'a>>) -> InternalPrepared<P> {
+        // common collapse case so that all the branches from now on do not need to
+        // consider it
+        if self.is_empty() && !matches!(kind, OrdInsertKind::Manual { .. }) {
+            return InternalPrepared::New {
+                p_target: P::invalid().inx(),
+                direction: Ordering::Equal,
+            };
+        } else {
+            if matches!(kind, OrdInsertKind::Empty) {
+                return InternalPrepared::Fail;
+            }
+        }
+
+        match kind {
+            OrdInsertKind::Empty => unreachable!(),
+            OrdInsertKind::Normal(k) => {
+                let (p, direction) = self.find_similar_key(T::shorten_key(k)).unwrap();
+                if direction.is_eq() {
+                    InternalPrepared::Replace(p)
+                } else {
+                    InternalPrepared::New {
+                        p_target: p.inx(),
+                        direction,
+                    }
+                }
+            }
+            OrdInsertKind::Nonhereditary(k) => {
+                let (p, direction) = self.find_similar_key(T::shorten_key(k)).unwrap();
+                if direction.is_eq() {
+                    // TODO I'm not sure which should be canonical, it can be returned in the middle
+                    // of a group anyways
+                    InternalPrepared::New {
+                        p_target: p.inx(),
+                        direction: Ordering::Less,
+                    }
+                } else {
+                    InternalPrepared::New {
+                        p_target: p.inx(),
+                        direction,
+                    }
+                }
+            }
+            OrdInsertKind::Linear { k, p_init, num } => {
+                let (p, direction) = self
+                    .find_similar_key_linear(p_init, num, T::shorten_key(k))
+                    .unwrap();
+                if direction.is_eq() {
+                    InternalPrepared::Replace(p)
+                } else {
+                    InternalPrepared::New {
+                        p_target: p.inx(),
+                        direction,
+                    }
+                }
+            }
+            OrdInsertKind::NonhereditaryLinear { k, p_init, num } => {
+                let (p, direction) = self
+                    .find_similar_key_linear(p_init, num, T::shorten_key(k))
+                    .unwrap();
+                if direction.is_eq() {
+                    InternalPrepared::New {
+                        p_target: p.inx(),
+                        direction: Ordering::Less,
+                    }
+                } else {
+                    InternalPrepared::New {
+                        p_target: p.inx(),
+                        direction,
+                    }
+                }
+            }
+            OrdInsertKind::Manual {
+                p_target,
+                direction,
+            } => {
+                let Some((generation, _)) = self.get_inx(p_target) else {
+                    return InternalPrepared::Fail;
+                };
+                if direction.is_eq() {
+                    InternalPrepared::Replace(Ptr::_from_raw(p_target, generation))
+                } else {
+                    InternalPrepared::New {
+                        p_target,
+                        direction,
+                    }
+                }
+            }
+        }
+    }
+
+    /// Following the style of
+    /// [ArenaInsertTrait::insert_within_capacity](crate::traits::ArenaInsertTrait::insert_within_capacity).
+    /// Uses
+    /// [OrdInsertKind::Normal], so the returned `Option<T>` is the replaced
+    /// item if there was already an entry with an equal key.
+    pub fn insert_within_capacity(&mut self, t: T) -> Result<(P, Option<T>), OrdInsertionError> {
+        let entry = self.entry_insert_within_capacity(OrdInsertKind::Normal(t.key()))?;
+        let p = entry.ptr().any();
+        Ok((p, entry.insert(t)))
+    }
+
+    /// Following the style of
+    /// [ArenaInsertTrait::insert_reallocating](crate::traits::ArenaInsertTrait::insert_reallocating).
+    /// Uses
+    /// [OrdInsertKind::Normal], so the returned `Option<T>` is the replaced
+    /// item if there was already an entry with an equal key.
+    pub fn insert_reallocating(&mut self, t: T) -> Result<(P, Option<T>), OrdInsertionError> {
+        let entry = self.entry_insert_reallocating(OrdInsertKind::Normal(t.key()))?;
+        let p = entry.ptr().any();
+        Ok((p, entry.insert(t)))
+    }
+
+    /// Following the style of
+    /// [ArenaInsertTrait::insert](crate::traits::ArenaInsertTrait::insert).
+    /// Uses [OrdInsertKind::Normal]. Panics if there was a reallocation
+    /// error or if max capacity was reached.
     ///
     /// # Panics
     ///
-    /// If `p` is invalid.
-    pub fn insert_inx_manual_unwrap(
+    /// If there was a reallocation error or if max capacity was reached.
+    #[must_use]
+    pub fn insert(&mut self, t: T) -> (P, Option<T>) {
+        self.insert_reallocating(t)
+            .expect("`SimpleOrdArena::insert_reallocating` failed")
+    }
+
+    /// Following the style of
+    /// [ArenaInsertTrait::entry_insert_within_capacity](crate::traits::ArenaInsertTrait::entry_insert_within_capacity)
+    pub fn entry_insert_within_capacity<'a>(
         &mut self,
-        p: P::Inx,
-        direction: Ordering,
-        k: K,
-        v: V,
-    ) -> (P, Option<(K, V)>) {
+        kind: OrdInsertKind<P, T::Key<'a>>,
+    ) -> Result<SimpleOrdArenaInsertEntry<'_, P, T, B>, OrdInsertionError> {
+        match self.check_ord_insert_kind(kind) {
+            InternalPrepared::Fail => Err(OrdInsertionError::FailedOrdRequirement),
+            InternalPrepared::Replace(p) => Ok(SimpleOrdArenaInsertEntry {
+                a: self,
+                p,
+                p_target: p.inx(),
+                direction: Ordering::Equal,
+            }),
+            InternalPrepared::New {
+                p_target,
+                direction,
+            } => {
+                let entry = self
+                    .a
+                    .entry_insert_within_capacity(LinkInsertKind::Disconnected)
+                    .map_err(|_| OrdInsertionError::NotWithinCapacity)?;
+                let p = entry.ptr();
+                Ok(SimpleOrdArenaInsertEntry {
+                    a: self,
+                    p,
+                    p_target,
+                    direction,
+                })
+            }
+        }
+    }
+
+    /// Following the style of
+    /// [ArenaInsertTrait::entry_insert_reallocating](crate::traits::ArenaInsertTrait::entry_insert_reallocating)
+    pub fn entry_insert_reallocating<'a>(
+        &mut self,
+        kind: OrdInsertKind<P, T::Key<'a>>,
+    ) -> Result<SimpleOrdArenaInsertEntry<'_, P, T, B>, OrdInsertionError> {
+        match self.check_ord_insert_kind(kind) {
+            InternalPrepared::Fail => Err(OrdInsertionError::FailedOrdRequirement),
+            InternalPrepared::Replace(p) => Ok(SimpleOrdArenaInsertEntry {
+                a: self,
+                p,
+                p_target: p.inx(),
+                direction: Ordering::Equal,
+            }),
+            InternalPrepared::New {
+                p_target,
+                direction,
+            } => {
+                let entry = match self
+                    .a
+                    .entry_insert_reallocating(LinkInsertKind::Disconnected)
+                {
+                    Ok(x) => x,
+                    Err(ChainInsertionError::BeyondMaxCapacity) => {
+                        return Err(OrdInsertionError::BeyondMaxCapacity);
+                    }
+                    Err(_) => return Err(OrdInsertionError::AllocError),
+                };
+                let p = entry.ptr();
+                Ok(SimpleOrdArenaInsertEntry {
+                    a: self,
+                    p,
+                    p_target,
+                    direction,
+                })
+            }
+        }
+    }
+
+    /// Following the style of
+    /// [ArenaInsertTrait::entry_insert](crate::traits::ArenaInsertTrait::entry_insert).
+    /// Panics if there was a reallocation error, or if max capacity was
+    /// reached, or if a `OrdInsertKind` requirement was violated.
+    ///
+    /// # Panics
+    ///
+    /// If there was a reallocation error, or if max capacity was reached, or if
+    /// a `OrdInsertKind` requirement was violated.
+    pub fn entry_insert<'a>(
+        &mut self,
+        kind: OrdInsertKind<P, T::Key<'a>>,
+    ) -> SimpleOrdArenaInsertEntry<'_, P, T, B> {
+        self.entry_insert_reallocating(kind)
+            .expect("`SimpleOrdArena::entry_insert_reallocating` failed")
+    }
+}
+
+/// Does not require `T: SimpleOrdItem`
+impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
+    /// Inserts `t` at `p`. Does not enforce key orderings, and instead accepts
+    /// whatever `direction` says. If `direction` is `Ordering::Equal`, the item
+    /// at `p` is replaced and returned. If `direction` is `Ordering::Less`, `t`
+    /// is inserted as a new entry before `p`. If `direction` is
+    /// `Ordering::Greater`, it is inserted after `p`. Use
+    /// [OrdInsertKind::Manual] with the `entry_insert_*` functions if the
+    /// failure cases need to be handled.
+    ///
+    /// # Panics
+    ///
+    /// If `p` is invalid. If `direction` is not `Ordering::Equal`, this can
+    /// also panic if there was a reallocation error or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit was reached.
+    #[track_caller]
+    pub fn insert_inx_manual_unwrap(&mut self, p: P::Inx, direction: Ordering, t: T) -> Option<T> {
         let (p, direction) = match direction {
             Ordering::Less => {
                 // first need to linear step to a node with a `None` in the right position if
                 // needed
-                let link = self.a.get_inx_unwrap(p);
+                let link = self.a.a.get_inx_mut_unwrap(p);
                 if link.t.p_tree0.is_some() {
                     (link.prev().unwrap(), true)
                 } else {
@@ -120,14 +391,12 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             }
             Ordering::Equal => {
                 // replacement case
-                let old_v = mem::replace(&mut self.a.get_inx_mut_unwrap_t(p).v, v);
-                return (
-                    Ptr::_from_raw(p, self.a.get_no_gen(p).unwrap().0),
-                    Some((k, old_v)),
-                )
+                let node = self.a.get_inx_mut_unwrap(p);
+                let old_t = mem::replace(&mut node.t, t);
+                return Some(old_t);
             }
             Ordering::Greater => {
-                let link = self.a.get_inx_unwrap(p);
+                let link = self.a.a.get_inx_mut_unwrap(p);
                 if link.t.p_tree1.is_some() {
                     (link.next().unwrap(), false)
                 } else {
@@ -136,48 +405,47 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             }
         };
         if direction {
-            let new_node = Node {
-                k,
-                v,
+            let new_node = SimpleOrdArenaNode {
+                t,
                 p_back: Some(p),
                 p_tree0: None,
                 p_tree1: None,
                 rank: 1,
             };
-            if let Ok(p_new) = self.a.insert((Some(p), None), new_node) {
-                self.a.get_inx_mut_unwrap_t(p).p_tree1 = Some(p_new.inx());
-                if self.last == p {
-                    self.last = p_new.inx()
-                }
-                self.rebalance_inserted(p_new.inx());
-                (p_new, None)
-            } else {
-                unreachable!()
+            let p_new = self
+                .a
+                .insert_reallocating(LinkInsertKind::NextToInx(p), new_node)
+                .expect("`SimpleOrdArena::insert_inx_manual_unwrap` failed to insert");
+            self.a.get_inx_mut_unwrap(p).p_tree1 = Some(p_new.inx());
+            if self.last == p {
+                self.last = p_new.inx()
             }
+            self.rebalance_inserted(p_new.inx());
+            None
         } else {
-            let new_node = Node {
-                k,
-                v,
+            let new_node = SimpleOrdArenaNode {
+                t,
                 p_back: Some(p),
                 p_tree0: None,
                 p_tree1: None,
                 rank: 1,
             };
-            if let Ok(p_new) = self.a.insert((None, Some(p)), new_node) {
-                // fix tree pointer in leaf direction
-                self.a.get_inx_mut_unwrap_t(p).p_tree0 = Some(p_new.inx());
-                if self.first == p {
-                    self.first = p_new.inx()
-                }
-                self.rebalance_inserted(p_new.inx());
-                (p_new, None)
-            } else {
-                unreachable!()
+            let p_new = self
+                .a
+                .insert_reallocating(LinkInsertKind::PrevToInx(p), new_node)
+                .expect("`SimpleOrdArena::insert_inx_manual_unwrap` failed to insert");
+            // fix tree pointer in leaf direction
+            self.a.get_inx_mut_unwrap(p).p_tree0 = Some(p_new.inx());
+            if self.first == p {
+                self.first = p_new.inx()
             }
+            self.rebalance_inserted(p_new.inx());
+            None
         }
     }
 
-    /// Rebalances starting from newly inserted node `p`
+    /// Rebalances starting from newly inserted node `p`. Do not call this in
+    /// the empty insertion case when inserting the first node.
     fn rebalance_inserted(&mut self, p: P::Inx) {
         // We keep record of the last three nodes for trinode restructuring.
         // We also keep the direction of the two edges between the nodes in
@@ -194,7 +462,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         // would be a rank 0 `None` child, and the rank difference between it and `n1`
         // would be 3, which would contradict invariants
 
-        let (n1, mut p1) = if let Some(p1) = n0.t.p_back {
+        let (n1, mut p1) = if let Some(p1) = n0.p_back {
             // in case `n1` was rank 1 we must promote it, the loop expects no rank
             // violations at p1 and below (also, if it is rank 2 then it is within rank
             // difference 2 of the `None` sibling to `n0`)
@@ -207,7 +475,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             //    /     \
             // n0 (1)  s0 (0,1)
 
-            let n1 = self.a.get_inx_mut_unwrap_t(p1);
+            let n1 = self.a.get_inx_mut_unwrap(p1);
             if n1.rank == 2 {
                 //       ? (3,4)
                 //         /
@@ -219,7 +487,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
 
                 // this isn't just an optimization, later branches need to make sure that the
                 // rank of `s0` has a rank difference of 2 below `n1`
-                return
+                return;
             } else {
                 //      ? (2,3)
                 //        /
@@ -243,10 +511,13 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             // correct
 
             // n0 (1)
-            return
+
+            // for coverage purposes
+            //return
+            unreachable!()
         };
-        let mut d01 = n1.t.p_tree1 == Some(p0);
-        let (n2, mut p2) = if let Some(p2) = n1.t.p_back {
+        let mut d01 = n1.p_tree1 == Some(p0);
+        let (n2, mut p2) = if let Some(p2) = n1.p_back {
             //      n2 (2,3)
             //        /
             //       /
@@ -262,9 +533,9 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             //    /    \
             //   /      \
             // n0 (1)  s0 (0)
-            return
+            return;
         };
-        let mut d12 = n2.t.p_tree1 == Some(p1);
+        let mut d12 = n2.p_tree1 == Some(p1);
         loop {
             // the prelude and any previous iterations of this loop must lead the state to
             // match with
@@ -282,11 +553,11 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             let n0 = self.a.get_inx_unwrap(p0);
             let n1 = self.a.get_inx_unwrap(p1);
             let n2 = self.a.get_inx_unwrap(p2);
-            let p3 = n2.t.p_back;
+            let p3 = n2.p_back;
 
-            let rank0 = n0.t.rank;
-            let rank1 = n1.t.rank;
-            let rank2 = n2.t.rank;
+            let rank0 = n0.rank;
+            let rank1 = n1.rank;
+            let rank2 = n2.rank;
             if rank1 < rank2 {
                 //      n2 (r+2)
                 //        /
@@ -295,7 +566,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                 //    /     \
                 //   /       \
                 // n0 (r)   s0 (r-1)
-                break
+                break;
             }
             //           ? (r+2,r+3)
             //             /
@@ -312,9 +583,9 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             // This isn't just an optimization, a general case restructure requires the
             // sibling of n1 to be 2 ranks below n2 or else the restructure may introduce
             // lower height violations.
-            let p_s1 = if d12 { n2.t.p_tree0 } else { n2.t.p_tree1 };
+            let p_s1 = if d12 { n2.p_tree0 } else { n2.p_tree1 };
             let rank_s1 = if let Some(p_s1) = p_s1 {
-                self.a.get_inx_unwrap(p_s1).t.rank
+                self.a.get_inx_unwrap(p_s1).rank
             } else {
                 0
             };
@@ -333,7 +604,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                 //   /       \
                 // n0 (r)   s0 (r-1)
                 //
-                self.a.get_inx_mut_unwrap_t(p2).rank = rank1.wrapping_add(1);
+                self.a.get_inx_mut_unwrap(p2).rank = rank1.wrapping_add(1);
                 //
                 //           ? (r+2,r+3)
                 //             /
@@ -378,8 +649,8 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     p1 = p2;
                     p2 = p3;
                     d01 = d12;
-                    d12 = self.a.get_inx_unwrap(p2).t.p_tree1 == Some(p1);
-                    continue
+                    d12 = self.a.get_inx_unwrap(p2).p_tree1 == Some(p1);
+                    continue;
                 } else {
                     // n2 was the root, the rest of the tree is ok
 
@@ -390,7 +661,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     //    /     \
                     //   /       \
                     // n0 (r)   s0 (r-1)
-                    break
+                    break;
                 }
             }
 
@@ -429,33 +700,33 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                 //            /      \
                 //          s0 (r-1) s1 (r-1)
 
-                let p_s0 = if d01 { n1.t.p_tree0 } else { n1.t.p_tree1 };
+                let p_s0 = if d01 { n1.p_tree0 } else { n1.p_tree1 };
                 if let Some(p_s0) = p_s0 {
-                    let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                    let s0 = self.a.get_inx_mut_unwrap(p_s0);
                     s0.p_back = Some(p2);
                 }
                 if d01 {
                     // reversed version
-                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    let n1 = self.a.get_inx_mut_unwrap(p1);
                     n1.p_tree0 = Some(p2);
                     n1.p_back = p3;
-                    let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                    let n2 = self.a.get_inx_mut_unwrap(p2);
                     n2.p_tree0 = p_s1;
                     n2.p_back = Some(p1);
                     n2.p_tree1 = p_s0;
                     n2.rank = rank0;
                 } else {
-                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    let n1 = self.a.get_inx_mut_unwrap(p1);
                     n1.p_back = p3;
                     n1.p_tree1 = Some(p2);
-                    let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                    let n2 = self.a.get_inx_mut_unwrap(p2);
                     n2.p_tree0 = p_s0;
                     n2.p_back = Some(p1);
                     n2.p_tree1 = p_s1;
                     n2.rank = rank0;
                 }
                 if let Some(p3) = p3 {
-                    let n3 = self.a.get_inx_mut_unwrap_t(p3);
+                    let n3 = self.a.get_inx_mut_unwrap(p3);
                     if n3.p_tree1 == Some(p2) {
                         n3.p_tree1 = Some(p1);
                     } else {
@@ -490,48 +761,48 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                 // s0     a     b    s1 (r-1)
 
                 let (p_a, p_b) = if d01 {
-                    (n0.t.p_tree1, n0.t.p_tree0)
+                    (n0.p_tree1, n0.p_tree0)
                 } else {
-                    (n0.t.p_tree0, n0.t.p_tree1)
+                    (n0.p_tree0, n0.p_tree1)
                 };
                 if let Some(p_a) = p_a {
-                    self.a.get_inx_mut_unwrap_t(p_a).p_back = Some(p2);
+                    self.a.get_inx_mut_unwrap(p_a).p_back = Some(p2);
                 }
                 if let Some(p_b) = p_b {
-                    self.a.get_inx_mut_unwrap_t(p_b).p_back = Some(p1);
+                    self.a.get_inx_mut_unwrap(p_b).p_back = Some(p1);
                 }
                 if d01 {
-                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    let n1 = self.a.get_inx_mut_unwrap(p1);
                     n1.p_back = Some(p0);
                     n1.p_tree1 = p_b;
                     n1.rank = rank0;
-                    let n0 = self.a.get_inx_mut_unwrap_t(p0);
+                    let n0 = self.a.get_inx_mut_unwrap(p0);
                     n0.p_tree0 = Some(p1);
                     n0.p_back = p3;
                     n0.p_tree1 = Some(p2);
                     n0.rank = rank1;
-                    let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                    let n2 = self.a.get_inx_mut_unwrap(p2);
                     n2.p_tree0 = p_a;
                     n2.p_back = Some(p0);
                     n2.rank = rank0;
                 } else {
                     // reverse version
-                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    let n1 = self.a.get_inx_mut_unwrap(p1);
                     n1.p_tree0 = p_b;
                     n1.p_back = Some(p0);
                     n1.rank = rank0;
-                    let n0 = self.a.get_inx_mut_unwrap_t(p0);
+                    let n0 = self.a.get_inx_mut_unwrap(p0);
                     n0.p_tree0 = Some(p2);
                     n0.p_back = p3;
                     n0.p_tree1 = Some(p1);
                     n0.rank = rank1;
-                    let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                    let n2 = self.a.get_inx_mut_unwrap(p2);
                     n2.p_back = Some(p0);
                     n2.p_tree1 = p_a;
                     n2.rank = rank0;
                 }
                 if let Some(p3) = p3 {
-                    let n3 = self.a.get_inx_mut_unwrap_t(p3);
+                    let n3 = self.a.get_inx_mut_unwrap(p3);
                     if n3.p_tree1 == Some(p2) {
                         n3.p_tree1 = Some(p0);
                     } else {
@@ -545,7 +816,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             // The previous branches all result in the next higher rank difference not being
             // violated, so we can just return. This also implies that we only need at most
             // one restructure.
-            break
+            break;
         }
     }
 }

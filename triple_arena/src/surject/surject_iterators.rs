@@ -1,53 +1,55 @@
-//! Iterators for `SurjectArena`
-
-use core::marker::PhantomData;
+//! Iterators for [SurjectArena]
 
 use recasting::{Recast, Recaster};
 
 use crate::{
-    arena_iterators::{self},
-    surject::{Key, Val},
-    utils::{chain_no_gen_iterators, LinkNoGen, PtrNoGen},
-    Advancer, Arena, Ptr, SurjectArena,
+    Arena, InvalidationOption, LinkNoGen, SurjectArena, arena_iterators,
+    surject::{SurjectElement, SurjectShared},
+    traits::{Advancer, ArenaTrait, ChainArenaTrait, DisjointableArenaTrait, Ptr},
+    utils::{PtrNoGen, traits::ArenaBacking},
 };
 
 /// An advancer over the valid `P`s of a `SurjectArena`
-pub struct PtrAdvancer<P: Ptr, K, V> {
-    adv: chain_no_gen_iterators::PtrAdvancer<P, Key<P, K>>,
-    _boo: PhantomData<fn() -> V>,
+pub struct PtrAdvancer<P: Ptr> {
+    adv: arena_iterators::PtrAdvancer<P>,
 }
 
-impl<P: Ptr, K, V> Advancer for PtrAdvancer<P, K, V> {
-    type Collection = SurjectArena<P, K, V>;
+impl<P: Ptr, T, S, B: ArenaBacking> Advancer<SurjectArena<P, T, S, B>> for PtrAdvancer<P> {
     type Item = P;
 
-    fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
-        self.adv.advance(&collection.keys)
+    fn advance(&mut self, collection: &SurjectArena<P, T, S, B>) -> Option<Self::Item> {
+        self.adv.advance(&collection.elements.a)
+    }
+
+    fn empty() -> Self {
+        Self {
+            adv: <arena_iterators::PtrAdvancer<P> as Advancer<
+                Arena<P, LinkNoGen<P, SurjectElement<P, T>>, B>,
+            >>::empty(),
+        }
     }
 }
 
 /// An advancer over the valid `P`s of one surject in a `SurjectArena`
-pub struct SurjectPtrAdvancer<P: Ptr, K, V> {
-    // same as for `ChainPtrAdvancer` except we get to assume the chain is cyclical
+pub struct SurjectPtrAdvancer<P: Ptr> {
+    // same as for `ChainPtrAdvancer` except we get to assume the chain is cyclic
     init: P::Inx,
     ptr: Option<P::Inx>,
     // prevent infinite loops
     max_advances: usize,
-    _boo: PhantomData<fn() -> (K, V)>,
 }
 
-impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
-    type Collection = SurjectArena<P, K, V>;
+impl<P: Ptr, T, S, B: ArenaBacking> Advancer<SurjectArena<P, T, S, B>> for SurjectPtrAdvancer<P> {
     type Item = P;
 
-    fn advance(&mut self, collection: &Self::Collection) -> Option<Self::Item> {
+    fn advance(&mut self, collection: &SurjectArena<P, T, S, B>) -> Option<Self::Item> {
         if self.max_advances == 0 {
-            return None
+            return None;
         } else {
             self.max_advances = self.max_advances.wrapping_sub(1);
         }
         if let Some(ptr) = self.ptr {
-            if let Some((generation, link)) = collection.keys.get_no_gen(ptr) {
+            if let Some((generation, link)) = collection.elements.get_inx_link_no_gen(ptr) {
                 if let Some(next) = link.next() {
                     if next == self.init {
                         self.ptr = None;
@@ -67,128 +69,128 @@ impl<P: Ptr, K, V> Advancer for SurjectPtrAdvancer<P, K, V> {
             None
         }
     }
-}
 
-/// An iterator over the valid `P`s of a `SurjectArena`
-pub struct Ptrs<'a, P: Ptr, K> {
-    iter: arena_iterators::Ptrs<'a, P, LinkNoGen<P, Key<P, K>>>,
-}
-
-impl<P: Ptr, K> Iterator for Ptrs<'_, P, K> {
-    type Item = P;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+    fn empty() -> Self {
+        // `max_advances: 0` guarantees empty
+        Self {
+            init: P::invalid().inx(),
+            ptr: None,
+            max_advances: 0,
+        }
     }
 }
 
-/// An iterator over `&K` in a `SurjectArena`
-pub struct Keys<'a, P: Ptr, K> {
-    iter: arena_iterators::Vals<'a, P, LinkNoGen<P, Key<P, K>>>,
+/// An iterator over the `(P, &T, &S)` of one surject in a `SurjectArena`
+pub struct IterSurject<'a, P: Ptr, T, S, B: ArenaBacking> {
+    arena: &'a SurjectArena<P, T, S, B>,
+    adv: SurjectPtrAdvancer<P>,
+    // the surject is fixed for the whole iteration, so this is looked up only once
+    shared: &'a S,
 }
 
-impl<'a, P: Ptr, K> Iterator for Keys<'a, P, K> {
-    type Item = &'a K;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|link| &link.t.k)
-    }
-}
-
-/// An iterator over `&V` in a `SurjectArena`
-pub struct Vals<'a, P: Ptr, V> {
-    iter: arena_iterators::Vals<'a, PtrNoGen<P>, Val<V>>,
-}
-
-impl<'a, P: Ptr, V> Iterator for Vals<'a, P, V> {
-    type Item = &'a V;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|v| &v.v)
-    }
-}
-
-/// A mutable iterator over `&mut K` in a `SurjectArena`
-pub struct KeysMut<'a, P: Ptr, K> {
-    iter_mut: chain_no_gen_iterators::ValsLinkMut<'a, P, Key<P, K>>,
-}
-
-impl<'a, P: Ptr, K> Iterator for KeysMut<'a, P, K> {
-    type Item = &'a mut K;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter_mut.next().map(|link| &mut link.t.k)
-    }
-}
-
-/// A mutable iterator over `&mut V` in a `SurjectArena`
-pub struct ValsMut<'a, P: Ptr, V> {
-    iter_mut: arena_iterators::ValsMut<'a, PtrNoGen<P>, Val<V>>,
-}
-
-impl<'a, P: Ptr, V> Iterator for ValsMut<'a, P, V> {
-    type Item = &'a mut V;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter_mut.next().map(|v| &mut v.v)
-    }
-}
-
-/// An iterator over `(P, &K, &V)` in a `SurjectArena`
-pub struct Iter<'a, P: Ptr, K, V> {
-    iter: arena_iterators::Iter<'a, P, LinkNoGen<P, Key<P, K>>>,
-    vals: &'a Arena<PtrNoGen<P>, Val<V>>,
-}
-
-impl<'a, P: Ptr, K, V> Iterator for Iter<'a, P, K, V> {
-    type Item = (P, &'a K, &'a V);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let (p, link) = self.iter.next()?;
-        Some((p, &link.t.k, &self.vals.get(link.t.p_val).unwrap().v))
-    }
-}
-
-/// An iterator over `(P, &K, &V)` in a `SurjectArena` surject
-pub struct IterSurject<'a, P: Ptr, K, V> {
-    arena: &'a SurjectArena<P, K, V>,
-    adv: SurjectPtrAdvancer<P, K, V>,
-    surject_val: Option<&'a V>,
-}
-
-impl<'a, P: Ptr, K, V> Iterator for IterSurject<'a, P, K, V> {
-    type Item = (P, &'a K, &'a V);
+impl<'a, P: Ptr, T, S, B: ArenaBacking> Iterator for IterSurject<'a, P, T, S, B> {
+    type Item = (P, &'a T, &'a S);
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(p) = self.adv.advance(self.arena) {
-            Some((p, self.arena.get_key(p).unwrap(), self.surject_val.unwrap()))
+            Some((p, self.arena.get(p).unwrap(), self.shared))
         } else {
             None
         }
     }
 }
 
-// I don't think it would be safe to implement an `IterMut` because the same
-// values would be returned multiple times
+/// An iterator over `(P, &T, &S)` in a `SurjectArena`
+pub struct Iter<'a, P: Ptr, T, S, B: ArenaBacking> {
+    iter: arena_iterators::Iter<'a, P, LinkNoGen<P, SurjectElement<P, T>>, B>,
+    shared_vals: &'a Arena<PtrNoGen<P>, SurjectShared<S>, B>,
+}
 
-impl<'a, P: Ptr, K, V> IntoIterator for &'a SurjectArena<P, K, V> {
-    type IntoIter = Iter<'a, P, K, V>;
-    type Item = (P, &'a K, &'a V);
+impl<'a, P: Ptr, T, S, B: ArenaBacking> Iterator for Iter<'a, P, T, S, B> {
+    type Item = (P, &'a T, &'a S);
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
+    fn next(&mut self) -> Option<Self::Item> {
+        let (p, link) = self.iter.next()?;
+        Some((
+            p,
+            &link.t.t,
+            &self.shared_vals.get(link.t.p_shared).unwrap().s,
+        ))
     }
 }
 
-/// All the iterators here can return values in arbitrary order
-impl<P: Ptr, K, V> SurjectArena<P, K, V> {
-    /// Advances over every valid `Ptr` in `self`.
-    ///
-    /// Has the same properties as [crate::Arena::advancer]
-    pub fn advancer(&self) -> PtrAdvancer<P, K, V> {
+// TODO this is how we have to do it until !Forget types, I would want the `S`
+// to be returned in a tuple with the iterator
+
+/// A draining iterator over the `(P, T, Option<S>)` of one surject in a
+/// `SurjectArena`. The last item will return the shared value.
+pub struct SurjectDrain<'a, P: Ptr, T, S, B: ArenaBacking> {
+    arena: &'a mut SurjectArena<P, T, S, B>,
+    adv: SurjectPtrAdvancer<P>,
+}
+
+impl<P: Ptr, T, S, B: ArenaBacking> Drop for SurjectDrain<'_, P, T, S, B> {
+    fn drop(&mut self) {
+        while self.next().is_some() {}
+    }
+}
+
+impl<P: Ptr, T, S, B: ArenaBacking> Iterator for SurjectDrain<'_, P, T, S, B> {
+    type Item = InvalidationOption<(P, T, Option<S>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let p = self.adv.advance(self.arena)?;
+        Some(
+            self.arena
+                .remove_element(p)
+                .unwrap()
+                .map(|(t, s)| (p, t, s)),
+        )
+    }
+}
+
+/// A draining iterator over all of the `(P, T, Option<S>)` in a `SurjectArena`.
+/// Each surject is drained completely before moving onto the next one, so the
+/// shared value arrives with the last element of each surject.
+pub struct Drain<'a, P: Ptr, T, S, B: ArenaBacking> {
+    arena: &'a mut SurjectArena<P, T, S, B>,
+    adv0: PtrAdvancer<P>,
+    adv1: Option<SurjectPtrAdvancer<P>>,
+}
+
+impl<P: Ptr, T, S, B: ArenaBacking> Drop for Drain<'_, P, T, S, B> {
+    fn drop(&mut self) {
+        self.arena.clear().allow();
+    }
+}
+
+impl<P: Ptr, T, S, B: ArenaBacking> Iterator for Drain<'_, P, T, S, B> {
+    type Item = InvalidationOption<(P, T, Option<S>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(adv1) = &mut self.adv1 {
+                if let Some(p) = adv1.advance(self.arena) {
+                    return Some(
+                        self.arena
+                            .remove_element(p)
+                            .unwrap()
+                            .map(|(t, s)| (p, t, s)),
+                    );
+                } else {
+                    self.adv1 = None;
+                }
+            }
+            let p_next_surject = self.adv0.advance(self.arena)?;
+            self.adv1 = Some(self.arena.advancer_surject(p_next_surject).unwrap());
+        }
+    }
+}
+
+impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
+    pub(crate) fn internal_advancer_inx(&self, inx: P::Inx, rev: bool) -> PtrAdvancer<P> {
         PtrAdvancer {
-            adv: self.keys.advancer(),
-            _boo: PhantomData,
+            adv: self.elements.a.advancer_inx(inx, rev),
         }
     }
 
@@ -198,93 +200,118 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
     ///
     /// # Note
     ///
-    /// If links of the surject that contains `p_init` are invalidated during
-    /// the loop, it can lead to loop where the same `Ptr` can be returned
+    /// If elements of the surject that contains `p_init` are invalidated during
+    /// the loop, it can lead to a loop where the same `Ptr` can be returned
     /// multiple times. There is an internal fail safe that prevents
     /// non-termination.
-    pub fn advancer_surject(&self, p_init: P) -> SurjectPtrAdvancer<P, K, V> {
-        SurjectPtrAdvancer {
+    pub fn advancer_surject(&self, p_init: P) -> Option<SurjectPtrAdvancer<P>> {
+        if !self.contains(p_init) {
+            return None;
+        }
+        Some(SurjectPtrAdvancer {
             init: p_init.inx(),
             ptr: Some(p_init.inx()),
-            max_advances: self.len_keys(),
-            _boo: PhantomData,
-        }
+            max_advances: self.len(),
+        })
     }
 
-    /// Iteration over all valid `P` in the arena
-    pub fn ptrs(&self) -> Ptrs<P, K> {
-        Ptrs {
-            iter: self.keys.ptrs(),
-        }
-    }
-
-    /// Iteration over `&K`
-    pub fn keys(&self) -> Keys<P, K> {
-        Keys {
-            iter: self.keys.vals(),
-        }
-    }
-
-    /// Iteration over `&V`
-    pub fn vals(&self) -> Vals<P, V> {
-        Vals {
-            iter: self.vals.vals(),
-        }
-    }
-
-    /// Mutable iteration over `&mut K`
-    pub fn keys_mut(&mut self) -> KeysMut<P, K> {
-        KeysMut {
-            iter_mut: self.keys.vals_mut(),
-        }
-    }
-
-    /// Mutable iteration over `&mut V`
-    pub fn vals_mut(&mut self) -> ValsMut<P, V> {
-        ValsMut {
-            iter_mut: self.vals.vals_mut(),
-        }
-    }
-
-    /// Iteration over `(P, &K, &V)` tuples. For each surject with multiple `P`
-    /// pointing to the same `V`, the same reference to the `V` is returned
-    /// multiple times
-    pub fn iter(&self) -> Iter<P, K, V> {
-        Iter {
-            iter: self.keys.iter(),
-            vals: &self.vals,
-        }
-    }
-
-    /// Iteration over `(P, &K, &V)` tuples in the surject that contains
-    /// `p_init`. The same `&V` reference is used for all iterations.
-    pub fn iter_surject(&self, p_init: P) -> IterSurject<P, K, V> {
-        IterSurject {
+    /// Iteration over the `(P, &T, &S)` tuples of the surject that contains
+    /// `p_init`. The same `&S` reference is used for all iterations. Returns
+    /// `None` if `p_init` is invalid.
+    pub fn iter_surject(&self, p_init: P) -> Option<IterSurject<'_, P, T, S, B>> {
+        Some(IterSurject {
             arena: self,
-            adv: self.advancer_surject(p_init),
-            surject_val: self.get_val(p_init),
+            adv: self.advancer_surject(p_init)?,
+            // `advancer_surject` has already established that `p_init` is valid
+            shared: self.get_shared(p_init).unwrap(),
+        })
+    }
+
+    pub(crate) fn internal_iter(&self) -> Iter<'_, P, T, S, B> {
+        Iter {
+            iter: self.elements.internal_iter(),
+            shared_vals: &self.shared_vals,
         }
     }
 
-    /// Performs [SurjectArena::compress_and_shrink] and returns an `Arena<P,
-    /// P>` that can be used for [Recast]ing
-    pub fn compress_and_shrink_recaster(&mut self) -> crate::Arena<P, P> {
-        let mut res = crate::Arena::<P, P>::new();
-        self.clone_keys_to_arena(&mut res, |_, _| P::invalid());
-        self.compress_and_shrink_with(|p, _, _, q| *res.get_mut(p).unwrap() = q);
-        res
+    /// Iteration over the `&S` of every surject, once each
+    pub fn shared_vals<'a>(&'a self) -> impl Iterator<Item = &'a S>
+    where
+        S: 'a,
+    {
+        self.shared_vals.vals().map(|shared| &shared.s)
+    }
+
+    /// Mutable iteration over the `&mut S` of every surject, once each
+    pub fn shared_vals_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut S>
+    where
+        S: 'a,
+    {
+        self.shared_vals.iter_mut().map(|(_, shared)| &mut shared.s)
+    }
+
+    /// Iteration over `(P, &T, &S)` tuples. For each surject with multiple `P`
+    /// pointing to the same `S`, the same reference to the `S` is returned
+    /// multiple times
+    pub fn iter_combined(&self) -> Iter<'_, P, T, S, B> {
+        self.internal_iter()
+    }
+
+    /// Draining iteration over the surject that contains `p_init`, returning
+    /// `(P, T, Option<S>)` with the shared value arriving with the last
+    /// element. If the iterator is dropped, the rest of the surject is
+    /// removed. Returns `None` if `p_init` is invalid.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If a `T::drop` or `S::drop` panics while the iterator is being dropped,
+    /// the elements that have yet to be removed are left in the arena as a
+    /// valid smaller surject.
+    pub fn drain_surject(&mut self, p_init: P) -> Option<SurjectDrain<'_, P, T, S, B>> {
+        let adv = self.advancer_surject(p_init)?;
+        Some(SurjectDrain { arena: self, adv })
+    }
+
+    /// Draining iteration over every element of the arena, returning
+    /// `(P, T, Option<S>)` with the shared value of each surject arriving with
+    /// the last element of that surject. If the iterator is dropped, the arena
+    /// is cleared.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If a `T::drop` or `S::drop` panics while the iterator is being dropped,
+    /// this follows [clear](ArenaTrait::clear) and the arena is left empty and
+    /// in a valid state.
+    pub fn drain_combined(&mut self) -> Drain<'_, P, T, S, B> {
+        let adv0 = self.advancer();
+        Drain {
+            arena: self,
+            adv0,
+            adv1: None,
+        }
     }
 }
 
-impl<P: Ptr, I, K: Recast<I>, V: Recast<I>> Recast<I> for SurjectArena<P, K, V> {
-    /// Note that this recasts both keys and values (only the `Ptr`s are the
-    /// keyed items from the `Recast` perspective)
+impl<'a, P: Ptr, T, S, B: ArenaBacking> IntoIterator for &'a SurjectArena<P, T, S, B> {
+    type IntoIter = Iter<'a, P, T, S, B>;
+    type Item = (P, &'a T, &'a S);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.internal_iter()
+    }
+}
+
+impl<P: Ptr, I, T: Recast<I>, S: Recast<I>, B: ArenaBacking> Recast<I>
+    for SurjectArena<P, T, S, B>
+{
+    /// Note that this recasts both the elements and the shared values (only the
+    /// `Ptr`s are the keyed items from the `Recast` perspective)
     fn recast<R: Recaster<Item = I>>(&mut self, recaster: &R) -> Result<(), <R as Recaster>::Item> {
-        for key in self.keys_mut() {
-            key.recast(recaster)?;
+        for element in self.vals_mut() {
+            element.recast(recaster)?;
         }
-        for val in self.vals_mut() {
-            val.recast(recaster)?;
+        for shared in self.shared_vals_mut() {
+            shared.recast(recaster)?;
         }
         Ok(())
     }

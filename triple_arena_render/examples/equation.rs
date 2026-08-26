@@ -1,7 +1,8 @@
-// note: for README version keep limit at 70 characters and change `out_file`
+// note: for README version keep limit at 70 characters
+//! SYNC(triple_arena_render/README.md, equation_example)
 
-use triple_arena::{ptr_struct, Arena, Ptr};
-use triple_arena_render::{render_to_svg_file, DebugNode, DebugNodeTrait};
+use triple_arena::{Arena, ptr_struct, traits::*};
+use triple_arena_render::{DebugNode, DebugNodeTrait, render_to_svg_file};
 
 // Suppose we are storing an equation evaluation tree in an arena
 // with this type of node
@@ -49,7 +50,7 @@ impl<P: Ptr> DebugNodeTrait<P> for MyNode<P> {
                     sources: v
                         .iter()
                         .enumerate()
-                        .map(|(i, p)| (*p, format!("in{}", i)))
+                        .map(|(i, p)| (*p, format!("in{i}")))
                         .collect(),
                     center: vec!["+".to_owned()],
                     sinks: vec![],
@@ -78,12 +79,12 @@ fn main() {
     let _sum = a.insert(Summation(vec![neg_lit42, inner_sum, will_be_removed]));
 
     // example of an invalid `Ptr` in a graph
-    a.remove(will_be_removed).unwrap();
+    a.remove(will_be_removed).allow().unwrap();
 
     render_to_svg_file(
         &a,
         false,
-        std::path::PathBuf::from("./triple_arena_render/example.svg".to_owned()),
+        std::path::PathBuf::from("./example.svg".to_owned()),
     )
     .unwrap();
 }

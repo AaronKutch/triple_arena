@@ -3,19 +3,21 @@ name: Triple Arena CI
 on: [pull_request]
 
 env:
-  RUSTFLAGS: -D warnings
   RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
 
 jobs:
   test_suite:
     name: Test suite
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
+      # use latest nightly
       - name: Install Rust components
         run: |
           rustup set profile minimal
-          rustup default stable
+          rustup default nightly
           rustup target add riscv32i-unknown-none-elf
       - name: Run test suite
         # The `riscv32i` build is needed to actually detect if the crate is no_std.
@@ -25,7 +27,6 @@ jobs:
           cargo b --target=riscv32i-unknown-none-elf -p no_std_test
           cargo b --no-default-features -p triple_arena
           cargo b --no-default-features --features=serde -p triple_arena
-          cargo b --no-default-features --features=expose_internal_utils -p triple_arena
           cargo b --no-default-features
           cargo b --all-features
           cargo t --no-default-features
@@ -38,12 +39,11 @@ jobs:
   miri:
     name: Miri
     runs-on: ubuntu-latest
-    # note: we have turned on this Miri flag
+    # note: we have turned on these Miri flags
     env:
-      RUSTFLAGS: -D warnings
       MIRIFLAGS: -Zmiri-tree-borrows -Zmiri-strict-provenance
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       - name: Install most recent Miri
         run: |
           rustup set profile minimal
@@ -53,25 +53,26 @@ jobs:
         run: |
           cargo miri test
 
-  msrv_test_suite:
+  msrv_build:
+    name: MSRV build
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -D warnings
     steps:
-      - uses: actions/checkout@v2
-      - name: Install Rust components
+      - uses: actions/checkout@v7
+      # reads the `rust-version` of triple_arena/Cargo.toml
+      - name: Install MSRV
         run: |
           rustup set profile minimal
-          rustup install nightly-2023-04-14
-      - name: Run test suite
+          rustup default "$(sed -n 's/^rust-version = "\(.*\)"/\1/p' triple_arena/Cargo.toml)"
+      - name: Check that the crate builds on its MSRV
         run: |
-          cargo build --no-default-features
+          cargo build -p triple_arena --all-features
+          cargo build -p triple_arena_render --all-features
 
   rustfmt:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       # Acquire the most recent nightly with a rustfmt component
       - name: Install most recent Rustfmt
         run: |
@@ -86,7 +87,7 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       # Acquire the most recent nightly with a clippy component
       - name: Install most recent Clippy
         run: |

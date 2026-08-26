@@ -1,12 +1,10 @@
-#![allow(clippy::type_complexity)]
-
 use std::cmp::max;
 
-use triple_arena::Ptr;
+use triple_arena::traits::Ptr;
 
 use crate::{
-    grid_process::Edge, FONT_ADJUST_Y, FONT_SIZE, FONT_WX, FONT_WY, INPUT_FONT_ADJUST_Y,
-    INPUT_FONT_SIZE, INPUT_FONT_WX, INPUT_FONT_WY, INPUT_PAD, PAD,
+    FONT_ADJUST_Y, FONT_SIZE, FONT_WX, FONT_WY, INPUT_FONT_ADJUST_Y, INPUT_FONT_SIZE,
+    INPUT_FONT_WX, INPUT_FONT_WY, INPUT_PAD, PAD, grid_process::Edge,
 };
 
 /// Graphics for a single node
@@ -162,16 +160,16 @@ impl<P: Ptr> RenderNode<P> {
             rect.1 += mov.1;
         }
         for tmp in &mut self.text {
-            tmp.0 .0 += mov.0;
-            tmp.0 .1 += mov.1;
+            tmp.0.0 += mov.0;
+            tmp.0.1 += mov.1;
         }
         for point in &mut self.input_points {
-            point.0 .0 += mov.0;
-            point.0 .1 += mov.1;
+            point.0.0 += mov.0;
+            point.0.1 += mov.1;
         }
         for point in &mut self.output_points {
-            point.0 .0 += mov.0;
-            point.0 .1 += mov.1;
+            point.0.0 += mov.0;
+            point.0.1 += mov.1;
         }
     }
 }

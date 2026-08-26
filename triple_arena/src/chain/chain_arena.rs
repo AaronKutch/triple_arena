@@ -1,73 +1,55 @@
 use core::{
     borrow::Borrow,
-    fmt,
-    fmt::{Debug, Display},
-    hash::Hash,
-    mem,
+    fmt::{self, Debug},
+    num::NonZeroUsize,
     ops::{Index, IndexMut},
 };
 
-use crate::{Advancer, Arena, Ptr};
+use crate::{
+    Arena, InvalidationOption, LinkNoGen,
+    errors::{MaxCapacityReductionError, ReallocationError},
+    traits::{
+        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
+        ChainArenaTrait, CompactArenaTrait, Ptr, SetMaxCapacity,
+    },
+    utils::{
+        ArenaSlot,
+        traits::{ArenaBacking, PtrInx},
+    },
+};
 
-/// This represents a link in a `ChainArena` that has a public `t: T` field and
-/// `Option<Ptr<P>>` interlinks to the previous and next links.
-pub struct Link<P: Ptr, T> {
-    // I think the code gen should be overall better if this is done
-    pub(crate) prev_next: (Option<P>, Option<P>),
-    pub t: T,
-}
-
-impl<P: Ptr, T> Link<P, T> {
-    /// Get a `Ptr` to the previous `Link` in the chain before `self`. Returns
-    /// `None` if `self` is at the start of the chain.
-    pub fn prev(&self) -> Option<P> {
-        self.prev_next.0
-    }
-
-    /// Get a `Ptr` to the next `Link` in the chain after `self`. Returns
-    /// `None` if `self` is at the end of the chain.
-    pub fn next(&self) -> Option<P> {
-        self.prev_next.1
-    }
-
-    /// Shorthand for `(self.prev(), self.next())`
-    pub fn prev_next(&self) -> (Option<P>, Option<P>) {
-        self.prev_next
-    }
-
-    /// Construct a `Link` from its components
-    pub fn new(prev_next: (Option<P>, Option<P>), t: T) -> Self {
-        Self { prev_next, t }
-    }
-}
+// note: SLCC = Single Link Cyclic Chain
 
 /// A doubly-linked-list based on an arena for handling usecases involving
 /// `O(1)` insertion, deletion, and other functions on linear lists of elements
-/// that we call "chains" of "links". Multiple separate chains and cyclical
+/// that we call "chains" of "links". Multiple separate chains and cyclic
 /// chains are supported.
 ///
 /// ```
-/// use triple_arena::{ptr_struct, ChainArena, Link};
+/// use triple_arena::{
+///     ChainArena, LinkInsertKind, errors::ChainInsertionError, ptr_struct, traits::*,
+/// };
 ///
 /// ptr_struct!(P0);
 /// let mut a: ChainArena<P0, String> = ChainArena::new();
 ///
-/// let p_a = a.insert_new("A".to_owned());
-/// let p_b = a.insert_new("B".to_owned());
+/// let p_a = a.insert(LinkInsertKind::Disconnected, "A".to_owned());
+/// let p_b = a.insert(LinkInsertKind::Disconnected, "B".to_owned());
 ///
-/// // initially, all entries from `insert_new` have `None` interlinks and
-/// // are each in their own single link chains, and are completely
-/// // unassociated like in a normal `Arena`.
+/// // initially, all entries from inserting with `LinkInsertKind::Disconnected`
+/// // have `None` interlinks and are each in their own single link chains, and
+/// // are completely unassociated like in a normal `Arena`.
 ///
-/// let link = a.get_link(p_a).unwrap();
+/// // `*_no_gen` variants are preferred if only index interlinks are needed
+/// let link = a.get_link_no_gen(p_a).unwrap();
 /// assert_eq!(link.t, "A");
-/// assert!(link.prev().is_none());
-/// assert!(link.next().is_none());
+/// assert_eq!(link.prev(), None);
+/// assert_eq!(link.next(), None);
 ///
-/// let link = a.get_link(p_b).unwrap();
+/// let link = a.get_link_no_gen(p_b).unwrap();
 /// assert_eq!(link.t, "B");
-/// assert!(link.prev().is_none());
-/// assert!(link.next().is_none());
+/// assert_eq!(link.prev(), None);
+/// assert_eq!(link.next(), None);
 ///
 /// assert!(!a.are_neighbors(p_a, p_b));
 ///
@@ -77,46 +59,55 @@ impl<P: Ptr, T> Link<P, T> {
 /// // and A being the end of the chain instead.
 /// a.connect(p_a, p_b).unwrap();
 ///
-/// let link = a.get_link(p_a).unwrap();
+/// let link = a.get_link_no_gen(p_a).unwrap();
 /// assert_eq!(link.t, "A");
-/// assert!(link.prev().is_none());
-/// assert_eq!(link.next().unwrap(), p_b);
+/// assert_eq!(link.prev(), None);
+/// assert_eq!(link.next(), Some(p_b.inx()));
 ///
-/// let link = a.get_link(p_b).unwrap();
+/// let link = a.get_link_no_gen(p_b).unwrap();
 /// assert_eq!(link.t, "B");
-/// assert_eq!(link.prev().unwrap(), p_a);
-/// assert!(link.next().is_none());
+/// assert_eq!(link.prev(), Some(p_a.inx()));
+/// assert_eq!(link.next(), None);
 ///
 /// assert!(a.are_neighbors(p_a, p_b));
 /// assert!(!a.are_neighbors(p_b, p_a));
 ///
 /// // Now let us insert a third link and make it the end of the existing chain
-/// // by using `insert_end`.
+/// // by using `LinkInsertKind::ChainEnd`.
 ///
-/// // `insert_end` guards against attaching to any part of a chain except for
-/// // the preexisting end link.
-/// assert_eq!(a.insert_end(p_a, "D".to_owned()), Err("D".to_owned()));
-/// let p_d = a.insert_end(p_b, "D".to_owned()).unwrap();
+/// // `LinkInsertKind::ChainEnd` guards against attaching to any part of a
+/// // chain except for the preexisting end link.
+/// assert_eq!(
+///     a.insert_reallocating(LinkInsertKind::ChainEnd(p_a), "D".to_owned()),
+///     Err(ChainInsertionError::FailedLinkRequirement)
+/// );
+/// let p_d = a.insert(LinkInsertKind::ChainEnd(p_b), "D".to_owned());
 ///
 /// assert!(a.are_neighbors(p_b, p_d));
 ///
 /// // Inserting a link into the middle
-/// let p_c = a.insert((Some(p_b), Some(p_d)), "C".to_owned()).unwrap();
+/// let p_c = a.insert(
+///     LinkInsertKind::AtInterlink {
+///         next_to: p_b,
+///         prev_to: p_d,
+///     },
+///     "C".to_owned(),
+/// );
 /// assert!(!a.are_neighbors(p_b, p_d));
 /// assert!(a.are_neighbors(p_b, p_c));
 /// assert!(a.are_neighbors(p_c, p_d));
 ///
 /// // Insert a separate chain
-/// let p_x = a.insert_new("X".to_owned());
-/// let p_y = a.insert_end(p_x, "Y".to_owned()).unwrap();
-/// let p_z = a.insert_end(p_y, "Z".to_owned()).unwrap();
+/// let p_x = a.insert(LinkInsertKind::Disconnected, "X".to_owned());
+/// let p_y = a.insert(LinkInsertKind::ChainEnd(p_x), "Y".to_owned());
+/// let p_z = a.insert(LinkInsertKind::ChainEnd(p_y), "Z".to_owned());
 ///
 /// // Connect the chains end-to-start in `O(1)`.
 /// a.connect(p_d, p_x).unwrap();
 ///
 /// // `iter_chain` will iterate over all links in the chain that the given
 /// // `Ptr` is a part of. It will iterate across the chain in order (but
-/// // check the documentation for how starting in the middle or in a cyclical
+/// // check the documentation for how starting in the middle or in a cyclic
 /// // chain works).
 /// let expected = [
 ///     (p_a, "A"),
@@ -127,7 +118,7 @@ impl<P: Ptr, T> Link<P, T> {
 ///     (p_y, "Y"),
 ///     (p_z, "Z"),
 /// ];
-/// for (i, (p_link, link)) in a.iter_chain(p_a).enumerate() {
+/// for (i, (p_link, link)) in a.iter_chain(p_a).unwrap().enumerate() {
 ///     assert_eq!(expected[i], (p_link, link.t.as_str()));
 /// }
 ///
@@ -136,33 +127,56 @@ impl<P: Ptr, T> Link<P, T> {
 /// // that the link before the removed element is connected with the link
 /// // after the element (chains are only broken in two with `break_*` or
 /// // `exchange_next`).
-/// assert_eq!(a.remove(p_d).unwrap().t, "D".to_owned());
+/// assert_eq!(a.remove(p_d).allow().unwrap(), "D".to_owned());
 /// assert!(a.are_neighbors(p_c, p_x));
+/// let expected = [
+///     (p_a, "A"),
+///     (p_b, "B"),
+///     (p_c, "C"),
+///     (p_x, "X"),
+///     (p_y, "Y"),
+///     (p_z, "Z"),
+/// ];
+/// for (i, (p_link, link)) in a.iter_chain(p_a).unwrap().enumerate() {
+///     assert_eq!(expected[i], (p_link, link.t.as_str()));
+/// }
 ///
 /// // Remove a single connected chain efficiently
-/// a.remove_chain(p_x).unwrap();
+/// let _ = a.drain_chain(p_x).unwrap();
 /// assert!(a.is_empty());
 /// ```
-pub struct ChainArena<P: Ptr, T> {
-    pub(crate) a: Arena<P, Link<P, T>>,
+pub struct ChainArena<
+    P: Ptr,
+    T,
+    #[cfg(feature = "alloc")] B: ArenaBacking = crate::HeapBacking,
+    #[cfg(not(feature = "alloc"))] B: ArenaBacking,
+> {
+    pub(crate) a: Arena<P, LinkNoGen<P, T>, B>,
 }
 
-/// # Note
-///
-/// `P` `Ptr`s to links in a `ChainArena` follow the same validity rules as
-/// `Ptr`s in a regular `Arena` (see the documentation on the main
-/// `impl<P: Ptr, T> Arena<P, T>`), except that `ChainArena`s automatically
-/// update internal interlinks to maintain the linked-list nature of the chains.
-/// The public interface has been designed such that it is not possible to break
-/// the doubly linked invariant that each interlink `Ptr` from one link to its
-/// neighbor has exactly one corresponding interlink `Ptr` pointing from the
-/// neighbor back to itself. However, note that external copies of interlinks
-/// may be indirectly invalidated by operations on a neighboring link.
-impl<P: Ptr, T> ChainArena<P, T> {
+/// Walks backwards to find the start of the chain that `p` is part of, and
+/// whether the chain is cyclic. Cyclic chains have no start, in which case `p`
+/// itself is returned.
+fn find_chain_start<P: Ptr, U, A: ChainArenaTrait<P, U>>(source: &A, p: P) -> (P, bool) {
+    let mut target_inx = p.inx();
+    loop {
+        let (generation, link) = source.get_inx_link_no_gen(target_inx).unwrap();
+        let target = P::_from_raw(target_inx, generation);
+        let Some(prev) = link.prev() else {
+            return (target, false);
+        };
+        if prev == p.inx() {
+            return (p, true);
+        }
+        target_inx = prev;
+    }
+}
+
+impl<P: Ptr, T, B: ArenaBacking> ChainArena<P, T, B> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
-        // needs to be done because of upstream manual `InternalEntry` handling
+        // needs to be done because of upstream manual `ArenaSlot` handling
         Arena::_check_invariants(&this.a)?;
         Self::_check_interlinks(this)?;
         Ok(())
@@ -173,864 +187,467 @@ impl<P: Ptr, T> ChainArena<P, T> {
     pub fn _check_interlinks(this: &Self) -> Result<(), &'static str> {
         let err = Err("interlink transitivity does not hold");
         for (p, link) in &this.a {
-            // note: we must check both cases of equality when checking for single link
-            // cyclic chains, because we _must_ not rely on any kind of induction (any set
-            // of interlinks could be bad or misplaced at the same time).
+            // Note: both directions have to be checked on every link even though that
+            // duplicates work, because we _must_ not rely on any kind of induction (any
+            // set of interlinks could be bad or misplaced at the same time).
             if let Some(prev) = link.prev() {
-                if let Some(prev) = this.a.get(prev) {
+                if let Some((_, prev)) = this.a.get_inx(prev) {
                     if let Some(next) = prev.next() {
-                        if p != next {
-                            return err
+                        if p.inx() != next {
+                            return err;
                         }
                     } else {
-                        return err
+                        return err;
                     }
                 } else {
-                    return err
-                }
-                if p == prev {
-                    // should be a single link cyclic chain
-                    if link.next() != Some(p) {
-                        return err
-                    }
+                    return err;
                 }
             }
-            // there are going to be duplicate checks but this must be done for invariant
-            // breaking cases
             if let Some(next) = link.next() {
-                if let Some(next) = this.a.get(next) {
+                if let Some((_, next)) = this.a.get_inx(next) {
                     if let Some(prev) = next.prev() {
-                        if p != prev {
-                            return err
+                        if p.inx() != prev {
+                            return err;
                         }
                     } else {
-                        return err
+                        return err;
                     }
                 } else {
-                    return err
-                }
-                if p == next {
-                    // should be a single link cyclic chain
-                    if link.prev() != Some(p) {
-                        return err
-                    }
+                    return err;
                 }
             }
         }
         Ok(())
     }
 
-    pub fn new() -> Self {
-        Self { a: Arena::new() }
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        let mut res = Self::new();
-        res.reserve(capacity);
-        res
-    }
-
-    /// Returns the number of links in the arena
-    pub fn len(&self) -> usize {
-        self.a.len()
-    }
-
-    /// Returns if the arena is empty
-    pub fn is_empty(&self) -> bool {
-        self.a.is_empty()
-    }
-
-    /// Returns the capacity of the arena
-    pub fn capacity(&self) -> usize {
-        self.a.capacity()
-    }
-
-    /// Follows [Arena::generation]
+    /// Returns the singular arena generation counter, the same as
+    /// [ArenaTrait::singular_generation]
+    #[inline]
     pub fn generation(&self) -> P::Gen {
         self.a.generation()
     }
 
-    /// Follows [Arena::reserve]
-    pub fn reserve(&mut self, additional: usize) {
-        self.a.reserve(additional)
+    /// Manually set the singular arena generation counter. This can break some
+    /// soft invariants such as ABA problem prevention and `P::invalid`
+    /// always being invalid with generation counters.
+    pub fn set_generation(&mut self, new_gen: P::Gen) {
+        self.a.set_generation(new_gen);
     }
 
-    /// If `prev_next.0.is_none() && prev_next.1.is_none()` then a new chain is
-    /// started in the arena. If
-    /// `prev_next.0.is_some() || prev_next.1.is_some()` then the link is
-    /// inserted in an existing chain and the neighboring interlinks reroute to
-    /// the new link. `prev_next.0.is_some() && prev_next.1.is_none()`
-    /// and the reverse is allowed even if the link is not at the start or
-    /// end of the chain; this function will detect this and derive the
-    /// unknown `Ptr`, inserting in the middle of the chain as usual. The
-    /// `Ptr` to the new link is returned.
-    ///
-    /// # Errors
-    ///
-    /// If a `Ptr` is invalid, or `prev_next.0.is_some() &&
-    /// prev_next.1.is_some() && !self.are_neighbors(prev, next)`, then
-    /// ownership of `t` is returned.
-    pub fn insert(&mut self, prev_next: (Option<P>, Option<P>), t: T) -> Result<P, T> {
-        match prev_next {
-            // new chain
-            (None, None) => Ok(self.a.insert(Link::new((None, None), t))),
-            (None, Some(p1)) => {
-                // if there is a failure it cannot result in a node being inserted
-                if let Some(link) = self.a.get(p1) {
-                    if let Some(p0) = link.prev() {
-                        // insert into middle of chain
-                        let res = self.a.insert(Link::new((Some(p0), Some(p1)), t));
-                        self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
-                        self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
-                        Ok(res)
-                    } else {
-                        let res = self.a.insert(Link::new((None, Some(p1)), t));
-                        self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
-                        Ok(res)
-                    }
-                } else {
-                    Err(t)
-                }
-            }
-            (Some(p0), None) => {
-                if let Some(link) = self.a.get(p0) {
-                    if let Some(p1) = link.next() {
-                        // insert into middle of chain
-                        let res = self.a.insert(Link::new((Some(p0), Some(p1)), t));
-                        self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
-                        self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
-                        Ok(res)
-                    } else {
-                        let res = self.a.insert(Link::new((Some(p0), None), t));
-                        self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
-                        Ok(res)
-                    }
-                } else {
-                    Err(t)
-                }
-            }
-            (Some(p0), Some(p1)) => {
-                // check for existence and that the nodes are neighbors
-                if !self.are_neighbors(p0, p1) {
-                    return Err(t)
-                }
-                let res = self.a.insert(Link::new((Some(p0), Some(p1)), t));
-                self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
-                self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
-                Ok(res)
-            }
+    /// Increment the singular arena generation counter, returning if generation
+    /// overflow occurred.
+    pub fn inc_generation(&mut self) -> InvalidationOption<()> {
+        self.a.inc_generation()
+    }
+
+    // this is tested by the `SurjectArena` fuzz test
+    /// Like `drain_chain` but assumes the chain is cyclic and `p` is valid.
+    pub(crate) fn remove_cyclic_chain_internal(&mut self, p: P::Inx) {
+        let mut tmp = self
+            .a
+            .remove_internal(p, None, false)
+            .allow()
+            .unwrap()
+            .1
+            .next()
+            .unwrap();
+        while tmp != p {
+            tmp = self
+                .a
+                .remove_internal(tmp, None, false)
+                .allow()
+                .unwrap()
+                .1
+                .next()
+                .unwrap();
         }
     }
 
-    /// The same as [ChainArena::insert] except that the inserted `T` is created
-    /// by `create`. The `Ptr` that will point to the new element is passed to
-    /// `create`, and this `Ptr` is also returned. `create` is not called and
-    /// `None` is returned if the `prev_next` setup would be invalid.
-    pub fn insert_with<F: FnOnce(P) -> T>(
+    /// The chain arena counterpart of
+    /// [transfer_reallocating](Arena::transfer_reallocating), transferring
+    /// every entry out of `source` and into `self`, but also in a
+    /// canonicalizing way. Given any `source` implementing both
+    /// [ChainArenaTrait] and [CompactArenaTrait] with any `Q: Ptr` and `U`
+    /// entry type, this transfers all of the links by reallocating `self`
+    /// if necessary, clearing `self`, and removing every link from `source`
+    /// and inserting a mapped `T` into `self`, preserving the interlink
+    /// structure. Every link is given by value to `map` with the
+    /// original source `Q: Ptr`, an [InvalidationOption]`<U>` for being able to
+    /// determine if the removal caused a generation overflow in `source`, the
+    /// destination `P: Ptr`, and then `map` must return the `T` that will be
+    /// inserted into `self`. The new links are all given `new_generation`.
+    ///
+    /// The normal [transfer_reallocating](Arena::transfer_reallocating) keeps
+    /// the entries in the same order of increasing index before and after the
+    /// transfer, but this function will reorder entries to bring links of
+    /// the same chain together. The links are canonically laid out in
+    /// `self`, such that their `P::Inx`s are `1..=source.len()` and each
+    /// chain occupies one contiguous run of indexes in
+    /// [Link::next](crate::Link::next) order. Acyclic chains begin at their
+    /// start link, while cyclic chains begin at the link that the
+    /// source advancer reaches first.
+    ///
+    /// Reallocation only occurs if `source.len() > self.capacity()`. All of
+    /// the fallible points happen before anything is modified, such that
+    /// `self` and `source` are logically unchanged if an error is
+    /// returned. An error is returned if a reallocation fails, if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit prevents a reallocation,
+    /// or if `source.len()` or the largest index in `source` is more than what
+    /// `P::Inx` can represent.
+    ///
+    /// This is the chain arena counterpart of the recaster example on
+    /// [compress_with](ArenaTrait::compress_with). Links have to travel between
+    /// two domains in order to be laid out in chain order, so instead of
+    /// compressing in place we transfer into a fresh arena and replace the old
+    /// one through the `&mut`:
+    /// ```
+    /// use triple_arena::{
+    ///     ChainArena, DirectArena, HeapBacking, LinkInsertKind, ptr_struct,
+    ///     traits::*,
+    ///     utils::traits::{PtrGen, PtrInx},
+    /// };
+    ///
+    /// // (This would be a standard function, except there are far too many choices to
+    /// // make on the backing of the recaster arena and how fallibility should be
+    /// // handled)
+    /// fn compress_canonical_recaster<P: Ptr, T>(
+    ///     this: &mut ChainArena<P, T, HeapBacking>,
+    ///     reset_generation: bool,
+    /// ) -> DirectArena<P, P, HeapBacking> {
+    ///     let new_generation = if reset_generation {
+    ///         // reset for serialization compactness, only safe if logically old domain `Ptr`s
+    ///         // can be eliminated
+    ///         P::Gen::two()
+    ///     } else {
+    ///         // use incremented generation so that all `Ptr`s of the old domain are
+    ///         // invalidated
+    ///         P::Gen::generational_inc(this.generation()).0
+    ///     };
+    ///     // This arena will be a recaster in which we create a mapping from the old `Ptr`
+    ///     // domain to the new one. We use a `DirectArena` for this since it will only
+    ///     // be used for this purpose and then discarded.
+    ///     let mut recaster = DirectArena::<P, P, HeapBacking>::new();
+    ///     // Set all the keys of the mapping, by cloning the `Ptr` validities of the
+    ///     // pre-transfer `this` into the recaster, and putting in invalid placeholders
+    ///     // for the new domain because we do not know them yet.
+    ///     recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
+    ///     let mut replacement = ChainArena::<P, T, HeapBacking>::new();
+    ///     // Transfer and write the new `Ptr`s at the indexes of the corresponding old
+    ///     // `Ptr`s, using the values seen by the closure to complete the mapping of
+    ///     // the old domain to the new domain.
+    ///     replacement
+    ///         .transfer_canonical_reallocating(new_generation, this, |q, o, p| {
+    ///             recaster[q] = p;
+    ///             o.allow()
+    ///         })
+    ///         .unwrap();
+    ///     *this = replacement;
+    ///     recaster
+    /// }
+    ///
+    /// ptr_struct!(P0);
+    ///
+    /// let mut a: ChainArena<P0, &str> = ChainArena::new();
+    /// let p_x = a.insert(LinkInsertKind::Disconnected, "X");
+    /// let p_a = a.insert(LinkInsertKind::Disconnected, "A");
+    /// a.insert(LinkInsertKind::ChainEnd(p_x), "Y");
+    /// let p_b = a.insert(LinkInsertKind::ChainEnd(p_a), "B");
+    /// // make an internal slot unallocated, and scatter the chains further
+    /// a.remove(p_x).allow().unwrap();
+    /// a.insert(LinkInsertKind::ChainEnd(p_b), "C");
+    ///
+    /// // the "A" -> "B" -> "C" chain is spread over the indexes 2, 4, 1
+    /// assert_eq!(
+    ///     &format!("{a:#?}"),
+    ///     r#"{
+    ///     P0[1](3): {4, (end)} "C",
+    ///     P0[2](2): {(start), 4} "A",
+    ///     P0[3](2): {(start), (end)} "Y",
+    ///     P0[4](2): {2, 1} "B",
+    /// }"#
+    /// );
+    ///
+    /// let recaster = compress_canonical_recaster(&mut a, false);
+    ///
+    /// // now each chain is one contiguous run of indexes in `Link::next` order
+    /// let layout: Vec<(usize, &str)> = a
+    ///     .iter()
+    ///     .map(|(p, t)| (PtrInx::try_into_usize(p.inx()).unwrap().get(), *t))
+    ///     .collect();
+    /// assert_eq!(layout, vec![(1, "A"), (2, "B"), (3, "C"), (4, "Y")]);
+    /// // and the recaster is a complete description of where the links went
+    /// println!("{recaster:#?}");
+    /// assert_eq!(
+    ///     &format!("{recaster:#?}"),
+    ///     r#"{
+    ///     P0[1](3): P0[3](4),
+    ///     P0[2](2): P0[1](4),
+    ///     P0[3](2): P0[4](4),
+    ///     P0[4](2): P0[2](4),
+    /// }"#
+    /// );
+    ///
+    /// // external `Ptr`s are fixed up with it
+    /// let mut external = p_a;
+    /// external.recast(&recaster).unwrap();
+    /// assert_eq!(a[external], "A");
+    /// ```
+    ///
+    /// # Unwind Safety
+    ///
+    /// If `map` panics, the link it was called with is lost to whatever `map`
+    /// does, the rest of the chain that was being drained is dropped, and
+    /// `source` and `self` are left with the chains that have yet to be
+    /// transferred and the links that were already transferred respectively.
+    pub fn transfer_canonical_reallocating<
+        Q: Ptr,
+        U,
+        A: ChainArenaTrait<Q, U> + CompactArenaTrait<Q, U>,
+        F: FnMut(Q, InvalidationOption<U>, P) -> T,
+    >(
         &mut self,
-        prev_next: (Option<P>, Option<P>),
-        create: F,
-    ) -> Option<P> {
-        match prev_next {
-            // new chain
-            (None, None) => Some(self.a.insert_with(|p| Link::new((None, None), create(p)))),
-            (None, Some(p1)) => {
-                // if there is a failure it cannot result in a node being inserted
-                if let Some(link) = self.a.get(p1) {
-                    if let Some(p0) = link.prev() {
-                        // insert into middle of chain
-                        let res = self
-                            .a
-                            .insert_with(|p| Link::new((Some(p0), Some(p1)), create(p)));
-                        self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
-                        self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
-                        Some(res)
-                    } else {
-                        let res = self
-                            .a
-                            .insert_with(|p| Link::new((None, Some(p1)), create(p)));
-                        self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
-                        Some(res)
-                    }
-                } else {
-                    None
-                }
-            }
-            (Some(p0), None) => {
-                if let Some(link) = self.a.get(p0) {
-                    if let Some(p1) = link.next() {
-                        // insert into middle of chain
-                        let res = self
-                            .a
-                            .insert_with(|p| Link::new((Some(p0), Some(p1)), create(p)));
-                        self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
-                        self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
-                        Some(res)
-                    } else {
-                        let res = self
-                            .a
-                            .insert_with(|p| Link::new((Some(p0), None), create(p)));
-                        self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
-                        Some(res)
-                    }
-                } else {
-                    None
-                }
-            }
-            (Some(p0), Some(p1)) => {
-                // check for existence and that the nodes are neighbors
-                if !self.are_neighbors(p0, p1) {
-                    return None
-                }
-                let res = self
-                    .a
-                    .insert_with(|p| Link::new((Some(p0), Some(p1)), create(p)));
-                self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(res);
-                self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(res);
-                Some(res)
-            }
+        new_generation: P::Gen,
+        source: &mut A,
+        mut map: F,
+    ) -> Result<(), ReallocationError> {
+        let Some(len) = NonZeroUsize::new(source.len()) else {
+            // follow what the other path would logically do
+            self.clear().allow();
+            self.set_generation(new_generation);
+            return Ok(());
+        };
+        // REF(careful_index_checking)
+        if P::Inx::try_from_usize(len).is_none() {
+            return Err(ReallocationError::AllocError);
+        };
+        if len.get() > self.capacity() {
+            // max capacity is tested here
+            self.reallocate_min_capacity(len.get())?;
         }
-    }
 
-    /// Inserts `t` as a single link in a new chain and returns a `Ptr` to it
-    pub fn insert_new(&mut self, t: T) -> P {
-        self.a.insert(Link::new((None, None), t))
-    }
+        // the rest should be infallible if soft invariants are followed
+        self.clear().allow();
+        self.set_generation(new_generation);
 
-    /// Inserts the `T` returned by `create` as a new single link chain into the
-    /// arena and returns a `Ptr` to it. `create` is given the the same
-    /// `Ptr` that is returned, which is useful for initialization of
-    /// immutable structures that need to reference themselves.
-    pub fn insert_new_with<F: FnOnce(P) -> T>(&mut self, create: F) -> P {
-        self.a.insert_with(|p| Link::new((None, None), create(p)))
-    }
-
-    /// Inserts `t` as a single link cyclical chain and returns a `Ptr` to it
-    pub fn insert_new_cyclic(&mut self, t: T) -> P {
-        self.a.insert_with(|p| Link::new((Some(p), Some(p)), t))
-    }
-
-    /// Like [ChainArena::insert_new_with] but with a single link cyclical
-    /// chain.
-    pub fn insert_new_cyclic_with<F: FnOnce(P) -> T>(&mut self, create: F) -> P {
-        self.a
-            .insert_with(|p| Link::new((Some(p), Some(p)), create(p)))
-    }
-
-    /// Inserts `t` as a new start link of a chain which has `p_start` as its
-    /// preexisting first link. Returns ownership of `t` if `p_start` is not
-    /// valid or is not the start of a chain
-    pub fn insert_start(&mut self, p_start: P, t: T) -> Result<P, T> {
-        if let Some(link) = self.a.get(p_start) {
-            if link.prev().is_some() {
-                // not at start of chain
-                Err(t)
-            } else {
-                let res = self.a.insert(Link::new((None, Some(p_start)), t));
-                self.a.get_inx_mut_unwrap(p_start.inx()).prev_next.0 = Some(res);
-                Ok(res)
-            }
-        } else {
-            Err(t)
-        }
-    }
-
-    /// Inserts `t` as the new end link of a chain which has `p_end` as its
-    /// preexisting end link. Returns ownership of `t` if `p_end` is not valid
-    /// or is not the end of a chain
-    pub fn insert_end(&mut self, p_end: P, t: T) -> Result<P, T> {
-        if let Some(link) = self.a.get(p_end) {
-            if link.next().is_some() {
-                // not at end of chain
-                Err(t)
-            } else {
-                let res = self.a.insert(Link::new((Some(p_end), None), t));
-                self.a.get_inx_mut_unwrap(p_end.inx()).prev_next.1 = Some(res);
-                Ok(res)
-            }
-        } else {
-            Err(t)
-        }
-    }
-
-    /// Returns if `p` is a valid `Ptr`
-    pub fn contains(&self, p: P) -> bool {
-        self.a.contains(p)
-    }
-
-    /// Returns if `p_prev` and `p_next` are neighbors on the same chain, such
-    /// that `self.get_link(p_prev).unwrap().next() == Some(p_next)` or
-    /// `self.get_link(p_next).unwrap().prev() == Some(p_prev)`. Note that
-    /// `self.are_neighbors(p0, p1)` is not necessarily equal to
-    /// `self.are_neighbors(p1, p0)` because of the directionality. This
-    /// function returns true for the single link cyclic chain case with
-    /// `p0 == p1`. Incurs only one internal lookup because of invariants.
-    /// Additionally returns `false` if `p_prev` or `p_next` are invalid
-    /// `Ptr`s.
-    pub fn are_neighbors(&self, p_prev: P, p_next: P) -> bool {
-        let mut are_neighbors = false;
-        if let Some(l0) = self.a.get(p_prev) {
-            if let Some(p) = l0.next() {
-                if p.inx() == p_next.inx() {
-                    // `p1` must implicitly exist if the invariants hold
-                    are_neighbors = true;
-                }
-            }
-        }
-        are_neighbors
-    }
-
-    /// Returns a reference to a link pointed to by `p`. Returns
-    /// `None` if `p` is invalid.
-    #[must_use]
-    // NOTE: we will not be doing `&Link<P, T>` -> `Link<P, &T>` because we
-    // want it all behind one pointer if possible
-    pub fn get_link(&self, p: P) -> Option<&Link<P, T>> {
-        self.a.get(p)
-    }
-
-    /// Returns a mutable reference to a link pointed to by `p`.
-    /// Returns `None` if `p` is invalid.
-    #[must_use]
-    pub fn get_link_mut(&mut self, p: P) -> Option<Link<P, &mut T>> {
-        self.a
-            .get_mut(p)
-            .map(|link| Link::new(link.prev_next, &mut link.t))
-    }
-
-    /// Gets two `Link<P, &mut T>` references pointed to by `p0` and `p1`.
-    /// If `p0 == p1` or a pointer is invalid, `None` is returned.
-    #[allow(clippy::type_complexity)]
-    #[must_use]
-    pub fn get2_link_mut(&mut self, p0: P, p1: P) -> Option<(Link<P, &mut T>, Link<P, &mut T>)> {
-        self.a.get2_mut(p0, p1).map(|(link0, link1)| {
-            (
-                Link::new(link0.prev_next(), &mut link0.t),
-                Link::new(link1.prev_next(), &mut link1.t),
-            )
-        })
-    }
-
-    /// Returns a `&T` reference pointed to by `p`. Returns
-    /// `None` if `p` is invalid.
-    #[must_use]
-    pub fn get(&self, p: P) -> Option<&T> {
-        self.a.get(p).map(|link| &link.t)
-    }
-
-    /// Returns a `&mut T` reference pointed to by `p`.
-    /// Returns `None` if `p` is invalid.
-    #[must_use]
-    pub fn get_mut(&mut self, p: P) -> Option<&mut T> {
-        self.a.get_mut(p).map(|link| &mut link.t)
-    }
-
-    /// Gets two `&mut T` references pointed to by `p0` and `p1`.
-    /// If `p0 == p1` or a `Ptr` is invalid, `None` is returned.
-    #[allow(clippy::type_complexity)]
-    #[must_use]
-    pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<(&mut T, &mut T)> {
-        self.a
-            .get2_mut(p0, p1)
-            .map(|(link0, link1)| (&mut link0.t, &mut link1.t))
-    }
-
-    /// Removes the link at `p`. If the link is in the middle of the chain, the
-    /// neighbors of `p` are rerouted to be neighbors of each other so that the
-    /// chain remains continuous. Returns `None` if `p` is not valid.
-    #[must_use]
-    pub fn remove(&mut self, p: P) -> Option<Link<P, T>> {
-        let link = self.a.remove(p)?;
-        match link.prev_next() {
-            (None, None) => (),
-            (None, Some(p1)) => {
-                self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = None;
-            }
-            (Some(p0), None) => {
-                self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = None;
-            }
-            (Some(p0), Some(p1)) => {
-                if p.inx() != p0.inx() {
-                    self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(p1);
-                    self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(p0);
-                } // else it is a single link cyclic chain
-            }
-        }
-        Some(link)
-    }
-
-    /// Efficiently removes the entire chain that `p` is connected to (which
-    /// might only include itself). Returns the length of the chain. Returns
-    /// `None` if `p` is not valid.
-    pub fn remove_chain(&mut self, p: P) -> Option<usize> {
-        let init = self.a.remove_internal(p, false)?;
-        let mut len = 1;
-        self.a.inc_gen();
-        let mut tmp = init.next();
-        while let Some(next) = tmp {
-            if next.inx() == p.inx() {
-                // cyclical
-                return Some(len)
-            }
-            tmp = self.a.remove_internal_inx_unwrap(next.inx(), false).next();
-            len = len.wrapping_add(1);
-        }
-        let mut tmp = init.prev();
-        while let Some(prev) = tmp {
-            tmp = self.a.remove_internal_inx_unwrap(prev.inx(), false).prev();
-            len = len.wrapping_add(1);
-        }
-        Some(len)
-    }
-
-    /// Invalidates all references to the link pointed to by `p`, and returns a
-    /// new valid reference. Any interlinks inside the arena that also pointed
-    /// to `p` are updated to use the new valid reference. Remember that any
-    /// external interlink pointers that used `p` are invalidated as well as the
-    /// link itself. Does no invalidation and returns `None` if `p` is
-    /// invalid.
-    #[must_use]
-    pub fn invalidate(&mut self, p: P) -> Option<P> {
-        let p_new = self.a.invalidate(p)?;
-        // fix invalidated interlinks
-        match self.a.get_inx_unwrap(p_new.inx()).prev_next() {
-            (None, None) => (),
-            (None, Some(p1)) => {
-                self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(p_new);
-            }
-            (Some(p0), None) => {
-                self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(p_new);
-            }
-            (Some(p0), Some(p1)) => {
-                if p0.inx() == p.inx() {
-                    // single link cyclical chain must be handled separately
-                    self.a.get_inx_mut_unwrap(p_new.inx()).prev_next = (Some(p_new), Some(p_new));
-                } else {
-                    self.a.get_inx_mut_unwrap(p1.inx()).prev_next.0 = Some(p_new);
-                    self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(p_new);
-                }
-            }
-        }
-        Some(p_new)
-    }
-
-    /// Replaces the `T` in the link pointed to by `p` with `new`, returns the
-    /// old `T`, and keeps the internal generation counter as-is so that
-    /// previously constructed `Ptr`s are still valid.
-    ///
-    /// # Errors
-    ///
-    /// Returns ownership of `new` instead if `p` is invalid
-    pub fn replace_and_keep_gen(&mut self, p: P, new: T) -> Result<T, T> {
-        if let Some(t) = self.get_mut(p) {
-            let old = mem::replace(t, new);
-            Ok(old)
-        } else {
-            Err(new)
-        }
-    }
-
-    /// Replaces the `T` in the link pointed to by `p` with `new`, returns a
-    /// tuple of the old `T` and new `P`, and updates the internal
-    /// generation counter so that previous `Plink`s to this link are
-    /// invalidated.
-    ///
-    /// # Errors
-    ///
-    /// Does no invalidation and returns ownership of `new` if `p` is invalid
-    pub fn replace_and_update_gen(&mut self, p: P, new: T) -> Result<(T, P), T> {
-        if let Some(p_new) = self.invalidate(p) {
-            let old = mem::replace(self.get_mut(p_new).unwrap(), new);
-            Ok((old, p_new))
-        } else {
-            Err(new)
-        }
-    }
-
-    /// Swaps the `T` at indexes `p0` and `p1` and keeps the generation counters
-    /// and link connections as-is. If `p0 == p1` then nothing occurs.
-    /// Returns `None` if `p0` or `p1` are invalid.
-    #[must_use]
-    pub fn swap(&mut self, p0: P, p1: P) -> Option<()> {
-        if p0.inx() == p1.inx() {
-            // need to check that they are valid
-            if self.contains(p0) && self.contains(p1) {
-                Some(())
-            } else {
-                None
-            }
-        } else {
-            let (lhs, rhs) = self.a.get2_mut(p0, p1)?;
-            mem::swap(&mut lhs.t, &mut rhs.t);
-            Some(())
-        }
-    }
-
-    /// Connects the interlinks of `p_prev` and `p_next` such that `p_prev` will
-    /// be previous to `p_next`. Returns `None` if `p_prev` has a next
-    /// interlink, `p_next` has a previous interlink, or the pointers are
-    /// invalid.
-    #[must_use]
-    pub fn connect(&mut self, p_prev: P, p_next: P) -> Option<()> {
-        if self.get_link(p_prev)?.next().is_none() && self.get_link(p_next)?.prev().is_none() {
-            self.a.get_inx_mut_unwrap(p_prev.inx()).prev_next.1 = Some(p_next);
-            self.a.get_inx_mut_unwrap(p_next.inx()).prev_next.0 = Some(p_prev);
-            Some(())
-        } else {
-            None
-        }
-    }
-
-    /// Breaks the previous interlink of `p`. Returns `None` if `p` is invalid
-    /// or does not have a prev link.
-    #[must_use]
-    pub fn break_prev(&mut self, p: P) -> Option<()> {
-        let u = self.get_link(p)?.prev()?;
-        self.a.get_inx_mut_unwrap(p.inx()).prev_next.0 = None;
-        self.a.get_inx_mut_unwrap(u.inx()).prev_next.1 = None;
-        Some(())
-    }
-
-    /// Breaks the next interlink of `p`. Returns `None` if `p` is invalid or
-    /// does not have a next link.
-    #[must_use]
-    pub fn break_next(&mut self, p: P) -> Option<()> {
-        let d = self.get_link(p)?.next()?;
-        self.a.get_inx_mut_unwrap(p.inx()).prev_next.1 = None;
-        self.a.get_inx_mut_unwrap(d.inx()).prev_next.0 = None;
-        Some(())
-    }
-
-    /// Exchanges the endpoints of the interlinks right after `p0` and `p1`.
-    /// Returns `None` if the links do not have next interlinks or if the
-    /// pointers are invalid.
-    ///
-    /// An interesting property of this function when applied to cyclic chains,
-    /// is that `exchange_next` on two `Ptr`s of the same cyclic chain always
-    /// results in two cyclic chains (except for if `p0 == p1`), and
-    /// `exchange_next` on two `Ptr`s of two separate cyclic chains always
-    /// results in a single cyclic chain.
-    #[must_use]
-    pub fn exchange_next(&mut self, p0: P, p1: P) -> Option<()> {
-        if self.contains(p0) && self.contains(p1) {
-            // get downstream links
-            let d0 = self.a.get_inx_unwrap(p0.inx()).next()?;
-            let d1 = self.a.get_inx_unwrap(p1.inx()).next()?;
-            self.a.get_inx_mut_unwrap(p0.inx()).prev_next.1 = Some(d1);
-            self.a.get_inx_mut_unwrap(p1.inx()).prev_next.1 = Some(d0);
-            self.a.get_inx_mut_unwrap(d0.inx()).prev_next.0 = Some(p1);
-            self.a.get_inx_mut_unwrap(d1.inx()).prev_next.0 = Some(p0);
-            Some(())
-        } else {
-            None
-        }
-    }
-
-    /// Drops all links from the arena and invalidates all pointers previously
-    /// created from it. This has no effect on allocated capacity.
-    pub fn clear(&mut self) {
-        self.a.clear()
-    }
-
-    /// Performs a [ChainArena::clear] and resets capacity to 0
-    pub fn clear_and_shrink(&mut self) {
-        self.a.clear_and_shrink()
-    }
-
-    /// Compresses the arena by moving around entries to be able to shrink the
-    /// capacity down to the length. All links and link prev-next relations
-    /// remain, but all `Ptr`s and interlinks are invalidated. New `Ptr`s to
-    /// the entries can be found again by iterators and advancers. Notably, when
-    /// iterating or advancing after a call to this function or during `map`ping
-    /// with [ChainArena::compress_and_shrink_with], whole chains at a time are
-    /// advanced through without discontinuity (although there is not a
-    /// specified ordering of links within the chain). Additionally, cache
-    /// locality is improved by neighboring links being moved close together
-    /// in memory.
-    pub fn compress_and_shrink(&mut self) {
-        self.compress_and_shrink_with(|_, _, _| ())
-    }
-
-    /// The same as [ChainArena::compress_and_shrink] except that `map` is run
-    /// on every `(P, &mut T, P)` with the first `P` being the old `Ptr` and the
-    /// last being the new `Ptr`.
-    pub fn compress_and_shrink_with<F: FnMut(P, &mut T, P)>(&mut self, mut map: F) {
-        // If we try using any linear loop method, we run into a problem where the
-        // arbitrary prev or next node has an unknown back interlink. We use this method
-        // because it has the added benefit of bringing in order links together in
-        // memory.
-        self.a.inc_gen();
-        let generation = self.generation();
-        let mut new = Arena::<P, Link<P, T>>::with_capacity(self.len());
-        new.set_gen(generation);
-        let mut adv = self.a.advancer();
-        'outer: while let Some(p_init) = adv.advance(&self.a) {
-            // an initial prelude is absolutely required to link up cyclic chains and handle
-            // SLCCs
-            let p = p_init;
-            let link = self.a.remove(p_init).unwrap();
-            let p_init = p_init.inx();
-            let mut p_init_prev = None;
-            let mut p_next = link.next().map(|p| p.inx());
-            let q_init = if let Some(prev) = link.prev() {
-                if prev.inx() == p_init {
-                    // SLCC
-                    let q = new.insert_with(|q| Link::new((Some(q), Some(q)), link.t));
-                    map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
-                    continue 'outer
-                } else {
-                    let q = new.insert(Link::new((None, None), link.t));
-                    p_init_prev = Some(prev.inx());
-                    q
-                }
-            } else {
-                new.insert(Link::new((None, None), link.t))
-            };
-            map(p, &mut new.get_inx_mut_unwrap(q_init.inx()).t, q_init);
-            let mut q_prev = q_init;
-            loop {
-                p_next = if let Some(p_next) = p_next {
-                    let p_gen = self.a.get_no_gen(p_next).unwrap().0;
-                    let p = Ptr::_from_raw(p_next, p_gen);
-                    let link = self.a.remove(p).unwrap();
-                    let tmp_next = link.next().map(|p| p.inx());
-                    let t = link.t;
-                    if Some(p_next) == p_init_prev {
-                        // cyclic chain, connect in one step
-                        let q = new.insert(Link::new((Some(q_prev), Some(q_init)), t));
-                        map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
-                        new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q);
-                        new.get_inx_mut_unwrap(q_init.inx()).prev_next.0 = Some(q);
-                        continue 'outer
-                    }
-                    let q = new.insert(Link::new((Some(q_prev), None), t));
-                    map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
-                    new.get_inx_mut_unwrap(q_prev.inx()).prev_next.1 = Some(q);
-                    q_prev = q;
-                    tmp_next
-                } else {
-                    // reached end of chain, next loop will handle starting from `p_init_prev`
-                    break
+        // using a normal advancer and inner canonically ordered drain_chain loop
+        // automatically gives us what we want
+        let mut adv_outer = source.advancer();
+        while let Some(q_start) = adv_outer.advance(source) {
+            let (start, cyclic) = find_chain_start(source, q_start);
+            // key links of this chain that have been inserted into `self` so far
+            let mut chain_first: Option<P::Inx> = None;
+            let mut chain_prev: Option<P::Inx> = None;
+            for o in source.drain_chain(start).unwrap() {
+                let ((q, q_link), o) = o.overflowing();
+                let Ok(entry) = self.a.entry_insert_within_capacity() else {
+                    unreachable!()
                 };
-            }
-            let mut p_prev = p_init_prev;
-            let mut q_next = q_init;
-            loop {
-                p_prev = if let Some(p_prev) = p_prev {
-                    let p_gen = self.a.get_no_gen(p_prev).unwrap().0;
-                    let p = Ptr::_from_raw(p_prev, p_gen);
-                    let link = self.a.remove(p).unwrap();
-                    let tmp_prev = link.prev().map(|p| p.inx());
-                    let t = link.t;
-                    let q = new.insert(Link::new((None, Some(q_next)), t));
-                    map(p, &mut new.get_inx_mut_unwrap(q.inx()).t, q);
-                    new.get_inx_mut_unwrap(q_next.inx()).prev_next.0 = Some(q);
-                    q_next = q;
-                    tmp_prev
+                let p = entry.ptr();
+                let arg = if o {
+                    InvalidationOption::GenerationOverflow(q_link.t)
                 } else {
-                    break
+                    InvalidationOption::Success(q_link.t)
                 };
+                let t = map(q, arg, p);
+                // keep chain invariants at every `map` call
+                entry.insert(LinkNoGen::new((chain_prev, None), t));
+                if let Some(prev) = chain_prev {
+                    self.a.get_inx_mut_unwrap(prev).prev_next.1 = Some(p.inx());
+                }
+                if chain_first.is_none() {
+                    chain_first = Some(p.inx());
+                }
+                chain_prev = Some(p.inx());
+            }
+            if cyclic
+                && let Some(first) = chain_first
+                && let Some(last) = chain_prev
+            {
+                // close the loop, also handles SLCCs
+                self.a.get_inx_mut_unwrap(last).prev_next.1 = Some(first);
+                self.a.get_inx_mut_unwrap(first).prev_next.0 = Some(last);
             }
         }
-        self.a = new;
+        Ok(())
     }
 
-    /// Creates a `ChainArena<P, T>` directly from an `Arena<P, Link<P, T>>`.
-    /// Returns an error if interlink transitivity fails to hold.
-    pub fn from_arena(arena: Arena<P, Link<P, T>>) -> Result<Self, &'static str> {
+    /// Creates a `ChainArena<P, T>` directly from an
+    /// `Arena<P, LinkNoGen<P, T>>`. Returns an error if interlink transitivity
+    /// fails to hold.
+    pub fn from_arena(arena: Arena<P, LinkNoGen<P, T>, B>) -> Result<Self, &'static str> {
         let res = Self { a: arena };
         Self::_check_interlinks(&res)?;
         Ok(res)
     }
 
-    /// Has the same properties of [Arena::clone_from_with], preserving
+    /// Has the same properties as
+    /// [clone_from_with](ArenaCloneFromWith::clone_from_with), preserving
     /// interlinks as well.
-    pub fn clone_from_with<U, F: FnMut(P, &Link<P, U>) -> T>(
+    ///
+    /// # Unwind Safety
+    ///
+    /// If `map` panics, it can break the interlink invariants (which can cause
+    /// panics with some functions) and `self` must be cleared.
+    pub fn clone_from_with<B1: ArenaBacking, U, F: FnMut(P, &LinkNoGen<P, U>) -> T>(
         &mut self,
-        source: &ChainArena<P, U>,
+        source: &ChainArena<P, U, B1>,
         mut map: F,
-    ) {
+    ) -> Result<(), ReallocationError> {
         self.a.clone_from_with(&source.a, |p, link| {
             let t = map(p, link);
-            Link::new(link.prev_next(), t)
+            LinkNoGen::new(link.prev_next(), t)
         })
     }
 
-    /// Overwrites `arena` (dropping all preexisting `T`, overwriting the
-    /// generation counter, and reusing capacity) with the `Ptr` mapping of
-    /// `self`, except that the interlink structure has been dropped.
-    pub fn clone_to_arena<U, F: FnMut(P, &Link<P, T>) -> U>(
+    /// Calls [clone_from_with](ArenaCloneFromWith::clone_from_with) on `arena`,
+    /// giving all the [LinkNoGen]s of `self` to the `Ptr` preserving mapping.
+    pub fn clone_to_arena<U, A: ArenaCloneFromWith<P, U>, F: FnMut(P, &LinkNoGen<P, T>) -> U>(
         &self,
-        arena: &mut Arena<P, U>,
+        arena: &mut A,
         map: F,
-    ) {
-        arena.clone_from_with(&self.a, map);
+    ) -> Result<(), ReallocationError> {
+        arena.clone_from_with(&self.a, map)
     }
 
-    /// Like [ChainArena::get], except generation counters are ignored and the
-    /// existing generation is returned.
-    #[doc(hidden)]
-    pub fn get_no_gen(&self, p: P::Inx) -> Option<(P::Gen, &Link<P, T>)> {
-        self.a.get_no_gen(p)
-    }
-
-    /// Like [ChainArena::get_mut], except generation counters are ignored and
-    /// the existing generation is returned.
-    #[doc(hidden)]
-    pub fn get_no_gen_mut(&mut self, p: P::Inx) -> Option<(P::Gen, Link<P, &mut T>)> {
-        self.a
-            .get_no_gen_mut(p)
-            .map(|(generation, link)| (generation, Link::new(link.prev_next(), &mut link.t)))
-    }
-
-    /// Like [ChainArena::get], except generation counters are ignored and the
-    /// result is unwrapped internally
+    /// Calls [Arena::get_inx_unwrap]
+    ///
+    /// # Panics
+    ///
+    /// If `p` does not point to an allocated entry
     #[doc(hidden)]
     //#[track_caller]
-    pub fn get_inx_unwrap(&self, p: P::Inx) -> &Link<P, T> {
-        self.a.get_inx_unwrap(p)
+    pub fn get_inx_unwrap(&self, p: P::Inx) -> &T {
+        &self.a.get_inx_unwrap(p).t
     }
 
-    // do not make a `get_inx_unwrap_t`, we do not want to incur extra offsets
-
-    /// Like [ChainArena::get_mut], except generation counters are ignored and
-    /// the result is unwrapped internally
+    /// Calls [Arena::get_inx_mut_unwrap]
+    ///
+    /// # Panics
+    ///
+    /// If `p` does not point to an allocated entry
     #[doc(hidden)]
     //#[track_caller]
-    pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> Link<P, &mut T> {
-        let link = self.a.get_inx_mut_unwrap(p);
-        Link::new(link.prev_next(), &mut link.t)
-    }
-
-    /// Like [ChainArena::get_mut], except generation counters are ignored and
-    /// the result is unwrapped internally, and only the `&mut T` is
-    /// returned
-    #[doc(hidden)]
-    //#[track_caller]
-    pub fn get_inx_mut_unwrap_t(&mut self, p: P::Inx) -> &mut T {
+    pub fn get_inx_mut_unwrap(&mut self, p: P::Inx) -> &mut T {
         &mut self.a.get_inx_mut_unwrap(p).t
+    }
+
+    /// Directly returns a reference to the internal backing, for the purposes
+    /// of accessing `ArenaBacking`-specific functions
+    pub fn backing(&self) -> &B::Stack<ArenaSlot<P, LinkNoGen<P, T>>> {
+        self.a.backing()
+    }
+
+    /// Directly returns a mutable reference to the internal backing, for the
+    /// purposes of accessing `ArenaBacking`-specific functions
+    ///
+    /// # Safety
+    ///
+    /// The `ArenaSlot` allocation state must not be modified, or else the
+    /// freelist or entry length could be broken. The `LinkNoGen` interlinks
+    /// must also not be modified, or else chain invariants could be broken.
+    pub unsafe fn backing_mut(&mut self) -> &mut B::Stack<ArenaSlot<P, LinkNoGen<P, T>>> {
+        // Safety: called in `unsafe` function with same invariants and added invariants
+        unsafe { self.a.backing_mut() }
     }
 }
 
-impl<P: Ptr, T, B: Borrow<P>> Index<B> for ChainArena<P, T> {
+impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> Index<Q> for ChainArena<P, T, B> {
     type Output = T;
 
-    fn index(&self, index: B) -> &Self::Output {
-        self.get(*index.borrow())
+    /// Returns a reference to the `T` pointed to by `inx`. Use
+    /// [get](ArenaTrait::get) if invalid `Ptr`s need to be handled, or
+    /// [get_link_no_gen](ChainArenaTrait::get_link_no_gen) if the interlinks
+    /// are also needed.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
+    fn index(&self, inx: Q) -> &T {
+        let p: P = *inx.borrow();
+        self.get(p)
             .expect("indexed `ChainArena` with invalidated `Ptr`")
     }
 }
 
-impl<P: Ptr, T, B: Borrow<P>> IndexMut<B> for ChainArena<P, T> {
-    fn index_mut(&mut self, index: B) -> &mut Self::Output {
+impl<P: Ptr, T, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for ChainArena<P, T, B> {
+    /// Returns a mutable reference to the `T` pointed to by `inx`. Use
+    /// [get_mut](ArenaTrait::get_mut) if invalid `Ptr`s need to be handled.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
+    fn index_mut(&mut self, inx: Q) -> &mut T {
+        let p: P = *inx.borrow();
         self.a
-            .get_mut(*index.borrow())
+            .get_mut(p)
             .map(|link| &mut link.t)
             .expect("indexed `ChainArena` with invalidated `Ptr`")
     }
 }
 
-impl<P: Ptr, T: Debug> Debug for Link<P, T> {
+impl<P: Ptr, T: Debug, B: ArenaBacking> Debug for ChainArena<P, T, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if f.alternate() {
-            write!(f, "({:?}, {:?}) {:#?}", self.prev(), self.next(), self.t)
-        } else {
-            write!(f, "({:?}, {:?}) {:?}", self.prev(), self.next(), self.t)
-        }
-    }
-}
-
-impl<P: Ptr, T: Hash> Hash for Link<P, T> {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.prev_next.hash(state);
-        self.t.hash(state);
-    }
-}
-
-impl<P: Ptr, T: Clone> Clone for Link<P, T> {
-    fn clone(&self) -> Self {
-        Self {
-            prev_next: self.prev_next,
-            t: self.t.clone(),
-        }
-    }
-}
-
-impl<P: Ptr, T: Copy> Copy for Link<P, T> {}
-
-impl<P: Ptr, T: PartialEq> PartialEq for Link<P, T> {
-    fn eq(&self, other: &Self) -> bool {
-        (self.prev_next == other.prev_next) && (self.t == other.t)
-    }
-}
-
-impl<P: Ptr, T: Eq> Eq for Link<P, T> {}
-
-impl<P: Ptr, T: PartialOrd> PartialOrd for Link<P, T> {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        match self.prev_next.partial_cmp(&other.prev_next) {
-            Some(core::cmp::Ordering::Equal) => {}
-            ord => return ord,
-        }
-        self.t.partial_cmp(&other.t)
-    }
-}
-
-impl<P: Ptr, T: Ord> Ord for Link<P, T> {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
-    }
-}
-
-// `Send` and `Sync` automatically implemented
-
-impl<P: Ptr, T: Display> Display for Link<P, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if f.alternate() {
-            write!(f, "({:?}, {:?}) {:#}", self.prev(), self.next(), self.t)
-        } else {
-            write!(f, "({:?}, {:?}) {}", self.prev(), self.next(), self.t)
-        }
-    }
-}
-
-impl<P: Ptr, T: Debug> Debug for ChainArena<P, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // needs to be done this way have the proper formatting
-        if f.alternate() {
-            write!(f, "{:#?}", self.a)
-        } else {
-            write!(f, "{:?}", self.a)
-        }
+        // grouping by chain is not efficiently possible without extra state
+        // unfortunately
+        f.debug_map().entries(self.iter_link_no_gen()).finish()
     }
 }
 
 /// Implemented if `T: Clone`.
-impl<P: Ptr, T: Clone> Clone for ChainArena<P, T> {
-    /// Has the `Ptr` preserving properties of [Arena::clone]
+impl<P: Ptr, T: Clone, B: ArenaBacking> Clone for ChainArena<P, T, B> {
+    /// Has the `Ptr` preserving properties of [Arena::clone], and the
+    /// interlinks are preserved as well.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure, or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit of the fresh `Self::new`
+    /// arena prevents reaching the needed capacity. Use
+    /// [clone_from_with](ChainArena::clone_from_with) if these need to be
+    /// handled.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If a `T::clone` panics, the partially cloned arena is dropped.
+    #[track_caller]
     fn clone(&self) -> Self {
         Self { a: self.a.clone() }
     }
 
-    /// Has the `Ptr` and capacity preserving properties of [Arena::clone_from]
+    /// Has the `Ptr` and capacity preserving properties of [Arena::clone_from],
+    /// and the interlinks are preserved as well.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure, or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit of `self` prevents
+    /// reaching the needed capacity. Use
+    /// [clone_from_with](ChainArena::clone_from_with) if these need to be
+    /// handled.
+    ///
+    /// # Unwind Safety
+    ///
+    /// A panicking `T::clone` or `T::drop` leaves `self` with the same
+    /// guarantees as [clone_from_with](ChainArena::clone_from_with).
+    #[track_caller]
     fn clone_from(&mut self, source: &Self) {
         self.a.clone_from(&source.a)
     }
 }
 
-impl<P: Ptr, T> Default for ChainArena<P, T> {
+impl<P: Ptr, T, B: ArenaBacking> Default for ChainArena<P, T, B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<P: Ptr, T: PartialEq> PartialEq<ChainArena<P, T>> for ChainArena<P, T> {
-    /// Checks if all `(P, Link<P, T>)` pairs are equal. This is sensitive to
-    /// `Ptr` indexes and generation counters, but does not compare arena
-    /// capacities or `self.generation()`.
-    fn eq(&self, other: &ChainArena<P, T>) -> bool {
-        self.a == other.a
+impl<P: Ptr, T, B: ArenaBacking> SetMaxCapacity for ChainArena<P, T, B>
+where
+    <B as ArenaBacking>::Stack<ArenaSlot<P, LinkNoGen<P, T>>>: SetMaxCapacity,
+{
+    fn set_max_capacity(&mut self, max_capacity: usize) -> Result<(), MaxCapacityReductionError> {
+        self.a.set_max_capacity(max_capacity)
     }
 }
-
-impl<P: Ptr, T: Eq> Eq for ChainArena<P, T> {}

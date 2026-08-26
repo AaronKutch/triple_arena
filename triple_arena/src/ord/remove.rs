@@ -1,10 +1,20 @@
-use crate::{OrdArena, Ptr};
+use crate::{
+    InvalidationResult, SimpleOrdArena,
+    traits::{ArenaTrait, ChainArenaTrait, Ptr},
+    utils::traits::ArenaBacking,
+};
 
-impl<P: Ptr, K, V> OrdArena<P, K, V> {
+impl<P: Ptr, T, B: ArenaBacking> SimpleOrdArena<P, T, B> {
     /// Removes the key-value pair at `p`. Returns `None` if `p` is invalid.
-    #[must_use]
-    pub fn remove(&mut self, p: P) -> Option<(K, V)> {
-        let link = self.a.remove(p)?;
+    pub(crate) fn internal_remove(
+        &mut self,
+        p: P::Inx,
+    ) -> InvalidationResult<(<P as Ptr>::Gen, T)> {
+        let (generation, link, o) = match self.a.remove_inx_link_no_gen(p) {
+            InvalidationResult::Success((generation, link)) => (generation, link, false),
+            InvalidationResult::GenerationOverflow((generation, link)) => (generation, link, true),
+            InvalidationResult::InvalidPtr => return InvalidationResult::InvalidPtr,
+        };
         // when removing a nonleaf node of the tree, its place in the tree is
         // replaced by a similar node, and if that node is nonleaf then it is
         // replaced again. We reach a leaf node in 2 replacements in the worst case:
@@ -35,7 +45,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
 
         // previous configuration of displaced node
         let (mut p_d, mut d_tree0, mut d_tree1, mut d_back, mut d_rank, mut d_prev, mut d_next) = (
-            p.inx(),
+            p,
             link.t.p_tree0,
             link.t.p_tree1,
             link.t.p_back,
@@ -43,35 +53,38 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             link.prev(),
             link.next(),
         );
-        let res = Some((link.t.k, link.t.v));
+        let res = if o {
+            InvalidationResult::GenerationOverflow((generation, link.t.t))
+        } else {
+            InvalidationResult::Success((generation, link.t.t))
+        };
         if self.a.is_empty() {
             // last node to be removed, our invariants require that `self.a.is_empty` be
             // checked to determine whether or not `self.first`, etc are valid.
-            return res
+            return res;
         }
-        let mut use_next = false;
         let mut p1 = d_back;
         loop {
             if d_tree0.is_some() || d_tree1.is_some() {
                 // pointer to replacement node
-                let p_r = if use_next {
-                    d_next.unwrap()
-                } else if let Some(p_r) = d_prev {
+                let p_r = if let Some(p_r) = d_prev {
                     if (d_rank == 2) && (d_tree0.is_none()) {
-                        // if we are on a displaced rank 2 node that has a `None` `p_tree0`,
-                        // look at `p_tree1` to avoid going up the tree
-                        use_next = true;
+                        // If we are on a displaced rank 2 node that has a `None`
+                        // `p_tree0`, look at `p_tree1` to avoid going up the tree.
+                        // Note that rank invariant 1 forces such a `p_tree1` to be a
+                        // rank 1 leaf, so this is always the last round of the loop.
                         d_next.unwrap()
                     } else {
                         p_r
                     }
                 } else {
-                    // if on the first `Link::prev` acquire we get a `None` (because we are on
-                    // the start), go only `Link::next`
-                    use_next = true;
+                    // If on the first `Link::prev` acquire we get a `None` (because we
+                    // are on the start), go only `Link::next`. The start has a `None`
+                    // `p_tree0`, so by the same rank argument this is also always the
+                    // last round.
                     d_next.unwrap()
                 };
-                let r = self.a.get_inx_mut_unwrap(p_r);
+                let r = self.a.a.get_inx_mut_unwrap(p_r);
                 // keep the old configuration of the replacement node
                 let buf = (
                     r.t.p_tree0,
@@ -83,9 +96,9 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                 );
                 r.t.rank = d_rank;
                 if let Some(d_back) = d_back {
-                    if d_back != p.inx() {
+                    if d_back != p {
                         r.t.p_back = Some(d_back);
-                        let n = self.a.get_inx_mut_unwrap_t(d_back);
+                        let n = self.a.get_inx_mut_unwrap(d_back);
                         if n.p_tree1 == Some(p_d) {
                             n.p_tree1 = Some(p_r);
                         } else {
@@ -97,11 +110,11 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     self.root = p_r;
                 }
                 let mut use_p_d = false;
-                let r = self.a.get_inx_mut_unwrap_t(p_r);
+                let r = self.a.get_inx_mut_unwrap(p_r);
                 if let Some(d_tree0) = d_tree0 {
                     if d_tree0 != p_r {
                         r.p_tree0 = Some(d_tree0);
-                        self.a.get_inx_mut_unwrap_t(d_tree0).p_back = Some(p_r);
+                        self.a.get_inx_mut_unwrap(d_tree0).p_back = Some(p_r);
                     } else {
                         // in the case where the replacement node is a child of the displaced node,
                         // we need to leave `p_tree0` as-is
@@ -110,11 +123,11 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                 } else {
                     r.p_tree0 = None;
                 }
-                let r = self.a.get_inx_mut_unwrap_t(p_r);
+                let r = self.a.get_inx_mut_unwrap(p_r);
                 if let Some(d_tree1) = d_tree1 {
                     if d_tree1 != p_r {
                         r.p_tree1 = Some(d_tree1);
-                        self.a.get_inx_mut_unwrap_t(d_tree1).p_back = Some(p_r);
+                        self.a.get_inx_mut_unwrap(d_tree1).p_back = Some(p_r);
                     } else {
                         use_p_d = true;
                     }
@@ -135,12 +148,12 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     p1 = d_back;
                 }
             } else {
-                break
+                break;
             }
         }
         let mut p0 = None;
         let mut p1 = p1.unwrap();
-        let n1 = self.a.get_inx_mut_unwrap(p1);
+        let n1 = self.a.a.get_inx_mut_unwrap(p1);
         if n1.t.p_tree1 == Some(p_d) {
             n1.t.p_tree1 = None;
         } else {
@@ -162,13 +175,13 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
         }
 
         loop {
-            let n1 = self.a.get_inx_unwrap(p1);
+            let n1 = self.a.a.get_inx_unwrap(p1);
             let rank1 = n1.t.rank;
             let d01 = n1.t.p_tree1 == p0;
             let p2 = n1.t.p_back;
 
             let rank0 = if let Some(p0) = p0 {
-                self.a.get_inx_unwrap(p0).t.rank
+                self.a.get_inx_unwrap(p0).rank
             } else {
                 0
             };
@@ -177,10 +190,10 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
             if let Some(p_s0) = p_s0 {
                 if rank0.wrapping_add(2) >= rank1 {
                     // no violation
-                    break
+                    break;
                 }
                 let s0 = self.a.get_inx_unwrap(p_s0);
-                let rank_s0 = s0.t.rank;
+                let rank_s0 = s0.rank;
 
                 if rank_s0.wrapping_add(2) == rank1 {
                     // this is not just an optimization, the other branch would require `s0` to have
@@ -190,7 +203,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     //    /     \
                     //   /       \
                     // n0 (r)   s0 (r+1)
-                    self.a.get_inx_mut_unwrap_t(p1).rank = rank_s0.wrapping_add(1);
+                    self.a.get_inx_mut_unwrap(p1).rank = rank_s0.wrapping_add(1);
                     //    n1 (r+2)
                     //    /     \
                     //   /       \
@@ -201,9 +214,9 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                         // convey
                         p0 = Some(p1);
                         p1 = p2;
-                        continue
+                        continue;
                     } else {
-                        break
+                        break;
                     }
                 }
 
@@ -213,18 +226,18 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                 // n0 (r)     s0 (r+2)
 
                 let (p_a, p_b) = if d01 {
-                    (s0.t.p_tree1, s0.t.p_tree0)
+                    (s0.p_tree1, s0.p_tree0)
                 } else {
-                    (s0.t.p_tree0, s0.t.p_tree1)
+                    (s0.p_tree0, s0.p_tree1)
                 };
 
                 let rank_a = if let Some(p_a) = p_a {
-                    self.a.get_inx_unwrap(p_a).t.rank
+                    self.a.get_inx_unwrap(p_a).rank
                 } else {
                     0
                 };
                 let rank_b = if let Some(p_b) = p_b {
-                    self.a.get_inx_unwrap(p_b).t.rank
+                    self.a.get_inx_unwrap(p_b).rank
                 } else {
                     0
                 };
@@ -267,31 +280,31 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     //     n1 (1)        b (1)
 
                     if let Some(p_a) = p_a {
-                        let a = self.a.get_inx_mut_unwrap_t(p_a);
+                        let a = self.a.get_inx_mut_unwrap(p_a);
                         a.p_back = Some(p1);
                     }
                     if d01 {
                         // reverse version
-                        let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                        let n1 = self.a.get_inx_mut_unwrap(p1);
                         n1.p_tree0 = p_a;
                         n1.p_back = Some(p_s0);
                         n1.rank = rank_a.wrapping_add(1);
-                        let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                        let s0 = self.a.get_inx_mut_unwrap(p_s0);
                         s0.p_back = p2;
                         s0.p_tree1 = Some(p1);
                         s0.rank = rank1;
                     } else {
-                        let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                        let n1 = self.a.get_inx_mut_unwrap(p1);
                         n1.p_back = Some(p_s0);
                         n1.p_tree1 = p_a;
                         n1.rank = rank_a.wrapping_add(1);
-                        let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                        let s0 = self.a.get_inx_mut_unwrap(p_s0);
                         s0.p_tree0 = Some(p1);
                         s0.p_back = p2;
                         s0.rank = rank1;
                     }
                     if let Some(p2) = p2 {
-                        let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                        let n2 = self.a.get_inx_mut_unwrap(p2);
                         if n2.p_tree1 == Some(p1) {
                             n2.p_tree1 = Some(p_s0);
                         } else {
@@ -301,7 +314,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                         self.root = p_s0;
                     }
                     // all invariants resolved
-                    break
+                    break;
                 }
 
                 //     n1 (r+3)
@@ -322,8 +335,8 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                     //           /     \
                     //          /       \
                     //         a (r)   b (r)
-                    self.a.get_inx_mut_unwrap_t(p_s0).rank = rank0.wrapping_add(1);
-                    self.a.get_inx_mut_unwrap_t(p1).rank = rank0.wrapping_add(2);
+                    self.a.get_inx_mut_unwrap(p_s0).rank = rank0.wrapping_add(1);
+                    self.a.get_inx_mut_unwrap(p1).rank = rank0.wrapping_add(2);
                     //     n1 (r+2)
                     //    /      \
                     //   /        \
@@ -338,9 +351,9 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                         // convey
                         p0 = Some(p1);
                         p1 = p2;
-                        continue
+                        continue;
                     } else {
-                        break
+                        break;
                     }
                 }
 
@@ -370,50 +383,50 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                 let p_a = p_a.unwrap();
                 let a = self.a.get_inx_unwrap(p_a);
                 let (p_c, p_d) = if d01 {
-                    (a.t.p_tree1, a.t.p_tree0)
+                    (a.p_tree1, a.p_tree0)
                 } else {
-                    (a.t.p_tree0, a.t.p_tree1)
+                    (a.p_tree0, a.p_tree1)
                 };
                 if let Some(p_c) = p_c {
-                    let c = self.a.get_inx_mut_unwrap_t(p_c);
+                    let c = self.a.get_inx_mut_unwrap(p_c);
                     c.p_back = Some(p1);
                 }
                 if let Some(p_d) = p_d {
-                    let d = self.a.get_inx_mut_unwrap_t(p_d);
+                    let d = self.a.get_inx_mut_unwrap(p_d);
                     d.p_back = Some(p_s0);
                 }
                 if d01 {
                     // reverse version
-                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    let n1 = self.a.get_inx_mut_unwrap(p1);
                     n1.p_tree0 = p_c;
                     n1.p_back = Some(p_a);
                     n1.rank = rank_a;
-                    let a = self.a.get_inx_mut_unwrap_t(p_a);
+                    let a = self.a.get_inx_mut_unwrap(p_a);
                     a.p_tree0 = Some(p_s0);
                     a.p_back = p2;
                     a.p_tree1 = Some(p1);
                     a.rank = rank1;
-                    let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                    let s0 = self.a.get_inx_mut_unwrap(p_s0);
                     s0.p_back = Some(p_a);
                     s0.p_tree1 = p_d;
                     s0.rank = rank_a;
                 } else {
-                    let n1 = self.a.get_inx_mut_unwrap_t(p1);
+                    let n1 = self.a.get_inx_mut_unwrap(p1);
                     n1.p_back = Some(p_a);
                     n1.p_tree1 = p_c;
                     n1.rank = rank_a;
-                    let a = self.a.get_inx_mut_unwrap_t(p_a);
+                    let a = self.a.get_inx_mut_unwrap(p_a);
                     a.p_tree0 = Some(p1);
                     a.p_back = p2;
                     a.p_tree1 = Some(p_s0);
                     a.rank = rank1;
-                    let s0 = self.a.get_inx_mut_unwrap_t(p_s0);
+                    let s0 = self.a.get_inx_mut_unwrap(p_s0);
                     s0.p_tree0 = p_d;
                     s0.p_back = Some(p_a);
                     s0.rank = rank_a;
                 }
                 if let Some(p2) = p2 {
-                    let n2 = self.a.get_inx_mut_unwrap_t(p2);
+                    let n2 = self.a.get_inx_mut_unwrap(p2);
                     if n2.p_tree1 == Some(p1) {
                         n2.p_tree1 = Some(p_a);
                     } else {
@@ -422,7 +435,7 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                 } else {
                     self.root = p_a;
                 }
-                break
+                break;
             } else {
                 // only possible at exterior of the tree with this case
 
@@ -430,16 +443,16 @@ impl<P: Ptr, K, V> OrdArena<P, K, V> {
                 //    /
                 //   /
                 // d (0)
-                self.a.get_inx_mut_unwrap_t(p1).rank = 1;
+                self.a.get_inx_mut_unwrap(p1).rank = 1;
                 //    n1 (1)
 
                 if let Some(p2) = p2 {
                     // convey
                     p0 = Some(p1);
                     p1 = p2;
-                    continue
+                    continue;
                 } else {
-                    break
+                    break;
                 }
             }
         }

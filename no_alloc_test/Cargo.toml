@@ -1,0 +1,17 @@
+# empty workspace array so that this compiles without affecting the main workspace
+
+[package]
+name = "no_alloc_test"
+version = "0.0.0"
+edition = "2024"
+publish = false
+[workspace]
+resolver = "3"
+# The purpose of this crate is to insure that `triple_arena` without the `alloc` feature has no allocation
+# dependencies. Simply building `triple_arena` with `--target=...` is not good enough, it has to be linked
+# into a no-alloc binary. I have chosen `riscv32i-unknown-none-elf` for its simplicity.
+
+[dependencies]
+panic-halt = "1"
+riscv-minimal-rt = "0.5"
+triple_arena = { path = "../triple_arena", default-features = false, features = ["serde_support"] }

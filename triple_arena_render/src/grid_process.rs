@@ -1,15 +1,16 @@
-#![allow(clippy::needless_range_loop)]
-
 use std::{
-    cmp::{max, min, Ordering, Reverse},
+    cmp::{Ordering, Reverse, max, min},
     collections::BinaryHeap,
     mem,
     num::NonZeroU64,
 };
 
-use triple_arena::{ptr_struct, Advancer, Arena, ChainArena, Link, OrdArena, Ptr};
+use triple_arena::{
+    Arena, ChainArena, LinkNoGen, OrdPair, SimpleOrdArena, ptr_struct, traits::*,
+    utils::traits::SimpleOrdItem,
+};
 
-use crate::{render_grid::RenderGrid, DebugNodeTrait, RenderError};
+use crate::{DebugNodeTrait, RenderError, render_grid::RenderGrid};
 
 #[derive(Debug)]
 pub struct Edge<P: Ptr> {
@@ -47,8 +48,8 @@ impl<P: Ptr> Default for ANode<P> {
 // TODO this code could be improved and cleaned up more
 
 /// Processes an `Arena<P, T>` into a `RenderGrid<P>`
-pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
-    arena: &Arena<P, T>,
+pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>, A: CompactArenaTrait<P, T>>(
+    arena: &A,
     error_on_invalid_ptr: bool,
 ) -> Result<RenderGrid<P>, RenderError<P>> {
     let mut visit_counter = NonZeroU64::new(1).unwrap();
@@ -74,7 +75,8 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                 .collect(),
             ..Default::default()
         }
-    });
+    })
+    .unwrap();
 
     // We need to unelide nonexistant sinks that have a corresponding source, and
     // vice versa. This also checks for invalid pointers.
@@ -99,7 +101,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                     });
                 }
             } else if error_on_invalid_ptr {
-                return Err(RenderError::InvalidPtr(p1))
+                return Err(RenderError::InvalidPtr(p1));
             }
         }
         // check all sources
@@ -117,7 +119,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                     });
                 }
             } else if error_on_invalid_ptr {
-                return Err(RenderError::InvalidPtr(p1))
+                return Err(RenderError::InvalidPtr(p1));
             }
         }
     }
@@ -192,7 +194,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                         // no more sinks, backtrack
                         path.pop().unwrap();
                         if path.is_empty() {
-                            break
+                            break;
                         }
                         // check next dependency
                         let len = path.len();
@@ -287,7 +289,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                         dag[current].visit = dfs_explored_visit;
                         path.pop().unwrap();
                         if path.is_empty() {
-                            break
+                            break;
                         }
                         // check next dependency
                         let len = path.len();
@@ -315,7 +317,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     // the `(P, P)` tuple is ordered for uniqueness, the first weight indicates `<`
     // preference and the second `>`. The bool allows only one extra layer of new
     // transitives to be made.
-    let mut orderings = OrdArena::<P, (P, P), (u64, u64, bool)>::new();
+    let mut orderings = SimpleOrdArena::<P, OrdPair<(P, P), (u64, u64, bool)>>::new();
     let mut f = |p0: P, p1: P, swap: bool, init_weight: u64| {
         let (pair, mut weight) = match p0.cmp(&p1) {
             Ordering::Less => ((p0, p1), (init_weight, 0)),
@@ -327,11 +329,11 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         }
         if weight != (0, 0) {
             if let Some(p_ordering) = orderings.find_key(&pair) {
-                let tmp = orderings.get_val_mut(p_ordering).unwrap();
+                let tmp = orderings.get_mut(p_ordering).unwrap().v_mut();
                 tmp.0 = tmp.0.saturating_add(weight.0);
                 tmp.1 = tmp.1.saturating_add(weight.1);
             } else {
-                let _ = orderings.insert(pair, (weight.0, weight.1, true));
+                let _ = orderings.insert(OrdPair::new(pair, (weight.0, weight.1, true)));
             }
         }
     };
@@ -365,32 +367,32 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         }
     }
 
-    // now do the transitive propogations, for transitivity we do not need the
+    // now do the transitive propagations, for transitivity we do not need the
     // reversed orderings
     let mut buf = vec![];
     for _ in 0..2 {
         let mut adv = orderings.advancer();
         while let Some(p_ordering) = adv.advance(&orderings) {
-            let ((p0, p1), weight) = orderings.get(p_ordering).unwrap();
+            let ((p0, p1), weight) = orderings.get(p_ordering).unwrap().k_v();
 
             // find the start of a region with `p1`
             if let Some((p_region_start, ord)) =
-                orderings.find_similar_with(|_, (p, _), _| match p1.cmp(p) {
+                orderings.find_similar_with(|_, pair| match p1.cmp(&pair.k().0) {
                     Ordering::Less => Ordering::Less,
                     Ordering::Equal => Ordering::Less,
                     Ordering::Greater => Ordering::Greater,
                 })
             {
-                let mut adv_region = orderings.advancer_starting_from(p_region_start);
+                let mut adv_region = orderings.advancer_ordered(p_region_start, false).unwrap();
                 if ord.is_gt() {
                     // advance by one to get into the region
                     adv_region.advance(&orderings);
                 }
                 while let Some(p_ordering) = adv_region.advance(&orderings) {
-                    let ((p2, p3), weight1) = orderings.get(p_ordering).unwrap();
+                    let ((p2, p3), weight1) = orderings.get(p_ordering).unwrap().k_v();
                     if *p2 != *p1 {
                         // reached the end of the region
-                        break
+                        break;
                     }
                     let added_weight = (
                         weight.0.saturating_add(weight1.0),
@@ -414,11 +416,11 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                 (p1, p0, (weight0.1, weight0.0))
             };
             if let Some(p_ordering) = orderings.find_key(&(p0, p1)) {
-                let tmp = orderings.get_val_mut(p_ordering).unwrap();
+                let tmp = orderings.get_mut(p_ordering).unwrap().v_mut();
                 tmp.0 = tmp.0.saturating_add(weight.0);
                 tmp.1 = tmp.1.saturating_add(weight.1);
             } else if weight0.2 {
-                let _ = orderings.insert((p0, p1), (weight.0, weight.1, false));
+                let _ = orderings.insert(OrdPair::new((p0, p1), (weight.0, weight.1, false)));
             }
             // else do not create new transitive edges
         }
@@ -434,7 +436,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     let mut f = |p0: P, p1: P| {
         let (p0, p1) = if p0 < p1 { (p0, p1) } else { (p1, p0) };
         if let Some(p_ordering) = orderings.find_key(&(p0, p1)) {
-            let weight = orderings.get_val(p_ordering).unwrap();
+            let weight = orderings.get(p_ordering).unwrap().v();
             if weight.0 < weight.1 {
                 prioritize.push(Reverse((min(weight.0, weight.1), p1, p0)));
             } else {
@@ -469,8 +471,11 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
 
     ptr_struct!(Q());
     let mut chain_lens = Arena::<Q, usize>::new();
-    let mut tmp = Arena::<P, Link<P, Q>>::new();
-    tmp.clone_from_with(&dag, |_, _| Link::new((None, None), chain_lens.insert(0)));
+    let mut tmp = Arena::<P, LinkNoGen<P, Q>>::new();
+    tmp.clone_from_with(&dag, |_, _| {
+        LinkNoGen::new((None, None), chain_lens.insert(0))
+    })
+    .unwrap();
     let mut total_ordering = ChainArena::<P, Q>::from_arena(tmp).unwrap();
     while let Some(Reverse((_, p0, p1))) = prioritize.pop() {
         let q0 = *total_ordering.get(p0).unwrap();
@@ -483,19 +488,19 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             }
             // find start of `q1` chain but also recolor
             let mut p1_start = Ptr::invalid();
-            let mut adv = total_ordering.advancer_chain(p1);
+            let mut adv = total_ordering.advancer_chain(p1).unwrap();
             while let Some(p) = adv.advance(&total_ordering) {
-                let link = total_ordering.get_link_mut(p).unwrap();
+                let link = total_ordering.get_link_no_gen(p).unwrap();
                 if link.prev().is_none() {
                     p1_start = p;
                 }
-                *link.t = q0;
+                *total_ordering.get_mut(p).unwrap() = q0;
             }
             total_ordering.connect(p0_end, p1_start).unwrap();
             let q1_len = *chain_lens.get(q1).unwrap();
             // q1 is erased, but need to update the length of q0
             *chain_lens.get_mut(q0).unwrap() += q1_len;
-            chain_lens.remove(q1).unwrap();
+            chain_lens.remove(q1).allow().unwrap();
         }
     }
 
@@ -514,12 +519,12 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         loop {
             if let Some(next) = total_ordering.get_link(p).unwrap().next() {
                 chain.push(p);
-                total_ordering.remove(p).unwrap();
+                total_ordering.remove(p).allow().unwrap();
                 p = next;
             } else {
                 chain.push(p);
-                total_ordering.remove(p).unwrap();
-                break
+                total_ordering.remove(p).allow().unwrap();
+                break;
             }
         }
         chains.push(Reverse((chain.len(), chain)));
@@ -575,7 +580,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                             // no more sinks, backtrack
                             path.pop().unwrap();
                             if path.is_empty() {
-                                break
+                                break;
                             }
                             // check next dependency
                             let len = path.len();
@@ -630,7 +635,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
                             // no more sinks, backtrack
                             path.pop().unwrap();
                             if path.is_empty() {
-                                break
+                                break;
                             }
                             // check next dependency
                             let len = path.len();
@@ -664,7 +669,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
     // want to compress horizontally. The idea is that every node has a desired
     // location to be in, either the average horizontal positions of their sources
     // and sinks or some median of them. If a node would collide with another if it
-    // would try to move, a "force" is propogated that says how many places it wants
+    // would try to move, a "force" is propagated that says how many places it wants
     // to travel and the intensity.
 
     //let mut prioritize = BinaryHeap::<(usize, P)>::new();
@@ -675,22 +680,36 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         grid_pos0: usize,
         p: P,
     }
-    let mut horizontals: Vec<OrdArena<P, HInfo<P>, ()>> = vec![];
+    impl<P: Ptr> SimpleOrdItem for HInfo<P> {
+        type Key<'a>
+            = usize
+        where
+            Self: 'a;
+
+        fn key(&self) -> Self::Key<'_> {
+            self.grid_pos0
+        }
+
+        fn shorten_key<'long: 'short, 'short>(k: Self::Key<'long>) -> Self::Key<'short>
+        where
+            Self: 'long,
+        {
+            k
+        }
+    }
+    let mut horizontals: Vec<SimpleOrdArena<P, HInfo<P>>> = vec![];
     let mut max_y = 0;
     for p in ptrs.iter().copied() {
         max_y = max(max_y, dag[p].grid_position.1);
     }
     for _ in 0..(max_y + 1) {
-        horizontals.push(OrdArena::new());
+        horizontals.push(SimpleOrdArena::new());
     }
     for p in ptrs.iter().copied() {
-        let _ = horizontals[dag[p].grid_position.1].insert(
-            HInfo {
-                grid_pos0: dag[p].grid_position.0,
-                p,
-            },
-            (),
-        );
+        let _ = horizontals[dag[p].grid_position.1].insert(HInfo {
+            grid_pos0: dag[p].grid_position.0,
+            p,
+        });
     }
 
     // The transitive ordering is very good but the priority of the chain merging
@@ -703,7 +722,7 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         // detect if all connections are towards one direction
         let node0 = &dag[p0];
         if (node0.sources.len() + node0.sinks.len()) <= 1 {
-            continue
+            continue;
         }
         let pos0 = node0.grid_position.0;
         let mut min_pos1 = usize::MAX;
@@ -727,21 +746,16 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
         } else if (min_pos1 < pos0) && (max_pos1 < (pos0 - 2)) {
             max_pos1.saturating_sub(1)
         } else {
-            continue
+            continue;
         };
         // check the horizontal for collisions
         let horizontal = &mut horizontals[node0.grid_position.1];
-        if horizontal
-            .find_with(|_, hinfo, _| new_pos.cmp(&hinfo.grid_pos0))
-            .is_none()
-        {
-            let p_h = horizontal
-                .find_with(|_, hinfo, _| dag[p0].grid_position.0.cmp(&hinfo.grid_pos0))
-                .unwrap();
-            let mut hinfo = horizontal.remove(p_h).unwrap().0;
+        if horizontal.find_key(new_pos).is_none() {
+            let p_h = horizontal.find_key(dag[p0].grid_position.0).unwrap();
+            let mut hinfo = horizontal.remove(p_h).allow().unwrap();
             dag[p0].grid_position.0 = new_pos;
             hinfo.grid_pos0 = new_pos;
-            let _ = horizontal.insert(hinfo, ());
+            let _ = horizontal.insert(hinfo);
         }
     }
 
@@ -764,19 +778,13 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             let mut shift = x;
             loop {
                 if x >= max_x {
-                    break
+                    break;
                 }
                 let mut collision = false;
                 for horizontal in &horizontals {
-                    if horizontal
-                        .find_with(|_, hinfo, _| x.cmp(&hinfo.grid_pos0))
-                        .is_some()
-                        && horizontal
-                            .find_with(|_, hinfo, _| (x + 1).cmp(&hinfo.grid_pos0))
-                            .is_some()
-                    {
+                    if horizontal.find_key(x).is_some() && horizontal.find_key(x + 1).is_some() {
                         collision = true;
-                        break
+                        break;
                     }
                 }
                 cumulative.push(shift);
@@ -790,13 +798,13 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             // apply shifts
             let mut new = vec![];
             for horizontal in &mut horizontals {
-                for (_, mut hinfo, _) in horizontal.drain() {
+                for (_, mut hinfo) in horizontal.drain().map(|o| o.allow()) {
                     hinfo.grid_pos0 = cumulative[hinfo.grid_pos0];
                     dag[hinfo.p].grid_position.0 = hinfo.grid_pos0;
                     new.push(hinfo);
                 }
                 for hinfo in new.drain(..) {
-                    let _ = horizontal.insert(hinfo, ());
+                    let _ = horizontal.insert(hinfo);
                 }
             }
         };
@@ -821,22 +829,24 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             // check the horizontals if we can move
             let horizontal = &mut horizontals[dag[p].grid_position.1];
             let pos = dag[p].grid_position.0;
-            let p_h = horizontal
-                .find_with(|_, hinfo, _| pos.cmp(&hinfo.grid_pos0))
-                .unwrap();
+            let p_h = horizontal.find_key(pos).unwrap();
             let maximal_movement = wanted.clamp(
                 {
-                    if let Some(p_h_sub1) = horizontal.get_link(p_h).unwrap().prev() {
-                        horizontal.get(p_h_sub1).unwrap().0.grid_pos0 + 1
+                    if let Some(p_h_sub1) =
+                        horizontal.get_inx_link_no_gen(p_h.inx()).unwrap().1.prev()
+                    {
+                        horizontal.get_inx(p_h_sub1).unwrap().1.grid_pos0 + 1
                     } else {
                         0
                     }
                 },
                 {
-                    if let Some(p_h_add1) = horizontal.get_link(p_h).unwrap().next() {
-                        horizontal.get(p_h_add1).unwrap().0.grid_pos0 - 1
+                    if let Some(p_h_add1) =
+                        horizontal.get_inx_link_no_gen(p_h.inx()).unwrap().1.next()
+                    {
+                        horizontal.get_inx(p_h_add1).unwrap().1.grid_pos0 - 1
                     } else {
-                        horizontal.get(p_h).unwrap().0.grid_pos0
+                        horizontal.get(p_h).unwrap().grid_pos0
                     }
                 },
             );
@@ -844,9 +854,9 @@ pub fn grid_process<P: Ptr, T: DebugNodeTrait<P>>(
             if maximal_movement != current {
                 // move
                 dag[p].grid_position.0 = maximal_movement;
-                let mut hinfo = horizontal.remove(p_h).unwrap().0;
+                let mut hinfo = horizontal.remove(p_h).allow().unwrap();
                 hinfo.grid_pos0 = maximal_movement;
-                let _ = horizontal.insert(hinfo, ());
+                let _ = horizontal.insert(hinfo);
                 /*prioritize.push((
                     wanted
                         .abs_diff(current)

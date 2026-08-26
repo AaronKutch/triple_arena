@@ -1,219 +1,387 @@
-use alloc::fmt;
-use core::{mem, num::NonZeroUsize};
+use core::{
+    borrow::Borrow,
+    fmt,
+    mem::{self, ManuallyDrop},
+    num::NonZeroUsize,
+    ops::{Index, IndexMut},
+    slice::GetDisjointMutError,
+};
 
 use fmt::Debug;
 
 use crate::{
-    arena::InternalEntry,
-    utils::{ChainNoGenArena, LinkNoGen, PtrInx, PtrNoGen},
-    Advancer, Arena, ChainArena, Ptr,
+    Arena, ChainArena, InvalidationOption, InvalidationResult, LinkInsertKind, LinkNoGen,
+    arena::{ArenaSlot, from_checked_ptr, from_checked_raw},
+    errors::{
+        AllocError, ChainInsertionError, MaxCapacityReductionError, NotWithinCapacityError,
+        ReallocationError,
+    },
+    traits::{
+        Advancer, ArenaCloneFromWith, ArenaInsertEntryTrait, ArenaInsertTrait, ArenaTrait,
+        ChainArenaTrait, DisjointableArenaTrait, Ptr, SetMaxCapacity,
+    },
+    utils::{
+        PtrNoGen, nzusize_iter,
+        traits::{ArenaBacking, NonZeroInxGenericStack, PtrInx},
+    },
 };
 
+/// Internal surject element for [SurjectArena]
 #[derive(Clone)]
-pub(crate) struct Key<P: Ptr, K> {
-    pub(crate) k: K,
-    // we want to have the size of `P::Inx` since we do not need the generation counter on the
-    // internal indirection
-    pub(crate) p_val: PtrNoGen<P>,
+pub struct SurjectElement<P: Ptr, T> {
+    pub t: T,
+    /// we want to have the size of `P::Inx` since we do not need the generation
+    /// counter on the internal indirection
+    pub p_shared: PtrNoGen<P>,
 }
 
+/// Internal shared value for [SurjectArena]
 #[derive(Clone)]
-pub(crate) struct Val<V> {
-    pub(crate) v: V,
-    // we ultimately need a reference count for efficient unions, and it
-    // has the bonus of being able to easily query key chain lengths
-    pub(crate) key_count: NonZeroUsize,
+pub struct SurjectShared<S> {
+    pub s: S,
+    /// we ultimately need a reference count for efficient unions, and it
+    /// has the bonus of being able to easily query element chain lengths
+    pub element_count: NonZeroUsize,
 }
 
-/// A generalization of an `Arena` with three parameters: a `P: Ptr` type, a `K`
-/// key type, and a `V` value type. Each `P` points to a single `K` like in a
-/// normal arena, but multiple `P` can point to a single `V` in a surjective map
-/// structure. When all `Ptr`s to a single `V` are removed, the `V` is removed
-/// as well. Efficient union-find functionality is also possible.
+/// A generalization of an `Arena` with three main parameters: a `P: Ptr` type,
+/// a `T` element type, and an `S` shared type. Each `P` points to a single `T`
+/// like in a normal arena, but multiple `(P, T)` entries can point to a single
+/// shared `S` in a surjective map structure. When all `Ptr`s to a single `S`
+/// are removed, the `S` is removed as well. Efficient union-find functionality
+/// is also possible.
 ///
 /// This is a more powerful version of union-find data structures, incorporating
-/// types on both sides of the key-value surjection, individual pointer-key
-/// validity tracking, `O(1)` single and double element operations, and allowing
+/// types on both sides of the surjection, individual entry `Ptr` validity
+/// tracking, `O(1)` single and double element operations, and allowing
 /// generation counted removal. Under the hood, this uses a `O(n log n)`
 /// strategy for union-find, but for many usecases this should actually be
 /// faster than the theoretical `O(n iterated log n)`, because there is always
 /// only a single layer of indirections at any one time for caches to deal with
 /// (we use a clever `ChainArena` based strategy that avoids any tree structures
-/// or key reinsertion).
+/// or element reinsertion).
 ///
-/// `SurjectArena<P, (), V>` is more like a classic union-find structure, and
-/// `SurjectArena<P, K, ()>` is a kind of non-hereditary set. Even
+/// `SurjectArena<P, (), S>` is more like a classic union-find structure, and
+/// `SurjectArena<P, T, ()>` is a kind of nonhereditary set. Even
 /// `SurjectArena<P, (), ()>` can be useful (assuming `P` has generation
-/// counters) for its O(1) validity tracking capabilities under any order
+/// counters) for its `O(1)` validity tracking capabilities under any order
 /// of adding and removing of pointers. This is more powerful than pure
 /// reference counting or epoch-like structures.
 ///
+/// # Note
+///
+/// `SurjectArena` naturally implements the same main traits that the other
+/// arena types do, but there are a few technicalities. Internally, there are
+/// two different arenas with separate sets of capacities and max capacities.
+/// All of the [ArenaTrait] methods should work as naturally as they do
+/// elsewhere, except:
+/// 1. [ArenaTrait::reallocate_min_capacity], [ArenaTrait::with_min_capacity],
+///    and impls involving reallocation will first try fallible operations on
+///    the capacity of shared values, and if they succeed they will then try
+///    acting on the element capacity. But if the action on the element capacity
+///    fails, the change that first happened on the shared value capacity will
+///    remain.
+/// 2. [ArenaTrait::capacity] uses the capacity of the `T` elements. It is
+///    possible for a successful [ArenaTrait::reallocate_min_capacity] to
+///    reserve more than requested, and that extra capacity can be asymmetrical
+///    between [ArenaTrait::capacity] and [SurjectArena::capacity_shared].
+///    Inserting new surjects within capacity requires both kinds of capacity,
+///    so be aware not to rely on just [ArenaTrait::capacity] after expanding.
+/// 3. Due to an unfortunate confluence of necessary design choices,
+///    [ArenaTrait::compress_with] for `SurjectArena`s is the only element-wise
+///    method in this crate that has `O(n^2)` complexity. Instead, use
+///    [compress_canonical](SurjectArena::compress_canonical) or
+///    [transfer_canonical_reallocating](SurjectArena::transfer_canonical_reallocating),
+///    which are `O(n)` and improve cache locality as well.
+///
 /// ```
-/// use triple_arena::{ptr_struct, SurjectArena};
+/// use triple_arena::{SurjectArena, errors::ChainInsertionError, ptr_struct, traits::ArenaTrait};
 ///
 /// ptr_struct!(P0);
 /// let mut a: SurjectArena<P0, String, String> = SurjectArena::new();
 ///
-/// // There must be at least one key associated with each value
-/// let p0_42 = a.insert("key0".to_owned(), "42".to_owned());
-/// // If we want new keys to be associated with the same key set pointing to
-/// // "42", then instead of calling `insert_val` we call `insert_key`
-/// let p1_42 = a.insert_key(p0_42, "key1".to_owned()).unwrap();
-/// // We could use either `p0_42` or `p1_42` as our reference to get
-/// // associated with the same key set; any valid pointer in the preexisting
-/// // set can be used with the same `O(1)` computational complexity incurred.
-/// let p2_42 = a.insert_key(p0_42, "key2".to_owned()).unwrap();
+/// // There must be at least one element associated with each shared value, so
+/// // the first insertion must always be a surject insertion
+/// let p0_42 = a.insert_surject("e0".to_owned(), "42".to_owned());
+/// // If we want new elements to be associated with the same surject that
+/// // shares "42", then instead of calling `insert_surject` we call `insert` to
+/// // insert elements into an existing surject
+/// let p1_42 = a.insert(p0_42, "e1".to_owned());
+/// // We could use either `p0_42` or `p1_42` as our reference to get associated
+/// // with the same surject. Any valid pointer in the preexisting surject can
+/// // be used with the same `O(1)` computational complexity incurred.
+/// let p2_42 = a.insert(p0_42, "e2".to_owned());
 ///
-/// assert_eq!(a.get_key(p0_42).unwrap(), "key0");
-/// assert_eq!(a.get_key(p1_42).unwrap(), "key1");
-/// assert_eq!(a.get_key(p2_42).unwrap(), "key2");
-/// assert_eq!(a.get_val(p0_42).unwrap(), "42");
-/// assert_eq!(a.get_val(p1_42).unwrap(), "42");
-/// assert_eq!(a.get_val(p2_42).unwrap(), "42");
+/// assert_eq!(a.get(p0_42).unwrap(), "e0");
+/// assert_eq!(a.get(p1_42).unwrap(), "e1");
+/// assert_eq!(a.get(p2_42).unwrap(), "e2");
+/// assert_eq!(a.get_shared(p0_42).unwrap(), "42");
+/// assert_eq!(a.get_shared(p1_42).unwrap(), "42");
+/// assert_eq!(a.get_shared(p2_42).unwrap(), "42");
 ///
-/// assert_eq!(a.remove_key(p1_42), Some(("key1".to_owned(), None)));
+/// assert_eq!(
+///     a.remove_element(p1_42).allow(),
+///     Some(("e1".to_owned(), None))
+/// );
 /// assert!(a.contains(p0_42));
 /// assert!(!a.contains(p1_42));
 /// assert!(a.contains(p2_42));
-/// // the value is perpetuated as long as there is a nonempty set of
-/// // pointer-keys associated with it
-/// assert_eq!(a.get_val(p2_42).unwrap(), "42");
+/// // the shared value is perpetuated as long as the surject still has at least
+/// // one element
+/// assert_eq!(a.get_shared(p2_42).unwrap(), "42");
 ///
 /// // We cannot use an invalidated pointer as a reference
 /// assert_eq!(
-///     a.insert_key(p1_42, "key3".to_owned()),
-///     Err("key3".to_owned())
+///     a.insert_reallocating(p1_42, "e3".to_owned()),
+///     Err(ChainInsertionError::FailedLinkRequirement)
 /// );
-/// // We need to use an existing valid key
-/// let p3_42 = a.insert_key(p2_42, "key3".to_owned()).unwrap();
-/// assert_eq!(a.get_val(p3_42).unwrap(), "42");
+/// // We need to use an existing valid element
+/// let p3_42 = a.insert(p2_42, "e3".to_owned());
+/// assert_eq!(a.get_shared(p3_42).unwrap(), "42");
 ///
-/// let other42 = a.insert("test".to_owned(), "42".to_owned());
+/// let other42 = a.insert_surject("test".to_owned(), "42".to_owned());
 /// // note this is still a general `Arena`-like structure and not a hereditary
-/// // set or map, so multiple of the same exact values can exist in different
-/// // surjects.
-/// assert!(!a.in_same_set(p0_42, other42).unwrap());
-/// a.remove(other42).unwrap();
+/// // set or map, so multiple of the same exact shared values can exist in
+/// // different surjects.
+/// assert!(!a.in_same_surject(p0_42, other42).unwrap());
+/// // removes the entire surject
+/// a.remove_shared(other42).unwrap().allow();
 ///
-/// let p4_7 = a.insert("key4".to_owned(), "7".to_owned());
-/// let p5_7 = a.insert_key(p4_7, "key5".to_owned()).unwrap();
+/// let p4_7 = a.insert_surject("e4".to_owned(), "7".to_owned());
+/// let p5_7 = a.insert(p4_7, "e5".to_owned());
 ///
-/// assert_eq!(a.len_key_set(p0_42).unwrap().get(), 3);
-/// assert_eq!(a.len_key_set(p4_7).unwrap().get(), 2);
+/// assert_eq!(a.len_surject(p0_42).unwrap().get(), 3);
+/// assert_eq!(a.len_surject(p4_7).unwrap().get(), 2);
 ///
-/// // I know the order ahead of time because the arena is deterministic, but
-/// // note that in general this will be completely unsorted with respect to
-/// // keys or values.
+/// // The order here is known ahead of time because the arena is deterministic,
+/// // but note that in general this will be completely unsorted with respect to
+/// // the elements or the shared values.
 /// let expected = [
-///     (p0_42, "key0", "42"),
-///     (p3_42, "key3", "42"),
-///     (p2_42, "key2", "42"),
-///     (p4_7, "key4", "7"),
-///     (p5_7, "key5", "7"),
+///     (p0_42, "e0", "42"),
+///     (p3_42, "e3", "42"),
+///     (p2_42, "e2", "42"),
+///     (p4_7, "e4", "7"),
+///     (p5_7, "e5", "7"),
 /// ];
-/// // this iterator is not cloning the values, it is simply repeatedly
-/// // indexing the values when multiple keys are associated with a single
+/// // this iterator is not cloning the shared values, it is simply repeatedly
+/// // indexing them when multiple elements are associated with a single shared
 /// // value
-/// for (i, (p, key, val)) in a.iter().enumerate() {
-///     assert_eq!(expected[i], (p, key.as_str(), val.as_str()));
+/// for (i, (p, element, shared)) in a.iter_combined().enumerate() {
+///     assert_eq!(expected[i], (p, element.as_str(), shared.as_str()));
 /// }
 ///
-/// let (removed_v, kept_p) = a.union(p0_42, p4_7).unwrap();
-/// // One of the "7" or "42" values was removed from the arena,
-/// // and the other remains in the arena. Suppose we want
-/// // to take a custom union of the `String`s to go along
-/// // with the union of the keys, we would do something like
-/// *a.get_val_mut(kept_p).unwrap() = format!("{} + {}", a.get_val(kept_p).unwrap(), removed_v);
+/// let (removed_s, kept_p) = a.union(p0_42, p4_7).unwrap();
+/// // One of the "7" or "42" shared values was removed from the arena, and the
+/// // other remains in the arena. Suppose we want to take a custom union of the
+/// // `String`s to go along with the union of the elements, we would do
+/// // something like
+/// *a.get_shared_mut(kept_p).unwrap() =
+///     format!("{} + {}", a.get_shared(kept_p).unwrap(), removed_s);
 ///
-/// assert_eq!(a.len_key_set(p0_42).unwrap().get(), 5);
+/// assert_eq!(a.len_surject(p0_42).unwrap().get(), 5);
 /// let expected = [
-///     (p0_42, "key0", "42 + 7"),
-///     (p3_42, "key3", "42 + 7"),
-///     (p2_42, "key2", "42 + 7"),
-///     (p4_7, "key4", "42 + 7"),
-///     (p5_7, "key5", "42 + 7"),
+///     (p0_42, "e0", "42 + 7"),
+///     (p3_42, "e3", "42 + 7"),
+///     (p2_42, "e2", "42 + 7"),
+///     (p4_7, "e4", "42 + 7"),
+///     (p5_7, "e5", "42 + 7"),
 /// ];
-/// for (i, (p, key, val)) in a.iter().enumerate() {
-///     assert_eq!(expected[i], (p, key.as_str(), val.as_str()));
+/// for (i, (p, element, shared)) in a.iter_combined().enumerate() {
+///     assert_eq!(expected[i], (p, element.as_str(), shared.as_str()));
 /// }
 ///
-/// // only upon removing the last key is the value is returned
-/// // (or we could use the wholesale `remove`)
-/// assert_eq!(a.remove_key(p4_7), Some(("key4".to_owned(), None)));
-/// assert_eq!(a.remove_key(p0_42), Some(("key0".to_owned(), None)));
-/// assert_eq!(a.remove_key(p3_42), Some(("key3".to_owned(), None)));
-/// assert_eq!(a.remove_key(p5_7), Some(("key5".to_owned(), None)));
+/// // only upon removing the last element is the shared value returned
+/// // (or we could use the wholesale `remove_shared`)
 /// assert_eq!(
-///     a.remove_key(p2_42),
-///     Some(("key2".to_owned(), Some("42 + 7".to_owned())))
+///     a.remove_element(p4_7).allow(),
+///     Some(("e4".to_owned(), None))
+/// );
+/// assert_eq!(
+///     a.remove_element(p0_42).allow(),
+///     Some(("e0".to_owned(), None))
+/// );
+/// assert_eq!(
+///     a.remove_element(p3_42).allow(),
+///     Some(("e3".to_owned(), None))
+/// );
+/// assert_eq!(
+///     a.remove_element(p5_7).allow(),
+///     Some(("e5".to_owned(), None))
+/// );
+/// assert_eq!(
+///     a.remove_element(p2_42).allow(),
+///     Some(("e2".to_owned(), Some("42 + 7".to_owned())))
 /// );
 /// ```
-pub struct SurjectArena<P: Ptr, K, V> {
-    pub(crate) keys: ChainNoGenArena<P, Key<P, K>>,
-    pub(crate) vals: Arena<PtrNoGen<P>, Val<V>>,
+pub struct SurjectArena<
+    P: Ptr,
+    T,
+    S,
+    #[cfg(feature = "alloc")] B: ArenaBacking = crate::HeapBacking,
+    #[cfg(not(feature = "alloc"))] B: ArenaBacking,
+> {
+    pub(crate) elements: ChainArena<P, SurjectElement<P, T>, B>,
+    pub(crate) shared_vals: Arena<PtrNoGen<P>, SurjectShared<S>, B>,
 }
 
-/// # Note
-///
-/// `Ptr`s in a `SurjectArena` follow the same validity rules as `Ptr`s in a
-/// regular `Arena` (see the documentation on the main
-/// `impl<P: Ptr, T> Arena<P, T>`). The validity of each `Ptr` is kept separate.
-impl<P: Ptr, K, V> SurjectArena<P, K, V> {
+// REF(surject_clear_guard) There are operations that have to break the
+// invariants of `SurjectArena` in the middle of their work. The arena cannot be
+// easily repaired in general, so we decide that this guard clears the arena.
+// Everything that uses this should be already destroying or overwriting what
+// would be cleared anyways.
+struct ClearOnUnwind<'a, P: Ptr, T, S, B: ArenaBacking>(&'a mut SurjectArena<P, T, S, B>);
+
+impl<P: Ptr, T, S, B: ArenaBacking> ClearOnUnwind<'_, P, T, S, B> {
+    /// Cancels the clearing
+    fn cancel(self) {
+        // nothing is leaked because this is a reference
+        let _ = ManuallyDrop::new(self);
+    }
+}
+
+impl<P: Ptr, T, S, B: ArenaBacking> Drop for ClearOnUnwind<'_, P, T, S, B> {
+    fn drop(&mut self) {
+        self.0.clear().allow();
+    }
+}
+
+// REF(insertion_idempotency)
+
+/// See [ArenaInsertTrait](crate::traits::ArenaInsertTrait)
+pub struct SurjectArenaInsertSurjectEntry<'a, P: Ptr, T, S, B: ArenaBacking> {
+    this: &'a mut SurjectArena<P, T, S, B>,
+    p: P,
+}
+
+impl<'a, P: Ptr, T, S, B: ArenaBacking> SurjectArenaInsertSurjectEntry<'a, P, T, S, B> {
+    /// Returns the `P` that the single element of the new surject will be
+    /// associated with
+    pub fn ptr(&self) -> P {
+        self.p
+    }
+
+    /// Inserts a new surject consisting of the single element `t` and the
+    /// shared value `s`
+    pub fn insert(self, t: T, s: S) {
+        let p_shared = self.this.shared_vals.insert(SurjectShared {
+            s,
+            element_count: NonZeroUsize::new(1).unwrap(),
+        });
+        let p = self
+            .this
+            .elements
+            .insert(LinkInsertKind::SingleLinkCyclic, SurjectElement {
+                t,
+                p_shared,
+            });
+        // REF(insertion_idempotency)
+        if p != self.p {
+            unreachable!()
+        }
+    }
+}
+
+/// See [ArenaInsertTrait](crate::traits::ArenaInsertTrait)
+pub struct SurjectArenaInsertEntry<'a, P: Ptr, T, S, B: ArenaBacking> {
+    this: &'a mut SurjectArena<P, T, S, B>,
+    p_target: P::Inx,
+    p_new: P,
+}
+
+impl<'a, P: Ptr, T, S, B: ArenaBacking> SurjectArenaInsertEntry<'a, P, T, S, B> {
+    /// Returns the `P` that the newly inserted element will be associated with,
+    /// and not the `ptr_in_target_surject`
+    pub fn ptr(&self) -> P {
+        self.p_new
+    }
+
+    /// Inserts the element `t` into the target surject
+    pub fn insert(self, t: T) {
+        let this = self.this;
+        let p_shared = this.elements.get_inx_unwrap(self.p_target).p_shared;
+        let element_count = &mut this
+            .shared_vals
+            .get_inx_mut_unwrap(p_shared.inx())
+            .element_count;
+        // it is impossible to overflow this, it would mean that we have already
+        // inserted `usize + 1` elements
+        *element_count = NonZeroUsize::new(element_count.get().wrapping_add(1)).unwrap();
+        let p = this
+            .elements
+            .insert(LinkInsertKind::NextToInx(self.p_target), SurjectElement {
+                t,
+                p_shared,
+            });
+        // REF(insertion_idempotency)
+        if p != self.p_new {
+            unreachable!()
+        }
+    }
+}
+
+impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B> {
     /// Used by tests
     #[doc(hidden)]
     pub fn _check_invariants(this: &Self) -> Result<(), &'static str> {
-        // needs to be done because of manual `InternalEntry` handling
-        ChainNoGenArena::_check_invariants(&this.keys)?;
-        Arena::_check_invariants(&this.vals)?;
+        // needs to be done because of manual `ArenaSlot` handling
+        ChainArena::_check_invariants(&this.elements)?;
+        Arena::_check_invariants(&this.shared_vals)?;
         Self::_check_surjects(this)?;
         Ok(())
     }
 
     #[doc(hidden)]
     pub fn _check_surjects(this: &Self) -> Result<(), &'static str> {
-        // there should be exactly one key chain associated with each val
-        let mut count = Arena::<PtrNoGen<P>, usize>::new();
-        count.clone_from_with(&this.vals, |_, _| 0);
-        for link in this.keys.vals() {
-            match count.get_mut(link.t.p_val) {
+        // there should be exactly one element chain associated with each shared value
+        let mut count =
+            Arena::<PtrNoGen<P>, usize, B>::with_min_capacity(this.shared_vals.capacity())
+                .map_err(|_| "could not allocate the temporary shared value count arena")?;
+        count
+            .clone_from_with(&this.shared_vals, |_, _| 0)
+            .map_err(|_| "could not fill the temporary shared value count arena")?;
+        for element in this.elements.vals() {
+            match count.get_mut(element.p_shared) {
                 Some(len) => *len = len.checked_add(1).unwrap(),
-                None => return Err("key points to nonexistent val"),
+                None => return Err("element points to nonexistent shared value"),
             }
         }
-        for (p_val, n) in &count {
-            if this.vals.get(p_val).unwrap().key_count.get() != *n {
-                return Err("key count does not match actual")
+        for (p_shared, n) in &count {
+            if this.shared_vals.get(p_shared).unwrap().element_count.get() != *n {
+                return Err("element count does not match actual");
             }
         }
 
-        let mut adv = this.keys.advancer();
-        while let Some(p) = adv.advance(&this.keys) {
-            let mut c = *count.get(this.keys.get(p).unwrap().p_val).unwrap();
+        let mut adv = this.elements.advancer();
+        while let Some(p) = adv.advance(&this.elements) {
+            let mut c = *count.get(this.elements.get(p).unwrap().p_shared).unwrap();
             if c != 0 {
                 // upon encountering a nonzero count for the first time, we follow the chain and
                 // count down, and if we reach back to the beginning (verifying cyclic chain)
                 // and reach a count of zero, then we know that the chain encountered all the
-                // needed keys. Subsequent encounters with the rest of the chain is ignored
+                // needed elements. Subsequent encounters with the rest of the chain is ignored
                 // because the count is zeroed afterwards.
                 let mut tmp = p.inx();
                 loop {
                     if c == 0 {
-                        return Err("did not reach end of key chain in expected time")
+                        return Err("did not reach end of surject chain in expected time");
                     }
                     c = c.checked_sub(1).unwrap();
-                    let (_, link) = this.keys.get_no_gen(tmp).unwrap();
+                    let (_, link) = this.elements.get_inx_link_no_gen(tmp).unwrap();
                     if let Some(next) = link.next() {
                         tmp = next;
                     } else {
-                        return Err("key chain is not cyclic")
+                        return Err("surject chain is not cyclic");
                     }
                     // have the test after the match so that we check for single node cyclics
                     if tmp == p.inx() {
                         if c != 0 {
-                            return Err("key chain did not have all keys associated with value")
+                            return Err("surject chain did not have all elements associated with \
+                                        the shared value");
                         }
-                        *count.get_mut(this.keys.get(p).unwrap().p_val).unwrap() = 0;
-                        break
+                        *count
+                            .get_mut(this.elements.get(p).unwrap().p_shared)
+                            .unwrap() = 0;
+                        break;
                     }
                 }
             }
@@ -221,656 +389,1065 @@ impl<P: Ptr, K, V> SurjectArena<P, K, V> {
         Ok(())
     }
 
-    pub fn new() -> Self {
-        Self {
-            keys: ChainNoGenArena::new(),
-            vals: Arena::new(),
-        }
+    /// See [ArenaTrait::with_min_capacity], this has separate capacities for
+    /// the elements and the shared values
+    pub fn with_min_capacity_separated(
+        min_capacity_elements: usize,
+        min_capacity_shared: usize,
+    ) -> Result<Self, AllocError> {
+        Ok(Self {
+            elements: ChainArena::with_min_capacity(min_capacity_elements)?,
+            shared_vals: Arena::with_min_capacity(min_capacity_shared)?,
+        })
     }
 
-    /// Creates the new arena with capacity for at least `capacity_keys` keys
-    /// and `capacity_vals` values
-    pub fn with_capacity(capacity_keys: usize, capacity_vals: usize) -> Self {
-        let mut res = Self::new();
-        res.reserve_keys(capacity_keys);
-        res.reserve_vals(capacity_vals);
-        res
+    /// Returns the number of shared values, or equivalently the number of
+    /// surjects in the arena. `self.len() >= self.len_shared()` is always true.
+    pub fn len_shared(&self) -> usize {
+        self.shared_vals.len()
     }
 
-    /// Returns the total number of valid `Ptr`s, or equivalently the number of
-    /// keys in the arena. `self.len_keys() >= self.len_vals()` is always
-    /// true.
-    pub fn len_keys(&self) -> usize {
-        self.keys.len()
-    }
-
-    /// Returns the number of values, or equivalently the number of key sets in
-    /// the arena
-    pub fn len_vals(&self) -> usize {
-        self.vals.len()
-    }
-
-    /// Returns the size of the set of keys pointing to the same value, with `p`
-    /// being a `Ptr` to any one of those keys. Returns `None` if `p` is
+    /// Returns the number of elements in the surject that contains `p`, with
+    /// `p` being a `Ptr` to any one of those elements. Returns `None` if `p` is
     /// invalid.
     #[must_use]
-    pub fn len_key_set(&self, p: P) -> Option<NonZeroUsize> {
-        let p_val = self.keys.get(p)?.p_val;
-        Some(self.vals.get_inx_unwrap(p_val.inx()).key_count)
+    pub fn len_surject(&self, p: P) -> Option<NonZeroUsize> {
+        let p_shared = self.elements.get(p)?.p_shared;
+        Some(
+            self.shared_vals
+                .get_inx_unwrap(p_shared.inx())
+                .element_count,
+        )
     }
 
-    /// Returns if the arena is empty (`self.len_keys() == 0` if and only if
-    /// `self.len_vals() == 0`)
-    pub fn is_empty(&self) -> bool {
-        self.vals.is_empty()
+    /// Returns the capacity of shared values of the arena
+    pub fn capacity_shared(&self) -> usize {
+        self.shared_vals.capacity()
     }
 
-    /// Returns the key capacity of the arena
-    pub fn capacity_keys(&self) -> usize {
-        self.keys.capacity()
-    }
-
-    /// Returns the value capacity of the arena
-    pub fn capacity_vals(&self) -> usize {
-        self.vals.capacity()
+    /// Returns the max shared value capacity of the arena
+    pub fn max_capacity_shared(&self) -> Option<usize> {
+        self.shared_vals.max_capacity()
     }
 
     /// Follows [Arena::generation]
     pub fn generation(&self) -> P::Gen {
-        self.keys.generation()
+        self.elements.generation()
     }
 
-    /// Follows [Arena::reserve] just for keys
-    pub fn reserve_keys(&mut self, additional: usize) {
-        self.keys.reserve(additional)
+    /// Follows [Arena::set_generation]
+    pub fn set_generation(&mut self, new_gen: P::Gen) {
+        self.elements.set_generation(new_gen)
     }
 
-    /// Follows [Arena::reserve] just for values
-    pub fn reserve_vals(&mut self, additional: usize) {
-        self.vals.reserve(additional)
+    /// Follows [Arena::inc_generation]
+    pub fn inc_generation(&mut self) -> InvalidationOption<()> {
+        self.elements.inc_generation()
     }
 
-    /// Inserts a new key and associated value. Returns a `Ptr` to the key.
-    pub fn insert(&mut self, k: K, v: V) -> P {
-        let p_val = self.vals.insert(Val {
-            v,
-            key_count: NonZeroUsize::new(1).unwrap(),
-        });
-        self.keys.insert_new_cyclic(Key { k, p_val })
+    /// Follows [ArenaTrait::reallocate_min_capacity] for the elements
+    pub fn reallocate_min_capacity_elements(
+        &mut self,
+        min_capacity: usize,
+    ) -> Result<(), ReallocationError> {
+        self.elements.reallocate_min_capacity(min_capacity)
     }
 
-    /// Inserts a surject into the arena, using the `K` and `V` returned by
-    /// `create` for the new key and value. Returns a `Ptr` to the new key.
-    /// `create` is given the the same `Ptr` that is returned, which is
-    /// useful for initialization of immutable structures that need to reference
-    /// themselves.
-    pub fn insert_with<F: FnOnce(P) -> (K, V)>(&mut self, create_k_v: F) -> P {
-        let mut res = P::invalid();
-        self.vals.insert_with(|p_val| {
-            let mut created_v = None;
-            self.keys.insert_new_cyclic_with(|p| {
-                res = p;
-                let (k, v) = create_k_v(p);
-                created_v = Some(v);
-                Key { k, p_val }
-            });
-            Val {
-                v: created_v.unwrap(),
-                key_count: NonZeroUsize::new(1).unwrap(),
+    /// Follows [ArenaTrait::reallocate_min_capacity] for the shared values
+    pub fn reallocate_min_capacity_shared(
+        &mut self,
+        min_capacity: usize,
+    ) -> Result<(), ReallocationError> {
+        self.shared_vals.reallocate_min_capacity(min_capacity)
+    }
+
+    /// Inserts a new surject into the arena, consisting of the single element
+    /// `t` and the shared value `s`. Returns a `Ptr` to the element.
+    pub fn insert_surject_within_capacity(
+        &mut self,
+        t: T,
+        s: S,
+    ) -> Result<P, NotWithinCapacityError> {
+        let entry = self.entry_insert_surject_within_capacity()?;
+        let p = entry.ptr();
+        entry.insert(t, s);
+        Ok(p)
+    }
+
+    /// Reallocating version of
+    /// [insert_surject_within_capacity](SurjectArena::insert_surject_within_capacity)
+    pub fn insert_surject_reallocating(&mut self, t: T, s: S) -> Result<P, ReallocationError> {
+        let entry = self.entry_insert_surject_reallocating()?;
+        let p = entry.ptr();
+        entry.insert(t, s);
+        Ok(p)
+    }
+
+    /// Panicking version of
+    /// [insert_surject_within_capacity](SurjectArena::insert_surject_within_capacity)
+    ///
+    /// # Panics
+    ///
+    /// Panics on allocation failure or if max capacity is used up
+    #[track_caller]
+    pub fn insert_surject(&mut self, t: T, s: S) -> P {
+        self.insert_surject_reallocating(t, s)
+            .expect("`SurjectArena::insert_surject_reallocating` failed")
+    }
+
+    /// Entry version of
+    /// [insert_surject_within_capacity](SurjectArena::insert_surject_within_capacity)
+    pub fn entry_insert_surject_within_capacity(
+        &mut self,
+    ) -> Result<SurjectArenaInsertSurjectEntry<'_, P, T, S, B>, NotWithinCapacityError> {
+        // will need space for a new shared value
+        let _ = self.shared_vals.entry_insert_within_capacity()?;
+        let entry = self
+            .elements
+            .entry_insert_within_capacity(LinkInsertKind::SingleLinkCyclic)
+            .map_err(|_| NotWithinCapacityError)?;
+        let p = entry.ptr();
+        Ok(SurjectArenaInsertSurjectEntry { this: self, p })
+    }
+
+    /// Entry version of
+    /// [insert_surject_reallocating](SurjectArena::insert_surject_reallocating)
+    pub fn entry_insert_surject_reallocating(
+        &mut self,
+    ) -> Result<SurjectArenaInsertSurjectEntry<'_, P, T, S, B>, ReallocationError> {
+        let _ = self.shared_vals.entry_insert_reallocating()?;
+        let p = match self
+            .elements
+            .entry_insert_reallocating(LinkInsertKind::SingleLinkCyclic)
+        {
+            Ok(entry) => entry.ptr(),
+            Err(ChainInsertionError::BeyondMaxCapacity) => {
+                return Err(ReallocationError::BeyondMaxCapacity);
             }
-        });
-        res
-    }
-
-    /// Inserts a new key into the arena, associating it with the same key set
-    /// that `p` is in (any `Ptr` from the valid key set can be used as a
-    /// reference), and returns the new `Ptr` to the key. Returns `Err(k)`
-    /// if `p` was invalid.
-    pub fn insert_key(&mut self, p: P, k: K) -> Result<P, K> {
-        let p_val = match self.keys.get(p) {
-            None => return Err(k),
-            Some(key) => key.p_val,
+            Err(_) => return Err(ReallocationError::AllocError),
         };
-        self.vals[p_val].key_count = NonZeroUsize::new(
-            self.vals
-                .get_inx_unwrap(p_val.inx())
-                .key_count
-                .get()
-                .wrapping_add(1),
-        )
-        .unwrap();
-        if let Ok(p) = self.keys.insert((Some(p.inx()), None), Key { k, p_val }) {
-            Ok(p)
-        } else {
-            unreachable!()
+        Ok(SurjectArenaInsertSurjectEntry { this: self, p })
+    }
+
+    /// Inserts a new element `t` into the arena, associating it with an
+    /// existing surject, of which `ptr_in_target_surject` is an existing
+    /// element of that surject. Returns
+    /// [FailedLinkRequirement](ChainInsertionError::FailedLinkRequirement) if
+    /// `ptr_in_target_surject` is invalid.
+    pub fn insert_within_capacity(
+        &mut self,
+        ptr_in_target_surject: P,
+        t: T,
+    ) -> Result<P, ChainInsertionError> {
+        let entry = self.entry_insert_within_capacity(ptr_in_target_surject)?;
+        let p = entry.ptr();
+        entry.insert(t);
+        Ok(p)
+    }
+
+    /// Reallocating version of
+    /// [insert_within_capacity](SurjectArena::insert_within_capacity)
+    pub fn insert_reallocating(
+        &mut self,
+        ptr_in_target_surject: P,
+        t: T,
+    ) -> Result<P, ChainInsertionError> {
+        let entry = self.entry_insert_reallocating(ptr_in_target_surject)?;
+        let p = entry.ptr();
+        entry.insert(t);
+        Ok(p)
+    }
+
+    /// Panicking version of
+    /// [insert_within_capacity](SurjectArena::insert_within_capacity)
+    ///
+    /// # Panics
+    ///
+    /// Panics on allocation failure, or if max capacity is used up, or if
+    /// `ptr_in_target_surject` was invalid
+    #[track_caller]
+    pub fn insert(&mut self, ptr_in_target_surject: P, t: T) -> P {
+        self.insert_reallocating(ptr_in_target_surject, t)
+            .expect("`SurjectArena::insert_reallocating` failed")
+    }
+
+    /// Entry version of
+    /// [insert_within_capacity](SurjectArena::insert_within_capacity)
+    pub fn entry_insert_within_capacity(
+        &mut self,
+        ptr_in_target_surject: P,
+    ) -> Result<SurjectArenaInsertEntry<'_, P, T, S, B>, ChainInsertionError> {
+        if !self.contains(ptr_in_target_surject) {
+            return Err(ChainInsertionError::FailedLinkRequirement);
         }
+        // only need space for the element, the shared value already exists
+        let entry = self
+            .elements
+            .entry_insert_within_capacity(LinkInsertKind::SingleLinkCyclic)?;
+        let p = entry.ptr();
+        Ok(SurjectArenaInsertEntry {
+            this: self,
+            p_target: ptr_in_target_surject.inx(),
+            p_new: p,
+        })
     }
 
-    /// The same as [SurjectArena::insert_key] except that the inserted `K` is
-    /// created by `create_k`. The `Ptr` that will point to the new key is
-    /// passed to `create_k`, and this `Ptr` is also returned. `create` is
-    /// not called and `None` is returned if `p` is invalid.
-    #[must_use]
-    pub fn insert_key_with<F: FnOnce(P) -> K>(&mut self, p: P, create_k: F) -> Option<P> {
-        let p_val = match self.keys.get(p) {
-            None => return None,
-            Some(key) => key.p_val,
-        };
-        self.vals[p_val].key_count = NonZeroUsize::new(
-            self.vals
-                .get_inx_unwrap(p_val.inx())
-                .key_count
-                .get()
-                .wrapping_add(1),
-        )
-        .unwrap();
-        if let Some(p) = self.keys.insert_with((Some(p.inx()), None), |p_link| Key {
-            k: create_k(p_link),
-            p_val,
-        }) {
-            Some(p)
-        } else {
-            unreachable!()
+    /// Entry version of
+    /// [insert_reallocating](SurjectArena::insert_reallocating)
+    pub fn entry_insert_reallocating(
+        &mut self,
+        ptr_in_target_surject: P,
+    ) -> Result<SurjectArenaInsertEntry<'_, P, T, S, B>, ChainInsertionError> {
+        if !self.contains(ptr_in_target_surject) {
+            return Err(ChainInsertionError::FailedLinkRequirement);
         }
+        // only need space for the element, the shared value already exists
+        let entry = self
+            .elements
+            .entry_insert_reallocating(LinkInsertKind::SingleLinkCyclic)?;
+        let p = entry.ptr();
+        Ok(SurjectArenaInsertEntry {
+            this: self,
+            p_target: ptr_in_target_surject.inx(),
+            p_new: p,
+        })
     }
 
-    /// Returns if `p` is a valid `Ptr`
-    pub fn contains(&self, p: P) -> bool {
-        self.keys.contains(p)
-    }
-
-    /// Returns if `p0` and `p1` point to keys in the same key set
+    /// Returns if `p0` and `p1` point to elements in the same surject. Returns
+    /// `None` if `p0` or `p1` are invalid.
     #[must_use]
-    pub fn in_same_set(&self, p0: P, p1: P) -> Option<bool> {
-        Some(self.keys.get(p0)?.p_val == self.keys.get(p1)?.p_val)
+    pub fn in_same_surject(&self, p0: P, p1: P) -> Option<bool> {
+        Some(self.elements.get(p0)?.p_shared == self.elements.get(p1)?.p_shared)
     }
 
-    /// Returns a reference to the key pointed to by `p`
+    /// Returns a reference to the shared value of the surject that contains the
+    /// element pointed to by `p`
     #[must_use]
-    pub fn get_key(&self, p: P) -> Option<&K> {
-        self.keys.get(p).as_ref().map(|key| &key.k)
+    pub fn get_shared(&self, p: P) -> Option<&S> {
+        let p_shared = self.elements.get(p)?.p_shared;
+        Some(&self.shared_vals.get_inx_unwrap(p_shared.inx()).s)
     }
 
-    /// Returns a reference to the value associated with the key pointed to by
-    /// `p`
+    /// Returns a mutable reference to the shared value of the surject that
+    /// contains the element pointed to by `p`
     #[must_use]
-    pub fn get_val(&self, p: P) -> Option<&V> {
-        let p_val = self.keys.get(p)?.p_val;
-        Some(&self.vals.get_inx_unwrap(p_val.inx()).v)
+    pub fn get_shared_mut(&mut self, p: P) -> Option<&mut S> {
+        let p_shared = self.elements.get(p)?.p_shared;
+        Some(&mut self.shared_vals.get_inx_mut_unwrap(p_shared.inx()).s)
     }
 
-    /// Returns a reference to the key-value pair pointed to by `p`
-    #[must_use]
-    pub fn get(&self, p: P) -> Option<(&K, &V)> {
-        let key = self.keys.get(p)?;
-        Some((&key.k, &self.vals.get_inx_unwrap(key.p_val.inx()).v))
-    }
-
-    /// Returns a mutable reference to the value pointed to by `p`
-    #[must_use]
-    pub fn get_key_mut(&mut self, p: P) -> Option<&mut K> {
-        if let Some(key) = self.keys.get_mut(p) {
-            Some(&mut key.k)
-        } else {
-            None
+    /// The same as
+    /// [get_disjoint_mut](crate::traits::DisjointableArenaTrait::get_disjoint_mut)
+    /// except that it is for the shared values, and so this additionally
+    /// requires that the `indices` all be from different surjects.
+    pub fn get_disjoint_shared_mut<const N: usize>(
+        &mut self,
+        indices: [P; N],
+    ) -> Result<[&mut S; N], GetDisjointMutError> {
+        let mut p_shareds = [PtrNoGen::<P>::invalid(); N];
+        for (p_shared, p) in p_shareds.iter_mut().zip(indices) {
+            *p_shared = self
+                .elements
+                .get(p)
+                .ok_or(GetDisjointMutError::IndexOutOfBounds)?
+                .p_shared;
         }
+        self.shared_vals
+            .get_disjoint_mut(p_shareds)
+            .map(|shareds| shareds.map(|shared| &mut shared.s))
     }
 
-    /// Returns a mutable reference to the value associated with the key pointed
-    /// to by `p`
+    /// Returns the generation associated with `p` and a `LinkNoGen<P, &T>`, the
+    /// interlinks of which point to the other elements in the surject. Each
+    /// surject is a cyclic chain of `LinkNoGen`s.
     #[must_use]
-    pub fn get_val_mut(&mut self, p: P) -> Option<&mut V> {
-        let p_val = self.keys.get(p)?.p_val;
-        Some(&mut self.vals.get_inx_mut_unwrap(p_val.inx()).v)
+    pub fn get_inx_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &T>)> {
+        self.elements
+            .get_inx_link_no_gen(p)
+            .map(|(generation, link)| (generation, LinkNoGen::new(link.prev_next(), &link.t.t)))
     }
 
-    /// Returns a mutable reference to the key-value pair pointed to by `p`
-    #[must_use]
-    pub fn get_mut(&mut self, p: P) -> Option<(&mut K, &mut V)> {
-        let key = self.keys.get_mut(p)?;
-        Some((
-            &mut key.k,
-            &mut self.vals.get_inx_mut_unwrap(key.p_val.inx()).v,
-        ))
-    }
-
-    /// Gets two `&mut K` references pointed to by `p0` and `p1`. If
-    /// `p0 == p1` or a pointer is invalid, `None` is returned.
-    #[must_use]
-    pub fn get2_key_mut(&mut self, p0: P, p1: P) -> Option<(&mut K, &mut K)> {
-        match self.keys.get2_mut(p0, p1) {
-            Some((key0, key1)) => Some((&mut key0.k, &mut key1.k)),
-            None => None,
-        }
-    }
-
-    /// Gets two `&mut V` references pointed to by `p0` and `p1`. If
-    /// `self.in_same_set(p0, p1)` or a pointer is invalid, `None` is
-    /// returned.
-    #[must_use]
-    pub fn get2_val_mut(&mut self, p0: P, p1: P) -> Option<(&mut V, &mut V)> {
-        let p_val0 = self.keys.get(p0)?.p_val;
-        let p_val1 = self.keys.get(p1)?.p_val;
-        match self.vals.get2_mut(p_val0, p_val1) {
-            Some((val0, val1)) => Some((&mut val0.v, &mut val1.v)),
-            None => None,
-        }
-    }
-
-    /// Gets two mutable references to the key-value pairs pointed to by `p0`
-    /// and `p1`. If `self.in_same_set(p0, p1)` or a pointer is invalid,
-    /// `None` is returned.
-    #[must_use]
-    #[allow(clippy::type_complexity)]
-    pub fn get2_mut(&mut self, p0: P, p1: P) -> Option<((&mut K, &mut V), (&mut K, &mut V))> {
-        match self.keys.get2_mut(p0, p1) {
-            Some((key0, key1)) => match self.vals.get2_mut(key0.p_val, key1.p_val) {
-                Some((val0, val1)) => {
-                    Some(((&mut key0.k, &mut val0.v), (&mut key1.k, &mut val1.v)))
-                }
-                None => None,
-            },
-            None => None,
-        }
-    }
-
-    /// Returns the generation associated with `p` and a `LinkNoGen<P, &K>`, the
-    /// interlinks of which point to other keys in the key set. The key set is a
-    /// cyclic chain of `LinkNoGen`s.
-    #[must_use]
-    pub fn get_link_no_gen(&self, p: P::Inx) -> Option<(P::Gen, LinkNoGen<P, &K>)> {
-        self.keys
-            .get_no_gen(p)
-            .map(|(p, link)| (p, LinkNoGen::new(link.prev_next(), &link.t.k)))
-    }
-
-    /// Takes the union of two key sets, of which `p0` points to a key in one
-    /// set and `p1` points to a key in the other set. If
-    /// `self.len_key_set(p0) < self.len_key_set(p1)`, then the value
+    /// Takes the union of two surjects, of which `p0` points to an element in
+    /// one surject and `p1` points to an element in the other surject. If
+    /// `self.len_surject(p0) < self.len_surject(p1)`, then the shared value
     /// associated with `p0` is removed and returned in a tuple with `p1`,
-    /// and the key set of `p0` is changed to point to the value of `p1`'s
-    /// key set. If `self.len_key_set(p0) >= self.len_key_set(p1)`, the
-    /// value pointed to by `p1` is removed and returned in a tuple with
-    /// `p0`, and the key set of `p1` is changed to point to the value of
-    /// `p0`'s key set. Returns `None` if `self.in_same_set(p0, p1)`.
+    /// and the surject of `p0` is changed to point to the shared value of
+    /// `p1`'s surject. If `self.len_surject(p0) >= self.len_surject(p1)`,
+    /// the shared value pointed to by `p1` is removed and returned in a
+    /// tuple with `p0`, and the surject of `p1` is changed to point to the
+    /// shared value of `p0`'s surject. Returns `None` if `p0` or `p1` are
+    /// invalid, or if they already point into the same surject.
     ///
     /// # Note
     ///
-    /// No `Ptr`s are invalidated even though a value is removed, all that
-    /// happens is both key sets are redirected point to a common value.
+    /// No `Ptr`s are invalidated even though a shared value is removed, all
+    /// that happens is both sets of elements are redirected to point to a
+    /// common shared value.
     ///
     /// This function is defined in this way to guarantee a `O(n log n)` cost
     /// for performing repeated unions in any order on a given starting arena.
-    /// If the two `V`s are some kind of additive structure that also need to
-    /// have their union taken, then the contents of the `V` in the return tuple
-    /// can be transferred to the value pointed to by the `P` also in the
-    /// return tuple. This way, users do not actually need to consider key set
+    /// If the two `S`s are some kind of additive structure that also need to
+    /// have their union taken, then the contents of the `S` in the return tuple
+    /// can be transferred to the shared value pointed to by the `P` also in the
+    /// return tuple. This way, users do not actually need to consider surject
     /// sizes explicitly.
     ///
-    /// We purposely reverse the typical order from `(P, V)` to `(V, P)`
+    /// We purposely reverse the typical order from `(P, S)` to `(S, P)`
     /// to give a visual that the returned things were not pointing to each
     /// other.
     #[must_use]
-    pub fn union(&mut self, mut p0: P, mut p1: P) -> Option<(V, P)> {
-        let mut p_val0 = self.keys.get(p0)?.p_val;
-        let mut p_val1 = self.keys.get(p1)?.p_val;
-        if p_val0 == p_val1 {
-            // corresponds to same set
-            return None
+    pub fn union(&mut self, mut p0: P, mut p1: P) -> Option<(S, P)> {
+        let mut p_shared0 = self.elements.get(p0)?.p_shared;
+        let mut p_shared1 = self.elements.get(p1)?.p_shared;
+        if p_shared0 == p_shared1 {
+            // corresponds to the same surject
+            return None;
         }
-        let len0 = self.vals.get_inx_unwrap(p_val0.inx()).key_count.get();
-        let len1 = self.vals.get_inx_unwrap(p_val1.inx()).key_count.get();
+        let len0 = self
+            .shared_vals
+            .get_inx_unwrap(p_shared0.inx())
+            .element_count
+            .get();
+        let len1 = self
+            .shared_vals
+            .get_inx_unwrap(p_shared1.inx())
+            .element_count
+            .get();
         if len0 < len1 {
-            mem::swap(&mut p_val0, &mut p_val1);
+            mem::swap(&mut p_shared0, &mut p_shared1);
             mem::swap(&mut p0, &mut p1);
         }
-        // overwrite the `PVal`s in the smaller chain
+        // overwrite the `p_shared`s in the smaller chain
         let mut tmp = p1.inx();
         loop {
-            self.keys.get_inx_mut_unwrap_t(tmp).p_val = p_val0;
-            tmp = self.keys.get_inx_unwrap(tmp).next().unwrap();
+            self.elements.get_inx_mut_unwrap(tmp).p_shared = p_shared0;
+            tmp = self
+                .elements
+                .get_inx_link_no_gen(tmp)
+                .unwrap()
+                .1
+                .next()
+                .unwrap();
             if tmp == p1.inx() {
-                break
+                break;
             }
         }
         // combine chains cheaply, this is why they need to be cyclic because exchanging
         // two interlinks anywhere between the chains results in a combined single
         // cyclic chain.
-        self.keys.exchange_next(p0, p1).unwrap();
-        // it is be impossible to overflow this, it would mean that we have already
+        self.elements.exchange_next(p0, p1).unwrap();
+        // it is impossible to overflow this, it would mean that we have already
         // inserted `usize + 1` elements
-        self.vals.get_inx_mut_unwrap(p_val0.inx()).key_count =
-            NonZeroUsize::new(len0.wrapping_add(len1)).unwrap();
-        Some((
-            self.vals.remove_internal_inx_unwrap(p_val1.inx(), false).v,
-            p0,
-        ))
+        self.shared_vals
+            .get_inx_mut_unwrap(p_shared0.inx())
+            .element_count = NonZeroUsize::new(len0.wrapping_add(len1)).unwrap();
+        Some((self.shared_vals.remove(p_shared1).allow().unwrap().s, p0))
     }
 
-    /// Removes the key pointed to by `p`. If there were other keys still in the
-    /// key set, the value is not removed and `Some((key, None))` is
-    /// returned. If `p` was the last key in the key set, then the value is
-    /// removed and returned like `Some((key, Some(val)))`. Returns
-    /// `None` if `p` is not valid.
-    #[must_use]
-    pub fn remove_key(&mut self, p: P) -> Option<(K, Option<V>)> {
-        let key = self.keys.remove(p)?.t;
-        let p_val = key.p_val;
-        let k = key.k;
-        let key_count = self.vals.get_inx_unwrap(p_val.inx()).key_count.get();
-        if key_count == 1 {
-            // last key, remove the value
-            Some((k, Some(self.vals.remove(p_val).unwrap().v)))
+    /// Removes the element pointed to by `p`. If there were other elements
+    /// still in the surject, the shared value is not removed and `Some((t,
+    /// None))` is returned. If `p` was the last remaining element in the
+    /// surject, then the shared value is removed and returned like
+    /// `Some((t, Some(s)))`. Returns `None` if `p` is not valid.
+    pub fn remove_element(&mut self, p: P) -> InvalidationResult<(T, Option<S>)> {
+        if !self.contains(p) {
+            return InvalidationResult::InvalidPtr;
+        }
+        self.remove_element_inx(p.inx()).map(|(_, t, s)| (t, s))
+    }
+
+    /// The same as [remove_element](SurjectArena::remove_element) except that
+    /// the generation is ignored and the existing generation is returned.
+    pub fn remove_element_inx(&mut self, p: P::Inx) -> InvalidationResult<(P::Gen, T, Option<S>)> {
+        let ((generation, element), o) = match self.elements.remove_inx(p) {
+            InvalidationResult::Success(element) => (element, false),
+            InvalidationResult::GenerationOverflow(element) => (element, true),
+            InvalidationResult::InvalidPtr => return InvalidationResult::InvalidPtr,
+        };
+        let p_shared = element.p_shared;
+        let t = element.t;
+        let element_count = &mut self
+            .shared_vals
+            .get_inx_mut_unwrap(p_shared.inx())
+            .element_count;
+        let res = if let Some(next) = NonZeroUsize::new(element_count.get() - 1) {
+            // decrement the element count
+            *element_count = next;
+            (generation, t, None)
         } else {
-            // decrement the key count
-            self.vals.get_inx_mut_unwrap(p_val.inx()).key_count =
-                NonZeroUsize::new(key_count.wrapping_sub(1)).unwrap();
-            Some((k, None))
-        }
-    }
-
-    /// Removes the entire key set and value cheaply, returning the value. `p`
-    /// can point to any key from the key set. Returns `None` if `p` is invalid.
-    #[must_use]
-    pub fn remove(&mut self, p: P) -> Option<V> {
-        let p_val = self.keys.get(p)?.p_val;
-        self.keys.remove_cyclic_chain_internal(p.inx(), true);
-        Some(self.vals.remove(p_val).unwrap().v)
-    }
-
-    /// Invalidates the `Ptr` `p` (no other `Ptr`s to keys in the key set are
-    /// invalidated), returning a new valid `Ptr`. Returns `None` if `p` is
-    /// not valid.
-    #[must_use]
-    pub fn invalidate(&mut self, p: P) -> Option<P> {
-        // the chain arena fixes interlinks
-        self.keys.invalidate(p)
-    }
-
-    /// Swaps the `K` keys pointed to by `Ptr`s `p0` and `p1` and keeps the
-    /// generation counters as-is. Note that key-value associations are swapped
-    /// such that if `p0` and `p1` point to two different key sets, then the
-    /// first key becomes associated with the value of the second key and vice
-    /// versa. If `p0` and `p1` point to the same key set, no association
-    /// changes occur. If `p0 == p1`, then nothing occurs. Returns `None` if
-    /// `p0` or `p1` are invalid.
-    #[must_use]
-    pub fn swap_keys(&mut self, p0: P, p1: P) -> Option<()> {
-        if p0 == p1 {
-            // still need to check for containment
-            if self.contains(p0) {
-                Some(())
-            } else {
-                None
-            }
-        } else {
-            let (lhs, rhs) = self.keys.get2_mut(p0, p1)?;
-            // be careful to swap only the inner `K` values and not the `p_val`s
-            mem::swap(&mut lhs.k, &mut rhs.k);
-            Some(())
-        }
-    }
-
-    /// Swaps the `V` values pointed to by `Ptr`s `p0` and `p1` and keeps the
-    /// generation counters as-is. If `p0` and `p1` point to keys in the same
-    /// key set, then nothing occurs. Returns `None` if `p0` or `p1` are
-    /// invalid.
-    #[must_use]
-    pub fn swap_vals(&mut self, p0: P, p1: P) -> Option<()> {
-        let p_val0 = self.keys.get(p0)?.p_val;
-        let p_val1 = self.keys.get(p1)?.p_val;
-        if p_val0 != p_val1 {
-            // we only want to swap the `V` and not the ref counts
-            let (lhs, rhs) = self.vals.get2_mut(p_val0, p_val1).unwrap();
-            mem::swap(&mut lhs.v, &mut rhs.v);
-        } // else no-op and we also checked for containment earlier
-        Some(())
-    }
-
-    /// Drops all keys and values from the arena and invalidates all pointers
-    /// previously created from it. This has no effect on allocated
-    /// capacities of keys or values.
-    pub fn clear(&mut self) {
-        self.keys.clear();
-        self.vals.clear();
-    }
-
-    /// Performs a [SurjectArena::clear] and resets key and value capacities to
-    /// 0
-    pub fn clear_and_shrink(&mut self) {
-        self.keys.clear_and_shrink();
-        self.vals.clear_and_shrink();
-    }
-
-    /// Compresses the arena by moving around entries to be able to shrink the
-    /// capacities of the keys and values down to their respective lengths. All
-    /// surject relations remain, but all `Ptr`s are invalidated. New `Ptr`s
-    /// to the entries can be found again by iterators and advancers.
-    /// Notably, when iterating or advancing after a call to this type of
-    /// function or during `map`ping with
-    /// [SurjectArena::compress_and_shrink_with], whole surjects at a time
-    /// are advanced through without discontinuity. Additionally, cache locality
-    /// is improved by keys within the same surject being moved close together
-    /// in memory.
-    pub fn compress_and_shrink(&mut self) {
-        self.compress_and_shrink_with(|_, _, _, _| ())
-    }
-
-    /// The same as [SurjectArena::compress_and_shrink] except that `map` is run
-    /// on every `(P, &mut K, &mut V, P)` with the first `P` being the old `Ptr`
-    /// and the last `P` being the new `Ptr`.
-    pub fn compress_and_shrink_with<F: FnMut(P, &mut K, &mut V, P)>(&mut self, mut map: F) {
-        // we run into the problem of not being able to lookup keys from values, so we
-        // do a special kind of manual compression on the values
-        let mut first_unallocated = None;
-        for i in self.vals.m.nziter() {
-            if matches!(
-                self.vals.m_get(P::Inx::new(i)).unwrap(),
-                InternalEntry::Free(_)
-            ) {
-                first_unallocated = Some(i);
-                break
-            }
-        }
-
-        // first compress the keys so that their cache locality is improved
-        let mut p_val_last = None;
-        let mut new_p_val = None;
-        self.keys.compress_and_shrink_with(|p, key, q| {
-            let p_val = key.p_val;
-            if Some(p_val) != p_val_last {
-                let mut new_change = false;
-                if let Some(i_unallocated) = first_unallocated {
-                    let i = P::Inx::get(p_val.inx());
-                    if i > i_unallocated {
-                        // move it into the unallocated spot
-                        self.vals.raw_entry_swap_special(i_unallocated, i);
-                        // change all `p_val`s of the surject
-                        new_p_val = Some(P::Inx::new(i_unallocated));
-                        new_change = true;
-                        // get the next unallocated index
-                        let mut j = i_unallocated.get().wrapping_add(1);
-                        loop {
-                            if j > self.vals.m.len() {
-                                first_unallocated = None;
-                                break
-                            }
-                            let j_nz = NonZeroUsize::new(j).unwrap();
-                            if matches!(
-                                self.vals.m_get(P::Inx::new(j_nz)).unwrap(),
-                                InternalEntry::Free(_)
-                            ) {
-                                first_unallocated = Some(j_nz);
-                                break
-                            }
-                            j = j.wrapping_add(1);
-                        }
-                    }
-                }
-                if !new_change {
-                    // the `p_val` of this new surject we are encountering does not need to be
-                    // changed
-                    new_p_val = None;
-                }
-                p_val_last = Some(p_val);
-            }
-            if let Some(new_p_val) = new_p_val {
-                key.p_val = Ptr::_from_raw(new_p_val, ());
-            }
-            map(
-                p,
-                &mut key.k,
-                &mut self.vals.get_inx_mut_unwrap(key.p_val.inx()).v,
-                q,
+            // last element, remove the shared value
+            (
+                generation,
+                t,
+                Some(self.shared_vals.remove(p_shared).allow().unwrap().s),
             )
-        });
-        // important: remove all free entries, set freelist root to `None`, and shrink
-        // to fit `self.vals`, completes the compression and fixes the likely broken
-        // freelist
-        while let Some(i) = NonZeroUsize::new(self.vals.m.len()) {
-            if let Some(InternalEntry::Free(_)) = self.vals.m.get(i) {
-                self.vals.m.pop().unwrap();
-            } else {
-                break
-            }
+        };
+        if o {
+            InvalidationResult::GenerationOverflow(res)
+        } else {
+            InvalidationResult::Success(res)
         }
-        self.vals.freelist_root = None;
-        self.vals.m.shrink_to_fit();
     }
 
-    /// Has the same properties of [Arena::clone_from_with]
-    pub fn clone_from_with<
-        K1: Ord,
-        V1,
-        F0: FnMut(P, &K1) -> K,
-        F1: FnMut(NonZeroUsize, &V1) -> V,
+    /// Removes the entire surject that contains `p`, dropping all of its
+    /// elements and returning the shared value. `p` can point to any element of
+    /// the surject. This is a version of
+    /// [drain_surject](SurjectArena::drain_surject) optimized for just
+    /// returning the shared value.
+    ///
+    /// # Unwind Safety
+    ///
+    /// Due to the way this function was optimized, if a
+    /// `T::drop` panics partway through, the whole arena is cleared
+    pub fn remove_shared(&mut self, p: P) -> InvalidationResult<S> {
+        let Some(element) = self.elements.get(p) else {
+            return InvalidationResult::InvalidPtr;
+        };
+        let p_shared = element.p_shared;
+        // REF(surject_clear_guard)
+        let this = ClearOnUnwind(self);
+        let s = this.0.shared_vals.remove(p_shared).allow().unwrap().s;
+        this.0.elements.remove_cyclic_chain_internal(p.inx());
+        let res = this.0.inc_generation();
+        this.cancel();
+        match res {
+            InvalidationOption::Success(()) => InvalidationResult::Success(s),
+            InvalidationOption::GenerationOverflow(()) => InvalidationResult::GenerationOverflow(s),
+        }
+    }
+
+    /// This is similar to
+    /// [compress_canonical](crate::traits::ChainArenaTrait::compress_canonical),
+    /// laying out the elements within the same surject to be contiguous with
+    /// one another, and improving cache locality. Unlike
+    /// [compress_with](ArenaTrait::compress_with), which only compresses the
+    /// elements, this also removes any free slots among the shared values.
+    ///
+    /// The shared values are internally laid out canonically as well, such that
+    /// their internal indexes are `1..=self.len_shared()` in the same order
+    /// that their surjects occupy the elements (observable with
+    /// [SurjectArena::shared_vals]).
+    ///
+    /// Because an element can be internally swapped multiple times to achieve
+    /// this in-place in the allocation, this cannot have a map. Use
+    /// [transfer_canonical_reallocating](SurjectArena::transfer_canonical_reallocating)
+    /// if you need a recaster.
+    pub fn compress_canonical(&mut self, reset_generation: bool) -> InvalidationOption<()> {
+        let res = self.elements.compress_canonical(reset_generation);
+        let Some(len_shared) = NonZeroUsize::new(self.shared_vals.len()) else {
+            // guaranteed empty, but there can still be free slots to remove
+            self.shared_vals.remove_free_end_slots();
+            self.shared_vals.freelist_root = None;
+            return res;
+        };
+
+        // The surjects are continuous within themselves first and also between
+        // themselves, so there is one well defined order where the `k`th surject has
+        // its shared value at index `k`. We can't look up elements from shared values,
+        // so we do this in three passes with temporarily suspended invariants to
+        // support encoding the permutation in the `p_shared`s of the first `k`
+        // elements.
+
+        // REF(surject_canonical_perm) the `k`th surject starts at element index `s >=
+        // k`, and every surject has at least one element, so we can write the current
+        // index of its shared value into element `k`, so that in the next pass the
+        // swaps can know what to change, and in the final pass we can recover with the
+        // canonical ordering and surject sizes. This loop works because by the time we
+        // reach element index `s`, we are either doing a no-op with the existing value
+        // (happens for the first surjects that are all of length 1) or clobbering an
+        // element of a surject that has already been saved earlier.
+        let mut s = NonZeroUsize::new(1).unwrap();
+        for raw_k in nzusize_iter(NonZeroUsize::new(1).unwrap(), Some(len_shared)) {
+            let raw_s = from_checked_raw::<P>(s);
+            let p_shared = self.elements.get_inx_unwrap(raw_s).p_shared;
+            // get this while `p_shared` is still valid
+            let element_count = self
+                .shared_vals
+                .get_inx_unwrap(p_shared.inx())
+                .element_count;
+            self.elements
+                .get_inx_mut_unwrap(from_checked_raw::<P>(raw_k))
+                .p_shared = p_shared;
+            s = s.checked_add(element_count.get()).unwrap();
+        }
+
+        // Canonicalize the shared values. Observe that we are always doing a no-op or
+        // moving an unfinalized slot into a finalized slot, but that during that swap,
+        // an unfinalized slot can be displaced and moved up into unfinalized space
+        // potentially many times. We can't quickly find which synthetic `p_shared` was
+        // pointing to that. The trick here is that we don't care about the `p_shared`
+        // of the finalized slots and can thus reuse them to extend the permutation
+        // encoding into a linked list, where if a `p_shared` points to finalized slots,
+        // we keep following it until it points to an unfinalized slot.
+        for raw_i in nzusize_iter(NonZeroUsize::new(1).unwrap(), Some(len_shared)) {
+            let mut raw_j = from_checked_ptr::<PtrNoGen<P>>(
+                self.elements
+                    .get_inx_unwrap(from_checked_raw::<P>(raw_i))
+                    .p_shared
+                    .inx(),
+            );
+            // get to the end of the linked list
+            while raw_j < raw_i {
+                raw_j = from_checked_ptr::<PtrNoGen<P>>(
+                    self.elements
+                        .get_inx_unwrap(from_checked_raw::<P>(raw_j))
+                        .p_shared
+                        .inx(),
+                );
+            }
+            if raw_j != raw_i {
+                // move known unfinalized `slot_j` down to finalized location at `slot_i`
+                let [slot_i, slot_j] = self
+                    .shared_vals
+                    .m
+                    .get_disjoint_mut([raw_i, raw_j])
+                    .unwrap_or_else(|_| unreachable!());
+                mem::swap(slot_i, slot_j);
+                // It happens that the function is correct without this extra step, but doing
+                // this is path compression needed to achieve `O(n)`.
+
+                // in case there was an unfinalized slot moved from `slot_i` to `slot_j`, extend
+                // the linked list to point at where it is at `raw_shared_i`
+                self.elements
+                    .get_inx_mut_unwrap(from_checked_raw::<P>(raw_i))
+                    .p_shared =
+                    PtrNoGen::<P>::_from_raw(from_checked_raw::<PtrNoGen<P>>(raw_j), ());
+            }
+        }
+
+        // recover, can be done purely from shared values and their element counts
+        let mut s = NonZeroUsize::new(1).unwrap();
+        for raw_k in nzusize_iter(NonZeroUsize::new(1).unwrap(), Some(len_shared)) {
+            let inx_k = from_checked_raw::<PtrNoGen<P>>(raw_k);
+            let element_count = self.shared_vals.get_inx_unwrap(inx_k).element_count.get();
+            let p_shared = Ptr::_from_raw(inx_k, ());
+            for _ in 0..element_count {
+                self.elements
+                    .get_inx_mut_unwrap(from_checked_raw::<P>(s))
+                    .p_shared = p_shared;
+                s = s.checked_add(1).unwrap();
+            }
+        }
+
+        self.shared_vals.remove_free_end_slots();
+        self.shared_vals.freelist_root = None;
+        res
+    }
+
+    /// The `SurjectArena` counterpart of
+    /// [transfer_canonical_reallocating](ChainArena::transfer_canonical_reallocating),
+    /// transferring every element and shared value out of `source` and into
+    /// `self` in a canonicalizing way. This removes every element from `source`
+    /// and inserts a mapped `T` into `self`, preserving the surjection.
+    /// Every element is given by value to `map_element` with the
+    /// original source `Q: Ptr`, an [InvalidationOption]`<T1>` for being able
+    /// to determine if the removal caused a generation overflow in `source`,
+    /// the destination `P: Ptr`, and then `map_element` must return the `T`
+    /// that will be inserted into `self`. Every shared value is given by value
+    /// to `map_shared` once, when the first element of its surject is
+    /// transferred. The new elements are all given `new_generation`.
+    ///
+    /// The shared values are internally laid out canonically as well, such that
+    /// their internal indexes are `1..=self.len_shared()` in the same order
+    /// that their surjects occupy the elements (observable with
+    /// [SurjectArena::shared_vals]).
+    ///
+    /// Reallocation only occurs if `source.len() > self.capacity()` or
+    /// `source.len_shared() > self.capacity_shared()`. All of the fallible
+    /// points happen before anything is modified, such that `self` and `source`
+    /// are logically unchanged if an error is returned. An error is returned if
+    /// a reallocation fails, if a [max_capacity](ArenaTrait::max_capacity)
+    /// limit prevents a reallocation, or if `source.len()` or
+    /// `source.len_shared()` are more than what `P::Inx` can represent.
+    ///
+    /// This is the `SurjectArena` counterpart of the recaster example on
+    /// [compress_with](ArenaTrait::compress_with). Elements have to travel
+    /// between two domains in order to be laid out in surject order while still
+    /// supporting a map, so instead of compressing in place we transfer
+    /// into a fresh arena and replace the old one through the `&mut`:
+    /// ```
+    /// use triple_arena::{
+    ///     DirectArena, HeapBacking, SurjectArena, ptr_struct,
+    ///     traits::*,
+    ///     utils::traits::{PtrGen, PtrInx},
+    /// };
+    ///
+    /// // (This would be a standard function, except there are far too many choices to
+    /// // make on the backing of the recaster arena and how fallibility should be
+    /// // handled)
+    /// fn compress_canonical_recaster<P: Ptr, T, S>(
+    ///     this: &mut SurjectArena<P, T, S, HeapBacking>,
+    ///     reset_generation: bool,
+    /// ) -> DirectArena<P, P, HeapBacking> {
+    ///     let new_generation = if reset_generation {
+    ///         // reset for serialization compactness, only safe if logically old domain `Ptr`s
+    ///         // can be eliminated
+    ///         P::Gen::two()
+    ///     } else {
+    ///         // use incremented generation so that all `Ptr`s of the old domain are
+    ///         // invalidated
+    ///         P::Gen::generational_inc(this.generation()).0
+    ///     };
+    ///     // This arena will be a recaster in which we create a mapping from the old `Ptr`
+    ///     // domain to the new one. We use a `DirectArena` for this since it will only
+    ///     // be used for this purpose and then discarded.
+    ///     let mut recaster = DirectArena::<P, P, HeapBacking>::new();
+    ///     // Set all the keys of the mapping, by cloning the `Ptr` validities of the
+    ///     // pre-transfer `this` into the recaster, and putting in invalid placeholders
+    ///     // for the new domain because we do not know them yet.
+    ///     recaster.clone_from_with(this, |_, _| P::invalid()).unwrap();
+    ///     let mut replacement = SurjectArena::<P, T, S, HeapBacking>::new();
+    ///     // Transfer and write the new `Ptr`s at the indexes of the corresponding old
+    ///     // `Ptr`s, using the values seen by the closure to complete the mapping of
+    ///     // the old domain to the new domain. Only the elements are keyed items from
+    ///     // the recaster perspective, so the shared values pass straight through.
+    ///     replacement
+    ///         .transfer_canonical_reallocating(
+    ///             new_generation,
+    ///             this,
+    ///             |q, o, p| {
+    ///                 recaster[q] = p;
+    ///                 o.allow()
+    ///             },
+    ///             |s| s,
+    ///         )
+    ///         .unwrap();
+    ///     *this = replacement;
+    ///     recaster
+    /// }
+    ///
+    /// ptr_struct!(P0);
+    ///
+    /// let mut a: SurjectArena<P0, &str, &str> = SurjectArena::new();
+    /// let p_a = a.insert_surject("A", "a");
+    /// let p_b = a.insert_surject("B", "b");
+    /// a.insert(p_b, "B2");
+    /// let p_c = a.insert_surject("C", "c");
+    /// // a union frees a shared value slot without freeing an element slot
+    /// let _ = a.union(p_a, p_b).unwrap();
+    /// let p_d = a.insert_surject("D", "d");
+    /// // interleave the last two surjects so that they are not contiguous
+    /// a.insert(p_c, "C2");
+    /// a.insert(p_d, "D2");
+    ///
+    /// fn layout<'a>(a: &SurjectArena<P0, &'a str, &'a str>) -> Vec<(usize, &'a str, &'a str)> {
+    ///     a.iter_combined()
+    ///         .map(|(p, t, s)| (PtrInx::try_into_usize(p.inx()).unwrap().get(), *t, *s))
+    ///         .collect()
+    /// }
+    ///
+    /// assert_eq!(layout(&a), vec![
+    ///     (1, "A", "b"),
+    ///     (2, "B", "b"),
+    ///     (3, "B2", "b"),
+    ///     (4, "C", "c"),
+    ///     (5, "D", "d"),
+    ///     (6, "C2", "c"),
+    ///     (7, "D2", "d"),
+    /// ]);
+    /// assert_eq!(a.shared_vals().copied().collect::<Vec<&str>>(), vec![
+    ///     "d", "b", "c"
+    /// ]);
+    ///
+    /// let recaster = compress_canonical_recaster(&mut a, false);
+    ///
+    /// // now each surject is one contiguous run of indexes
+    /// assert_eq!(layout(&a), vec![
+    ///     (1, "A", "b"),
+    ///     (2, "B2", "b"),
+    ///     (3, "B", "b"),
+    ///     (4, "C", "c"),
+    ///     (5, "C2", "c"),
+    ///     (6, "D", "d"),
+    ///     (7, "D2", "d"),
+    /// ]);
+    /// // and the shared values are in corresponding order
+    /// assert_eq!(a.shared_vals().copied().collect::<Vec<&str>>(), vec![
+    ///     "b", "c", "d"
+    /// ]);
+    /// // and the recaster is a complete description of where the elements went
+    /// assert_eq!(
+    ///     &format!("{recaster:#?}"),
+    ///     r#"{
+    ///     P0[1](2): P0[1](3),
+    ///     P0[2](2): P0[3](3),
+    ///     P0[3](2): P0[2](3),
+    ///     P0[4](2): P0[4](3),
+    ///     P0[5](2): P0[6](3),
+    ///     P0[6](2): P0[5](3),
+    ///     P0[7](2): P0[7](3),
+    /// }"#
+    /// );
+    ///
+    /// // external `Ptr`s are fixed up with it
+    /// let mut external = p_a;
+    /// external.recast(&recaster).unwrap();
+    /// assert_eq!(a[external], "A");
+    /// ```
+    ///
+    /// # Unwind Safety
+    ///
+    /// If `map_element` or `map_shared` panics, the element it was called with
+    /// is lost to whatever the closure does, the rest of the surject that was
+    /// being drained out of `source` is dropped, `source` is left with the
+    /// surjects that have yet to be transferred, and `self` is cleared.
+    pub fn transfer_canonical_reallocating<
+        Q: Ptr,
+        T1,
+        S1,
+        B1: ArenaBacking,
+        F0: FnMut(Q, InvalidationOption<T1>, P) -> T,
+        F1: FnMut(S1) -> S,
     >(
         &mut self,
-        source: &SurjectArena<P, K1, V1>,
-        mut map_key: F0,
-        mut map_val: F1,
-    ) {
-        self.keys.clone_from_with(&source.keys, |p, link| {
-            let k = map_key(p, &link.t.k);
-            Key {
-                k,
-                p_val: Ptr::_from_raw(p.inx(), ()),
-            }
-        });
-        self.vals.clone_from_with(&source.vals, |_, val| {
-            let v = map_val(val.key_count, &val.v);
-            Val {
-                v,
-                key_count: val.key_count,
-            }
-        });
-    }
+        new_generation: P::Gen,
+        source: &mut SurjectArena<Q, T1, S1, B1>,
+        mut map_element: F0,
+        mut map_shared: F1,
+    ) -> Result<(), ReallocationError> {
+        // precheck both the elements and the shared values first, can't have atomic
+        // fallibility without it
 
-    /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
-    /// generation counter, and reusing capacity) with the `Ptr` mapping of
-    /// `self`, with groups of keys preserved as cyclical chains.
-    pub fn clone_keys_to_chain_arena<T, F: FnMut(P, &K) -> T>(
-        &self,
-        chain_arena: &mut ChainArena<P, T>,
-        mut map: F,
-    ) {
-        self.keys
-            .clone_to_chain_arena(chain_arena, |p, key| map(p, &key.k))
-    }
-
-    /// Overwrites `chain_arena` (dropping all preexisting `T`, overwriting the
-    /// generation counter, and reusing capacity) with the `Ptr` mapping of
-    /// `self`, with groups of keys preserved as cyclical chains.
-    pub fn clone_keys_to_chain_no_gen_arena<T, F: FnMut(P, &K) -> T>(
-        &self,
-        chain_arena: &mut ChainNoGenArena<P, T>,
-        mut map: F,
-    ) {
-        chain_arena.clone_from_with(&self.keys, |p, link| map(p, &link.t.k))
-    }
-
-    /// Overwrites `arena` (dropping all preexisting `T` and relations,
-    /// overwriting the generation counter, and reusing capacity) with the
-    /// `Ptr` mapping of `self`.
-    pub fn clone_keys_to_arena<T, F: FnMut(P, &K) -> T>(
-        &self,
-        arena: &mut Arena<P, T>,
-        mut map: F,
-    ) {
-        self.keys.clone_to_arena(arena, |p, link| map(p, &link.t.k))
-    }
-}
-
-// we can't implement `Index` because the format would force `&(&K, &V)` which
-// causes many further problems
-
-impl<P: Ptr, K: Debug, V: Debug> Debug for SurjectArena<P, K, V> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_set().entries(self.iter()).finish()
-    }
-}
-
-/// Implemented if `K: Clone` and `V: Clone`.
-impl<P: Ptr, K: Clone, V: Clone> Clone for SurjectArena<P, K, V> {
-    /// Has the `Ptr` preserving properties of [Arena::clone]
-    fn clone(&self) -> Self {
-        Self {
-            keys: self.keys.clone(),
-            vals: self.vals.clone(),
+        let Some(len) = NonZeroUsize::new(source.len()) else {
+            // follow what the other path would logically do
+            self.clear().allow();
+            self.set_generation(new_generation);
+            return Ok(());
+        };
+        // REF(careful_index_checking) here and in the rest of this function
+        if P::Inx::try_from_usize(len).is_none() {
+            return Err(ReallocationError::AllocError);
+        };
+        if len.get() > self.capacity() {
+            // max capacity is tested here
+            self.reallocate_min_capacity_elements(len.get())?;
         }
+
+        // Guaranteed nonempty at this point. There is no REF(careful_index_checking)
+        // for this one, because `len_shared <= len` and a linear `P::Inx` agrees with
+        // `max_index`, so the check on `len` above has already covered it.
+        let len_shared = NonZeroUsize::new(source.len_shared()).unwrap();
+        if len_shared.get() > self.capacity_shared() {
+            // max capacity is tested here
+            self.reallocate_min_capacity_shared(len_shared.get())?;
+        }
+
+        // the rest should be infallible if soft invariants are followed
+        self.clear().allow();
+        self.set_generation(new_generation);
+
+        // Transfer and canonicalize the elements first. We rely on the canonical
+        // ordering to focus on the surjects one at a time completely, and in order so
+        // that we can map the shared value and its new `Ptr` all in one step
+
+        let mut current_source_p_shared = None;
+        let mut mapped_p_shared = PtrNoGen::<P>::invalid();
+        // REF(surject_clear_guard)
+        let this = ClearOnUnwind(self);
+        let dst = &mut *this.0;
+        dst.elements
+            .transfer_canonical_reallocating(new_generation, &mut source.elements, |q, o, p| {
+                let (element, o) = o.overflowing();
+                let arg = if o {
+                    InvalidationOption::GenerationOverflow(element.t)
+                } else {
+                    InvalidationOption::Success(element.t)
+                };
+                let t = map_element(q, arg, p);
+
+                let new_surject = if let Some(p_shared) = current_source_p_shared {
+                    element.p_shared != p_shared
+                } else {
+                    true
+                };
+                if new_surject {
+                    current_source_p_shared = Some(element.p_shared);
+                    let shared = source.shared_vals.remove(element.p_shared).allow().unwrap();
+                    let mapped_shared = map_shared(shared.s);
+                    mapped_p_shared = dst.shared_vals.insert(SurjectShared {
+                        s: mapped_shared,
+                        element_count: shared.element_count,
+                    });
+                }
+
+                SurjectElement {
+                    t,
+                    p_shared: mapped_p_shared,
+                }
+            })
+            .unwrap();
+        this.cancel();
+
+        Ok(())
     }
 
-    /// Has the `Ptr` and capacity preserving properties of [Arena::clone_from]
-    fn clone_from(&mut self, source: &Self) {
-        self.keys.clone_from(&source.keys);
-        self.vals.clone_from(&source.vals);
+    /// Has the same properties of [Arena::clone_from_with]. `map_shared` is
+    /// given the number of elements in the surject along with the `&S1`.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If `map_element` or `map_shared` panics, `self` is cleared.
+    pub fn clone_from_with<
+        B1: ArenaBacking,
+        T1,
+        S1,
+        F0: FnMut(P, &T1) -> T,
+        F1: FnMut(NonZeroUsize, &S1) -> S,
+    >(
+        &mut self,
+        source: &SurjectArena<P, T1, S1, B1>,
+        mut map_element: F0,
+        mut map_shared: F1,
+    ) -> Result<(), ReallocationError> {
+        // reserve both capacities ahead of time so that `Arena::clone_from_with` will
+        // not reallocate later
+        if let Some(p) = source.elements.find_last_inx_ptr() {
+            let last = from_checked_ptr::<P>(p.inx());
+            if last.get() > self.capacity() {
+                self.elements.reallocate_min_capacity(last.get())?;
+            }
+        }
+        if let Some(p) = source.shared_vals.find_last_inx_ptr() {
+            let last = from_checked_ptr::<PtrNoGen<P>>(p.inx());
+            if last.get() > self.capacity_shared() {
+                self.shared_vals.reallocate_min_capacity(last.get())?;
+            }
+        }
+
+        // REF(surject_clear_guard)
+        let this = ClearOnUnwind(self);
+        // this should be infallible, but propogate any error anyways
+        this.0
+            .elements
+            .clone_from_with(&source.elements, |p, link| {
+                let t = map_element(p, &link.t.t);
+                SurjectElement {
+                    t,
+                    p_shared: link.t.p_shared,
+                }
+            })?;
+        this.0
+            .shared_vals
+            .clone_from_with(&source.shared_vals, |_, shared| {
+                let s = map_shared(shared.element_count, &shared.s);
+                SurjectShared {
+                    s,
+                    element_count: shared.element_count,
+                }
+            })?;
+        this.cancel();
+        Ok(())
+    }
+
+    /// Calls [clone_from_with](ChainArena::clone_from_with) on `chain_arena`.
+    /// Each surject is preserved as one cyclic chain.
+    pub fn clone_to_chain_arena<U, B1: ArenaBacking, F: FnMut(P, &T) -> U>(
+        &self,
+        chain_arena: &mut ChainArena<P, U, B1>,
+        mut map: F,
+    ) -> Result<(), ReallocationError> {
+        chain_arena.clone_from_with(&self.elements, |p, link| map(p, &link.t.t))
+    }
+
+    /// Calls [clone_from_with](ArenaCloneFromWith::clone_from_with) on `arena`,
+    /// giving all the elements of `self` to the `Ptr` preserving mapping.
+    pub fn clone_to_arena<
+        U,
+        A: ArenaCloneFromWith<P, U>,
+        F: FnMut(P, &LinkNoGen<P, SurjectElement<P, T>>) -> U,
+    >(
+        &self,
+        arena: &mut A,
+        mut map: F,
+    ) -> Result<(), ReallocationError> {
+        self.elements.clone_to_arena(arena, |p, link| map(p, link))
+    }
+
+    /// Directly returns a reference to the internal backing, for the purposes
+    /// of accessing `ArenaBacking`-specific functions
+    pub fn backing(
+        &self,
+    ) -> (
+        &B::Stack<ArenaSlot<P, LinkNoGen<P, SurjectElement<P, T>>>>,
+        &B::Stack<ArenaSlot<PtrNoGen<P>, SurjectShared<S>>>,
+    ) {
+        (self.elements.backing(), self.shared_vals.backing())
+    }
+
+    /// Directly returns a mutable reference to the internal backing, for the
+    /// purposes of accessing `ArenaBacking`-specific functions
+    ///
+    /// # Safety
+    ///
+    /// The `ArenaSlot` allocation state must not be modified, or else the
+    /// freelist or entry length could be broken. The `LinkNoGen` interlinks
+    /// must also not be modified, or else chain invariants could be broken, and
+    /// `SurjectArena` related invariants should not be mutated.
+    pub unsafe fn backing_mut(
+        &mut self,
+    ) -> (
+        &mut B::Stack<ArenaSlot<P, LinkNoGen<P, SurjectElement<P, T>>>>,
+        &mut B::Stack<ArenaSlot<PtrNoGen<P>, SurjectShared<S>>>,
+    ) {
+        // Safety: called in `unsafe` function with same invariants and added invariants
+        unsafe { (self.elements.backing_mut(), self.shared_vals.backing_mut()) }
     }
 }
 
-impl<P: Ptr, K, V> Default for SurjectArena<P, K, V> {
+impl<P: Ptr, T, S, B: ArenaBacking> Default for SurjectArena<P, T, S, B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<P: Ptr, K: PartialEq, V: PartialEq> PartialEq<SurjectArena<P, K, V>>
-    for SurjectArena<P, K, V>
-{
-    /// Checks if all `(P, K, V)` pairs are equal. This is sensitive to
-    /// `Ptr` indexes, generation counters, and some hidden key set relations,
-    /// but does not compare arena capacities, `self.generation()`, or hidden
-    /// value pointers.
-    fn eq(&self, other: &SurjectArena<P, K, V>) -> bool {
-        // first the keys
-        let mut adv0 = self.advancer();
-        let mut adv1 = other.advancer();
-        while let Some(p0) = adv0.advance(self) {
-            if let Some(p1) = adv1.advance(other) {
-                if p0 != p1 {
-                    return false
-                }
-                let key0 = self.keys.get_inx_unwrap(p0.inx());
-                let key1 = self.keys.get_inx_unwrap(p1.inx());
-                // make sure not to depend on `p_val`
-                if key0.prev_next() != key1.prev_next() {
-                    return false
-                }
-                if key0.t.k != key1.t.k {
-                    return false
-                }
-                // the surject composition is implicitly checked by the `prev_next`
-                // checks
-                if self.vals.get_inx_unwrap(key0.t.p_val.inx()).v
-                    != other.vals.get_inx_unwrap(key1.t.p_val.inx()).v
-                {
-                    return false
-                }
-            } else {
-                return false
-            }
-        }
-        adv1.advance(other).is_none()
+// Note: I would try returning both, but `&(&T, &S)` becomes problematic and we
+// may as well follow the other arenas with respect to `ArenaTrait` definitions
+
+impl<P: Ptr, T, S, B: ArenaBacking, Q: Borrow<P>> Index<Q> for SurjectArena<P, T, S, B> {
+    type Output = T;
+
+    /// Returns a reference to the `T` pointed to by `inx`. Use
+    /// [get](ArenaTrait::get) if invalid `Ptr`s need to be handled,
+    /// [get_shared](SurjectArena::get_shared) if the shared value is wanted
+    /// instead, or
+    /// [get_inx_link_no_gen](SurjectArena::get_inx_link_no_gen) if the
+    /// neighboring elements of the surject are also needed.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
+    fn index(&self, inx: Q) -> &T {
+        let p: P = *inx.borrow();
+        self.get(p)
+            .expect("indexed `SurjectArena` with invalidated `Ptr`")
     }
 }
 
-impl<P: Ptr, K: Eq, V: Eq> Eq for SurjectArena<P, K, V> {}
+impl<P: Ptr, T, S, B: ArenaBacking, Q: Borrow<P>> IndexMut<Q> for SurjectArena<P, T, S, B> {
+    /// Returns a mutable reference to the `T` pointed to by `inx`. Use
+    /// [get_mut](ArenaTrait::get_mut) if invalid `Ptr`s need to be handled, or
+    /// [get_shared_mut](SurjectArena::get_shared_mut) if the shared value is
+    /// wanted instead.
+    ///
+    /// # Panics
+    ///
+    /// If `inx` is invalid
+    #[track_caller]
+    fn index_mut(&mut self, inx: Q) -> &mut T {
+        let p: P = *inx.borrow();
+        self.get_mut(p)
+            .expect("indexed `SurjectArena` with invalidated `Ptr`")
+    }
+}
+
+impl<P: Ptr, T: Debug, S: Debug, B: ArenaBacking> Debug for SurjectArena<P, T, S, B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_set().entries(self.internal_iter()).finish()
+    }
+}
+
+/// Implemented if `T: Clone` and `S: Clone`.
+impl<P: Ptr, T: Clone, S: Clone, B: ArenaBacking> Clone for SurjectArena<P, T, S, B> {
+    /// Has the `Ptr` preserving properties of [Arena::clone], and the
+    /// surjection is preserved as well.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure, or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit of the fresh `Self::new`
+    /// arena prevents reaching the needed capacity. Use
+    /// [clone_from_with](SurjectArena::clone_from_with) if these need to be
+    /// handled.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If a `T::clone` or `S::clone` panics, the partially cloned arenas are
+    /// dropped.
+    #[track_caller]
+    fn clone(&self) -> Self {
+        Self {
+            elements: self.elements.clone(),
+            shared_vals: self.shared_vals.clone(),
+        }
+    }
+
+    /// Has the `Ptr` and capacity preserving properties of [Arena::clone_from],
+    /// and the surjection is preserved as well.
+    ///
+    /// # Panics
+    ///
+    /// This function can panic on allocation failure, or if a
+    /// [max_capacity](ArenaTrait::max_capacity) limit of `self` prevents
+    /// reaching the needed capacity. Use
+    /// [clone_from_with](SurjectArena::clone_from_with) if these need to be
+    /// handled.
+    ///
+    /// # Unwind Safety
+    ///
+    /// If any of the above panics or a `T::clone`, `S::clone`, `T::drop`, or
+    /// `S::drop` panics, `self` is cleared.
+    #[track_caller]
+    fn clone_from(&mut self, source: &Self) {
+        // REF(surject_clear_guard)
+        let this = ClearOnUnwind(self);
+        this.0.elements.clone_from(&source.elements);
+        this.0.shared_vals.clone_from(&source.shared_vals);
+        this.cancel();
+    }
+}
+
+impl<P: Ptr, T, S, B: ArenaBacking> SetMaxCapacity for SurjectArena<P, T, S, B>
+where
+    <B as ArenaBacking>::Stack<ArenaSlot<P, LinkNoGen<P, SurjectElement<P, T>>>>: SetMaxCapacity,
+    <B as ArenaBacking>::Stack<ArenaSlot<PtrNoGen<P>, SurjectShared<S>>>: SetMaxCapacity,
+{
+    /// This either succeeds in setting both kinds of max capacities, or else
+    /// both will be reset to their original values
+    fn set_max_capacity(&mut self, max_capacity: usize) -> Result<(), MaxCapacityReductionError> {
+        // the shared values are implicitly limited by the elements, but we may be
+        // increasing beyond the original limits
+        let old = self.shared_vals.max_capacity();
+        self.shared_vals.set_max_capacity(max_capacity)?;
+        match self.elements.set_max_capacity(max_capacity) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                if let Some(old) = old {
+                    self.shared_vals
+                        .set_max_capacity(old)
+                        .unwrap_or_else(|_| unreachable!());
+                }
+                Err(e)
+            }
+        }
+    }
+}
+
+impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B>
+where
+    <B as ArenaBacking>::Stack<ArenaSlot<P, LinkNoGen<P, SurjectElement<P, T>>>>: SetMaxCapacity,
+{
+    /// Follows [SetMaxCapacity::set_max_capacity] for just the elements, which
+    /// is what [ArenaTrait::capacity] and [ArenaTrait::max_capacity] use
+    pub fn set_max_capacity_elements(
+        &mut self,
+        max_capacity: usize,
+    ) -> Result<(), MaxCapacityReductionError> {
+        self.elements.set_max_capacity(max_capacity)
+    }
+}
+
+impl<P: Ptr, T, S, B: ArenaBacking> SurjectArena<P, T, S, B>
+where
+    <B as ArenaBacking>::Stack<ArenaSlot<PtrNoGen<P>, SurjectShared<S>>>: SetMaxCapacity,
+{
+    /// Follows [SetMaxCapacity::set_max_capacity] for just the shared values,
+    /// which is what [capacity_shared](SurjectArena::capacity_shared) and
+    /// [max_capacity_shared](SurjectArena::max_capacity_shared) use
+    pub fn set_max_capacity_shared(
+        &mut self,
+        max_capacity: usize,
+    ) -> Result<(), MaxCapacityReductionError> {
+        self.shared_vals.set_max_capacity(max_capacity)
+    }
+}

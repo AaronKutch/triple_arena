@@ -4,7 +4,7 @@
 
 #![allow(dead_code)]
 
-use core::num::{NonZeroU128, NonZeroU8};
+use core::num::{NonZeroU8, NonZeroU128};
 
 use triple_arena::ptr_struct;
 

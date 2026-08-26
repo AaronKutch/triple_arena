@@ -1,72 +1,114 @@
 #![cfg(feature = "serde_support")]
 
-use serde::{de::DeserializeOwned, Serialize};
-use testcrate::{std_arena, std_chain, std_chain_no_gen, std_ord, std_surject};
-use triple_arena::{
-    utils::{ChainNoGenArena, PtrGen},
-    Arena, ChainArena, OrdArena, Ptr, SurjectArena,
-};
+use std::num::{NonZeroU32, NonZeroU128};
 
-// RON version for debug
-/*
-fn round_trip<T: Serialize + DeserializeOwned>(t: &T) -> T {
-    let s = ron::to_string(t).unwrap();
-    let res: T = ron::from_str(&s).unwrap();
-    res
-}
-*/
-
-fn round_trip<T: Serialize + DeserializeOwned>(t: &T) -> T {
-    let v = postcard::to_allocvec(t).unwrap();
-    let res: T = postcard::from_bytes(&v).unwrap();
-    res
-}
+use stacked_errors::{StackedError, ensure, ensure_eq};
+use testcrate::{P0, P3};
+use triple_arena::{Link, LinkNoGen, traits::*, utils::PtrNoGen};
 
 #[test]
-fn serde() {
-    let a = std_arena();
-    let b = round_trip(&a);
-    Arena::_check_invariants(&b).unwrap();
-    for (p, t) in &a {
-        let q = Ptr::_from_raw(p.inx(), PtrGen::two());
-        assert_eq!(b.get(q).unwrap(), t);
-    }
+fn serde() -> Result<(), StackedError> {
+    let p0 = P0::_from_raw(
+        NonZeroU32::new(7).unwrap(),
+        NonZeroU128::new(u128::MAX - 7).unwrap(),
+    );
+    let v = postcard::to_allocvec(&p0).unwrap();
+    ensure_eq!(v, vec![
+        7, 248, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        255, 3
+    ]);
+    ensure_eq!(postcard::from_bytes::<P0>(&v).unwrap(), p0);
+    ensure_eq!(
+        postcard::from_bytes::<P0>(&[7]),
+        Err(postcard::Error::DeserializeUnexpectedEnd)
+    );
+    let s = ron::to_string(&p0).unwrap();
+    ensure_eq!(s, "(7,340282366920938463463374607431768211448)");
+    ensure_eq!(ron::from_str::<P0>(&s).unwrap(), p0);
+    ensure!(ron::from_str::<P0>("7").is_err());
 
-    let a = std_chain();
-    let b = round_trip(&a);
-    ChainArena::_check_invariants(&b).unwrap();
-    for (p, t) in &a {
-        let q = Ptr::_from_raw(p.inx(), PtrGen::two());
-        let link = b.get_link(q).unwrap();
-        assert_eq!(link.prev().map(|p| p.inx()), t.prev().map(|p| p.inx()));
-        assert_eq!(link.next().map(|p| p.inx()), t.next().map(|p| p.inx()));
-        assert_eq!(link.t, t.t);
-    }
+    // generationless
+    let p3 = P3::_from_raw(NonZeroU32::new(7).unwrap(), ());
+    let v = postcard::to_allocvec(&p3).unwrap();
+    ensure_eq!(v, vec![7]);
+    ensure_eq!(postcard::from_bytes::<P3>(&v).unwrap(), p3);
+    ensure_eq!(
+        postcard::take_from_bytes::<P3>(&[7, 3]),
+        Ok((p3, [3].as_slice()))
+    );
+    let s = ron::to_string(&p3).unwrap();
+    ensure_eq!(s, "7");
+    ensure_eq!(ron::from_str::<P3>(&s).unwrap(), p3);
+    ensure!(ron::from_str::<P3>("(7,3)").is_err());
 
-    let a = std_chain_no_gen();
-    let b = round_trip(&a);
-    ChainNoGenArena::_check_invariants(&b).unwrap();
-    for (p, t) in &a {
-        let q = Ptr::_from_raw(p.inx(), PtrGen::two());
-        assert_eq!(b.get_link(q).unwrap(), t);
-    }
+    let p0 = PtrNoGen::<P0>::_from_raw(NonZeroU32::new(7).unwrap(), ());
+    let v = postcard::to_allocvec(&p0).unwrap();
+    ensure_eq!(v, vec![7]);
+    ensure_eq!(postcard::from_bytes::<PtrNoGen<P0>>(&v).unwrap(), p0);
+    let s = ron::to_string(&p0).unwrap();
+    ensure_eq!(s, "7");
+    ensure_eq!(ron::from_str::<PtrNoGen<P0>>(&s).unwrap(), p0);
 
-    let a = std_surject();
-    let b = round_trip(&a);
-    SurjectArena::_check_invariants(&b).unwrap();
-    for (p, k, v) in &a {
-        let q = Ptr::_from_raw(p.inx(), PtrGen::two());
-        assert_eq!(b.get_key(q).unwrap(), k);
-        assert_eq!(b.get_val(q).unwrap(), v);
-    }
+    let p0 = P0::_from_raw(NonZeroU32::new(7).unwrap(), NonZeroU128::new(42).unwrap());
+    let p1 = P0::_from_raw(NonZeroU32::new(6).unwrap(), NonZeroU128::new(7).unwrap());
+    let link: Link<P0, String> = Link::new((Some(p0), Some(p1)), "67".to_owned());
+    let v = postcard::to_allocvec(&link).unwrap();
+    ensure_eq!(v, vec![1, 7, 42, 1, 6, 7, 2, 54, 55]);
+    ensure_eq!(postcard::from_bytes::<Link<P0, String>>(&v).unwrap(), link);
+    ensure_eq!(
+        ron::to_string(&link).unwrap(),
+        "(Some((7,42)),Some((6,7)),\"67\")"
+    );
+    let link: Link<P0, String> = Link::new((None, None), "67".to_owned());
+    let v = postcard::to_allocvec(&link).unwrap();
+    ensure_eq!(v, vec![0, 0, 2, 54, 55]);
+    ensure_eq!(postcard::from_bytes::<Link<P0, String>>(&v).unwrap(), link);
+    ensure_eq!(ron::to_string(&link).unwrap(), "(None,None,\"67\")");
 
-    let mut a = std_ord();
-    a.compress_and_shrink();
-    let b = round_trip(&a);
-    OrdArena::_check_invariants(&b).unwrap();
-    for (p, k, v) in &a {
-        let q = Ptr::_from_raw(p.inx(), PtrGen::two());
-        assert_eq!(b.get_key(q).unwrap(), k);
-        assert_eq!(b.get_val(q).unwrap(), v);
+    let p0 = P0::_from_raw(NonZeroU32::new(7).unwrap(), NonZeroU128::new(42).unwrap());
+    let p1 = P0::_from_raw(NonZeroU32::new(6).unwrap(), NonZeroU128::new(7).unwrap());
+    let link: LinkNoGen<P0, String> =
+        LinkNoGen::new((Some(p0.inx()), Some(p1.inx())), "67".to_owned());
+    let v = postcard::to_allocvec(&link).unwrap();
+    ensure_eq!(v, vec![1, 7, 1, 6, 2, 54, 55]);
+    ensure_eq!(
+        postcard::from_bytes::<LinkNoGen<P0, String>>(&v).unwrap(),
+        link
+    );
+    ensure_eq!(ron::to_string(&link).unwrap(), "(Some(7),Some(6),\"67\")");
+    let link: LinkNoGen<P0, String> = LinkNoGen::new((None, None), "67".to_owned());
+    let v = postcard::to_allocvec(&link).unwrap();
+    ensure_eq!(v, vec![0, 0, 2, 54, 55]);
+    ensure_eq!(
+        postcard::from_bytes::<LinkNoGen<P0, String>>(&v).unwrap(),
+        link
+    );
+    ensure_eq!(ron::to_string(&link).unwrap(), "(None,None,\"67\")");
+
+    // Serialization errors must propagate rather than panic. Buffers that are
+    // too small make each individual element write fail in turn.
+    let p0 = P0::_from_raw(NonZeroU32::new(7).unwrap(), NonZeroU128::new(42).unwrap());
+    let p1 = P0::_from_raw(NonZeroU32::new(6).unwrap(), NonZeroU128::new(7).unwrap());
+    let link: Link<P0, String> = Link::new((Some(p0), Some(p1)), "67".to_owned());
+    // the full size is 9 bytes: 3 for `prev`, 3 for `next`, and 3 for `t`
+    for too_small in [0usize, 3, 6] {
+        ensure!(postcard::to_slice(&link, &mut vec![0u8; too_small]).is_err());
     }
+    ensure!(postcard::to_slice(&link, &mut [0u8; 9]).is_ok());
+
+    let link: LinkNoGen<P0, String> =
+        LinkNoGen::new((Some(p0.inx()), Some(p1.inx())), "67".to_owned());
+    // the full size is 7 bytes: 2 for `prev`, 2 for `next`, and 3 for `t`
+    for too_small in [0usize, 2, 4] {
+        ensure!(postcard::to_slice(&link, &mut vec![0u8; too_small]).is_err());
+    }
+    ensure!(postcard::to_slice(&link, &mut [0u8; 7]).is_ok());
+
+    // deserialization errors propagate for every `Ptr` shape
+    ensure!(postcard::from_bytes::<PtrNoGen<P0>>(&[]).is_err());
+    ensure!(postcard::from_bytes::<P3>(&[]).is_err());
+    ensure!(postcard::from_bytes::<Link<P0, String>>(&[1]).is_err());
+    ensure!(postcard::from_bytes::<LinkNoGen<P0, String>>(&[1]).is_err());
+
+    Ok(())
 }

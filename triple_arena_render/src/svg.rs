@@ -5,11 +5,11 @@ use std::{
     path::PathBuf,
 };
 
-use triple_arena::{Arena, Ptr};
+use triple_arena::traits::*;
 
 use crate::{
-    grid_process::grid_process, render_grid::RenderGrid, DebugNodeTrait, RenderError, COLORS,
-    FONT_FAMILY, NODE_FILL, NODE_PAD_Y, PAD, RELATION_WIDTH, TEXT_COLOR,
+    COLORS, DebugNodeTrait, FONT_FAMILY, NODE_FILL, NODE_PAD_Y, PAD, RELATION_WIDTH, RenderError,
+    TEXT_COLOR, grid_process::grid_process, render_grid::RenderGrid,
 };
 
 /// create the SVG code
@@ -118,7 +118,7 @@ pub(crate) fn gen_svg<P: Ptr>(rg: &RenderGrid<P>) -> String {
                     .unwrap();*/
                 }
             } else {
-                continue
+                continue;
             };
         }
     }
@@ -140,7 +140,7 @@ pub(crate) fn gen_svg<P: Ptr>(rg: &RenderGrid<P>) -> String {
                     s,
                     "<text fill=\"#{}\" font-size=\"{}\" font-family=\"{}\" x=\"{}\" y=\"{}\" \
                      textLength=\"{}\">{}</text>",
-                    TEXT_COLOR, size, FONT_FAMILY, tmp.0 .0, tmp.0 .1, tmp.2, final_text
+                    TEXT_COLOR, size, FONT_FAMILY, tmp.0.0, tmp.0.1, tmp.2, final_text
                 )
                 .unwrap();
                 /*write!(
@@ -171,16 +171,13 @@ pub(crate) fn gen_svg<P: Ptr>(rg: &RenderGrid<P>) -> String {
     output
 }
 
-// TODO when associated type bounds become stable, use something like
-// `A: ArenaTrait<E: DebugNodeTrait<P>>`
-
 /// Renders an SVG graph representation of `arena` in a top-down order from
 /// sources to sinks. Cycles are broken up by inserting `Ptr` reference nodes.
 /// If `error_on_invalid_ptr` then this will return an error if an invalid
 /// `Ptr` is encountered, otherwise it will insert `Ptr` nodes with
 /// "(invalid)" appended.
-pub fn render_to_svg<P: Ptr, T: DebugNodeTrait<P>>(
-    arena: &Arena<P, T>,
+pub fn render_to_svg<P: Ptr, T: DebugNodeTrait<P>, A: CompactArenaTrait<P, T>>(
+    arena: &A,
     error_on_invalid_ptr: bool,
 ) -> Result<String, RenderError<P>> {
     let rg = grid_process(arena, error_on_invalid_ptr)?;
@@ -188,8 +185,8 @@ pub fn render_to_svg<P: Ptr, T: DebugNodeTrait<P>>(
 }
 
 /// Writes the result of [render_to_svg] to `out_file`
-pub fn render_to_svg_file<P: Ptr, T: DebugNodeTrait<P>>(
-    arena: &Arena<P, T>,
+pub fn render_to_svg_file<P: Ptr, T: DebugNodeTrait<P>, A: CompactArenaTrait<P, T>>(
+    arena: &A,
     error_on_invalid_ptr: bool,
     out_file: PathBuf,
 ) -> Result<(), RenderError<P>> {

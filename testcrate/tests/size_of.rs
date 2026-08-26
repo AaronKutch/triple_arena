@@ -4,9 +4,9 @@ use std::{
 };
 
 use triple_arena::{
-    ptr_struct,
-    utils::{InternalEntry, LinkNoGen, Node, PtrNoGen},
-    Link, Ptr,
+    Link, ptr_struct,
+    traits::*,
+    utils::{ArenaSlot, DirectSlot, PtrNoGen, SimpleOrdArenaNode},
 };
 
 ptr_struct!(P0);
@@ -29,21 +29,36 @@ fn size_of_ptr() {
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn size_of_node() {
-    assert_eq!(size_of::<Node<P0, (), ()>>(), 32);
+    use triple_arena::LinkNoGen;
+
+    assert_eq!(size_of::<SimpleOrdArenaNode<P0, ()>>(), 32);
     assert_eq!(size_of::<Link<P0, ()>>(), 32);
     assert_eq!(size_of::<LinkNoGen<P0, ()>>(), 16);
-    assert_eq!(size_of::<InternalEntry<P0, ()>>(), 16);
+    assert_eq!(size_of::<ArenaSlot<P0, ()>>(), 16);
     assert_eq!(
-        size_of::<InternalEntry<P0, Link<P0, Node<P0, (), ()>>>>(),
+        size_of::<ArenaSlot<P0, Link<P0, SimpleOrdArenaNode<P0, ()>>>>(),
         72
     );
 
-    assert_eq!(size_of::<Node<P1, (), ()>>(), 32);
+    assert_eq!(size_of::<SimpleOrdArenaNode<P1, ()>>(), 32);
     assert_eq!(size_of::<Link<P1, ()>>(), 16);
     assert_eq!(size_of::<LinkNoGen<P1, ()>>(), 16);
-    assert_eq!(size_of::<InternalEntry<P1, ()>>(), 8);
+    assert_eq!(size_of::<ArenaSlot<P1, ()>>(), 8);
     assert_eq!(
-        size_of::<InternalEntry<P1, Link<P1, Node<P1, (), ()>>>>(),
+        size_of::<ArenaSlot<P1, Link<P1, SimpleOrdArenaNode<P1, ()>>>>(),
+        56
+    );
+
+    // only needs the generation niche
+    assert_eq!(size_of::<DirectSlot<P0, ()>>(), 8);
+    assert_eq!(
+        size_of::<DirectSlot<P0, Link<P0, SimpleOrdArenaNode<P0, ()>>>>(),
+        72
+    );
+    // only a single byte
+    assert_eq!(size_of::<DirectSlot<P1, ()>>(), 1);
+    assert_eq!(
+        size_of::<DirectSlot<P1, Link<P1, SimpleOrdArenaNode<P1, ()>>>>(),
         56
     );
 }

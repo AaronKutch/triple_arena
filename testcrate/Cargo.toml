@@ -1,18 +1,32 @@
 [package]
 name = "testcrate"
 version = "0.0.0"
-edition = "2021"
+edition = "2024"
 publish = false
 
-[dependencies]
-postcard = { version = "1.0", features = ["alloc"] }
-rand_xoshiro = "0.7"
-serde = "1.0"
-serde_derive = "1.0"
-triple_arena = { path = "../triple_arena", features = ["expose_internal_utils"] }
-triple_arena_render = { path = "../triple_arena_render" }
+[[bin]]
+name = "render0"
+path = "./src/bin/render0.rs"
+required-features = ["alloc"]
 
-# separate feature because we need to test the `ptr_struct` macro both ways
+[[bin]]
+name = "render1"
+path = "./src/bin/render1.rs"
+required-features = ["alloc"]
+
+# separate feature because we need to test the `ptr_struct` macro both ways and make sure we got configuration correct
 [features]
-default = ["serde_support"]
+default = ["serde_support", "alloc"]
+alloc = ["triple_arena/alloc", "triple_arena_render"]
 serde_support = ["triple_arena/serde_support"]
+
+[dependencies]
+clap = { workspace = true }
+expect-test = { workspace = true }
+postcard = { workspace = true }
+rand_xoshiro = { workspace = true }
+ron = { workspace = true }
+stacked_errors = { workspace = true }
+star_rng = { workspace = true }
+triple_arena = { workspace = true }
+triple_arena_render = { workspace = true, optional = true }
