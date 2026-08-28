@@ -15,7 +15,7 @@ We do not have a "clear_and_shrink" function or something that might imply reduc
 
 Some collections have `try_*` functions for reasons unrelated to capacity, we use `*_within_capacity` to completely avoid ambiguity.
 
-"reallocate_min_capacity" is the best name I could come up with, the fact that it is a minimum must be encoded in the name. Maybe I should have named it "reallocate_with_min_capacity" but I think we make a terseness exception, also the "min" could be as "minimize" to reference its ability to shrink. We don't need "try_*" since in any universe allocation is infallible and allocator v2 does this. Note there are concievable defragmentation cases where an implementor and allocator would make `min_capacity == self.len()` not a no-op.
+"reallocate_min_capacity" is the best name I could come up with, the fact that it is a minimum must be encoded in the name. Maybe I should have named it "reallocate_with_min_capacity" but I think we make a terseness exception, also the "min" could be as "minimize" to reference its ability to shrink. We don't need "try_*" since in any universe allocation is fallible and allocator v2 does this. Note there are concievable defragmentation cases where an implementor and allocator would make `min_capacity == self.len()` not a no-op.
 
 I would consider things like `fn is_full(&self) -> bool {self.len() == self.max_capacity()}`, but there is still too high of a chance for assuming alternatives like `self.len() == self.capacity()` based on context, minimize the functions we have access to
 

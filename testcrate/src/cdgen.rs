@@ -18,6 +18,7 @@ pub trait TryInternalDrop {
 // Note that if `Ck`s from the wrong `CdGen` are used, it will always end up
 // causing a failure unless perfect deterministic swaps occur
 
+/// A key uniquely corresponding to a [Cd]
 #[derive(Clone, Copy)]
 pub struct Ck<D: Copy>(usize, NonZeroU64, PhantomData<fn() -> D>); // index and a generation
 
